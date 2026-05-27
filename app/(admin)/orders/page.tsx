@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -16,7 +16,7 @@ const statusColor: Record<string, string> = {
 
 const statuses = ['รอดำเนินการ', 'กำลังตัด', 'กำลังเย็บ', 'กำลังรีด', 'กำลังแพ็ค', 'สำเร็จ']
 
-export default function OrdersPage() {
+function OrdersContent() {
   const searchParams = useSearchParams()
   const status = searchParams.get('status') ?? undefined
   const [orders, setOrders] = useState<any[]>([])
@@ -89,5 +89,13 @@ export default function OrdersPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function OrdersPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>กำลังโหลด…</div>}>
+      <OrdersContent />
+    </Suspense>
   )
 }
