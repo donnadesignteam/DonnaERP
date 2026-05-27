@@ -14,7 +14,13 @@ export default function manifest(): MetadataRoute.Manifest {
         src: '/donna-logo.jpg',
         sizes: 'any',
         type: 'image/jpeg',
-        purpose: 'any maskable',
+        purpose: 'any',
+      },
+      {
+        src: '/donna-logo.jpg',
+        sizes: 'any',
+        type: 'image/jpeg',
+        purpose: 'maskable',
       },
     ],
   }
