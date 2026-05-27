@@ -1,26 +1,55 @@
-@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&display=swap');
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg:       #FAF8F5;
+  --surface:  #FFFFFF;
+  --border:   #EAE5DF;
+  --border-2: #D9D2C8;
+  --ink:      #1A1008;
+  --ink-2:    #3D2E1E;
+  --ink-3:    #7A6A58;
+  --ink-4:    #A89880;
+  --blue:     #C47E3A;
+  --blue-bg:  #FDF5EC;
+  --red:      #DC2626;
+  --red-bg:   #FEF2F2;
+  --green:    #16A34A;
+  --yellow:   #CA8A04;
+  --purple:   #7C3AED;
+  --radius:   8px;
+  --radius-sm:4px;
+  --shadow:   0 1px 2px rgba(0,0,0,0.05);
+  --shadow-md:0 4px 8px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html.dark {
+  --bg:       #0E0A06;
+  --surface:  #181008;
+  --border:   #2E2218;
+  --border-2: #3E3020;
+  --ink:      #FAF6F0;
+  --ink-2:    #E8DDD0;
+  --ink-3:    #A89278;
+  --ink-4:    #7A6A58;
+  --blue-bg:  #3A2010;
+  --red-bg:   #3B1219;
+  --shadow:   0 1px 2px rgba(0,0,0,0.4);
+  --shadow-md:0 4px 12px rgba(0,0,0,0.5);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
+
+input, select, textarea, button { font-family: inherit; font-size: 14px; }
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 4px; }
