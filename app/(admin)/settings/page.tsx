@@ -43,7 +43,7 @@ export default function SettingsPage() {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 24 }}>
         {/* Account info */}
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '24px' }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 18, color: 'var(--ink)' }}>บัญชีที่เข้าใช้งาน</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <div style={{ width: 48, height: 48, borderRadius: 24, background: 'var(--blue)22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>👤</div>
@@ -58,7 +58,7 @@ export default function SettingsPage() {
         </div>
 
         {/* DB Status */}
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '24px' }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 18, color: 'var(--ink)' }}>สถานะการเชื่อมข้อมูล</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
             <span style={{ width: 10, height: 10, borderRadius: 5, background: dbOk === null ? 'var(--ink-3)' : dbOk ? '#34c759' : 'var(--red)', display: 'inline-block' }} />
@@ -72,7 +72,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Theme */}
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '24px' }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 18, color: 'var(--ink)' }}>ธีม</h2>
           <div style={{ display: 'flex', gap: 10 }}>
             <button onClick={() => !dark && toggleTheme()} style={{ flex: 1, padding: '10px', borderRadius: 10, border: `2px solid ${dark ? 'var(--blue)' : 'rgba(0,0,0,0.10)'}`, background: dark ? 'var(--ink)' : '#fff', color: dark ? '#fff' : 'var(--ink)', cursor: 'pointer', fontSize: 13, fontWeight: dark ? 600 : 400 }}>
@@ -85,7 +85,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Report issue */}
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '24px' }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 18, color: 'var(--ink)' }}>รายงานปัญหา</h2>
           <p style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.6, marginBottom: 16 }}>
             หากพบปัญหาในการใช้งานระบบ กรุณาส่งรายงานผ่านปุ่มด้านล่าง
@@ -97,7 +97,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Activity logs */}
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', marginBottom: 20 }}>
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '24px', marginBottom: 20 }}>
         <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 18, color: 'var(--ink)' }}>ประวัติการแก้ไข (Activity Log)</h2>
         {logs.length === 0 ? (
           <p style={{ fontSize: 13, color: 'var(--ink-3)' }}>ยังไม่มี log — log จะแสดงเมื่อเพิ่มตาราง activity_logs ใน Supabase</p>

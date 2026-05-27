@@ -68,14 +68,14 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', padding: '28px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '28px' }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 20, color: 'var(--ink)' }}>ข้อมูลลูกค้า</h2>
           <Field label="ชื่อลูกค้า" value={order.customer_name} />
           <Field label="เบอร์โทร" value={order.customer_phone} />
           <Field label="ที่อยู่" value={order.address} />
         </div>
 
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', padding: '28px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '28px' }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 20, color: 'var(--ink)' }}>ข้อมูลออเดอร์</h2>
           <Field label="กำหนดส่ง" value={order.deadline ? new Date(order.deadline).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' }) : undefined} />
           <Field label="วันที่สั่ง" value={order.created_at ? new Date(order.created_at).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' }) : undefined} />
@@ -84,14 +84,14 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         </div>
 
         {order.notes && (
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', padding: '28px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', gridColumn: '1 / -1' }}>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '28px', gridColumn: '1 / -1' }}>
             <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12, color: 'var(--ink)' }}>หมายเหตุ</h2>
             <p style={{ fontSize: 14, color: 'var(--ink)', lineHeight: 1.6 }}>{order.notes}</p>
           </div>
         )}
 
         {order.items && (
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', padding: '28px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', gridColumn: '1 / -1' }}>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '28px', gridColumn: '1 / -1' }}>
             <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12, color: 'var(--ink)' }}>รายการสินค้า</h2>
             <pre style={{ fontSize: 13, color: 'var(--ink)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
               {typeof order.items === 'string' ? order.items : JSON.stringify(order.items, null, 2)}
@@ -100,7 +100,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         )}
 
         {extraFields.length > 0 && (
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', padding: '28px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', gridColumn: '1 / -1' }}>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '28px', gridColumn: '1 / -1' }}>
             <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 20, color: 'var(--ink)' }}>ข้อมูลเพิ่มเติม</h2>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
               {extraFields.map(([k, v]) => (
