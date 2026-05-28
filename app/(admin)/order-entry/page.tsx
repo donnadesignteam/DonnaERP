@@ -109,6 +109,7 @@ const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping
   order_status: 'รอดำเนินการ',
   courier: '',
   is_installation: false,
+  is_dropoff: false,
   installation_date: '',
   notes: '',
   price: null,
