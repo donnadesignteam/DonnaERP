@@ -35,6 +35,7 @@ type Entry = {
   order_status: string
   courier: string
   is_installation: boolean
+  is_dropoff: boolean
   installation_date: string
   notes: string
   price: number | null
@@ -69,6 +70,15 @@ function calcShipping(deadline: string, courier: string): string {
   let time = '13:00:00'
   if (courier.includes('SPX Express') || courier === 'J&T Express' || courier === 'LEX TH') time = '15:00:00'
   return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()},${time}`
+}
+
+function shiftShippingDatetime(s: string, days: number): string {
+  if (!s || s === '-') return s
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4}),(.+)$/)
+  if (!m) return s
+  const d = new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]))
+  d.setDate(d.getDate() + days)
+  return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()},${m[4]}`
 }
 
 function daysRemaining(dateStr: string): number | null {
@@ -146,7 +156,9 @@ export default function OrderEntryPage() {
   const [pasteCol4, setPasteCol4] = useState('')
   const [pasteCol5, setPasteCol5] = useState('')
   const [pasteCol6, setPasteCol6] = useState('')
-  const [pasteRows, setPasteRows] = useState<{ paymentDate: string; deadline: string; orderNumber: string; price: number; customerName: string; courier: string }[]>([])
+  const [pasteCol7, setPasteCol7] = useState('')
+  const [pasteCol8, setPasteCol8] = useState('')
+  const [pasteRows, setPasteRows] = useState<{ paymentDate: string; deadline: string; orderNumber: string; price: number; customerName: string; courier: string; orderStatus: string; isDuplicate: boolean; isDropoff: boolean }[]>([])
   const [pasteSaving, setPasteSaving] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [modalItems, setModalItems] = useState<Item[]>([])
@@ -391,15 +403,18 @@ export default function OrderEntryPage() {
   }
 
   function parsePasteData() {
-    const split = (s: string) => s.split('\n').map(x => x.trim()).filter(Boolean)
-    const orderNums  = split(pasteCol1)  // เลขออเดอร์ลูกค้า
-    const customers  = split(pasteCol2)  // ชื่อลูกค้า
-    const payDates   = split(pasteCol3)  // เวลาชำระสินค้า
-    const couriers   = split(pasteCol4)  // ตัวเลือกการจัดส่ง
-    const deadlines  = split(pasteCol5)  // วันที่คาดว่าจะจัดส่ง
-    const prices     = split(pasteCol6)  // ราคาสุทธิ
-    const len = Math.max(orderNums.length, customers.length, payDates.length, couriers.length, deadlines.length, prices.length)
-    const map = new Map<string, { paymentDate: string; deadline: string; orderNumber: string; price: number; customerName: string; courier: string }>()
+    const split = (s: string) => s.trimEnd().split('\n').map(x => x.trim())
+    const orderNums  = split(pasteCol1)
+    const customers  = split(pasteCol2)
+    const payDates   = split(pasteCol3)
+    const couriers   = split(pasteCol4)
+    const deadlines  = split(pasteCol5)
+    const prices     = split(pasteCol6)
+    const statuses   = split(pasteCol7)
+    const dropoffs   = split(pasteCol8)
+    const existingNums = new Set(rows.map(r => r.order_number).filter(Boolean))
+    const len = Math.max(orderNums.length, customers.length, payDates.length, couriers.length, deadlines.length, prices.length, statuses.length, dropoffs.length)
+    const map = new Map<string, { paymentDate: string; deadline: string; orderNumber: string; price: number; customerName: string; courier: string; orderStatus: string; isDuplicate: boolean; isDropoff: boolean }>()
     for (let i = 0; i < len; i++) {
       const orderNumber = orderNums[i] ?? ''
       const price = parseFloat((prices[i] ?? '0').replace(/,/g, '')) || 0
@@ -407,17 +422,31 @@ export default function OrderEntryPage() {
       if (map.has(orderNumber)) {
         map.get(orderNumber)!.price += price
       } else {
-        map.set(orderNumber, { paymentDate: payDates[i] ?? '', deadline: deadlines[i] ?? '', orderNumber, price, customerName: customers[i] ?? '', courier: normalizeCourier(couriers[i] ?? '') })
+        const orderStatus = statuses[i] ?? ''
+        const isDropoff = !!(dropoffs[i] ?? '').trim()
+        map.set(orderNumber, { paymentDate: payDates[i] ?? '', deadline: deadlines[i] ?? '', orderNumber, price, customerName: customers[i] ?? '', courier: normalizeCourier(couriers[i] ?? ''), orderStatus, isDuplicate: existingNums.has(orderNumber), isDropoff })
       }
     }
     setPasteRows(Array.from(map.values()))
   }
 
+  function isPasteRowSaveable(r: { orderStatus: string; isDuplicate: boolean }): boolean {
+    if (r.isDuplicate) return false
+    const s = r.orderStatus.trim()
+    if (!s) return true
+    return s.includes('ต้องจัดส่ง') || s.includes('จัดส่งแล้ว')
+  }
+
   async function savePasteRows() {
     setPasteSaving(true)
     const today = new Date().toISOString().split('T')[0]
-    const payload = pasteRows.map(r => ({
-      entry_date: toIsoDate(r.paymentDate) || today,
+    const resetCols = () => { setPasteRows([]); setPasteCol1(''); setPasteCol2(''); setPasteCol3(''); setPasteCol4(''); setPasteCol5(''); setPasteCol6(''); setPasteCol7(''); setPasteCol8('') }
+
+    const newRows = pasteRows.filter(isPasteRowSaveable)
+    const dropoffUpdateRows = pasteRows.filter(r => r.isDuplicate && r.isDropoff)
+
+    const insertPayload = newRows.map(r => ({
+      entry_date: (r.paymentDate && r.paymentDate !== '-') ? (toIsoDate(r.paymentDate) || today) : null,
       deadline: toIsoDate(r.deadline) || null,
       shipping_datetime: (toIsoDate(r.deadline) && r.courier) ? calcShipping(toIsoDate(r.deadline)!, r.courier) : null,
       status: 'อยู่ในกำหนด',
@@ -427,20 +456,43 @@ export default function OrderEntryPage() {
       order_status: 'รอดำเนินการ',
       is_urgent: false,
       is_installation: false,
+      is_dropoff: r.isDropoff,
       admin_name: null, technician: null,
       customer_name: r.customerName || null,
       courier: r.courier || null,
       shipping_date: null, platform: 'Shopee', items: null, installation_date: null,
     }))
-    const res = await supabase.from('order_entries').insert(payload).select()
-    setPasteSaving(false)
-    if (res.error) {
-      setError(`บันทึกไม่สำเร็จ: ${res.error.message}`)
-    } else {
-      setRows(prev => [...(res.data as Entry[]), ...prev])
-      setModal(null)
-      setPasteRows([]); setPasteCol1(''); setPasteCol2(''); setPasteCol3(''); setPasteCol4(''); setPasteCol5(''); setPasteCol6('')
+
+    let updatedIds: string[] = []
+    for (const r of dropoffUpdateRows) {
+      const existing = rows.find(row => row.order_number === r.orderNumber)
+      if (!existing) continue
+      const now = new Date().toISOString()
+      const { error: err } = await supabase.from('order_entries').update({ is_dropoff: true, updated_at: now }).eq('id', existing.id)
+      if (!err) updatedIds.push(existing.id)
     }
+
+    if (insertPayload.length === 0 && updatedIds.length === 0) {
+      setPasteSaving(false)
+      setModal(null)
+      resetCols()
+      return
+    }
+
+    let insertedRows: Entry[] = []
+    if (insertPayload.length > 0) {
+      const res = await supabase.from('order_entries').insert(insertPayload).select()
+      if (res.error) { setPasteSaving(false); setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
+      insertedRows = res.data as Entry[]
+    }
+
+    setPasteSaving(false)
+    setRows(prev => [
+      ...insertedRows,
+      ...prev.map(r => updatedIds.includes(r.id) ? { ...r, is_dropoff: true } : r),
+    ])
+    setModal(null)
+    resetCols()
   }
 
   function toggleArr(arr: string[], val: string): string[] {
@@ -729,6 +781,7 @@ export default function OrderEntryPage() {
                     </div>
                   )}
                 </th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>Drop-off</th>
                 <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
                   <button onClick={() => setOpenFilter(openFilter === 'urgent' ? null : 'urgent')}
                     style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: urgentFilter ? '#22c55e' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
@@ -767,7 +820,8 @@ export default function OrderEntryPage() {
             </thead>
             <tbody>
               {displayed.map(r => {
-                const days = r.shipping_datetime ? daysRemaining(r.shipping_datetime) : null
+                const effectiveShipping = (r.is_dropoff && r.shipping_datetime) ? shiftShippingDatetime(r.shipping_datetime, 2) : r.shipping_datetime
+                const days = effectiveShipping ? daysRemaining(effectiveShipping) : null
                 return (
                   <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : 'transparent' }}>
                     <td style={{ padding: '12px 14px' }}>
@@ -783,7 +837,7 @@ export default function OrderEntryPage() {
                         </span>
                       ) : '-'}
                     </td>
-                    <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', fontWeight: 500, color: '#bf5af2' }}>{r.is_urgent ? '-' : (r.shipping_datetime || '-')}</td>
+                    <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', fontWeight: 500, color: '#bf5af2' }}>{r.is_urgent ? '-' : (effectiveShipping || '-')}</td>
                     <td style={{ padding: '12px 14px', color: 'var(--blue)', fontWeight: 600 }}>{r.order_number || '-'}</td>
                     <td style={{ padding: '12px 14px' }}>{r.customer_name || '-'}</td>
                     <td style={{ padding: '12px 14px', textAlign: 'right', whiteSpace: 'nowrap', fontWeight: r.price ? 600 : 400, color: r.price ? 'var(--ink)' : 'var(--ink-4)' }}>
@@ -806,7 +860,7 @@ export default function OrderEntryPage() {
                       <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.courier || '-'}</div>
                     </td>
                     <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', color: 'var(--ink-3)' }}>
-                      {r.entry_date ? new Date(r.entry_date).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}
+                      {r.entry_date ? new Date(r.entry_date).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : <span style={{ color: '#f59e0b', fontWeight: 500 }}>ยังไม่ชำระ</span>}
                     </td>
                     <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', color: 'var(--ink-3)' }}>
                       {r.deadline ? new Date(r.deadline).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}
@@ -835,6 +889,10 @@ export default function OrderEntryPage() {
                           {PROD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
                       )}
+                    </td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>
+                      <input type="checkbox" checked={!!r.is_dropoff} onChange={e => updateField(r.id, 'is_dropoff', e.target.checked)}
+                        style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6366f1' }} />
                     </td>
                     <td style={{ padding: '12px 14px', textAlign: 'center' }}>
                       <input type="checkbox" checked={!!r.is_urgent} onChange={e => toggleDone(r.id, e.target.checked)}
@@ -920,6 +978,8 @@ export default function OrderEntryPage() {
                     ['ตัวเลือกการจัดส่ง', pasteCol4, setPasteCol4],
                     ['วันที่คาดว่าจะจัดส่ง', pasteCol5, setPasteCol5],
                     ['ราคาสุทธิ', pasteCol6, setPasteCol6],
+                    ['สถานะการสั่งซื้อ', pasteCol7, setPasteCol7],
+                    ['Drop-off', pasteCol8, setPasteCol8],
                   ] as [string, string, (v: string) => void][]).map(([label, val, setter]) => (
                     <div key={label}>
                       <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 5 }}>{label}</label>
@@ -937,27 +997,54 @@ export default function OrderEntryPage() {
 
                 {pasteRows.length > 0 && (
                   <div>
-                    <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 8 }}>พบ {pasteRows.length} ออเดอร์ (รวมที่ซ้ำแล้ว)</p>
+                    {(() => {
+                      const saveCount = pasteRows.filter(isPasteRowSaveable).length
+                      const dropoffCount = pasteRows.filter(r => r.isDuplicate && r.isDropoff).length
+                      const skipCount = pasteRows.length - saveCount - dropoffCount
+                      return (
+                        <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 8 }}>
+                          พบ {pasteRows.length} ออเดอร์ — บันทึกใหม่ <strong style={{ color: 'var(--ink)' }}>{saveCount}</strong>{dropoffCount > 0 && <> · อัพเดท Drop-off <strong style={{ color: '#6366f1' }}>{dropoffCount}</strong></>}{skipCount > 0 && <> · ข้าม <strong style={{ color: 'var(--red)' }}>{skipCount}</strong></>} รายการ
+                        </p>
+                      )
+                    })()}
                     <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginBottom: 16, maxHeight: 260, overflowY: 'auto' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                         <thead>
                           <tr style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
-                            {['วันชำระ', 'วันต้องส่ง', 'เลขออเดอร์', 'ราคาสุทธิ', 'ชื่อลูกค้า', 'การจัดส่ง'].map(h => (
+                            {['สถานะ', 'วันชำระ', 'วันต้องส่ง', 'เลขออเดอร์', 'ราคาสุทธิ', 'ชื่อลูกค้า', 'การจัดส่ง'].map(h => (
                               <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 500, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{h}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
-                          {pasteRows.map((r, i) => (
-                            <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-                              <td style={{ padding: '7px 10px' }}>{r.paymentDate || '-'}</td>
-                              <td style={{ padding: '7px 10px' }}>{r.deadline || '-'}</td>
-                              <td style={{ padding: '7px 10px', fontWeight: 600, color: 'var(--blue)' }}>{r.orderNumber}</td>
-                              <td style={{ padding: '7px 10px', fontWeight: 600 }}>{r.price.toLocaleString()} บาท</td>
-                              <td style={{ padding: '7px 10px' }}>{r.customerName || '-'}</td>
-                              <td style={{ padding: '7px 10px', color: 'var(--ink-3)', fontSize: 11 }}>{r.courier || '-'}</td>
-                            </tr>
-                          ))}
+                          {pasteRows.map((r, i) => {
+                            const isCancelled = r.orderStatus.includes('ยกเลิก')
+                            const saveable = isPasteRowSaveable(r)
+                            const isDropoffUpdate = r.isDuplicate && r.isDropoff
+                            return (
+                              <tr key={i} style={{ borderBottom: '1px solid var(--border)', opacity: (saveable || isDropoffUpdate) ? 1 : 0.55 }}>
+                                <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
+                                  {isDropoffUpdate ? (
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#6366f1', background: '#ede9fe', borderRadius: 4, padding: '2px 6px' }}>อัพเดท Drop-off</span>
+                                  ) : r.isDuplicate ? (
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#f59e0b', background: '#fef3c7', borderRadius: 4, padding: '2px 6px' }}>มีออเดอร์นี้แล้ว</span>
+                                  ) : isCancelled ? (
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#ef4444', background: '#fee2e2', borderRadius: 4, padding: '2px 6px' }}>ยกเลิก</span>
+                                  ) : r.orderStatus ? (
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#22c55e', background: '#dcfce7', borderRadius: 4, padding: '2px 6px' }}>{r.orderStatus}</span>
+                                  ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
+                                </td>
+                                <td style={{ padding: '7px 10px', color: (!r.paymentDate || r.paymentDate === '-') ? '#f59e0b' : undefined, fontWeight: (!r.paymentDate || r.paymentDate === '-') ? 500 : undefined }}>
+                                  {(!r.paymentDate || r.paymentDate === '-') ? 'ยังไม่ชำระ' : r.paymentDate}
+                                </td>
+                                <td style={{ padding: '7px 10px' }}>{r.deadline || '-'}</td>
+                                <td style={{ padding: '7px 10px', fontWeight: 600, color: 'var(--blue)' }}>{r.orderNumber}</td>
+                                <td style={{ padding: '7px 10px', fontWeight: 600 }}>{r.price.toLocaleString()} บาท</td>
+                                <td style={{ padding: '7px 10px' }}>{r.customerName || '-'}</td>
+                                <td style={{ padding: '7px 10px', color: 'var(--ink-3)', fontSize: 11 }}>{r.courier || '-'}</td>
+                              </tr>
+                            )
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -966,7 +1053,13 @@ export default function OrderEntryPage() {
                         style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ยกเลิก</button>
                       <button onClick={savePasteRows} disabled={pasteSaving}
                         style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
-                        {pasteSaving ? 'กำลังบันทึก…' : `บันทึกทั้งหมด ${pasteRows.length} รายการ`}
+                        {pasteSaving ? 'กำลังบันทึก…' : (() => {
+                          const n = pasteRows.filter(isPasteRowSaveable).length
+                          const d = pasteRows.filter(r => r.isDuplicate && r.isDropoff).length
+                          if (n > 0 && d > 0) return `บันทึก ${n} ใหม่ · อัพเดท Drop-off ${d}`
+                          if (d > 0) return `อัพเดท Drop-off ${d} ออเดอร์`
+                          return `บันทึก ${n} รายการ`
+                        })()}
                       </button>
                     </div>
                   </div>
