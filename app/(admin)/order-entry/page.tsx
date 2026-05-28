@@ -91,7 +91,8 @@ function daysRemaining(dateStr: string): number | null {
     target = new Date(dateStr)
   }
   const diff = target.getTime() - new Date().setHours(0, 0, 0, 0)
-  return Math.ceil(diff / 86400000)
+  const result = Math.ceil(diff / 86400000)
+  return isNaN(result) ? null : result
 }
 
 const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping_datetime'> => ({
@@ -132,6 +133,7 @@ const PROD_STATUS_COLOR: Record<string, string> = {
 
 export default function OrderEntryPage() {
   const selectAllRef = useRef<HTMLInputElement>(null)
+  const modalDownOnBackdrop = useRef(false)
   const [rows, setRows] = useState<Entry[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<{ mode: 'add' | 'edit'; data: Partial<Entry> } | null>(null)
@@ -147,9 +149,10 @@ export default function OrderEntryPage() {
   const [techFilters, setTechFilters] = useState<string[]>([])
   const [shippingDateFrom, setShippingDateFrom] = useState('')
   const [shippingDateTo, setShippingDateTo] = useState('')
-  const [openFilter, setOpenFilter] = useState<'platform' | 'courier' | 'status' | 'admin' | 'tech' | 'shipping' | 'urgent' | 'install' | 'days' | null>(null)
+  const [openFilter, setOpenFilter] = useState<'platform' | 'courier' | 'status' | 'admin' | 'tech' | 'shipping' | 'urgent' | 'install' | 'days' | 'updated' | null>(null)
   const [daysSort, setDaysSort] = useState<'asc' | 'desc' | null>('asc')
   const [sortOrder, setSortOrder] = useState<string[]>([])
+  const [updatedSort, setUpdatedSort] = useState<'asc' | 'desc' | null>(null)
   const [modalTab, setModalTab] = useState<'form' | 'paste'>('form')
   const [pasteCol1, setPasteCol1] = useState('')
   const [pasteCol2, setPasteCol2] = useState('')
@@ -170,21 +173,31 @@ export default function OrderEntryPage() {
   const [itemsModalError, setItemsModalError] = useState('')
   const [openAction, setOpenAction] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [formParseLoading, setFormParseLoading] = useState(false)
+  const [formParseError, setFormParseError] = useState('')
 
   const computeSortOrder = (rs: Entry[], sort: 'asc' | 'desc' | null): string[] => {
     if (!sort) return rs.map(r => r.id)
     const parseD = (s: string | null | undefined) => {
-      if (!s) return null
-      if (s.includes('-')) return new Date(s)
+      if (!s || s === '-') return null
       const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
-      if (!m) return null
-      return new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]))
+      if (m) {
+        const d = new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]))
+        return isNaN(d.getTime()) ? null : d
+      }
+      if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+        const d = new Date(s)
+        return isNaN(d.getTime()) ? null : d
+      }
+      return null
     }
     return [...rs].sort((a, b) => {
       if (a.is_urgent && b.is_urgent) return 0
       if (a.is_urgent) return 1
       if (b.is_urgent) return -1
-      const da = parseD(a.shipping_datetime), db = parseD(b.shipping_datetime)
+      const aShipping = (a.is_dropoff && a.shipping_datetime) ? shiftShippingDatetime(a.shipping_datetime, 2) : a.shipping_datetime
+      const bShipping = (b.is_dropoff && b.shipping_datetime) ? shiftShippingDatetime(b.shipping_datetime, 2) : b.shipping_datetime
+      const da = parseD(aShipping), db = parseD(bShipping)
       if (!da && !db) return 0
       if (!da) return 1
       if (!db) return -1
@@ -549,7 +562,13 @@ export default function OrderEntryPage() {
     return matchSearch && matchStatus && matchPlatform && matchCourier && matchAdmin && matchTech && matchUrgent && matchInstall && matchShipping
   })
 
-  if (daysSort && sortOrder.length > 0) {
+  if (updatedSort) {
+    displayed.sort((a, b) => {
+      const da = a.updated_at ? new Date(a.updated_at).getTime() : 0
+      const db = b.updated_at ? new Date(b.updated_at).getTime() : 0
+      return updatedSort === 'desc' ? db - da : da - db
+    })
+  } else if (daysSort && sortOrder.length > 0) {
     const orderMap = new Map(sortOrder.map((id, i) => [id, i]))
     displayed.sort((a, b) => (orderMap.get(a.id) ?? 999999) - (orderMap.get(b.id) ?? 999999))
   }
@@ -561,6 +580,26 @@ export default function OrderEntryPage() {
       selectAllRef.current.indeterminate = some && !all
     }
   })
+
+  const handleFormParseItems = async () => {
+    if (!itemsPasteText.trim()) return
+    setFormParseLoading(true)
+    setFormParseError('')
+    try {
+      const res = await fetch('/api/parse-items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: itemsPasteText }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'แปลงไม่สำเร็จ')
+      setModalItems(data.items)
+    } catch (e: unknown) {
+      setFormParseError(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด')
+    } finally {
+      setFormParseLoading(false)
+    }
+  }
 
   const handleParseItems = async () => {
     if (!itemsModalPasteText.trim()) return
@@ -585,7 +624,7 @@ export default function OrderEntryPage() {
 
   const inp = (label: string, key: string, type = 'text') => (
     <div style={{ marginBottom: 14 }}>
-      <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 5 }}>{label}</label>
+      <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>{label}</label>
       <input type={type} value={String(modal?.data[key as keyof typeof modal.data] ?? '')}
         onChange={e => set(key, e.target.value)}
         style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
@@ -594,7 +633,7 @@ export default function OrderEntryPage() {
 
   const sel = (label: string, key: string, options: string[]) => (
     <div style={{ marginBottom: 14 }}>
-      <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 5 }}>{label}</label>
+      <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>{label}</label>
       <select value={String(modal?.data[key as keyof typeof modal.data] ?? '')} onChange={e => set(key, e.target.value)}
         style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none' }}>
         <option value="">— เลือก —</option>
@@ -660,8 +699,8 @@ export default function OrderEntryPage() {
                   </button>
                   {openFilter === 'days' && (
                     <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 140 }}>
-                      {([['ตามลำดับ', null], ['น้อยไปมาก', 'asc'], ['มากไปน้อย', 'desc']] as [string, 'asc' | 'desc' | null][]).map(([label, val]) => (
-                        <div key={label} onClick={() => { setSortOrder(computeSortOrder(rows, val)); setDaysSort(val); setOpenFilter(null) }}
+                      {([['น้อยไปมาก', 'asc'], ['มากไปน้อย', 'desc']] as [string, 'asc' | 'desc'][]).map(([label, val]) => (
+                        <div key={label} onClick={() => { setSortOrder(computeSortOrder(rows, val)); setDaysSort(val); setUpdatedSort(null); setOpenFilter(null) }}
                           style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: daysSort === val ? 600 : 400, color: daysSort === val ? 'var(--blue)' : 'var(--ink)', background: daysSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
                           {label}
                         </div>
@@ -815,7 +854,22 @@ export default function OrderEntryPage() {
                     </div>
                   )}
                 </th>
-                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>แก้ไขล่าสุด</th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
+                  <button onClick={() => setOpenFilter(openFilter === 'updated' ? null : 'updated')}
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: updatedSort ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    เวลาที่แก้ไข <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                  </button>
+                  {openFilter === 'updated' && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 150 }}>
+                      {([['ใหม่สุด-เก่าสุด', 'desc'], ['เก่าสุด-ใหม่สุด', 'asc']] as [string, 'asc' | 'desc'][]).map(([label, val]) => (
+                        <div key={label} onClick={() => { setUpdatedSort(val); setDaysSort(null); setOpenFilter(null) }}
+                          style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: updatedSort === val ? 600 : 400, color: updatedSort === val ? 'var(--blue)' : 'var(--ink)', background: updatedSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
+                          {label}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </th>
                 <th style={{ padding: '10px 14px' }}></th>
               </tr>
             </thead>
@@ -836,9 +890,11 @@ export default function OrderEntryPage() {
                         <span style={{ fontWeight: 700, color: days < 0 ? 'var(--red)' : days <= 2 ? '#ff9f0a' : '#34c759' }}>
                           {days < 0 ? `เกิน ${Math.abs(days)}` : days} วัน
                         </span>
-                      ) : '-'}
+                      ) : <span style={{ color: 'var(--ink-4)' }}>รอกำหนด</span>}
                     </td>
-                    <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', fontWeight: 500, color: '#bf5af2' }}>{r.is_urgent ? '-' : (effectiveShipping || '-')}</td>
+                    <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', fontWeight: 500, color: '#bf5af2' }}>
+                      {r.is_urgent ? '-' : effectiveShipping ? effectiveShipping : <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>รอกำหนด</span>}
+                    </td>
                     <td style={{ padding: '12px 14px', color: 'var(--blue)', fontWeight: 600 }}>{r.order_number || '-'}</td>
                     <td style={{ padding: '12px 14px' }}>{r.customer_name || '-'}</td>
                     <td style={{ padding: '12px 14px', textAlign: 'right', whiteSpace: 'nowrap', fontWeight: r.price ? 600 : 400, color: r.price ? 'var(--ink)' : 'var(--ink-4)' }}>
@@ -947,8 +1003,11 @@ export default function OrderEntryPage() {
 
       {/* Modal form */}
       {modal && (
-        <div onClick={() => setModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: 680, maxHeight: '90vh', overflowY: 'auto' }}>
+        <div
+          onMouseDown={e => { modalDownOnBackdrop.current = e.target === e.currentTarget }}
+          onClick={e => { if (e.target === e.currentTarget && modalDownOnBackdrop.current) setModal(null) }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: 680, maxHeight: '90vh', overflowY: 'auto' }}>
 
             {/* Tabs (add) / Title (edit) */}
             {modal.mode === 'edit' ? (
@@ -974,18 +1033,17 @@ export default function OrderEntryPage() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
                   {([
                     ['เลขออเดอร์ลูกค้า', pasteCol1, setPasteCol1],
+                    ['สถานะการสั่งซื้อ', pasteCol7, setPasteCol7],
                     ['ชื่อลูกค้า', pasteCol2, setPasteCol2],
                     ['เวลาชำระสินค้า', pasteCol3, setPasteCol3],
                     ['ตัวเลือกการจัดส่ง', pasteCol4, setPasteCol4],
                     ['วันที่คาดว่าจะจัดส่ง', pasteCol5, setPasteCol5],
                     ['ราคาสุทธิ', pasteCol6, setPasteCol6],
-                    ['สถานะการสั่งซื้อ', pasteCol7, setPasteCol7],
                     ['Drop-off', pasteCol8, setPasteCol8],
                   ] as [string, string, (v: string) => void][]).map(([label, val, setter]) => (
                     <div key={label}>
-                      <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 5 }}>{label}</label>
+                      <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>{label}</label>
                       <textarea value={val} onChange={e => { setter(e.target.value); setPasteRows([]) }} rows={8}
-                        placeholder={`วาง ${label} ทีละบรรทัด…`}
                         style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 10px', fontSize: 12, outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'monospace' }} />
                     </div>
                   ))}
@@ -1084,25 +1142,22 @@ export default function OrderEntryPage() {
 
               {/* Shipping datetime (calculated) */}
               <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 5 }}>วันและเวลาที่ต้องส่ง</label>
+                <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>วันและเวลาที่ต้องส่ง</label>
                 <div style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, background: 'var(--bg)', color: '#bf5af2', fontWeight: 600 }}>
                   {modal.data.shipping_datetime || calcShipping(modal.data.deadline ?? '', modal.data.courier ?? '') || '— เลือกกำหนดส่ง + บริษัท'}
                 </div>
               </div>
 
-              {inp('วันที่ส่ง', 'shipping_date', 'date')}
               {sel('แอดมิน', 'admin_name', ADMINS)}
               {sel('ช่างที่รับผิดชอบ', 'technician', TECHS)}
               {sel('จากแพลตฟอร์ม', 'platform', PLATFORMS)}
               {sel('บริษัทจัดส่ง', 'courier', COURIERS)}
-              {sel('สถานะงาน', 'order_status', PROD_STATUSES)}
-              {sel('สถานะงาน', 'status', ['อยู่ในกำหนด', 'งานเสร็จแล้ว'])}
             </div>
 
             {/* ---- Items ---- */}
             <div style={{ marginBottom: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <label style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 500 }}>รายการสินค้า</label>
+                <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700 }}>รายการสินค้า</label>
                 <button type="button" onClick={() => setModalItems(prev => [...prev, emptyItem()])}
                   style={{ fontSize: 12, padding: '3px 10px', border: '1px solid var(--blue)', borderRadius: 6, color: 'var(--blue)', background: 'var(--blue-bg)', cursor: 'pointer' }}>
                   + เพิ่มรายการ
@@ -1110,15 +1165,21 @@ export default function OrderEntryPage() {
               </div>
               <textarea
                 value={itemsPasteText}
-                onChange={e => setItemsPasteText(e.target.value)}
-                onPaste={e => setTimeout(() => {
-                  const v = (e.target as HTMLTextAreaElement).value
-                  if (v.trim()) { setModalItems(parsePasteItems(v)); setItemsPasteText('') }
-                }, 0)}
-                rows={2}
-                placeholder={"วางข้อความจาก Excel ที่นี่ — แปลงอัตโนมัติ\nลำดับ: ประเภทม่าน  รหัสสี  ชื่อสี  กว้าง  สูง  จำนวน  หน่วย  หมายเหตุ"}
-                style={{ width: '100%', border: '1px dashed var(--border)', borderRadius: 6, padding: '8px 10px', fontSize: 12, outline: 'none', resize: 'none', boxSizing: 'border-box', fontFamily: 'monospace', background: 'var(--bg)', color: 'var(--ink)', marginBottom: 8 }}
+                onChange={e => { setItemsPasteText(e.target.value); setFormParseError('') }}
+                rows={6}
+                placeholder={"วางข้อความรายการสินค้า — กด ✦ แปลงรายการ ให้ AI แปลงให้อัตโนมัติ"}
+                style={{ width: '100%', border: '1px dashed var(--border)', borderRadius: 6, padding: '8px 10px', fontSize: 12, outline: 'none', resize: 'none', boxSizing: 'border-box', fontFamily: 'monospace', background: 'var(--bg)', color: 'var(--ink)', marginBottom: 6 }}
               />
+              {formParseError && (
+                <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 6 }}>{formParseError}</div>
+              )}
+              <button
+                type="button"
+                onClick={handleFormParseItems}
+                disabled={!itemsPasteText.trim() || formParseLoading}
+                style={{ marginBottom: 8, padding: '6px 16px', borderRadius: 7, border: 'none', background: formParseLoading || !itemsPasteText.trim() ? 'var(--border)' : 'var(--blue)', color: formParseLoading || !itemsPasteText.trim() ? 'var(--ink-3)' : '#fff', fontSize: 12, fontWeight: 600, cursor: formParseLoading || !itemsPasteText.trim() ? 'default' : 'pointer' }}>
+                {formParseLoading ? 'กำลังแปลง…' : '✦ แปลงรายการ'}
+              </button>
               {modalItems.length === 0 && !itemsPasteText && (
                 <div style={{ border: '1px dashed var(--border)', borderRadius: 8, padding: '12px', textAlign: 'center', color: 'var(--ink-4)', fontSize: 12 }}>
                   ยังไม่มีรายการ
@@ -1161,23 +1222,18 @@ export default function OrderEntryPage() {
             </div>
 
             <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 5 }}>ราคาสุทธิ (บาท)</label>
+              <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>ราคาสุทธิ (บาท)</label>
               <input type="number" step="0.01" value={modal.data.price ?? ''} onChange={e => set('price', e.target.value)}
                 style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
             </div>
 
             <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 5 }}>หมายเหตุ</label>
+              <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>หมายเหตุ</label>
               <textarea value={modal.data.notes ?? ''} onChange={e => set('notes', e.target.value)} rows={2}
                 style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
             </div>
 
             <div style={{ display: 'flex', gap: 20, marginBottom: 16 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
-                <input type="checkbox" checked={!!modal.data.is_urgent} onChange={e => set('is_urgent', e.target.checked)}
-                  style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#22c55e' }} />
-                ✅ งานเสร็จ
-              </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
                 <input type="checkbox" checked={!!modal.data.is_installation} onChange={e => set('is_installation', e.target.checked)}
                   style={{ width: 16, height: 16, cursor: 'pointer' }} />
