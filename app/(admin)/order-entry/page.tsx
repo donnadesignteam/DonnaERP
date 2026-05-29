@@ -39,6 +39,9 @@ type Entry = {
   installation_date: string
   notes: string
   price: number | null
+  payment_status: string
+  deposit: number | null
+  order_assigned: string
   created_at: string
   updated_at: string
 }
@@ -114,6 +117,9 @@ const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping
   installation_date: '',
   notes: '',
   price: null,
+  payment_status: 'ยังไม่ชำระ',
+  deposit: null,
+  order_assigned: 'รออัพเดท',
 })
 
 const STATUS_COLOR: Record<string, string> = {
@@ -130,6 +136,28 @@ const PROD_STATUS_COLOR: Record<string, string> = {
   'กำลังแพ็ค': '#ef4444',
   'งานเสร็จ': '#22c55e',
 }
+
+const OUTSIDE_PLATFORMS = [
+  'Facebook','LineOA','Tiktok-Chat','Shopee-Chat','หน้าร้าน',
+  'Lineส่วนตัวยุน','Lineส่วนตัวเฟิร์น','Lineส่วนตัวสู้',
+  'เคลม:Shopee','เคลม:Lazada','เคลม:Tiktok','เคลม:Facebook','เคลม:LineOA','เคลม:หน้าร้าน',
+  'เคลม:Lineส่วนตัวยุน','เคลม:Lineส่วนตัวเฟิร์น','เคลม:Lineส่วนตัวสู้',
+]
+const OUTSIDE_STATUSES = ['รอดำเนินการ', 'เสร็จสิ้น', 'รอยอดปลายทาง', 'ยกเลิก']
+const OUTSIDE_STATUS_COLOR: Record<string, string> = {
+  'รอดำเนินการ': '#f59e0b',
+  'เสร็จสิ้น': '#22c55e',
+  'รอยอดปลายทาง': '#3b82f6',
+  'ยกเลิก': '#ef4444',
+}
+const PAYMENT_STATUSES = ['ยังไม่ชำระ', 'มัดจำ', 'มัดจำ50%', 'ชำระครบ']
+const PAYMENT_STATUS_COLOR: Record<string, string> = {
+  'ยังไม่ชำระ': '#f59e0b',
+  'มัดจำ': '#8b5cf6',
+  'มัดจำ50%': '#3b82f6',
+  'ชำระครบ': '#22c55e',
+}
+const ORDER_ASSIGNED = ['รออัพเดท', 'แจ้งลงหน้าร้าน', 'พี่ฟอง', 'ช่างเชียงใหม่']
 
 export default function OrderEntryPage() {
   const selectAllRef = useRef<HTMLInputElement>(null)
@@ -149,10 +177,19 @@ export default function OrderEntryPage() {
   const [techFilters, setTechFilters] = useState<string[]>([])
   const [shippingDateFrom, setShippingDateFrom] = useState('')
   const [shippingDateTo, setShippingDateTo] = useState('')
-  const [openFilter, setOpenFilter] = useState<'platform' | 'courier' | 'status' | 'admin' | 'tech' | 'shipping' | 'urgent' | 'install' | 'days' | 'updated' | null>(null)
+  const [openFilter, setOpenFilter] = useState<'platform' | 'courier' | 'status' | 'admin' | 'tech' | 'shipping' | 'urgent' | 'install' | 'days' | 'updated' | 'out-days' | 'out-deadline' | 'out-platform' | 'out-payment' | 'out-assigned' | 'out-status' | 'out-done' | 'out-updated' | null>(null)
   const [daysSort, setDaysSort] = useState<'asc' | 'desc' | null>('asc')
   const [sortOrder, setSortOrder] = useState<string[]>([])
   const [updatedSort, setUpdatedSort] = useState<'asc' | 'desc' | null>(null)
+  const [outDaysSort, setOutDaysSort] = useState<'asc' | 'desc' | null>('asc')
+  const [outUpdatedSort, setOutUpdatedSort] = useState<'asc' | 'desc' | null>(null)
+  const [outDeadlineFrom, setOutDeadlineFrom] = useState('')
+  const [outDeadlineTo, setOutDeadlineTo] = useState('')
+  const [outPlatformFilters, setOutPlatformFilters] = useState<string[]>([])
+  const [outPaymentFilters, setOutPaymentFilters] = useState<string[]>([])
+  const [outAssignedFilters, setOutAssignedFilters] = useState<string[]>([])
+  const [outStatusFilters, setOutStatusFilters] = useState<string[]>([])
+  const [outDoneFilter, setOutDoneFilter] = useState<boolean | null>(null)
   const [modalTab, setModalTab] = useState<'form' | 'paste'>('form')
   const [pasteCol1, setPasteCol1] = useState('')
   const [pasteCol2, setPasteCol2] = useState('')
@@ -172,6 +209,13 @@ export default function OrderEntryPage() {
   const [itemsModalLoading, setItemsModalLoading] = useState(false)
   const [itemsModalError, setItemsModalError] = useState('')
   const [openAction, setOpenAction] = useState<string | null>(null)
+  const [actionRect, setActionRect] = useState<DOMRect | null>(null)
+  const [editCell, setEditCell] = useState<{id: string; field: string; val: string} | null>(null)
+  const [printModal, setPrintModal] = useState(false)
+  const [printMaxDays, setPrintMaxDays] = useState(3)
+  const [quickFilter, setQuickFilter] = useState<'all' | 'platform' | 'outside' | 'install'>('all')
+  const [addTypeModal, setAddTypeModal] = useState(false)
+  const [addType, setAddType] = useState<'platform' | 'outside' | 'install' | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [formParseLoading, setFormParseLoading] = useState(false)
   const [formParseError, setFormParseError] = useState('')
@@ -255,6 +299,9 @@ export default function OrderEntryPage() {
       installation_date: d.is_installation ? (d.installation_date || null) : null,
       notes: d.notes || null,
       price: d.price ? Number(d.price) : null,
+      payment_status: d.payment_status || 'ยังไม่ชำระ',
+      deposit: d.deposit ? Number(d.deposit) : null,
+      order_assigned: d.order_assigned || 'รออัพเดท',
       updated_at: now,
     }
     if (modal.mode === 'add') {
@@ -269,6 +316,7 @@ export default function OrderEntryPage() {
       setRows(prev => prev.map(r => r.id === d.id ? res.data as Entry : r))
     }
     setModal(null)
+    setAddType(null)
   }
 
   const del = async (id: string) => {
@@ -559,7 +607,12 @@ export default function OrderEntryPage() {
       if (shippingDateTo && d > new Date(shippingDateTo + 'T23:59:59')) return false
       return true
     })()
-    return matchSearch && matchStatus && matchPlatform && matchCourier && matchAdmin && matchTech && matchUrgent && matchInstall && matchShipping
+    const p = r.platform ?? ''
+    const matchQuick = quickFilter === 'all' ? true
+      : quickFilter === 'platform' ? (p === 'Shopee' || p === 'Tiktok' || p === 'Lazada' || p === 'เคลม:Shopee' || p === 'เคลม:Tiktok' || p === 'เคลม:Lazada')
+      : quickFilter === 'outside' ? OUTSIDE_PLATFORMS.includes(p)
+      : r.is_installation === true
+    return matchSearch && matchStatus && matchPlatform && matchCourier && matchAdmin && matchTech && matchUrgent && matchInstall && matchShipping && matchQuick
   })
 
   if (updatedSort) {
@@ -572,6 +625,36 @@ export default function OrderEntryPage() {
     const orderMap = new Map(sortOrder.map((id, i) => [id, i]))
     displayed.sort((a, b) => (orderMap.get(a.id) ?? 999999) - (orderMap.get(b.id) ?? 999999))
   }
+
+  const displayedOut = (() => {
+    let rs = displayed
+    if (outPlatformFilters.length) rs = rs.filter(r => outPlatformFilters.includes(r.platform ?? ''))
+    if (outPaymentFilters.length) rs = rs.filter(r => outPaymentFilters.includes(r.payment_status || 'ยังไม่ชำระ'))
+    if (outAssignedFilters.length) rs = rs.filter(r => outAssignedFilters.includes(r.order_assigned || 'รออัพเดท'))
+    if (outStatusFilters.length) rs = rs.filter(r => outStatusFilters.includes(r.order_status ?? ''))
+    if (outDoneFilter !== null) rs = rs.filter(r => !!r.is_urgent === outDoneFilter)
+    if (outDeadlineFrom || outDeadlineTo) rs = rs.filter(r => {
+      if (!r.deadline) return false
+      const d = new Date(r.deadline)
+      if (outDeadlineFrom && d < new Date(outDeadlineFrom)) return false
+      if (outDeadlineTo && d > new Date(outDeadlineTo + 'T23:59:59')) return false
+      return true
+    })
+    if (outUpdatedSort) {
+      rs = [...rs].sort((a, b) => {
+        const da = a.updated_at ? new Date(a.updated_at).getTime() : 0
+        const db = b.updated_at ? new Date(b.updated_at).getTime() : 0
+        return outUpdatedSort === 'desc' ? db - da : da - db
+      })
+    } else if (outDaysSort) {
+      rs = [...rs].sort((a, b) => {
+        const da = a.deadline ? new Date(a.deadline).getTime() : (outDaysSort === 'asc' ? Infinity : -Infinity)
+        const db = b.deadline ? new Date(b.deadline).getTime() : (outDaysSort === 'asc' ? Infinity : -Infinity)
+        return outDaysSort === 'asc' ? da - db : db - da
+      })
+    }
+    return rs
+  })()
 
   useEffect(() => {
     if (selectAllRef.current) {
@@ -622,10 +705,110 @@ export default function OrderEntryPage() {
     }
   }
 
+  const saveTextCell = async (id: string, field: string, val: string) => {
+    const now = new Date().toISOString()
+    const { error: err } = await supabase.from('order_entries').update({ [field]: val || null, updated_at: now }).eq('id', id)
+    if (!err) {
+      const sy = window.scrollY
+      flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: val || null, updated_at: now } as Entry : r)))
+      window.scrollTo(window.scrollX, sy)
+    }
+    setEditCell(null)
+  }
+
+  const handlePaymentStatus = async (r: Entry, val: string) => {
+    const now = new Date().toISOString()
+    const updates: Record<string, unknown> = { payment_status: val, updated_at: now }
+    if (val === 'มัดจำ50%' && r.price) updates.deposit = r.price / 2
+    else if (val === 'มัดจำ') updates.deposit = null
+    const { error: err } = await supabase.from('order_entries').update(updates).eq('id', r.id)
+    if (!err) {
+      const sy = window.scrollY
+      flushSync(() => setRows(prev => prev.map(row => row.id === r.id ? { ...row, ...updates, updated_at: now } as Entry : row)))
+      window.scrollTo(window.scrollX, sy)
+    }
+  }
+
+  const saveNumericCell = async (id: string, field: string, val: string) => {
+    const num = val === '' ? null : parseFloat(val)
+    const now = new Date().toISOString()
+    const { error: err } = await supabase.from('order_entries').update({ [field]: num, updated_at: now }).eq('id', id)
+    if (!err) {
+      const sy = window.scrollY
+      flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: num, updated_at: now } as Entry : r)))
+      window.scrollTo(window.scrollX, sy)
+    }
+    setEditCell(null)
+  }
+
+  function getPrintRows(maxDays: number) {
+    return rows.filter(r => {
+      if (r.is_urgent) return false
+      const es = (r.is_dropoff && r.shipping_datetime) ? shiftShippingDatetime(r.shipping_datetime, 2) : r.shipping_datetime
+      const d = es ? daysRemaining(es) : null
+      return d !== null && d < maxDays
+    }).sort((a, b) => {
+      const parseD = (r: Entry) => {
+        const es = (r.is_dropoff && r.shipping_datetime) ? shiftShippingDatetime(r.shipping_datetime, 2) : r.shipping_datetime
+        if (!es || es === '-') return null
+        const m = es.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+        return m ? new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1])) : null
+      }
+      const da = parseD(a), db = parseD(b)
+      if (!da && !db) return 0
+      if (!da) return 1
+      if (!db) return -1
+      return da.getTime() - db.getTime()
+    })
+  }
+
+  function doPrint() {
+    const toPrint = getPrintRows(printMaxDays)
+    const html = `<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>ปริ้นออเดอร์</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Sarabun', 'Noto Sans Thai', sans-serif; font-size: 12px; color: #000; margin: 0; padding: 16px; }
+  h2 { font-size: 14px; margin-bottom: 10px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #aaa; padding: 5px 8px; text-align: left; vertical-align: middle; }
+  th { background: #f0f0f0; font-weight: 700; white-space: nowrap; }
+  .dr { color: #c00; font-weight: 700; }
+  .do { color: #b05000; font-weight: 700; }
+  .dg { color: #006000; font-weight: 700; }
+  @media print { body { padding: 6px; } }
+</style>
+</head>
+<body>
+<h2>ออเดอร์ที่ต้องส่งใน ${printMaxDays} วัน — ${new Date().toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' })} (${toPrint.length} รายการ)</h2>
+<table>
+<thead><tr>
+  <th>#</th><th>วันที่เหลือ</th><th>ต้องจัดส่งภายใน</th><th>เลขคำสั่งซื้อ</th><th>ลูกค้า</th><th>ช่างที่รับผิดชอบ</th><th>แพลตฟอร์ม</th><th>สถานะงาน</th><th>บริษัทขนส่ง</th>
+</tr></thead>
+<tbody>
+${toPrint.map((r, i) => {
+  const es = (r.is_dropoff && r.shipping_datetime) ? shiftShippingDatetime(r.shipping_datetime, 2) : r.shipping_datetime
+  const d = es ? daysRemaining(es) : null
+  const cls = d !== null ? (d < 0 ? 'dr' : d <= 2 ? 'do' : 'dg') : ''
+  const dtext = d !== null ? (d < 0 ? `เกิน ${Math.abs(d)} วัน` : `${d} วัน`) : '-'
+  return `<tr><td>${i + 1}</td><td class="${cls}">${dtext}</td><td>${es || '-'}</td><td>${r.order_number || '-'}</td><td>${r.customer_name || '-'}</td><td>${r.technician || '-'}</td><td>${r.platform || '-'}</td><td>${r.order_status || '-'}</td><td>${r.courier || '-'}</td></tr>`
+}).join('\n')}
+</tbody>
+</table>
+</body>
+</html>`
+    const win = window.open('', '_blank', 'width=1200,height=750')
+    if (win) { win.document.write(html); win.document.close(); win.focus(); win.print() }
+    setPrintModal(false)
+  }
+
   const inp = (label: string, key: string, type = 'text') => (
     <div style={{ marginBottom: 14 }}>
       <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>{label}</label>
-      <input type={type} value={String(modal?.data[key as keyof typeof modal.data] ?? '')}
+      <input type={type} lang={type === 'date' ? 'en-GB' : undefined} value={String(modal?.data[key as keyof typeof modal.data] ?? '')}
         onChange={e => set(key, e.target.value)}
         style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
     </div>
@@ -644,7 +827,7 @@ export default function OrderEntryPage() {
 
   return (
     <div>
-      {(openFilter || openAction) && <div onClick={() => { setOpenFilter(null); setOpenAction(null) }} style={{ position: 'fixed', inset: 0, zIndex: 199 }} />}
+      {(openFilter || openAction) && <div onClick={() => { setOpenFilter(null); setOpenAction(null); setActionRect(null) }} style={{ position: 'fixed', inset: 0, zIndex: 9998 }} />}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
         <div>
           <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px' }}>ออเดอร์</h1>
@@ -657,7 +840,11 @@ export default function OrderEntryPage() {
               ลบที่เลือก ({selectedIds.size})
             </button>
           )}
-          <button onClick={() => { setModal({ mode: 'add', data: { ...emptyForm(), shipping_datetime: '' } }); setModalItems([]); setItemsPasteText('') }}
+          <button onClick={() => setPrintModal(true)}
+            style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+            🖨️ ปริ้น
+          </button>
+          <button onClick={() => setAddTypeModal(true)}
             style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,122,255,0.3)' }}>
             + เพิ่มรายการ
           </button>
@@ -674,6 +861,15 @@ export default function OrderEntryPage() {
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ชื่อลูกค้า / เลขคำสั่งซื้อ…"
         style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontSize: 14, marginBottom: 12, outline: 'none', boxSizing: 'border-box' }} />
 
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        {([['all', 'ทั้งหมด'], ['platform', 'งานแพลตฟอร์ม'], ['outside', 'งานนอก'], ['install', 'งานติดตั้ง']] as [typeof quickFilter, string][]).map(([val, label]) => (
+          <button key={val} onClick={() => setQuickFilter(val)}
+            style={{ padding: '6px 16px', borderRadius: 20, border: quickFilter === val ? 'none' : '1px solid var(--border)', background: quickFilter === val ? 'var(--blue)' : 'var(--surface)', color: quickFilter === val ? '#fff' : 'var(--ink-3)', fontSize: 13, fontWeight: quickFilter === val ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', overflowX: 'auto' }}>
         {loading ? (
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>กำลังโหลด…</div>
@@ -681,6 +877,309 @@ export default function OrderEntryPage() {
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>
             <div style={{ fontSize: 36, marginBottom: 12 }}>📝</div>ยังไม่มีรายการ
           </div>
+        ) : (quickFilter === 'outside' || quickFilter === 'install') ? (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
+                <th style={{ padding: '10px 14px', width: 36 }}>
+                  <input type="checkbox" ref={selectAllRef}
+                    checked={displayed.length > 0 && displayed.every(r => selectedIds.has(r.id))}
+                    onChange={toggleSelectAll}
+                    style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
+                </th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
+                  <button onClick={() => setOpenFilter(openFilter === 'out-days' ? null : 'out-days')}
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outDaysSort ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    วันที่เหลือ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                  </button>
+                  {openFilter === 'out-days' && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 140 }}>
+                      {([['น้อยไปมาก', 'asc'], ['มากไปน้อย', 'desc']] as [string, 'asc'|'desc'][]).map(([label, val]) => (
+                        <div key={label} onClick={() => { setOutDaysSort(val); setOutUpdatedSort(null); setOpenFilter(null) }}
+                          style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: outDaysSort === val ? 600 : 400, color: outDaysSort === val ? 'var(--blue)' : 'var(--ink)', background: outDaysSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
+                          {label}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
+                  <button onClick={() => setOpenFilter(openFilter === 'out-deadline' ? null : 'out-deadline')}
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: (outDeadlineFrom || outDeadlineTo) ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    วันที่จัดส่ง <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                  </button>
+                  {openFilter === 'out-deadline' && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '12px 14px', minWidth: 220 }}>
+                      <div style={{ marginBottom: 8 }}>
+                        <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>ตั้งแต่</label>
+                        <input type="date" lang="en-GB" value={outDeadlineFrom} onChange={e => setOutDeadlineFrom(e.target.value)} style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+                      </div>
+                      <div style={{ marginBottom: 8 }}>
+                        <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>ถึงวันที่</label>
+                        <input type="date" lang="en-GB" value={outDeadlineTo} onChange={e => setOutDeadlineTo(e.target.value)} style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+                      </div>
+                      {(outDeadlineFrom || outDeadlineTo) && (
+                        <button onClick={() => { setOutDeadlineFrom(''); setOutDeadlineTo('') }} style={{ fontSize: 11, border: 'none', background: 'transparent', color: 'var(--ink-4)', cursor: 'pointer', padding: 0 }}>ล้าง</button>
+                      )}
+                    </div>
+                  )}
+                </th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ลูกค้า</th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
+                  <button onClick={() => setOpenFilter(openFilter === 'out-platform' ? null : 'out-platform')}
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outPlatformFilters.length ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    แพลตฟอร์ม{outPlatformFilters.length > 0 && ` (${outPlatformFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                  </button>
+                  {openFilter === 'out-platform' && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 180, maxHeight: 260, overflowY: 'auto', padding: '6px 0' }}>
+                      {OUTSIDE_PLATFORMS.map(p => (
+                        <label key={p} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: outPlatformFilters.includes(p) ? 'var(--blue-bg)' : 'transparent' }}>
+                          <input type="checkbox" checked={outPlatformFilters.includes(p)} onChange={() => setOutPlatformFilters(toggleArr(outPlatformFilters, p))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
+                          {p}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>รายการ</th>
+                <th style={{ textAlign: 'right', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ยอดทั้งหมด</th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
+                  <button onClick={() => setOpenFilter(openFilter === 'out-payment' ? null : 'out-payment')}
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outPaymentFilters.length ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    ชำระ{outPaymentFilters.length > 0 && ` (${outPaymentFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                  </button>
+                  {openFilter === 'out-payment' && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 150, padding: '6px 0' }}>
+                      {PAYMENT_STATUSES.map(s => (
+                        <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: outPaymentFilters.includes(s) ? 'var(--blue-bg)' : 'transparent' }}>
+                          <input type="checkbox" checked={outPaymentFilters.includes(s)} onChange={() => setOutPaymentFilters(toggleArr(outPaymentFilters, s))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
+                          <span style={{ fontWeight: 600, color: PAYMENT_STATUS_COLOR[s] }}>{s}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </th>
+                <th style={{ textAlign: 'right', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ยอดชำระก่อนจัดส่ง</th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
+                  <button onClick={() => setOpenFilter(openFilter === 'out-assigned' ? null : 'out-assigned')}
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outAssignedFilters.length ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    ลงออเดอร์{outAssignedFilters.length > 0 && ` (${outAssignedFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                  </button>
+                  {openFilter === 'out-assigned' && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 160, padding: '6px 0' }}>
+                      {ORDER_ASSIGNED.map(o => (
+                        <label key={o} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: outAssignedFilters.includes(o) ? 'var(--blue-bg)' : 'transparent' }}>
+                          <input type="checkbox" checked={outAssignedFilters.includes(o)} onChange={() => setOutAssignedFilters(toggleArr(outAssignedFilters, o))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
+                          {o}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
+                  <button onClick={() => setOpenFilter(openFilter === 'out-status' ? null : 'out-status')}
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outStatusFilters.length ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    สถานะงาน{outStatusFilters.length > 0 && ` (${outStatusFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                  </button>
+                  {openFilter === 'out-status' && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 150, padding: '6px 0' }}>
+                      {PROD_STATUSES.map(s => (
+                        <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: outStatusFilters.includes(s) ? 'var(--blue-bg)' : 'transparent' }}>
+                          <input type="checkbox" checked={outStatusFilters.includes(s)} onChange={() => setOutStatusFilters(toggleArr(outStatusFilters, s))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: PROD_STATUS_COLOR[s], flexShrink: 0, display: 'inline-block' }} />
+                          {s}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
+                  <button onClick={() => setOpenFilter(openFilter === 'out-done' ? null : 'out-done')}
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outDoneFilter !== null ? '#22c55e' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    งานเสร็จ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                  </button>
+                  {openFilter === 'out-done' && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 150, padding: '6px 0' }}>
+                      {([['ทั้งหมด', null], ['งานเสร็จเท่านั้น', true], ['ยังไม่เสร็จ', false]] as [string, boolean|null][]).map(([label, val]) => (
+                        <button key={String(label)} onClick={() => { setOutDoneFilter(val); setOpenFilter(null) }}
+                          style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', fontSize: 12, border: 'none', cursor: 'pointer', background: outDoneFilter === val ? 'var(--blue-bg)' : 'transparent', color: outDoneFilter === val ? 'var(--blue)' : 'var(--ink)', fontWeight: outDoneFilter === val ? 600 : 400 }}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>วันที่สร้าง</th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>หมายเหตุ</th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
+                  <button onClick={() => setOpenFilter(openFilter === 'out-updated' ? null : 'out-updated')}
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outUpdatedSort ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    แก้ไขล่าสุด <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                  </button>
+                  {openFilter === 'out-updated' && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 160 }}>
+                      {([['ใหม่สุด-เก่าสุด', 'desc'], ['เก่าสุด-ใหม่สุด', 'asc']] as [string, 'asc'|'desc'][]).map(([label, val]) => (
+                        <div key={label} onClick={() => { setOutUpdatedSort(val); setOutDaysSort(null); setOpenFilter(null) }}
+                          style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: outUpdatedSort === val ? 600 : 400, color: outUpdatedSort === val ? 'var(--blue)' : 'var(--ink)', background: outUpdatedSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
+                          {label}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </th>
+                <th style={{ padding: '10px 14px' }} />
+              </tr>
+            </thead>
+            <tbody>
+              {displayedOut.map(r => {
+                const isEditing = (f: string) => editCell?.id === r.id && editCell.field === f
+                const numCell = (field: 'price' | 'deposit') => {
+                  const val = r[field]
+                  return isEditing(field) ? (
+                    <input type="number" autoFocus value={editCell!.val}
+                      onChange={e => setEditCell(ec => ec ? { ...ec, val: e.target.value } : null)}
+                      onBlur={() => saveNumericCell(r.id, field, editCell!.val)}
+                      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                      style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: 90, outline: 'none', textAlign: 'right', padding: '2px 0' }} />
+                  ) : (
+                    <div onClick={() => setEditCell({ id: r.id, field, val: String(val ?? '') })}
+                      style={{ cursor: 'text', textAlign: 'right', color: val != null ? 'var(--ink)' : 'var(--ink-4)', fontWeight: val != null ? 600 : 400 }}>
+                      {val != null ? Number(val).toLocaleString('th-TH') : '—'}
+                    </div>
+                  )
+                }
+                const textCell = (field: 'customer_name' | 'notes', placeholder = '—') => {
+                  const val = r[field] ?? ''
+                  return isEditing(field) ? (
+                    <input type="text" autoFocus value={editCell!.val}
+                      onChange={e => setEditCell(ec => ec ? { ...ec, val: e.target.value } : null)}
+                      onBlur={() => saveTextCell(r.id, field, editCell!.val)}
+                      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                      style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: '100%', minWidth: 100, outline: 'none', padding: '2px 0' }} />
+                  ) : (
+                    <div onClick={() => setEditCell({ id: r.id, field, val })}
+                      style={{ cursor: 'text', color: val ? 'var(--ink)' : 'var(--ink-4)', maxWidth: field === 'notes' ? 160 : undefined, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {val || placeholder}
+                    </div>
+                  )
+                }
+                const dateCell = (field: 'entry_date' | 'deadline') => {
+                  const val = r[field] ?? ''
+                  const display = val ? new Date(val).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
+                  return isEditing(field) ? (
+                    <input type="date" autoFocus value={editCell!.val}
+                      onChange={e => setEditCell(ec => ec ? { ...ec, val: e.target.value } : null)}
+                      onBlur={() => saveTextCell(r.id, field, editCell!.val)}
+                      style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, outline: 'none', padding: '2px 0' }} />
+                  ) : (
+                    <div onClick={() => setEditCell({ id: r.id, field, val })}
+                      style={{ cursor: 'text', whiteSpace: 'nowrap', color: field === 'deadline' ? (val ? '#bf5af2' : 'var(--ink-4)') : (val ? 'var(--ink-3)' : 'var(--ink-4)') }}>
+                      {display}
+                    </div>
+                  )
+                }
+                const autoDeposit = r.payment_status === 'มัดจำ50%' && r.price ? r.price / 2 : null
+                const outDays = r.deadline ? daysRemaining(r.deadline) : null
+                const isDone = r.order_status === 'เสร็จสิ้น'
+                const isCancelled = r.order_status === 'ยกเลิก'
+                return (
+                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : 'transparent' }}>
+                    <td style={{ padding: '12px 14px' }}>
+                      <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)}
+                        style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
+                    </td>
+                    <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
+                      {isCancelled ? (
+                        <span style={{ fontWeight: 700, color: '#ef4444' }}>ยกเลิก</span>
+                      ) : r.is_urgent ? (
+                        <span style={{ fontWeight: 700, color: '#22c55e' }}>งานเสร็จแล้ว</span>
+                      ) : isDone ? (
+                        <span style={{ fontWeight: 700, color: '#22c55e' }}>เสร็จสิ้น</span>
+                      ) : outDays !== null ? (
+                        <span style={{ fontWeight: 700, color: outDays < 0 ? 'var(--red)' : outDays <= 2 ? '#ff9f0a' : '#34c759' }}>
+                          {outDays < 0 ? `เกิน ${Math.abs(outDays)}` : outDays} วัน
+                        </span>
+                      ) : <span style={{ color: 'var(--ink-4)' }}>รอกำหนด</span>}
+                    </td>
+                    <td style={{ padding: '8px 14px' }}>
+                      {isCancelled ? <span style={{ color: 'var(--ink-4)' }}>-</span> : dateCell('deadline')}
+                    </td>
+                    <td style={{ padding: '8px 14px', minWidth: 100 }}>{textCell('customer_name')}</td>
+                    <td style={{ padding: '8px 14px' }}>
+                      <select value={r.platform || ''} onChange={e => updateField(r.id, 'platform', e.target.value)}
+                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.platform ? 'var(--ink-3)' : 'var(--ink-4)', padding: 0, maxWidth: 140 }}>
+                        <option value="">—</option>
+                        {OUTSIDE_PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ padding: '6px 14px', maxWidth: 200 }}>
+                      <button onClick={() => { setItemsModal({ id: r.id, items: Array.isArray(r.items) ? r.items : [] }); setItemsModalPasteText('') }}
+                        style={{ border: 'none', background: 'transparent', fontSize: 11, cursor: 'pointer', padding: 0, color: r.items?.length ? 'var(--ink)' : 'var(--ink-4)', textAlign: 'left', display: 'block', width: '100%' }}>
+                        {r.items?.length ? (
+                          <div>
+                            {formatItemLines(r.items).map((line, i) => (
+                              <div key={i} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190, lineHeight: '1.6', color: i === 0 ? 'var(--ink)' : 'var(--ink-3)' }}>{line}</div>
+                            ))}
+                          </div>
+                        ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
+                      </button>
+                    </td>
+                    <td style={{ padding: '8px 14px' }}>{numCell('price')}</td>
+                    <td style={{ padding: '8px 14px' }}>
+                      <select value={r.payment_status || 'ยังไม่ชำระ'} onChange={e => handlePaymentStatus(r, e.target.value)}
+                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PAYMENT_STATUS_COLOR[r.payment_status] ?? '#f59e0b', padding: 0 }}>
+                        {PAYMENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ padding: '8px 14px' }}>
+                      {(r.payment_status === 'ชำระครบ' || !r.payment_status || r.payment_status === 'ยังไม่ชำระ') ? (
+                        <div style={{ textAlign: 'right', color: 'var(--ink-4)' }}>-</div>
+                      ) : autoDeposit != null ? (
+                        <div style={{ textAlign: 'right', fontWeight: 600, color: '#3b82f6' }}>{autoDeposit.toLocaleString('th-TH')}</div>
+                      ) : numCell('deposit')}
+                    </td>
+                    <td style={{ padding: '8px 14px' }}>
+                      <select value={r.order_assigned || 'รออัพเดท'} onChange={e => updateField(r.id, 'order_assigned', e.target.value)}
+                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.order_assigned && r.order_assigned !== 'รออัพเดท' ? 'var(--ink)' : 'var(--ink-4)', fontWeight: r.order_assigned && r.order_assigned !== 'รออัพเดท' ? 600 : 400, padding: 0 }}>
+                        {ORDER_ASSIGNED.map(o => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ padding: '8px 14px' }}>
+                      {r.is_urgent ? (
+                        <span style={{ fontSize: 12, fontWeight: 600, color: PROD_STATUS_COLOR['งานเสร็จ'] }}>งานเสร็จ</span>
+                      ) : (
+                        <select value={r.order_status || ''} onChange={e => updateField(r.id, 'order_status', e.target.value)}
+                          style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PROD_STATUS_COLOR[r.order_status] ?? 'var(--ink-4)', padding: 0 }}>
+                          <option value="">—</option>
+                          {PROD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      )}
+                    </td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>
+                      <input type="checkbox" checked={!!r.is_urgent} onChange={e => toggleDone(r.id, e.target.checked)}
+                        style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                    </td>
+                    <td style={{ padding: '8px 14px' }}>{dateCell('entry_date')}</td>
+                    <td style={{ padding: '8px 14px', minWidth: 120 }}>{textCell('notes', '—')}</td>
+                    <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', color: 'var(--ink-4)', fontSize: 11 }}>
+                      {r.updated_at ? (
+                        <div>
+                          <div>{new Date(r.updated_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}</div>
+                          <div>{new Date(r.updated_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>
+                        </div>
+                      ) : '-'}
+                    </td>
+                    <td style={{ padding: '8px 14px' }}>
+                      <button onClick={e => { const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); if (openAction === r.id) { setOpenAction(null); setActionRect(null) } else { setOpenAction(r.id); setActionRect(rect) } }}
+                        style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: openAction === r.id ? 'var(--bg)' : '#fff', cursor: 'pointer', fontSize: 16, color: 'var(--ink-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', letterSpacing: 1 }}>
+                        ···
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
@@ -838,22 +1337,7 @@ export default function OrderEntryPage() {
                     </div>
                   )}
                 </th>
-                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
-                  <button onClick={() => setOpenFilter(openFilter === 'install' ? null : 'install')}
-                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: installFilter ? '#f59e0b' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
-                    ติดตั้ง <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
-                  </button>
-                  {openFilter === 'install' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 150, padding: '6px 0' }}>
-                      {[['ทั้งหมด', null], ['มีติดตั้ง', true], ['ไม่มีติดตั้ง', false]].map(([label, val]) => (
-                        <button key={String(label)} onClick={() => { setInstallFilter(val as boolean); setOpenFilter(null) }}
-                          style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', fontSize: 12, border: 'none', cursor: 'pointer', background: installFilter === val ? 'var(--blue-bg)' : 'transparent', color: installFilter === val ? 'var(--blue)' : 'var(--ink)', fontWeight: installFilter === val ? 600 : 400 }}>
-                          {label as string}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>หมายเหตุ</th>
                 <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
                   <button onClick={() => setOpenFilter(openFilter === 'updated' ? null : 'updated')}
                     style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: updatedSort ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
@@ -955,9 +1439,19 @@ export default function OrderEntryPage() {
                       <input type="checkbox" checked={!!r.is_urgent} onChange={e => toggleDone(r.id, e.target.checked)}
                         style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
                     </td>
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>
-                      <input type="checkbox" checked={!!r.is_installation} onChange={e => updateField(r.id, 'is_installation', e.target.checked)}
-                        style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#f59e0b' }} />
+                    <td style={{ padding: '8px 14px', maxWidth: 200 }}>
+                      {editCell?.id === r.id && editCell.field === 'notes' ? (
+                        <input type="text" autoFocus value={editCell.val}
+                          onChange={e => setEditCell(ec => ec ? { ...ec, val: e.target.value } : null)}
+                          onBlur={() => saveTextCell(r.id, 'notes', editCell.val)}
+                          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                          style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: '100%', outline: 'none', padding: '2px 0' }} />
+                      ) : (
+                        <div onClick={() => setEditCell({ id: r.id, field: 'notes', val: r.notes ?? '' })}
+                          style={{ cursor: 'text', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: r.notes ? 'var(--ink-3)' : 'var(--ink-4)', minWidth: 60 }}>
+                          {r.notes || '—'}
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', color: 'var(--ink-4)', fontSize: 11 }}>
                       {r.updated_at ? (
@@ -967,31 +1461,11 @@ export default function OrderEntryPage() {
                         </div>
                       ) : '-'}
                     </td>
-                    <td style={{ padding: '8px 14px', position: 'relative' }}>
-                      <button onClick={() => setOpenAction(openAction === r.id ? null : r.id)}
+                    <td style={{ padding: '8px 14px' }}>
+                      <button onClick={e => { const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); if (openAction === r.id) { setOpenAction(null); setActionRect(null) } else { setOpenAction(r.id); setActionRect(rect) } }}
                         style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: openAction === r.id ? 'var(--bg)' : '#fff', cursor: 'pointer', fontSize: 16, color: copiedId === r.id ? '#34c759' : 'var(--ink-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', letterSpacing: 1, transition: 'color 0.2s' }}>
                         {copiedId === r.id ? '✓' : '···'}
                       </button>
-                      {openAction === r.id && (
-                        <div style={{ position: 'absolute', top: '100%', right: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 130, padding: '4px 0', marginTop: 2 }}>
-                          <button onClick={() => { copyOrderText(r) }}
-                            style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)' }}>
-                            <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-                            คัดลอก
-                          </button>
-                          <button onClick={() => { setOpenAction(null); setModal({ mode: 'edit', data: { ...r, items: null } }); setModalItems(Array.isArray(r.items) ? [...(r.items as Item[])] : []); setItemsPasteText('') }}
-                            style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)' }}>
-                            <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 7.125L18 8.625"/></svg>
-                            แก้ไข
-                          </button>
-                          <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
-                          <button onClick={() => { setOpenAction(null); del(r.id) }}
-                            style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--red)' }}>
-                            <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
-                            ลบ
-                          </button>
-                        </div>
-                      )}
                     </td>
                   </tr>
                 )
@@ -1000,6 +1474,32 @@ export default function OrderEntryPage() {
           </table>
         )}
       </div>
+
+      {/* Global action dropdown */}
+      {openAction && actionRect && (() => {
+        const r = rows.find(row => row.id === openAction)
+        if (!r) return null
+        return (
+          <div style={{ position: 'fixed', top: actionRect.bottom + 2, right: window.innerWidth - actionRect.right, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 9999, minWidth: 130, padding: '4px 0' }}>
+            <button onClick={() => copyOrderText(r)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: copiedId === r.id ? '#34c759' : 'var(--ink)' }}>
+              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+              {copiedId === r.id ? 'คัดลอกแล้ว' : 'คัดลอก'}
+            </button>
+            <button onClick={() => { setOpenAction(null); setActionRect(null); setModal({ mode: 'edit', data: { ...r, items: null } }); setModalItems(Array.isArray(r.items) ? [...(r.items as Item[])] : []); setItemsPasteText('') }}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)' }}>
+              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/></svg>
+              แก้ไข
+            </button>
+            <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+            <button onClick={() => { setOpenAction(null); setActionRect(null); del(r.id) }}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--red)' }}>
+              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
+              ลบ
+            </button>
+          </div>
+        )
+      })()}
 
       {/* Modal form */}
       {modal && (
@@ -1134,25 +1634,40 @@ export default function OrderEntryPage() {
             {/* ---- Form tab ---- */}
             {(modal.mode === 'edit' || modalTab === 'form') && (
             <div>
+            {(() => {
+              const ft = modal.mode === 'add' ? addType
+                : modal.data.is_installation ? 'install'
+                : OUTSIDE_PLATFORMS.includes(modal.data.platform ?? '') ? 'outside' : 'platform'
+              const isOutside = ft === 'outside' || ft === 'install'
+              const isInstall = ft === 'install'
+              return (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
               {inp('ชื่อลูกค้าซื้อ', 'customer_name')}
-              {inp('เลขคำสั่งซื้อ', 'order_number')}
+              {!isOutside && inp('เลขคำสั่งซื้อ', 'order_number')}
               {inp('วันที่สร้าง', 'entry_date', 'date')}
-              {inp('กำหนดส่งงาน', 'deadline', 'date')}
-
-              {/* Shipping datetime (calculated) */}
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>วันและเวลาที่ต้องส่ง</label>
-                <div style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, background: 'var(--bg)', color: '#bf5af2', fontWeight: 600 }}>
-                  {modal.data.shipping_datetime || calcShipping(modal.data.deadline ?? '', modal.data.courier ?? '') || '— เลือกกำหนดส่ง + บริษัท'}
+              {inp(isInstall ? 'กำหนดติดตั้ง' : 'กำหนดส่งงาน', 'deadline', 'date')}
+              {isInstall ? (
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>วันและเวลาที่ต้องติดตั้ง</label>
+                  <input type="text" value={String(modal.data.shipping_datetime ?? '')} onChange={e => set('shipping_datetime', e.target.value)}
+                    placeholder="เช่น 5/6/2025,09:00:00"
+                    style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box', color: '#bf5af2', fontWeight: 600 }} />
                 </div>
-              </div>
-
+              ) : !isOutside ? (
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>วันและเวลาที่ต้องส่ง</label>
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, background: 'var(--bg)', color: '#bf5af2', fontWeight: 600 }}>
+                    {modal.data.shipping_datetime || calcShipping(modal.data.deadline ?? '', modal.data.courier ?? '') || '— เลือกกำหนดส่ง + บริษัท'}
+                  </div>
+                </div>
+              ) : null}
               {sel('แอดมิน', 'admin_name', ADMINS)}
               {sel('ช่างที่รับผิดชอบ', 'technician', TECHS)}
-              {sel('จากแพลตฟอร์ม', 'platform', PLATFORMS)}
-              {sel('บริษัทจัดส่ง', 'courier', COURIERS)}
+              {sel('จากแพลตฟอร์ม', 'platform', isOutside ? OUTSIDE_PLATFORMS : PLATFORMS)}
+              {!isInstall && sel('บริษัทจัดส่ง', 'courier', COURIERS)}
             </div>
+              )
+            })()}
 
             {/* ---- Items ---- */}
             <div style={{ marginBottom: 14 }}>
@@ -1221,11 +1736,43 @@ export default function OrderEntryPage() {
               ))}
             </div>
 
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>ราคาสุทธิ (บาท)</label>
-              <input type="number" step="0.01" value={modal.data.price ?? ''} onChange={e => set('price', e.target.value)}
-                style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
-            </div>
+            {(() => {
+              const ft = modal.mode === 'add' ? addType
+                : modal.data.is_installation ? 'install'
+                : OUTSIDE_PLATFORMS.includes(modal.data.platform ?? '') ? 'outside' : 'platform'
+              const isOutside = ft === 'outside' || ft === 'install'
+              return isOutside ? (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>ยอดทั้งหมด (บาท)</label>
+                    <input type="number" step="0.01" value={modal.data.price ?? ''} onChange={e => set('price', e.target.value)}
+                      style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                  </div>
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>ชำระ</label>
+                    <select value={modal.data.payment_status || 'ยังไม่ชำระ'} onChange={e => set('payment_status', e.target.value)}
+                      style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', fontWeight: 600, color: PAYMENT_STATUS_COLOR[modal.data.payment_status ?? ''] ?? '#f59e0b' }}>
+                      {PAYMENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  {(modal.data.payment_status === 'มัดจำ' || modal.data.payment_status === 'มัดจำ50%') && (
+                    <div style={{ marginBottom: 14 }}>
+                      <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>ยอดชำระก่อนจัดส่ง (บาท)</label>
+                      <input type="number" step="0.01"
+                        value={modal.data.deposit ?? (modal.data.payment_status === 'มัดจำ50%' && modal.data.price ? Number(modal.data.price) / 2 : '')}
+                        onChange={e => set('deposit', e.target.value)}
+                        style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>ราคาสุทธิ (บาท)</label>
+                  <input type="number" step="0.01" value={modal.data.price ?? ''} onChange={e => set('price', e.target.value)}
+                    style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                </div>
+              )
+            })()}
 
             <div style={{ marginBottom: 14 }}>
               <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>หมายเหตุ</label>
@@ -1233,24 +1780,8 @@ export default function OrderEntryPage() {
                 style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
             </div>
 
-            <div style={{ display: 'flex', gap: 20, marginBottom: 16 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
-                <input type="checkbox" checked={!!modal.data.is_installation} onChange={e => set('is_installation', e.target.checked)}
-                  style={{ width: 16, height: 16, cursor: 'pointer' }} />
-                🔨 งานติดตั้ง
-              </label>
-            </div>
-
-            {modal.data.is_installation && (
-              <div style={{ marginBottom: 14, padding: '12px 16px', background: 'var(--bg)', borderRadius: 10 }}>
-                <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 5 }}>วันที่ติดตั้ง</label>
-                <input type="date" lang="en-GB" value={modal.data.installation_date ?? ''} onChange={e => set('installation_date', e.target.value)}
-                  style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none' }} />
-              </div>
-            )}
-
             <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-              <button onClick={() => setModal(null)}
+              <button onClick={() => { setModal(null); setAddType(null) }}
                 style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ยกเลิก</button>
               <button onClick={save} disabled={saving}
                 style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
@@ -1259,6 +1790,72 @@ export default function OrderEntryPage() {
             </div>
             </div>
             )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add type picker */}
+      {addTypeModal && (
+        <div onClick={() => setAddTypeModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: 400, padding: '28px 32px' }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>เพิ่มรายการ</h3>
+            <p style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 20 }}>เลือกประเภทงาน</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {([
+                ['งานแพลตฟอร์ม', '🛍️', 'Shopee / Tiktok / Lazada', 'platform', {}],
+                ['งานนอก', '💬', 'Facebook / Line / หน้าร้าน', 'outside', {}],
+                ['งานติดตั้ง', '🔨', 'สั่งพร้อมติดตั้ง', 'install', { is_installation: true }],
+              ] as [string, string, string, 'platform'|'outside'|'install', object][]).map(([label, icon, desc, type, extra]) => (
+                <button key={label} onClick={() => {
+                  setAddTypeModal(false)
+                  setAddType(type)
+                  setModal({ mode: 'add', data: { ...emptyForm(), shipping_datetime: '', ...extra } })
+                  setModalItems([])
+                  setItemsPasteText('')
+                }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', textAlign: 'left', transition: 'border-color 0.15s' }}
+                  onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--blue)')}
+                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}>
+                  <span style={{ fontSize: 24 }}>{icon}</span>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{label}</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>{desc}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setAddTypeModal(false)}
+              style={{ marginTop: 16, width: '100%', padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontSize: 14, color: 'var(--ink-3)' }}>
+              ยกเลิก
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Print modal */}
+      {printModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: 380, padding: '28px 32px' }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 20 }}>ปริ้นออเดอร์</h3>
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600, display: 'block', marginBottom: 10 }}>วันที่เหลือน้อยกว่า</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <input type="number" min={0} max={99} value={printMaxDays}
+                  onChange={e => setPrintMaxDays(Number(e.target.value))}
+                  style={{ width: 80, border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', fontSize: 20, fontWeight: 700, outline: 'none', textAlign: 'center' }} />
+                <span style={{ fontSize: 14, color: 'var(--ink-3)' }}>วัน</span>
+              </div>
+              {(() => {
+                const count = getPrintRows(printMaxDays).length
+                return <p style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 12 }}>พบ <strong style={{ color: 'var(--ink)' }}>{count}</strong> รายการ จากออเดอร์ทั้งหมด {rows.length} รายการ</p>
+              })()}
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setPrintModal(false)}
+                style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ยกเลิก</button>
+              <button onClick={doPrint}
+                style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>🖨️ ปริ้น</button>
             </div>
           </div>
         </div>
