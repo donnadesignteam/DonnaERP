@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
 import { supabase } from '@/lib/supabase'
+import * as XLSX from 'xlsx'
 
 type Item = {
   type: string
@@ -162,6 +163,7 @@ const ORDER_ASSIGNED = ['รออัพเดท', 'แจ้งลงหน้
 export default function OrderEntryPage() {
   const selectAllRef = useRef<HTMLInputElement>(null)
   const modalDownOnBackdrop = useRef(false)
+  const tableCardRef = useRef<HTMLDivElement>(null)
   const [rows, setRows] = useState<Entry[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<{ mode: 'add' | 'edit'; data: Partial<Entry> } | null>(null)
@@ -177,7 +179,7 @@ export default function OrderEntryPage() {
   const [techFilters, setTechFilters] = useState<string[]>([])
   const [shippingDateFrom, setShippingDateFrom] = useState('')
   const [shippingDateTo, setShippingDateTo] = useState('')
-  const [openFilter, setOpenFilter] = useState<'platform' | 'courier' | 'status' | 'admin' | 'tech' | 'shipping' | 'urgent' | 'install' | 'days' | 'updated' | 'out-days' | 'out-deadline' | 'out-platform' | 'out-payment' | 'out-assigned' | 'out-status' | 'out-done' | 'out-updated' | null>(null)
+  const [openFilter, setOpenFilter] = useState<'platform' | 'courier' | 'status' | 'admin' | 'tech' | 'shipping' | 'urgent' | 'install' | 'days' | 'updated' | 'out-days' | 'out-deadline' | 'out-platform' | 'out-payment' | 'out-assigned' | 'out-status' | 'out-done' | 'out-installed' | 'out-updated' | null>(null)
   const [daysSort, setDaysSort] = useState<'asc' | 'desc' | null>('asc')
   const [sortOrder, setSortOrder] = useState<string[]>([])
   const [updatedSort, setUpdatedSort] = useState<'asc' | 'desc' | null>(null)
@@ -190,7 +192,12 @@ export default function OrderEntryPage() {
   const [outAssignedFilters, setOutAssignedFilters] = useState<string[]>([])
   const [outStatusFilters, setOutStatusFilters] = useState<string[]>([])
   const [outDoneFilter, setOutDoneFilter] = useState<boolean | null>(null)
-  const [modalTab, setModalTab] = useState<'form' | 'paste'>('form')
+  const [outInstalledFilter, setOutInstalledFilter] = useState<boolean | null>(null)
+  const [outFilterPos, setOutFilterPos] = useState<{top: number; left: number} | null>(null)
+  const [rowPlatformDropdown, setRowPlatformDropdown] = useState<{id: string; pos: {top: number; left: number}} | null>(null)
+  const [modalTab, setModalTab] = useState<'form' | 'paste' | 'file'>('form')
+  const [fileDragOver, setFileDragOver] = useState(false)
+  const [fileParseError, setFileParseError] = useState('')
   const [pasteCol1, setPasteCol1] = useState('')
   const [pasteCol2, setPasteCol2] = useState('')
   const [pasteCol3, setPasteCol3] = useState('')
@@ -464,16 +471,10 @@ export default function OrderEntryPage() {
     return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0]
   }
 
-  function parsePasteData() {
+  function computePasteRowsFromCols(c1: string, c2: string, c3: string, c4: string, c5: string, c6: string, c7: string, c8: string) {
     const split = (s: string) => s.trimEnd().split('\n').map(x => x.trim())
-    const orderNums  = split(pasteCol1)
-    const customers  = split(pasteCol2)
-    const payDates   = split(pasteCol3)
-    const couriers   = split(pasteCol4)
-    const deadlines  = split(pasteCol5)
-    const prices     = split(pasteCol6)
-    const statuses   = split(pasteCol7)
-    const dropoffs   = split(pasteCol8)
+    const orderNums = split(c1); const customers = split(c2); const payDates = split(c3); const couriers = split(c4)
+    const deadlines = split(c5); const prices = split(c6); const statuses = split(c7); const dropoffs = split(c8)
     const existingNums = new Set(rows.map(r => r.order_number).filter(Boolean))
     const len = Math.max(orderNums.length, customers.length, payDates.length, couriers.length, deadlines.length, prices.length, statuses.length, dropoffs.length)
     const map = new Map<string, { paymentDate: string; deadline: string; orderNumber: string; price: number; customerName: string; courier: string; orderStatus: string; isDuplicate: boolean; isDropoff: boolean }>()
@@ -481,15 +482,100 @@ export default function OrderEntryPage() {
       const orderNumber = orderNums[i] ?? ''
       const price = parseFloat((prices[i] ?? '0').replace(/,/g, '')) || 0
       if (!orderNumber) continue
-      if (map.has(orderNumber)) {
-        map.get(orderNumber)!.price += price
-      } else {
-        const orderStatus = statuses[i] ?? ''
+      if (map.has(orderNumber)) { map.get(orderNumber)!.price += price }
+      else {
         const isDropoff = !!(dropoffs[i] ?? '').trim()
-        map.set(orderNumber, { paymentDate: payDates[i] ?? '', deadline: deadlines[i] ?? '', orderNumber, price, customerName: customers[i] ?? '', courier: normalizeCourier(couriers[i] ?? ''), orderStatus, isDuplicate: existingNums.has(orderNumber), isDropoff })
+        map.set(orderNumber, { paymentDate: payDates[i] ?? '', deadline: deadlines[i] ?? '', orderNumber, price, customerName: customers[i] ?? '', courier: normalizeCourier(couriers[i] ?? ''), orderStatus: statuses[i] ?? '', isDuplicate: existingNums.has(orderNumber), isDropoff })
       }
     }
     setPasteRows(Array.from(map.values()))
+  }
+
+  function parsePasteData() {
+    computePasteRowsFromCols(pasteCol1, pasteCol2, pasteCol3, pasteCol4, pasteCol5, pasteCol6, pasteCol7, pasteCol8)
+  }
+
+  const XLSX_COL_MAP: Record<string, number> = {
+    'หมายเลขคำสั่งซื้อ': 0,      // col1 = เลขออเดอร์
+    'ชื่อผู้ใช้ (ผู้ซื้อ)': 1,    // col2 = ชื่อลูกค้า
+    'เวลาการชำระสินค้า': 2,       // col3 = วันชำระ
+    'ตัวเลือกการจัดส่ง': 3,       // col4 = courier
+    'วันที่คาดว่าจะทำการจัดส่งสินค้า': 4, // col5 = วันต้องส่ง
+    'ราคาขายสุทธิ': 5,            // col6 = ราคา
+    'สถานะการสั่งซื้อ': 6,        // col7 = สถานะ
+    'วิธีการจัดส่ง': 7,           // col8 = Drop-off
+  }
+
+  function processRawRows(rawRows: string[][]) {
+    if (rawRows.length === 0) { setFileParseError('ไฟล์ว่างเปล่า'); return }
+    const headers = rawRows[0].map(h => h.toString().trim())
+    const isNamedHeader = headers.some(h => Object.keys(XLSX_COL_MAP).includes(h))
+
+    let cols: string[]
+    if (isNamedHeader) {
+      const colIdx = new Array(8).fill(-1)
+      headers.forEach((h, i) => { if (XLSX_COL_MAP[h] !== undefined) colIdx[XLSX_COL_MAP[h]] = i })
+      const data = rawRows.slice(1).filter(r => r.some(c => c.toString().trim()))
+      if (data.length === 0) { setFileParseError('ไม่พบข้อมูล'); return }
+      cols = colIdx.map(ci => data.map(r => ci >= 0 ? (r[ci] ?? '').toString().trim() : '').join('\n'))
+    } else {
+      const hasHeader = headers.some(c => isNaN(parseFloat(c.replace(/,/g, ''))) && c.length > 0 && !/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/.test(c))
+      const data = (hasHeader ? rawRows.slice(1) : rawRows).filter(r => r.some(c => c.toString().trim()))
+      if (data.length === 0) { setFileParseError('ไม่พบข้อมูล'); return }
+      cols = [0,1,2,3,4,5,6,7].map(i => data.map(r => (r[i] ?? '').toString().trim()).join('\n'))
+    }
+
+    const [c1,c2,c3,c4,c5,c6,c7,c8] = cols
+    setPasteCol1(c1); setPasteCol2(c2); setPasteCol3(c3); setPasteCol4(c4)
+    setPasteCol5(c5); setPasteCol6(c6); setPasteCol7(c7); setPasteCol8(c8)
+    computePasteRowsFromCols(c1, c2, c3, c4, c5, c6, c7, c8)
+    setModalTab('paste')
+  }
+
+  function processFileBuffer(buf: ArrayBuffer, filename: string) {
+    setFileParseError('')
+    try {
+      const wb = XLSX.read(buf, { type: 'array', cellDates: true })
+      const ws = wb.Sheets[wb.SheetNames[0]]
+      const rawRows = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, defval: '' }) as string[][]
+      processRawRows(rawRows)
+    } catch {
+      setFileParseError('อ่านไฟล์ไม่ได้: ' + filename)
+    }
+  }
+
+  function processFileText(text: string, filename: string) {
+    setFileParseError('')
+    try {
+      const firstLine = text.split('\n')[0] ?? ''
+      const sep = firstLine.includes('\t') ? '\t' : ','
+      const rawRows = text.trim().split('\n').map(row => {
+        const cells: string[] = []; let inQ = false; let cur = ''
+        for (const ch of row) {
+          if (ch === '"') { inQ = !inQ; continue }
+          if (ch === sep && !inQ) { cells.push(cur.trim()); cur = ''; continue }
+          cur += ch
+        }
+        cells.push(cur.trim())
+        return cells
+      })
+      processRawRows(rawRows)
+    } catch {
+      setFileParseError('อ่านไฟล์ไม่ได้: ' + filename)
+    }
+  }
+
+  function handleFile(file: File) {
+    const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.xlsm')
+    if (isExcel) {
+      const reader = new FileReader()
+      reader.onload = ev => processFileBuffer(ev.target?.result as ArrayBuffer, file.name)
+      reader.readAsArrayBuffer(file)
+    } else {
+      const reader = new FileReader()
+      reader.onload = ev => processFileText(ev.target?.result as string, file.name)
+      reader.readAsText(file, 'utf-8')
+    }
   }
 
   function isPasteRowSaveable(r: { orderStatus: string; isDuplicate: boolean }): boolean {
@@ -505,7 +591,11 @@ export default function OrderEntryPage() {
     const resetCols = () => { setPasteRows([]); setPasteCol1(''); setPasteCol2(''); setPasteCol3(''); setPasteCol4(''); setPasteCol5(''); setPasteCol6(''); setPasteCol7(''); setPasteCol8('') }
 
     const newRows = pasteRows.filter(isPasteRowSaveable)
-    const dropoffUpdateRows = pasteRows.filter(r => r.isDuplicate && r.isDropoff)
+    const dropoffUpdateRows = pasteRows.filter(r => {
+      if (!r.isDuplicate || !r.isDropoff) return false
+      const existing = rows.find(row => row.order_number === r.orderNumber)
+      return existing && !existing.is_dropoff
+    })
 
     const insertPayload = newRows.map(r => ({
       entry_date: (r.paymentDate && r.paymentDate !== '-') ? (toIsoDate(r.paymentDate) || today) : null,
@@ -610,7 +700,7 @@ export default function OrderEntryPage() {
     const p = r.platform ?? ''
     const matchQuick = quickFilter === 'all' ? true
       : quickFilter === 'platform' ? (p === 'Shopee' || p === 'Tiktok' || p === 'Lazada' || p === 'เคลม:Shopee' || p === 'เคลม:Tiktok' || p === 'เคลม:Lazada')
-      : quickFilter === 'outside' ? OUTSIDE_PLATFORMS.includes(p)
+      : quickFilter === 'outside' ? (OUTSIDE_PLATFORMS.includes(p) && !r.is_installation)
       : r.is_installation === true
     return matchSearch && matchStatus && matchPlatform && matchCourier && matchAdmin && matchTech && matchUrgent && matchInstall && matchShipping && matchQuick
   })
@@ -633,6 +723,7 @@ export default function OrderEntryPage() {
     if (outAssignedFilters.length) rs = rs.filter(r => outAssignedFilters.includes(r.order_assigned || 'รออัพเดท'))
     if (outStatusFilters.length) rs = rs.filter(r => outStatusFilters.includes(r.order_status ?? ''))
     if (outDoneFilter !== null) rs = rs.filter(r => !!r.is_urgent === outDoneFilter)
+    if (outInstalledFilter !== null) rs = rs.filter(r => !!r.is_dropoff === outInstalledFilter)
     if (outDeadlineFrom || outDeadlineTo) rs = rs.filter(r => {
       if (!r.deadline) return false
       const d = new Date(r.deadline)
@@ -805,14 +896,36 @@ ${toPrint.map((r, i) => {
     setPrintModal(false)
   }
 
-  const inp = (label: string, key: string, type = 'text') => (
-    <div style={{ marginBottom: 14 }}>
-      <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>{label}</label>
-      <input type={type} lang={type === 'date' ? 'en-GB' : undefined} value={String(modal?.data[key as keyof typeof modal.data] ?? '')}
-        onChange={e => set(key, e.target.value)}
-        style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
-    </div>
-  )
+  const inp = (label: string, key: string, type = 'text') => {
+    const rawVal = String(modal?.data[key as keyof typeof modal.data] ?? '')
+    const displayVal = type === 'date'
+      ? rawVal.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$3/$2/$1')
+      : rawVal
+    return (
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>{label}</label>
+        {type === 'date' ? (
+          <div style={{ position: 'relative' }}>
+            <input
+              type="date"
+              value={/^\d{4}-\d{2}-\d{2}$/.test(rawVal) ? rawVal : ''}
+              onChange={e => { if (e.target.value) set(key, e.target.value) }}
+              onMouseDown={e => { e.preventDefault(); try { (e.target as HTMLInputElement).showPicker() } catch {} }}
+              style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box', color: displayVal ? 'transparent' : 'var(--ink-3)' }}
+            />
+            {displayVal && (
+              <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, display: 'flex', alignItems: 'center', paddingLeft: 12, fontSize: 13, color: 'var(--ink)', pointerEvents: 'none' }}>
+                {displayVal}
+              </div>
+            )}
+          </div>
+        ) : (
+          <input type="text" value={rawVal} onChange={e => set(key, e.target.value)}
+            style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+        )}
+      </div>
+    )
+  }
 
   const sel = (label: string, key: string, options: string[]) => (
     <div style={{ marginBottom: 14 }}>
@@ -825,9 +938,16 @@ ${toPrint.map((r, i) => {
     </div>
   )
 
+  const openOutFilter = (e: React.MouseEvent, key: typeof openFilter) => {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const cardR = tableCardRef.current?.getBoundingClientRect()
+    if (openFilter === key) { setOpenFilter(null); setOutFilterPos(null) }
+    else { setOpenFilter(key); setOutFilterPos(cardR ? { top: r.bottom - cardR.top, left: r.left - cardR.left } : { top: r.bottom, left: r.left }) }
+  }
+
   return (
     <div>
-      {(openFilter || openAction) && <div onClick={() => { setOpenFilter(null); setOpenAction(null); setActionRect(null) }} style={{ position: 'fixed', inset: 0, zIndex: 9998 }} />}
+      {(openFilter || openAction || rowPlatformDropdown) && <div onClick={() => { setOpenFilter(null); setOutFilterPos(null); setOpenAction(null); setActionRect(null); setRowPlatformDropdown(null) }} style={{ position: 'fixed', inset: 0, zIndex: 9998 }} />}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
         <div>
           <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px' }}>ออเดอร์</h1>
@@ -870,7 +990,120 @@ ${toPrint.map((r, i) => {
         ))}
       </div>
 
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', overflowX: 'auto' }}>
+      <div ref={tableCardRef} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', position: 'relative' }}>
+        {outFilterPos && openFilter && (() => {
+          const dropStyle = { position: 'absolute' as const, top: outFilterPos.top + 4, left: outFilterPos.left, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0' }
+          if (openFilter === 'out-days') return (
+            <div style={{ ...dropStyle, minWidth: 140 }}>
+              {([['น้อยไปมาก', 'asc'], ['มากไปน้อย', 'desc']] as [string, 'asc'|'desc'][]).map(([label, val]) => (
+                <div key={label} onClick={() => { setOutDaysSort(val); setOutUpdatedSort(null); setOpenFilter(null); setOutFilterPos(null) }}
+                  style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: outDaysSort === val ? 600 : 400, color: outDaysSort === val ? 'var(--blue)' : 'var(--ink)', background: outDaysSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
+                  {label}
+                </div>
+              ))}
+            </div>
+          )
+          if (openFilter === 'out-deadline') return (
+            <div style={{ ...dropStyle, padding: '12px 14px', minWidth: 220 }}>
+              <div style={{ marginBottom: 8 }}>
+                <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>ตั้งแต่</label>
+                <input type="date" lang="en-GB" value={outDeadlineFrom} onChange={e => setOutDeadlineFrom(e.target.value)} style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+              </div>
+              <div style={{ marginBottom: 8 }}>
+                <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>ถึงวันที่</label>
+                <input type="date" lang="en-GB" value={outDeadlineTo} onChange={e => setOutDeadlineTo(e.target.value)} style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+              </div>
+              {(outDeadlineFrom || outDeadlineTo) && (
+                <button onClick={() => { setOutDeadlineFrom(''); setOutDeadlineTo('') }} style={{ fontSize: 11, border: 'none', background: 'transparent', color: 'var(--ink-4)', cursor: 'pointer', padding: 0 }}>ล้าง</button>
+              )}
+            </div>
+          )
+          if (openFilter === 'out-platform') return (
+            <div style={{ ...dropStyle, minWidth: 180, maxHeight: 260, overflowY: 'auto' }}>
+              {OUTSIDE_PLATFORMS.map(p => (
+                <label key={p} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: outPlatformFilters.includes(p) ? 'var(--blue-bg)' : 'transparent' }}>
+                  <input type="checkbox" checked={outPlatformFilters.includes(p)} onChange={() => setOutPlatformFilters(toggleArr(outPlatformFilters, p))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
+                  {p}
+                </label>
+              ))}
+            </div>
+          )
+          if (openFilter === 'out-payment') return (
+            <div style={{ ...dropStyle, minWidth: 150 }}>
+              {PAYMENT_STATUSES.map(s => (
+                <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: outPaymentFilters.includes(s) ? 'var(--blue-bg)' : 'transparent' }}>
+                  <input type="checkbox" checked={outPaymentFilters.includes(s)} onChange={() => setOutPaymentFilters(toggleArr(outPaymentFilters, s))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
+                  <span style={{ fontWeight: 600, color: PAYMENT_STATUS_COLOR[s] }}>{s}</span>
+                </label>
+              ))}
+            </div>
+          )
+          if (openFilter === 'out-assigned') return (
+            <div style={{ ...dropStyle, minWidth: 160 }}>
+              {ORDER_ASSIGNED.map(o => (
+                <label key={o} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: outAssignedFilters.includes(o) ? 'var(--blue-bg)' : 'transparent' }}>
+                  <input type="checkbox" checked={outAssignedFilters.includes(o)} onChange={() => setOutAssignedFilters(toggleArr(outAssignedFilters, o))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
+                  {o}
+                </label>
+              ))}
+            </div>
+          )
+          if (openFilter === 'out-status') return (
+            <div style={{ ...dropStyle, minWidth: 150 }}>
+              {PROD_STATUSES.map(s => (
+                <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: outStatusFilters.includes(s) ? 'var(--blue-bg)' : 'transparent' }}>
+                  <input type="checkbox" checked={outStatusFilters.includes(s)} onChange={() => setOutStatusFilters(toggleArr(outStatusFilters, s))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: PROD_STATUS_COLOR[s], flexShrink: 0, display: 'inline-block' }} />
+                  {s}
+                </label>
+              ))}
+            </div>
+          )
+          if (openFilter === 'out-done') return (
+            <div style={{ ...dropStyle, minWidth: 150 }}>
+              {([['ทั้งหมด', null], ['งานเสร็จเท่านั้น', true], ['ยังไม่เสร็จ', false]] as [string, boolean|null][]).map(([label, val]) => (
+                <button key={String(label)} onClick={() => { setOutDoneFilter(val); setOpenFilter(null); setOutFilterPos(null) }}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', fontSize: 12, border: 'none', cursor: 'pointer', background: outDoneFilter === val ? 'var(--blue-bg)' : 'transparent', color: outDoneFilter === val ? 'var(--blue)' : 'var(--ink)', fontWeight: outDoneFilter === val ? 600 : 400 }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )
+          if (openFilter === 'out-installed') return (
+            <div style={{ ...dropStyle, minWidth: 150 }}>
+              {([['ทั้งหมด', null], ['ติดตั้งแล้ว', true], ['ยังไม่ติดตั้ง', false]] as [string, boolean|null][]).map(([label, val]) => (
+                <button key={String(label)} onClick={() => { setOutInstalledFilter(val); setOpenFilter(null); setOutFilterPos(null) }}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', fontSize: 12, border: 'none', cursor: 'pointer', background: outInstalledFilter === val ? 'var(--blue-bg)' : 'transparent', color: outInstalledFilter === val ? 'var(--blue)' : 'var(--ink)', fontWeight: outInstalledFilter === val ? 600 : 400 }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )
+          if (openFilter === 'out-updated') return (
+            <div style={{ ...dropStyle, minWidth: 160 }}>
+              {([['ใหม่สุด-เก่าสุด', 'desc'], ['เก่าสุด-ใหม่สุด', 'asc']] as [string, 'asc'|'desc'][]).map(([label, val]) => (
+                <div key={label} onClick={() => { setOutUpdatedSort(val); setOutDaysSort(null); setOpenFilter(null); setOutFilterPos(null) }}
+                  style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: outUpdatedSort === val ? 600 : 400, color: outUpdatedSort === val ? 'var(--blue)' : 'var(--ink)', background: outUpdatedSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
+                  {label}
+                </div>
+              ))}
+            </div>
+          )
+          return null
+        })()}
+        {rowPlatformDropdown && (
+          <div style={{ position: 'absolute', top: rowPlatformDropdown.pos.top + 4, left: rowPlatformDropdown.pos.left, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 160, maxHeight: 260, overflowY: 'auto', padding: '6px 0' }}>
+            {OUTSIDE_PLATFORMS.map(p => (
+              <div key={p} onClick={() => { updateField(rowPlatformDropdown.id, 'platform', p); setRowPlatformDropdown(null) }}
+                style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, color: 'var(--ink)', background: 'transparent' }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--blue-bg)'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                {p}
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{ overflowX: 'auto' }}>
         {loading ? (
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>กำลังโหลด…</div>
         ) : displayed.length === 0 ? (
@@ -887,145 +1120,67 @@ ${toPrint.map((r, i) => {
                     onChange={toggleSelectAll}
                     style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
                 </th>
-                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
-                  <button onClick={() => setOpenFilter(openFilter === 'out-days' ? null : 'out-days')}
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                  <button onClick={e => openOutFilter(e, 'out-days')}
                     style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outDaysSort ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
                     วันที่เหลือ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
-                  {openFilter === 'out-days' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 140 }}>
-                      {([['น้อยไปมาก', 'asc'], ['มากไปน้อย', 'desc']] as [string, 'asc'|'desc'][]).map(([label, val]) => (
-                        <div key={label} onClick={() => { setOutDaysSort(val); setOutUpdatedSort(null); setOpenFilter(null) }}
-                          style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: outDaysSort === val ? 600 : 400, color: outDaysSort === val ? 'var(--blue)' : 'var(--ink)', background: outDaysSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
-                          {label}
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </th>
-                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
-                  <button onClick={() => setOpenFilter(openFilter === 'out-deadline' ? null : 'out-deadline')}
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                  <button onClick={e => openOutFilter(e, 'out-deadline')}
                     style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: (outDeadlineFrom || outDeadlineTo) ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
-                    วันที่จัดส่ง <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                    {quickFilter === 'install' ? 'วันที่ติดตั้ง' : 'วันที่จัดส่ง'} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
-                  {openFilter === 'out-deadline' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '12px 14px', minWidth: 220 }}>
-                      <div style={{ marginBottom: 8 }}>
-                        <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>ตั้งแต่</label>
-                        <input type="date" lang="en-GB" value={outDeadlineFrom} onChange={e => setOutDeadlineFrom(e.target.value)} style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
-                      </div>
-                      <div style={{ marginBottom: 8 }}>
-                        <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>ถึงวันที่</label>
-                        <input type="date" lang="en-GB" value={outDeadlineTo} onChange={e => setOutDeadlineTo(e.target.value)} style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
-                      </div>
-                      {(outDeadlineFrom || outDeadlineTo) && (
-                        <button onClick={() => { setOutDeadlineFrom(''); setOutDeadlineTo('') }} style={{ fontSize: 11, border: 'none', background: 'transparent', color: 'var(--ink-4)', cursor: 'pointer', padding: 0 }}>ล้าง</button>
-                      )}
-                    </div>
-                  )}
                 </th>
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ลูกค้า</th>
-                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
-                  <button onClick={() => setOpenFilter(openFilter === 'out-platform' ? null : 'out-platform')}
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                  <button onClick={e => openOutFilter(e, 'out-platform')}
                     style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outPlatformFilters.length ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
                     แพลตฟอร์ม{outPlatformFilters.length > 0 && ` (${outPlatformFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
-                  {openFilter === 'out-platform' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 180, maxHeight: 260, overflowY: 'auto', padding: '6px 0' }}>
-                      {OUTSIDE_PLATFORMS.map(p => (
-                        <label key={p} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: outPlatformFilters.includes(p) ? 'var(--blue-bg)' : 'transparent' }}>
-                          <input type="checkbox" checked={outPlatformFilters.includes(p)} onChange={() => setOutPlatformFilters(toggleArr(outPlatformFilters, p))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
-                          {p}
-                        </label>
-                      ))}
-                    </div>
-                  )}
                 </th>
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>รายการ</th>
                 <th style={{ textAlign: 'right', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ยอดทั้งหมด</th>
-                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
-                  <button onClick={() => setOpenFilter(openFilter === 'out-payment' ? null : 'out-payment')}
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                  <button onClick={e => openOutFilter(e, 'out-payment')}
                     style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outPaymentFilters.length ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
                     ชำระ{outPaymentFilters.length > 0 && ` (${outPaymentFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
-                  {openFilter === 'out-payment' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 150, padding: '6px 0' }}>
-                      {PAYMENT_STATUSES.map(s => (
-                        <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: outPaymentFilters.includes(s) ? 'var(--blue-bg)' : 'transparent' }}>
-                          <input type="checkbox" checked={outPaymentFilters.includes(s)} onChange={() => setOutPaymentFilters(toggleArr(outPaymentFilters, s))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
-                          <span style={{ fontWeight: 600, color: PAYMENT_STATUS_COLOR[s] }}>{s}</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
                 </th>
-                <th style={{ textAlign: 'right', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ยอดชำระก่อนจัดส่ง</th>
-                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
-                  <button onClick={() => setOpenFilter(openFilter === 'out-assigned' ? null : 'out-assigned')}
+                <th style={{ textAlign: 'right', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{quickFilter === 'install' ? 'ยอดชำระหลังติดตั้ง' : 'ยอดชำระก่อนจัดส่ง'}</th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                  <button onClick={e => openOutFilter(e, 'out-assigned')}
                     style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outAssignedFilters.length ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
                     ลงออเดอร์{outAssignedFilters.length > 0 && ` (${outAssignedFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
-                  {openFilter === 'out-assigned' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 160, padding: '6px 0' }}>
-                      {ORDER_ASSIGNED.map(o => (
-                        <label key={o} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: outAssignedFilters.includes(o) ? 'var(--blue-bg)' : 'transparent' }}>
-                          <input type="checkbox" checked={outAssignedFilters.includes(o)} onChange={() => setOutAssignedFilters(toggleArr(outAssignedFilters, o))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
-                          {o}
-                        </label>
-                      ))}
-                    </div>
-                  )}
                 </th>
-                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
-                  <button onClick={() => setOpenFilter(openFilter === 'out-status' ? null : 'out-status')}
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                  <button onClick={e => openOutFilter(e, 'out-status')}
                     style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outStatusFilters.length ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
                     สถานะงาน{outStatusFilters.length > 0 && ` (${outStatusFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
-                  {openFilter === 'out-status' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 150, padding: '6px 0' }}>
-                      {PROD_STATUSES.map(s => (
-                        <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: outStatusFilters.includes(s) ? 'var(--blue-bg)' : 'transparent' }}>
-                          <input type="checkbox" checked={outStatusFilters.includes(s)} onChange={() => setOutStatusFilters(toggleArr(outStatusFilters, s))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
-                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: PROD_STATUS_COLOR[s], flexShrink: 0, display: 'inline-block' }} />
-                          {s}
-                        </label>
-                      ))}
-                    </div>
-                  )}
                 </th>
-                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
-                  <button onClick={() => setOpenFilter(openFilter === 'out-done' ? null : 'out-done')}
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                  <button onClick={e => openOutFilter(e, 'out-done')}
                     style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outDoneFilter !== null ? '#22c55e' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
                     งานเสร็จ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
-                  {openFilter === 'out-done' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 150, padding: '6px 0' }}>
-                      {([['ทั้งหมด', null], ['งานเสร็จเท่านั้น', true], ['ยังไม่เสร็จ', false]] as [string, boolean|null][]).map(([label, val]) => (
-                        <button key={String(label)} onClick={() => { setOutDoneFilter(val); setOpenFilter(null) }}
-                          style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', fontSize: 12, border: 'none', cursor: 'pointer', background: outDoneFilter === val ? 'var(--blue-bg)' : 'transparent', color: outDoneFilter === val ? 'var(--blue)' : 'var(--ink)', fontWeight: outDoneFilter === val ? 600 : 400 }}>
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
                 </th>
+                {quickFilter === 'install' && (
+                  <th style={{ textAlign: 'center', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                    <button onClick={e => openOutFilter(e, 'out-installed')}
+                      style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outInstalledFilter !== null ? '#22c55e' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                      ติดตั้ง <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                    </button>
+                  </th>
+                )}
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>วันที่สร้าง</th>
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>หมายเหตุ</th>
-                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
-                  <button onClick={() => setOpenFilter(openFilter === 'out-updated' ? null : 'out-updated')}
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                  <button onClick={e => openOutFilter(e, 'out-updated')}
                     style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outUpdatedSort ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
                     แก้ไขล่าสุด <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
-                  {openFilter === 'out-updated' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 160 }}>
-                      {([['ใหม่สุด-เก่าสุด', 'desc'], ['เก่าสุด-ใหม่สุด', 'asc']] as [string, 'asc'|'desc'][]).map(([label, val]) => (
-                        <div key={label} onClick={() => { setOutUpdatedSort(val); setOutDaysSort(null); setOpenFilter(null) }}
-                          style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: outUpdatedSort === val ? 600 : 400, color: outUpdatedSort === val ? 'var(--blue)' : 'var(--ink)', background: outUpdatedSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
-                          {label}
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </th>
                 <th style={{ padding: '10px 14px' }} />
               </tr>
@@ -1102,15 +1257,20 @@ ${toPrint.map((r, i) => {
                       ) : <span style={{ color: 'var(--ink-4)' }}>รอกำหนด</span>}
                     </td>
                     <td style={{ padding: '8px 14px' }}>
-                      {isCancelled ? <span style={{ color: 'var(--ink-4)' }}>-</span> : dateCell('deadline')}
+                      {isCancelled ? <span style={{ color: 'var(--ink-4)' }}>-</span>
+                        : (quickFilter === 'install' && r.is_dropoff) ? <span style={{ fontWeight: 700, color: '#22c55e' }}>ติดตั้งแล้ว</span>
+                        : dateCell('deadline')}
                     </td>
                     <td style={{ padding: '8px 14px', minWidth: 100 }}>{textCell('customer_name')}</td>
                     <td style={{ padding: '8px 14px' }}>
-                      <select value={r.platform || ''} onChange={e => updateField(r.id, 'platform', e.target.value)}
-                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.platform ? 'var(--ink-3)' : 'var(--ink-4)', padding: 0, maxWidth: 140 }}>
-                        <option value="">—</option>
-                        {OUTSIDE_PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
-                      </select>
+                      <button onClick={e => {
+                        const cardR = tableCardRef.current?.getBoundingClientRect()
+                        const btnR = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                        const pos = { top: btnR.bottom - (cardR?.top ?? 0), left: btnR.left - (cardR?.left ?? 0) }
+                        setRowPlatformDropdown(d => d?.id === r.id ? null : { id: r.id, pos })
+                      }} style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.platform ? 'var(--ink-3)' : 'var(--ink-4)', padding: 0, maxWidth: 140, textAlign: 'left' }}>
+                        {r.platform || '—'}
+                      </button>
                     </td>
                     <td style={{ padding: '6px 14px', maxWidth: 200 }}>
                       <button onClick={() => { setItemsModal({ id: r.id, items: Array.isArray(r.items) ? r.items : [] }); setItemsModalPasteText('') }}
@@ -1159,6 +1319,12 @@ ${toPrint.map((r, i) => {
                       <input type="checkbox" checked={!!r.is_urgent} onChange={e => toggleDone(r.id, e.target.checked)}
                         style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
                     </td>
+                    {quickFilter === 'install' && (
+                      <td style={{ padding: '12px 14px', textAlign: 'center' }}>
+                        <input type="checkbox" checked={!!r.is_dropoff} onChange={e => updateField(r.id, 'is_dropoff', e.target.checked)}
+                          style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                      </td>
+                    )}
                     <td style={{ padding: '8px 14px' }}>{dateCell('entry_date')}</td>
                     <td style={{ padding: '8px 14px', minWidth: 120 }}>{textCell('notes', '—')}</td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', color: 'var(--ink-4)', fontSize: 11 }}>
@@ -1473,6 +1639,7 @@ ${toPrint.map((r, i) => {
             </tbody>
           </table>
         )}
+        </div>
       </div>
 
       {/* Global action dropdown */}
@@ -1516,16 +1683,47 @@ ${toPrint.map((r, i) => {
               </div>
             ) : (
               <div style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
-                {(['form', 'paste'] as const).map(t => (
-                  <button key={t} onClick={() => { setModalTab(t); setPasteRows([]) }}
+                {(['form', ...(addType === 'platform' ? ['paste', 'file'] : [])] as ('form'|'paste'|'file')[]).map(t => (
+                  <button key={t} onClick={() => { setModalTab(t); setPasteRows([]); setFileParseError('') }}
                     style={{ flex: 1, padding: '16px 0', fontSize: 14, fontWeight: modalTab === t ? 600 : 400, border: 'none', borderBottom: modalTab === t ? '2px solid var(--blue)' : '2px solid transparent', background: 'transparent', cursor: 'pointer', color: modalTab === t ? 'var(--blue)' : 'var(--ink-3)', transition: 'all 0.15s' }}>
-                    {t === 'form' ? 'กรอกฟอร์ม' : 'วาง Copy'}
+                    {t === 'form' ? 'กรอกฟอร์ม' : t === 'paste' ? 'วาง Copy' : 'Drop ไฟล์'}
                   </button>
                 ))}
               </div>
             )}
 
             <div style={{ padding: '24px 32px 32px' }}>
+
+            {/* ---- File drop tab ---- */}
+            {modal.mode === 'add' && modalTab === 'file' && (
+              <div>
+                <div
+                  onDragOver={e => { e.preventDefault(); setFileDragOver(true) }}
+                  onDragLeave={() => setFileDragOver(false)}
+                  onDrop={e => {
+                    e.preventDefault(); setFileDragOver(false)
+                    const file = e.dataTransfer.files[0]
+                    if (file) handleFile(file)
+                  }}
+                  style={{ border: `2px dashed ${fileDragOver ? 'var(--blue)' : 'var(--border)'}`, borderRadius: 12, padding: '48px 24px', textAlign: 'center', background: fileDragOver ? 'var(--blue-bg)' : 'var(--bg)', transition: 'all 0.15s', marginBottom: 16 }}>
+                  <div style={{ fontSize: 36, marginBottom: 12 }}>📂</div>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>วางไฟล์ที่นี่</div>
+                  <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 20 }}>รองรับ .xlsx, .csv, .txt</div>
+                  <label style={{ display: 'inline-block', padding: '8px 20px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, cursor: 'pointer', background: 'var(--surface)', color: 'var(--ink)' }}>
+                    เลือกไฟล์
+                    <input type="file" accept=".xlsx,.xls,.xlsm,.csv,.txt,.tsv" style={{ display: 'none' }} onChange={e => {
+                      const file = e.target.files?.[0]
+                      if (file) handleFile(file)
+                      e.target.value = ''
+                    }} />
+                  </label>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--ink-3)', background: 'var(--bg)', borderRadius: 8, padding: '10px 14px' }}>
+                  <strong>ลำดับคอลัมน์ที่รองรับ:</strong> เลขออเดอร์ · ชื่อลูกค้า · วันชำระ · บริษัทขนส่ง · วันต้องส่ง · ราคา · สถานะ · Drop-off
+                </div>
+                {fileParseError && <div style={{ marginTop: 12, fontSize: 13, color: 'var(--red)' }}>{fileParseError}</div>}
+              </div>
+            )}
 
             {/* ---- Paste tab ---- */}
             {modal.mode === 'add' && modalTab === 'paste' && (
@@ -1558,7 +1756,7 @@ ${toPrint.map((r, i) => {
                   <div>
                     {(() => {
                       const saveCount = pasteRows.filter(isPasteRowSaveable).length
-                      const dropoffCount = pasteRows.filter(r => r.isDuplicate && r.isDropoff).length
+                      const dropoffCount = pasteRows.filter(r => r.isDuplicate && r.isDropoff && !rows.find(row => row.order_number === r.orderNumber)?.is_dropoff).length
                       const skipCount = pasteRows.length - saveCount - dropoffCount
                       return (
                         <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 8 }}>
@@ -1579,7 +1777,7 @@ ${toPrint.map((r, i) => {
                           {pasteRows.map((r, i) => {
                             const isCancelled = r.orderStatus.includes('ยกเลิก')
                             const saveable = isPasteRowSaveable(r)
-                            const isDropoffUpdate = r.isDuplicate && r.isDropoff
+                            const isDropoffUpdate = r.isDuplicate && r.isDropoff && !rows.find(row => row.order_number === r.orderNumber)?.is_dropoff
                             return (
                               <tr key={i} style={{ borderBottom: '1px solid var(--border)', opacity: (saveable || isDropoffUpdate) ? 1 : 0.55 }}>
                                 <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
@@ -1614,7 +1812,7 @@ ${toPrint.map((r, i) => {
                         style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
                         {pasteSaving ? 'กำลังบันทึก…' : (() => {
                           const n = pasteRows.filter(isPasteRowSaveable).length
-                          const d = pasteRows.filter(r => r.isDuplicate && r.isDropoff).length
+                          const d = pasteRows.filter(r => r.isDuplicate && r.isDropoff && !rows.find(row => row.order_number === r.orderNumber)?.is_dropoff).length
                           if (n > 0 && d > 0) return `บันทึก ${n} ใหม่ · อัพเดท Drop-off ${d}`
                           if (d > 0) return `อัพเดท Drop-off ${d} ออเดอร์`
                           return `บันทึก ${n} รายการ`
@@ -1643,27 +1841,20 @@ ${toPrint.map((r, i) => {
               return (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
               {inp('ชื่อลูกค้าซื้อ', 'customer_name')}
+              {sel('จากแพลตฟอร์ม', 'platform', isOutside ? OUTSIDE_PLATFORMS : PLATFORMS)}
               {!isOutside && inp('เลขคำสั่งซื้อ', 'order_number')}
               {inp('วันที่สร้าง', 'entry_date', 'date')}
               {inp(isInstall ? 'กำหนดติดตั้ง' : 'กำหนดส่งงาน', 'deadline', 'date')}
-              {isInstall ? (
-                <div style={{ marginBottom: 14 }}>
-                  <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>วันและเวลาที่ต้องติดตั้ง</label>
-                  <input type="text" value={String(modal.data.shipping_datetime ?? '')} onChange={e => set('shipping_datetime', e.target.value)}
-                    placeholder="เช่น 5/6/2025,09:00:00"
-                    style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box', color: '#bf5af2', fontWeight: 600 }} />
-                </div>
-              ) : !isOutside ? (
+              {!isInstall && !isOutside && (
                 <div style={{ marginBottom: 14 }}>
                   <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>วันและเวลาที่ต้องส่ง</label>
                   <div style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, background: 'var(--bg)', color: '#bf5af2', fontWeight: 600 }}>
                     {modal.data.shipping_datetime || calcShipping(modal.data.deadline ?? '', modal.data.courier ?? '') || '— เลือกกำหนดส่ง + บริษัท'}
                   </div>
                 </div>
-              ) : null}
+              )}
               {sel('แอดมิน', 'admin_name', ADMINS)}
               {sel('ช่างที่รับผิดชอบ', 'technician', TECHS)}
-              {sel('จากแพลตฟอร์ม', 'platform', isOutside ? OUTSIDE_PLATFORMS : PLATFORMS)}
               {!isInstall && sel('บริษัทจัดส่ง', 'courier', COURIERS)}
             </div>
               )
@@ -1810,6 +2001,7 @@ ${toPrint.map((r, i) => {
                 <button key={label} onClick={() => {
                   setAddTypeModal(false)
                   setAddType(type)
+                  setModalTab('form')
                   setModal({ mode: 'add', data: { ...emptyForm(), shipping_datetime: '', ...extra } })
                   setModalItems([])
                   setItemsPasteText('')
