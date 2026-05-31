@@ -89,7 +89,12 @@ export default function Sidebar() {
                 overflow: 'hidden',
               }}>
                 <span style={{ opacity: active ? 1 : 0.7, flexShrink: 0, display: 'flex', width: 16 }}>{icon}</span>
-                <span style={{ paddingLeft: 9, maxWidth: expanded ? 160 : 0, overflow: 'hidden', transition: 'max-width 0.22s ease' }}>{label}</span>
+                <span style={{ paddingLeft: 9, maxWidth: expanded ? 160 : 0, overflow: 'hidden', transition: 'max-width 0.22s ease', display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <span style={{ whiteSpace: 'nowrap' }}>{label}</span>
+                  {href !== '/order-entry' && (
+                    <span style={{ fontSize: 9, color: 'rgba(250,246,240,0.3)', fontWeight: 400, whiteSpace: 'nowrap', letterSpacing: '0.01em' }}>ยังไม่เปิดใช้งาน</span>
+                  )}
+                </span>
               </Link>
             </div>
           )

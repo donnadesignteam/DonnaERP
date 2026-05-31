@@ -129,6 +129,7 @@ const STATUS_COLOR: Record<string, string> = {
 }
 
 const PROD_STATUSES = ['รอดำเนินการ', 'กำลังตัด', 'กำลังเย็บ', 'กำลังรีด', 'กำลังแพ็ค', 'รอจัดส่ง', 'จัดส่งแล้ว']
+const INSTALL_STATUSES = ['รอดำเนินการ', 'กำลังตัด', 'กำลังเย็บ', 'กำลังรีด', 'กำลังแพ็ค', 'รอติดตั้ง']
 const PROD_STATUS_COLOR: Record<string, string> = {
   'รอดำเนินการ': '#f59e0b',
   'กำลังตัด': '#10b981',
@@ -138,6 +139,7 @@ const PROD_STATUS_COLOR: Record<string, string> = {
   'งานเสร็จ': '#22c55e',
   'รอจัดส่ง': '#6366f1',
   'จัดส่งแล้ว': '#22c55e',
+  'รอติดตั้ง': '#f97316',
 }
 
 const OUTSIDE_PLATFORMS = [
@@ -224,6 +226,15 @@ export default function OrderEntryPage() {
   const [printMaxDays, setPrintMaxDays] = useState(3)
   const [quickFilter, setQuickFilter] = useState<'all' | 'platform' | 'outside' | 'install'>('all')
   const [addTypeModal, setAddTypeModal] = useState(false)
+  const [incompleteFilter, setIncompleteFilter] = useState(false)
+  const [allDaysSort, setAllDaysSort] = useState<'asc' | 'desc' | null>('asc')
+  const [allUpdatedSort, setAllUpdatedSort] = useState<'asc' | 'desc' | null>(null)
+  const [allDeadlineFrom, setAllDeadlineFrom] = useState('')
+  const [allDeadlineTo, setAllDeadlineTo] = useState('')
+  const [allPlatformFilters, setAllPlatformFilters] = useState<string[]>([])
+  const [allStatusFilters, setAllStatusFilters] = useState<string[]>([])
+  const [allDoneFilter, setAllDoneFilter] = useState<boolean | null>(null)
+  const [openAllFilter, setOpenAllFilter] = useState<'days'|'deadline'|'platform'|'status'|'done'|'updated'|null>(null)
   const [addType, setAddType] = useState<'platform' | 'outside' | 'install' | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [formParseLoading, setFormParseLoading] = useState(false)
@@ -410,9 +421,10 @@ export default function OrderEntryPage() {
   }
 
   const toggleDone = async (id: string, checked: boolean) => {
+    const row = rows.find(r => r.id === id)
     const now = new Date().toISOString()
     const updates = checked
-      ? { is_urgent: true, order_status: 'รอจัดส่ง', updated_at: now }
+      ? { is_urgent: true, order_status: row?.is_installation ? 'รอติดตั้ง' : 'รอจัดส่ง', updated_at: now }
       : { is_urgent: false, order_status: 'รอดำเนินการ', updated_at: now }
     const { error: err } = await supabase.from('order_entries').update(updates).eq('id', id)
     if (!err) {
@@ -704,7 +716,8 @@ export default function OrderEntryPage() {
       : quickFilter === 'platform' ? (p === 'Shopee' || p === 'Tiktok' || p === 'Lazada' || p === 'เคลม:Shopee' || p === 'เคลม:Tiktok' || p === 'เคลม:Lazada')
       : quickFilter === 'outside' ? (OUTSIDE_PLATFORMS.includes(p) && !r.is_installation)
       : r.is_installation === true
-    return matchSearch && matchStatus && matchPlatform && matchCourier && matchAdmin && matchTech && matchUrgent && matchInstall && matchShipping && matchQuick
+    const matchIncomplete = !incompleteFilter || (!r.items || r.items.length === 0 || !r.deadline || r.price == null || !r.customer_name || (OUTSIDE_PLATFORMS.includes(r.platform ?? '') && (!r.order_assigned || r.order_assigned === 'รออัพเดท')) || ((OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation) && (!r.payment_status || r.payment_status === 'ยังไม่ชำระ')))
+    return matchSearch && matchStatus && matchPlatform && matchCourier && matchAdmin && matchTech && matchUrgent && matchInstall && matchShipping && matchQuick && matchIncomplete
   })
 
   if (updatedSort) {
@@ -744,6 +757,44 @@ export default function OrderEntryPage() {
         const da = a.deadline ? new Date(a.deadline).getTime() : (outDaysSort === 'asc' ? Infinity : -Infinity)
         const db = b.deadline ? new Date(b.deadline).getTime() : (outDaysSort === 'asc' ? Infinity : -Infinity)
         return outDaysSort === 'asc' ? da - db : db - da
+      })
+    }
+    return rs
+  })()
+
+  const displayedAll = (() => {
+    let rs = displayed
+    if (allPlatformFilters.length) rs = rs.filter(r => allPlatformFilters.includes(r.platform ?? ''))
+    if (allStatusFilters.length) rs = rs.filter(r => allStatusFilters.includes(r.order_status ?? ''))
+    if (allDoneFilter !== null) rs = rs.filter(r => !!r.is_urgent === allDoneFilter)
+    if (allDeadlineFrom || allDeadlineTo) rs = rs.filter(r => {
+      const d = r.deadline ? new Date(r.deadline) : null
+      if (!d) return false
+      if (allDeadlineFrom && d < new Date(allDeadlineFrom)) return false
+      if (allDeadlineTo && d > new Date(allDeadlineTo + 'T23:59:59')) return false
+      return true
+    })
+    if (allUpdatedSort) {
+      rs = [...rs].sort((a, b) => {
+        const da = a.updated_at ? new Date(a.updated_at).getTime() : 0
+        const db = b.updated_at ? new Date(b.updated_at).getTime() : 0
+        return allUpdatedSort === 'desc' ? db - da : da - db
+      })
+    } else if (allDaysSort) {
+      rs = [...rs].sort((a, b) => {
+        const getMs = (r: Entry) => {
+          const isOut = OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation
+          if (isOut) return r.deadline ? new Date(r.deadline).getTime() : null
+          const eff = (r.is_dropoff && r.shipping_datetime) ? shiftShippingDatetime(r.shipping_datetime, 2) : r.shipping_datetime
+          if (!eff || eff === '-') return null
+          const m = eff.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+          return m ? new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1])).getTime() : null
+        }
+        const da = getMs(a), db = getMs(b)
+        if (da === null && db === null) return 0
+        if (da === null) return 1
+        if (db === null) return -1
+        return allDaysSort === 'asc' ? da - db : db - da
       })
     }
     return rs
@@ -790,7 +841,6 @@ export default function OrderEntryPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'แปลงไม่สำเร็จ')
       setItemsModal(m => m ? { ...m, items: data.items } : null)
-      setItemsModalPasteText('')
     } catch (e: unknown) {
       setItemsModalError(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด')
     } finally {
@@ -949,7 +999,7 @@ ${toPrint.map((r, i) => {
 
   return (
     <div>
-      {(openFilter || openAction || rowPlatformDropdown) && <div onClick={() => { setOpenFilter(null); setOutFilterPos(null); setOpenAction(null); setActionRect(null); setRowPlatformDropdown(null) }} style={{ position: 'fixed', inset: 0, zIndex: 9998 }} />}
+      {(openFilter || openAction || rowPlatformDropdown || openAllFilter) && <div onClick={() => { setOpenFilter(null); setOutFilterPos(null); setOpenAction(null); setActionRect(null); setRowPlatformDropdown(null); setOpenAllFilter(null) }} style={{ position: 'fixed', inset: 0, zIndex: 150 }} />}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
         <div>
           <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px' }}>ออเดอร์</h1>
@@ -983,13 +1033,34 @@ ${toPrint.map((r, i) => {
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ชื่อลูกค้า / เลขคำสั่งซื้อ…"
         style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontSize: 14, marginBottom: 12, outline: 'none', boxSizing: 'border-box' }} />
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         {([['all', 'ทั้งหมด'], ['platform', 'งานแพลตฟอร์ม'], ['outside', 'งานนอก'], ['install', 'งานติดตั้ง']] as [typeof quickFilter, string][]).map(([val, label]) => (
           <button key={val} onClick={() => setQuickFilter(val)}
             style={{ padding: '6px 16px', borderRadius: 20, border: quickFilter === val ? 'none' : '1px solid var(--border)', background: quickFilter === val ? 'var(--blue)' : 'var(--surface)', color: quickFilter === val ? '#fff' : 'var(--ink-3)', fontSize: 13, fontWeight: quickFilter === val ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
             {label}
           </button>
         ))}
+        <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px' }} />
+        {(() => {
+          const incompleteCount = rows.filter(r => {
+            const p = r.platform ?? ''
+            const matchQ = quickFilter === 'all' ? true
+              : quickFilter === 'platform' ? (p === 'Shopee' || p === 'Tiktok' || p === 'Lazada' || p === 'เคลม:Shopee' || p === 'เคลม:Tiktok' || p === 'เคลม:Lazada')
+              : quickFilter === 'outside' ? (OUTSIDE_PLATFORMS.includes(p) && !r.is_installation)
+              : r.is_installation === true
+            return matchQ && (!r.items || r.items.length === 0 || !r.deadline || r.price == null || !r.customer_name || (OUTSIDE_PLATFORMS.includes(r.platform ?? '') && (!r.order_assigned || r.order_assigned === 'รออัพเดท')) || ((OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation) && (!r.payment_status || r.payment_status === 'ยังไม่ชำระ')))
+          }).length
+          if (incompleteCount === 0) return null
+          return (
+            <button onClick={() => setIncompleteFilter(f => !f)}
+              style={{ padding: '6px 14px', borderRadius: 20, border: incompleteFilter ? 'none' : '1px solid var(--border)', background: incompleteFilter ? '#ef4444' : 'var(--surface)', color: incompleteFilter ? '#fff' : '#ef4444', fontSize: 13, fontWeight: incompleteFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+              ข้อมูลไม่ครบ
+              <span style={{ background: incompleteFilter ? 'rgba(255,255,255,0.3)' : '#ef444422', color: incompleteFilter ? '#fff' : '#ef4444', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
+                {incompleteCount}
+              </span>
+            </button>
+          )
+        })()}
       </div>
 
       <div ref={tableCardRef} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', position: 'relative' }}>
@@ -1311,7 +1382,7 @@ ${toPrint.map((r, i) => {
                       <select value={r.order_status || ''} onChange={e => updateField(r.id, 'order_status', e.target.value)}
                         style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PROD_STATUS_COLOR[r.order_status] ?? 'var(--ink-4)', padding: 0 }}>
                         <option value="">—</option>
-                        {PROD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                        {(r.is_installation ? INSTALL_STATUSES : PROD_STATUSES).map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </td>
                     <td style={{ padding: '12px 14px', textAlign: 'center' }}>
@@ -1355,20 +1426,115 @@ ${toPrint.map((r, i) => {
                     onChange={toggleSelectAll}
                     style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
                 </th>
-                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>วันที่เหลือ</th>
-                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ต้องส่งภายใน</th>
-                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>วันที่ติดตั้ง</th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
+                  <button onClick={() => setOpenAllFilter(openAllFilter === 'days' ? null : 'days')}
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: allDaysSort ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    วันที่เหลือ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                  </button>
+                  {openAllFilter === 'days' && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 140 }}>
+                      {([['น้อยไปมาก', 'asc'], ['มากไปน้อย', 'desc']] as [string, 'asc'|'desc'][]).map(([label, val]) => (
+                        <div key={val} onClick={() => { setAllDaysSort(val); setAllUpdatedSort(null); setOpenAllFilter(null) }}
+                          style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: allDaysSort === val ? 600 : 400, color: allDaysSort === val ? 'var(--blue)' : 'var(--ink)', background: allDaysSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
+                          {label}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
+                  <button onClick={() => setOpenAllFilter(openAllFilter === 'deadline' ? null : 'deadline')}
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: (allDeadlineFrom || allDeadlineTo) ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    ต้องส่งภายใน <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                  </button>
+                  {openAllFilter === 'deadline' && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '12px 14px', minWidth: 220 }}>
+                      <div style={{ marginBottom: 8 }}>
+                        <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>ตั้งแต่</label>
+                        <input type="date" value={allDeadlineFrom} onChange={e => setAllDeadlineFrom(e.target.value)} style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, outline: 'none', boxSizing: 'border-box' as const }} />
+                      </div>
+                      <div style={{ marginBottom: 8 }}>
+                        <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>ถึงวันที่</label>
+                        <input type="date" value={allDeadlineTo} onChange={e => setAllDeadlineTo(e.target.value)} style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, outline: 'none', boxSizing: 'border-box' as const }} />
+                      </div>
+                      {(allDeadlineFrom || allDeadlineTo) && (
+                        <button onClick={() => { setAllDeadlineFrom(''); setAllDeadlineTo('') }} style={{ fontSize: 11, border: 'none', background: 'transparent', color: 'var(--ink-4)', cursor: 'pointer', padding: 0 }}>ล้าง</button>
+                      )}
+                    </div>
+                  )}
+                </th>
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ลูกค้า</th>
-                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>แพลตฟอร์ม</th>
-                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>สถานะงาน</th>
-                <th style={{ textAlign: 'center', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>งานเสร็จ</th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
+                  <button onClick={() => setOpenAllFilter(openAllFilter === 'platform' ? null : 'platform')}
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: allPlatformFilters.length ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    แพลตฟอร์ม{allPlatformFilters.length > 0 && ` (${allPlatformFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                  </button>
+                  {openAllFilter === 'platform' && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 180, maxHeight: 280, overflowY: 'auto', padding: '6px 0' }}>
+                      {PLATFORMS.concat(OUTSIDE_PLATFORMS.filter(p => !PLATFORMS.includes(p))).map(p => (
+                        <label key={p} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: allPlatformFilters.includes(p) ? 'var(--blue-bg)' : 'transparent' }}>
+                          <input type="checkbox" checked={allPlatformFilters.includes(p)} onChange={() => setAllPlatformFilters(toggleArr(allPlatformFilters, p))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
+                          {p}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
+                  <button onClick={() => setOpenAllFilter(openAllFilter === 'status' ? null : 'status')}
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: allStatusFilters.length ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    สถานะงาน{allStatusFilters.length > 0 && ` (${allStatusFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                  </button>
+                  {openAllFilter === 'status' && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 160, padding: '6px 0' }}>
+                      {[...PROD_STATUSES, ...INSTALL_STATUSES.filter(s => !PROD_STATUSES.includes(s))].map(s => (
+                        <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: allStatusFilters.includes(s) ? 'var(--blue-bg)' : 'transparent' }}>
+                          <input type="checkbox" checked={allStatusFilters.includes(s)} onChange={() => setAllStatusFilters(toggleArr(allStatusFilters, s))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: PROD_STATUS_COLOR[s] ?? '#ccc', flexShrink: 0, display: 'inline-block' }} />
+                          {s}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </th>
+                <th style={{ textAlign: 'center', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
+                  <button onClick={() => setOpenAllFilter(openAllFilter === 'done' ? null : 'done')}
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: allDoneFilter !== null ? '#22c55e' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    งานเสร็จ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                  </button>
+                  {openAllFilter === 'done' && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 150, padding: '6px 0' }}>
+                      {([['ทั้งหมด', null], ['งานเสร็จเท่านั้น', true], ['ยังไม่เสร็จ', false]] as [string, boolean|null][]).map(([label, val]) => (
+                        <button key={String(label)} onClick={() => { setAllDoneFilter(val); setOpenAllFilter(null) }}
+                          style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', fontSize: 12, border: 'none', cursor: 'pointer', background: allDoneFilter === val ? 'var(--blue-bg)' : 'transparent', color: allDoneFilter === val ? 'var(--blue)' : 'var(--ink)', fontWeight: allDoneFilter === val ? 600 : 400 }}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </th>
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>หมายเหตุ</th>
-                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>แก้ไขล่าสุด</th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
+                  <button onClick={() => setOpenAllFilter(openAllFilter === 'updated' ? null : 'updated')}
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: allUpdatedSort ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    แก้ไขล่าสุด <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                  </button>
+                  {openAllFilter === 'updated' && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 160 }}>
+                      {([['ใหม่สุด-เก่าสุด', 'desc'], ['เก่าสุด-ใหม่สุด', 'asc']] as [string, 'asc'|'desc'][]).map(([label, val]) => (
+                        <div key={val} onClick={() => { setAllUpdatedSort(val); setAllDaysSort(null); setOpenAllFilter(null) }}
+                          style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: allUpdatedSort === val ? 600 : 400, color: allUpdatedSort === val ? 'var(--blue)' : 'var(--ink)', background: allUpdatedSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
+                          {label}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </th>
                 <th style={{ padding: '10px 14px' }} />
               </tr>
             </thead>
             <tbody>
-              {displayed.map(r => {
+              {displayedAll.map(r => {
                 const isOutsideRow = OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation
                 const allEffective = isOutsideRow
                   ? r.deadline
@@ -1395,12 +1561,10 @@ ${toPrint.map((r, i) => {
                       {!isOutsideRow ? (
                         r.order_status === 'จัดส่งแล้ว' ? <span style={{ color: '#22c55e', fontWeight: 700 }}>จัดส่งแล้ว</span>
                         : allEffective ? allEffective : <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>รอกำหนด</span>
-                      ) : <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>-</span>}
-                    </td>
-                    <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', color: '#bf5af2', fontWeight: 500 }}>
-                      {r.is_installation ? (
-                        r.deadline ? new Date(r.deadline).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>-</span>
-                      ) : <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>-</span>}
+                      ) : (
+                        r.order_status === 'จัดส่งแล้ว' ? <span style={{ color: '#22c55e', fontWeight: 700 }}>จัดส่งแล้ว</span>
+                        : r.deadline ? new Date(r.deadline).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>รอกำหนด</span>
+                      )}
                     </td>
                     <td style={{ padding: '12px 14px' }}>{r.customer_name || '-'}</td>
                     <td style={{ padding: '12px 14px', color: 'var(--ink-3)' }}>{r.platform || '-'}</td>
@@ -2188,9 +2352,10 @@ ${toPrint.map((r, i) => {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr style={{ background: '#FAFAFA', borderBottom: '1px solid var(--border)' }}>
-                    {['#', 'ประเภท', 'ชั้น', 'หัวราง', 'รหัสสี', 'ชื่อสี', 'กว้าง (ม.)', 'สูง (ม.)', 'จำนวน', 'หน่วย', 'กระดูม', 'หมายเหตุ', ''].map(h => (
+                    {['#', 'ประเภท', 'ชั้น', 'หัวราง', 'รหัสสี', 'ชื่อสี', 'กว้าง (ม.)', 'สูง (ม.)', 'จำนวน', 'หน่วย', 'กระดูม', 'หมายเหตุ'].map(h => (
                       <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 500, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
+                    <th style={{ padding: '8px 10px', position: 'sticky', right: 0, background: '#FAFAFA', zIndex: 1 }} />
                   </tr>
                 </thead>
                 <tbody>
@@ -2225,9 +2390,9 @@ ${toPrint.map((r, i) => {
                           />
                         </td>
                       ))}
-                      <td style={{ padding: '4px 8px' }}>
+                      <td style={{ padding: '4px 8px', position: 'sticky', right: 0, background: 'var(--surface)', boxShadow: '-2px 0 4px rgba(0,0,0,0.04)' }}>
                         <button onClick={() => setItemsModal(m => m ? { ...m, items: m.items.filter((_, i) => i !== idx) } : null)}
-                          style={{ border: 'none', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }}>ลบ</button>
+                          style={{ border: 'none', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontSize: 13, padding: '2px 4px', whiteSpace: 'nowrap' }}>ลบ</button>
                       </td>
                     </tr>
                   ))}
