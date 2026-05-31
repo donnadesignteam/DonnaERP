@@ -234,7 +234,8 @@ export default function OrderEntryPage() {
   const [allPlatformFilters, setAllPlatformFilters] = useState<string[]>([])
   const [allStatusFilters, setAllStatusFilters] = useState<string[]>([])
   const [allDoneFilter, setAllDoneFilter] = useState<boolean | null>(null)
-  const [openAllFilter, setOpenAllFilter] = useState<'days'|'deadline'|'platform'|'status'|'done'|'updated'|null>(null)
+  const [allCourierFilters, setAllCourierFilters] = useState<string[]>([])
+  const [openAllFilter, setOpenAllFilter] = useState<'days'|'deadline'|'platform'|'courier'|'status'|'done'|'updated'|null>(null)
   const [addType, setAddType] = useState<'platform' | 'outside' | 'install' | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [formParseLoading, setFormParseLoading] = useState(false)
@@ -439,11 +440,11 @@ export default function OrderEntryPage() {
   }
 
   function toggleSelectAll() {
-    const allSelected = displayed.every(r => selectedIds.has(r.id))
+    const allSelected = activeDisplayed.every(r => selectedIds.has(r.id))
     if (allSelected) {
-      setSelectedIds(prev => { const s = new Set(prev); displayed.forEach(r => s.delete(r.id)); return s })
+      setSelectedIds(prev => { const s = new Set(prev); activeDisplayed.forEach(r => s.delete(r.id)); return s })
     } else {
-      setSelectedIds(prev => { const s = new Set(prev); displayed.forEach(r => s.add(r.id)); return s })
+      setSelectedIds(prev => { const s = new Set(prev); activeDisplayed.forEach(r => s.add(r.id)); return s })
     }
   }
 
@@ -765,6 +766,7 @@ export default function OrderEntryPage() {
   const displayedAll = (() => {
     let rs = displayed
     if (allPlatformFilters.length) rs = rs.filter(r => allPlatformFilters.includes(r.platform ?? ''))
+    if (allCourierFilters.length) rs = rs.filter(r => r.is_installation ? allCourierFilters.includes('งานติดตั้ง') : allCourierFilters.includes(r.courier ?? ''))
     if (allStatusFilters.length) rs = rs.filter(r => allStatusFilters.includes(r.order_status ?? ''))
     if (allDoneFilter !== null) rs = rs.filter(r => !!r.is_urgent === allDoneFilter)
     if (allDeadlineFrom || allDeadlineTo) rs = rs.filter(r => {
@@ -800,10 +802,14 @@ export default function OrderEntryPage() {
     return rs
   })()
 
+  const activeDisplayed = quickFilter === 'all' ? displayedAll
+    : (quickFilter === 'outside' || quickFilter === 'install') ? displayedOut
+    : displayed
+
   useEffect(() => {
     if (selectAllRef.current) {
-      const some = displayed.some(r => selectedIds.has(r.id))
-      const all = displayed.length > 0 && displayed.every(r => selectedIds.has(r.id))
+      const some = activeDisplayed.some(r => selectedIds.has(r.id))
+      const all = activeDisplayed.length > 0 && activeDisplayed.every(r => selectedIds.has(r.id))
       selectAllRef.current.indeterminate = some && !all
     }
   })
@@ -905,8 +911,7 @@ export default function OrderEntryPage() {
     })
   }
 
-  function doPrint() {
-    const toPrint = getPrintRows(printMaxDays)
+  function openPrintWindow(toPrint: Entry[], title: string) {
     const html = `<!DOCTYPE html>
 <html lang="th">
 <head>
@@ -926,7 +931,7 @@ export default function OrderEntryPage() {
 </style>
 </head>
 <body>
-<h2>ออเดอร์ที่ต้องส่งใน ${printMaxDays} วัน — ${new Date().toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' })} (${toPrint.length} รายการ)</h2>
+<h2>${title} (${toPrint.length} รายการ)</h2>
 <table>
 <thead><tr>
   <th>#</th><th>วันที่เหลือ</th><th>ต้องจัดส่งภายใน</th><th>เลขคำสั่งซื้อ</th><th>ลูกค้า</th><th>ช่างที่รับผิดชอบ</th><th>แพลตฟอร์ม</th><th>สถานะงาน</th><th>บริษัทขนส่ง</th>
@@ -945,6 +950,11 @@ ${toPrint.map((r, i) => {
 </html>`
     const win = window.open('', '_blank', 'width=1200,height=750')
     if (win) { win.document.write(html); win.document.close(); win.focus(); win.print() }
+  }
+
+  function doPrint() {
+    const toPrint = getPrintRows(printMaxDays)
+    openPrintWindow(toPrint, `ออเดอร์ที่ต้องส่งใน ${printMaxDays} วัน — ${new Date().toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' })}`)
     setPrintModal(false)
   }
 
@@ -1012,9 +1022,13 @@ ${toPrint.map((r, i) => {
               ลบที่เลือก ({selectedIds.size})
             </button>
           )}
-          <button onClick={() => setPrintModal(true)}
+          <button onClick={() => {
+              if (selectedIds.size > 0) {
+                openPrintWindow(rows.filter(r => selectedIds.has(r.id)), `ออเดอร์ที่เลือก ${selectedIds.size} รายการ — ${new Date().toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' })}`)
+              } else { setPrintModal(true) }
+            }}
             style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-            🖨️ ปริ้น
+            🖨️ ปริ้น{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
           </button>
           <button onClick={() => setAddTypeModal(true)}
             style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,122,255,0.3)' }}>
@@ -1030,8 +1044,16 @@ ${toPrint.map((r, i) => {
         </div>
       )}
 
-      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ชื่อลูกค้า / เลขคำสั่งซื้อ…"
-        style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontSize: 14, marginBottom: 12, outline: 'none', boxSizing: 'border-box' }} />
+      <div style={{ position: 'relative', marginBottom: 12 }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ชื่อลูกค้า / เลขคำสั่งซื้อ…"
+          style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', paddingRight: search ? 36 : 14, fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+        {search && (
+          <button onClick={() => setSearch('')}
+            style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'var(--border)', color: 'var(--ink-3)', borderRadius: '50%', width: 20, height: 20, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, padding: 0 }}>
+            ✕
+          </button>
+        )}
+      </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         {([['all', 'ทั้งหมด'], ['platform', 'งานแพลตฟอร์ม'], ['outside', 'งานนอก'], ['install', 'งานติดตั้ง']] as [typeof quickFilter, string][]).map(([val, label]) => (
@@ -1189,7 +1211,7 @@ ${toPrint.map((r, i) => {
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
                 <th style={{ padding: '10px 14px', width: 36 }}>
                   <input type="checkbox" ref={selectAllRef}
-                    checked={displayed.length > 0 && displayed.every(r => selectedIds.has(r.id))}
+                    checked={activeDisplayed.length > 0 && activeDisplayed.every(r => selectedIds.has(r.id))}
                     onChange={toggleSelectAll}
                     style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
                 </th>
@@ -1422,7 +1444,7 @@ ${toPrint.map((r, i) => {
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
                 <th style={{ padding: '10px 14px', width: 36 }}>
                   <input type="checkbox" ref={selectAllRef}
-                    checked={displayed.length > 0 && displayed.every(r => selectedIds.has(r.id))}
+                    checked={activeDisplayed.length > 0 && activeDisplayed.every(r => selectedIds.has(r.id))}
                     onChange={toggleSelectAll}
                     style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
                 </th>
@@ -1475,6 +1497,22 @@ ${toPrint.map((r, i) => {
                         <label key={p} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: allPlatformFilters.includes(p) ? 'var(--blue-bg)' : 'transparent' }}>
                           <input type="checkbox" checked={allPlatformFilters.includes(p)} onChange={() => setAllPlatformFilters(toggleArr(allPlatformFilters, p))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
                           {p}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
+                  <button onClick={() => setOpenAllFilter(openAllFilter === 'courier' ? null : 'courier')}
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: allCourierFilters.length ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    บริษัทจัดส่ง{allCourierFilters.length > 0 && ` (${allCourierFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                  </button>
+                  {openAllFilter === 'courier' && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 200, maxHeight: 260, overflowY: 'auto', padding: '6px 0' }}>
+                      {['งานติดตั้ง', ...new Set(rows.map(r => r.courier).filter(Boolean))].map(c => (
+                        <label key={c} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: allCourierFilters.includes(c!) ? 'var(--blue-bg)' : 'transparent' }}>
+                          <input type="checkbox" checked={allCourierFilters.includes(c!)} onChange={() => setAllCourierFilters(toggleArr(allCourierFilters, c!))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
+                          {c === 'งานติดตั้ง' ? <span style={{ color: '#f97316', fontWeight: 600 }}>งานติดตั้ง</span> : c}
                         </label>
                       ))}
                     </div>
@@ -1568,6 +1606,9 @@ ${toPrint.map((r, i) => {
                     </td>
                     <td style={{ padding: '12px 14px' }}>{r.customer_name || '-'}</td>
                     <td style={{ padding: '12px 14px', color: 'var(--ink-3)' }}>{r.platform || '-'}</td>
+                    <td style={{ padding: '12px 14px', color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
+                      {r.is_installation ? <span style={{ color: '#f97316', fontWeight: 600 }}>งานติดตั้ง</span> : r.courier || <span style={{ color: 'var(--ink-4)' }}>-</span>}
+                    </td>
                     <td style={{ padding: '8px 14px' }}>
                       <select value={r.order_status || ''} onChange={e => updateField(r.id, 'order_status', e.target.value)}
                         style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PROD_STATUS_COLOR[r.order_status] ?? 'var(--ink-4)', padding: 0 }}>
@@ -1619,7 +1660,7 @@ ${toPrint.map((r, i) => {
                 <th style={{ padding: '10px 14px', width: 36 }}>
                   <input type="checkbox"
                     ref={selectAllRef}
-                    checked={displayed.length > 0 && displayed.every(r => selectedIds.has(r.id))}
+                    checked={activeDisplayed.length > 0 && activeDisplayed.every(r => selectedIds.has(r.id))}
                     onChange={toggleSelectAll}
                     style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
                 </th>
@@ -1918,6 +1959,11 @@ ${toPrint.map((r, i) => {
               style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: copiedId === r.id ? '#34c759' : 'var(--ink)' }}>
               <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
               {copiedId === r.id ? 'คัดลอกแล้ว' : 'คัดลอก'}
+            </button>
+            <button onClick={() => { setOpenAction(null); setActionRect(null); openPrintWindow([r], `ออเดอร์ ${r.customer_name || r.order_number || ''} — ${new Date().toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' })}`) }}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)' }}>
+              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z"/></svg>
+              ปริ้น
             </button>
             <button onClick={() => { setOpenAction(null); setActionRect(null); setModal({ mode: 'edit', data: { ...r, items: null } }); setModalItems(Array.isArray(r.items) ? [...(r.items as Item[])] : []); setItemsPasteText('') }}
               style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)' }}>
