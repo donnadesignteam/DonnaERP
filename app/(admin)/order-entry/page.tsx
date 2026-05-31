@@ -128,7 +128,7 @@ const STATUS_COLOR: Record<string, string> = {
   'งานเสร็จแล้ว': 'var(--blue)',
 }
 
-const PROD_STATUSES = ['รอดำเนินการ', 'กำลังตัด', 'กำลังเย็บ', 'กำลังรีด', 'กำลังแพ็ค']
+const PROD_STATUSES = ['รอดำเนินการ', 'กำลังตัด', 'กำลังเย็บ', 'กำลังรีด', 'กำลังแพ็ค', 'รอจัดส่ง', 'จัดส่งแล้ว']
 const PROD_STATUS_COLOR: Record<string, string> = {
   'รอดำเนินการ': '#f59e0b',
   'กำลังตัด': '#10b981',
@@ -136,6 +136,8 @@ const PROD_STATUS_COLOR: Record<string, string> = {
   'กำลังรีด': '#8b5cf6',
   'กำลังแพ็ค': '#ef4444',
   'งานเสร็จ': '#22c55e',
+  'รอจัดส่ง': '#6366f1',
+  'จัดส่งแล้ว': '#22c55e',
 }
 
 const OUTSIDE_PLATFORMS = [
@@ -410,7 +412,7 @@ export default function OrderEntryPage() {
   const toggleDone = async (id: string, checked: boolean) => {
     const now = new Date().toISOString()
     const updates = checked
-      ? { is_urgent: true, order_status: 'งานเสร็จ', updated_at: now }
+      ? { is_urgent: true, order_status: 'รอจัดส่ง', updated_at: now }
       : { is_urgent: false, order_status: 'รอดำเนินการ', updated_at: now }
     const { error: err } = await supabase.from('order_entries').update(updates).eq('id', id)
     if (!err) {
@@ -1129,7 +1131,7 @@ ${toPrint.map((r, i) => {
                 <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap' }}>
                   <button onClick={e => openOutFilter(e, 'out-deadline')}
                     style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: (outDeadlineFrom || outDeadlineTo) ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
-                    {quickFilter === 'install' ? 'วันที่ติดตั้ง' : 'วันที่จัดส่ง'} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                    {quickFilter === 'install' ? 'วันที่ติดตั้ง' : 'ต้องส่งภายใน'} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                 </th>
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ลูกค้า</th>
@@ -1247,7 +1249,7 @@ ${toPrint.map((r, i) => {
                       {isCancelled ? (
                         <span style={{ fontWeight: 700, color: '#ef4444' }}>ยกเลิก</span>
                       ) : r.is_urgent ? (
-                        <span style={{ fontWeight: 700, color: '#22c55e' }}>งานเสร็จแล้ว</span>
+                        <span style={{ fontWeight: 700, color: '#22c55e' }}>งานเสร็จ</span>
                       ) : isDone ? (
                         <span style={{ fontWeight: 700, color: '#22c55e' }}>เสร็จสิ้น</span>
                       ) : outDays !== null ? (
@@ -1258,6 +1260,7 @@ ${toPrint.map((r, i) => {
                     </td>
                     <td style={{ padding: '8px 14px' }}>
                       {isCancelled ? <span style={{ color: 'var(--ink-4)' }}>-</span>
+                        : r.order_status === 'จัดส่งแล้ว' ? <span style={{ fontWeight: 700, color: '#22c55e' }}>จัดส่งแล้ว</span>
                         : (quickFilter === 'install' && r.is_dropoff) ? <span style={{ fontWeight: 700, color: '#22c55e' }}>ติดตั้งแล้ว</span>
                         : dateCell('deadline')}
                     </td>
@@ -1305,15 +1308,11 @@ ${toPrint.map((r, i) => {
                       </select>
                     </td>
                     <td style={{ padding: '8px 14px' }}>
-                      {r.is_urgent ? (
-                        <span style={{ fontSize: 12, fontWeight: 600, color: PROD_STATUS_COLOR['งานเสร็จ'] }}>งานเสร็จ</span>
-                      ) : (
-                        <select value={r.order_status || ''} onChange={e => updateField(r.id, 'order_status', e.target.value)}
-                          style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PROD_STATUS_COLOR[r.order_status] ?? 'var(--ink-4)', padding: 0 }}>
-                          <option value="">—</option>
-                          {PROD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      )}
+                      <select value={r.order_status || ''} onChange={e => updateField(r.id, 'order_status', e.target.value)}
+                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PROD_STATUS_COLOR[r.order_status] ?? 'var(--ink-4)', padding: 0 }}>
+                        <option value="">—</option>
+                        {PROD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
                     </td>
                     <td style={{ padding: '12px 14px', textAlign: 'center' }}>
                       <input type="checkbox" checked={!!r.is_urgent} onChange={e => toggleDone(r.id, e.target.checked)}
@@ -1339,6 +1338,109 @@ ${toPrint.map((r, i) => {
                       <button onClick={e => { const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); if (openAction === r.id) { setOpenAction(null); setActionRect(null) } else { setOpenAction(r.id); setActionRect(rect) } }}
                         style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: openAction === r.id ? 'var(--bg)' : '#fff', cursor: 'pointer', fontSize: 16, color: 'var(--ink-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', letterSpacing: 1 }}>
                         ···
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        ) : quickFilter === 'all' ? (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
+                <th style={{ padding: '10px 14px', width: 36 }}>
+                  <input type="checkbox" ref={selectAllRef}
+                    checked={displayed.length > 0 && displayed.every(r => selectedIds.has(r.id))}
+                    onChange={toggleSelectAll}
+                    style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
+                </th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>วันที่เหลือ</th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ต้องส่งภายใน</th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>วันที่ติดตั้ง</th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ลูกค้า</th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>แพลตฟอร์ม</th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>สถานะงาน</th>
+                <th style={{ textAlign: 'center', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>งานเสร็จ</th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>หมายเหตุ</th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>แก้ไขล่าสุด</th>
+                <th style={{ padding: '10px 14px' }} />
+              </tr>
+            </thead>
+            <tbody>
+              {displayed.map(r => {
+                const isOutsideRow = OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation
+                const allEffective = isOutsideRow
+                  ? r.deadline
+                  : (r.is_dropoff && r.shipping_datetime) ? shiftShippingDatetime(r.shipping_datetime, 2) : r.shipping_datetime
+                const allDays = allEffective ? daysRemaining(allEffective) : null
+                return (
+                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : 'transparent' }}>
+                    <td style={{ padding: '12px 14px' }}>
+                      <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)}
+                        style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
+                    </td>
+                    <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>
+                      {r.order_status === 'จัดส่งแล้ว' ? (
+                        <span style={{ fontWeight: 700, color: '#22c55e' }}>งานเสร็จแล้ว</span>
+                      ) : r.is_urgent ? (
+                        <span style={{ fontWeight: 700, color: '#22c55e' }}>งานเสร็จ</span>
+                      ) : allDays !== null ? (
+                        <span style={{ fontWeight: 700, color: allDays < 0 ? 'var(--red)' : allDays <= 2 ? '#ff9f0a' : '#34c759' }}>
+                          {allDays < 0 ? `เกิน ${Math.abs(allDays)}` : allDays} วัน
+                        </span>
+                      ) : <span style={{ color: 'var(--ink-4)' }}>รอกำหนด</span>}
+                    </td>
+                    <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', fontWeight: 500, color: '#bf5af2' }}>
+                      {!isOutsideRow ? (
+                        r.order_status === 'จัดส่งแล้ว' ? <span style={{ color: '#22c55e', fontWeight: 700 }}>จัดส่งแล้ว</span>
+                        : allEffective ? allEffective : <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>รอกำหนด</span>
+                      ) : <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>-</span>}
+                    </td>
+                    <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', color: '#bf5af2', fontWeight: 500 }}>
+                      {r.is_installation ? (
+                        r.deadline ? new Date(r.deadline).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>-</span>
+                      ) : <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>-</span>}
+                    </td>
+                    <td style={{ padding: '12px 14px' }}>{r.customer_name || '-'}</td>
+                    <td style={{ padding: '12px 14px', color: 'var(--ink-3)' }}>{r.platform || '-'}</td>
+                    <td style={{ padding: '8px 14px' }}>
+                      <select value={r.order_status || ''} onChange={e => updateField(r.id, 'order_status', e.target.value)}
+                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PROD_STATUS_COLOR[r.order_status] ?? 'var(--ink-4)', padding: 0 }}>
+                        <option value="">—</option>
+                        {PROD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>
+                      <input type="checkbox" checked={!!r.is_urgent} onChange={e => toggleDone(r.id, e.target.checked)}
+                        style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                    </td>
+                    <td style={{ padding: '8px 14px', maxWidth: 200 }}>
+                      {editCell?.id === r.id && editCell.field === 'notes' ? (
+                        <input type="text" autoFocus value={editCell.val}
+                          onChange={e => setEditCell(ec => ec ? { ...ec, val: e.target.value } : null)}
+                          onBlur={() => saveTextCell(r.id, 'notes', editCell.val)}
+                          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                          style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: '100%', outline: 'none', padding: '2px 0' }} />
+                      ) : (
+                        <div onClick={() => setEditCell({ id: r.id, field: 'notes', val: r.notes ?? '' })}
+                          style={{ cursor: 'text', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: r.notes ? 'var(--ink-3)' : 'var(--ink-4)', minWidth: 60 }}>
+                          {r.notes || '—'}
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', color: 'var(--ink-4)', fontSize: 11 }}>
+                      {r.updated_at ? (
+                        <div>
+                          <div>{new Date(r.updated_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}</div>
+                          <div>{new Date(r.updated_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>
+                        </div>
+                      ) : '-'}
+                    </td>
+                    <td style={{ padding: '8px 14px' }}>
+                      <button onClick={e => { const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); if (openAction === r.id) { setOpenAction(null); setActionRect(null) } else { setOpenAction(r.id); setActionRect(rect) } }}
+                        style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: openAction === r.id ? 'var(--bg)' : '#fff', cursor: 'pointer', fontSize: 16, color: copiedId === r.id ? '#34c759' : 'var(--ink-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', letterSpacing: 1, transition: 'color 0.2s' }}>
+                        {copiedId === r.id ? '✓' : '···'}
                       </button>
                     </td>
                   </tr>
@@ -1534,8 +1636,10 @@ ${toPrint.map((r, i) => {
                         style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
                     </td>
                     <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>
-                      {r.is_urgent ? (
+                      {r.order_status === 'จัดส่งแล้ว' ? (
                         <span style={{ fontWeight: 700, color: '#22c55e' }}>งานเสร็จแล้ว</span>
+                      ) : r.is_urgent ? (
+                        <span style={{ fontWeight: 700, color: '#22c55e' }}>งานเสร็จ</span>
                       ) : days !== null ? (
                         <span style={{ fontWeight: 700, color: days < 0 ? 'var(--red)' : days <= 2 ? '#ff9f0a' : '#34c759' }}>
                           {days < 0 ? `เกิน ${Math.abs(days)}` : days} วัน
@@ -1543,7 +1647,9 @@ ${toPrint.map((r, i) => {
                       ) : <span style={{ color: 'var(--ink-4)' }}>รอกำหนด</span>}
                     </td>
                     <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', fontWeight: 500, color: '#bf5af2' }}>
-                      {r.is_urgent ? '-' : effectiveShipping ? effectiveShipping : <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>รอกำหนด</span>}
+                      {r.order_status === 'จัดส่งแล้ว' ? (
+                        <span style={{ color: '#22c55e', fontWeight: 700 }}>จัดส่งแล้ว</span>
+                      ) : effectiveShipping ? effectiveShipping : <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>รอกำหนด</span>}
                     </td>
                     <td style={{ padding: '12px 14px', color: 'var(--blue)', fontWeight: 600 }}>{r.order_number || '-'}</td>
                     <td style={{ padding: '12px 14px' }}>{r.customer_name || '-'}</td>
@@ -1587,15 +1693,11 @@ ${toPrint.map((r, i) => {
                       </select>
                     </td>
                     <td style={{ padding: '8px 14px' }}>
-                      {r.is_urgent ? (
-                        <span style={{ fontSize: 12, fontWeight: 600, color: PROD_STATUS_COLOR['งานเสร็จ'] }}>งานเสร็จ</span>
-                      ) : (
-                        <select value={r.order_status || ''} onChange={e => updateField(r.id, 'order_status', e.target.value)}
-                          style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PROD_STATUS_COLOR[r.order_status] ?? 'var(--ink-4)', padding: 0, maxWidth: 100 }}>
-                          <option value="">—</option>
-                          {PROD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      )}
+                      <select value={r.order_status || ''} onChange={e => updateField(r.id, 'order_status', e.target.value)}
+                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PROD_STATUS_COLOR[r.order_status] ?? 'var(--ink-4)', padding: 0, maxWidth: 100 }}>
+                        <option value="">—</option>
+                        {PROD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
                     </td>
                     <td style={{ padding: '12px 14px', textAlign: 'center' }}>
                       <input type="checkbox" checked={!!r.is_dropoff} onChange={e => updateField(r.id, 'is_dropoff', e.target.checked)}
