@@ -9,8 +9,10 @@ type Item = {
   type: string
   floors: number | null
   rail_head: string
+  fabric_type: string
   color_code: string
   color_name: string
+  color_desc: string
   width: number | string
   height: number | string
   quantity: number | string
@@ -47,7 +49,7 @@ type Entry = {
   updated_at: string
 }
 
-const emptyItem = (): Item => ({ type: '', floors: null, rail_head: '', color_code: '', color_name: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', note: '' })
+const emptyItem = (): Item => ({ type: '', floors: null, rail_head: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', note: '' })
 
 const PLATFORMS = ['Tiktok','Tiktok-Chat','Shopee','Shopee-Chat','Lazada','Facebook','LineOA',
   'Lineส่วนตัวยุน','Lineส่วนตัวสู้','Lineส่วนตัวเฟิร์น','หน้าร้าน',
@@ -367,20 +369,20 @@ export default function OrderEntryPage() {
         if (idx > 0) lines.push('')
         const isRail = item.type.startsWith('ราง')
         if (isRail) {
-          const typeParts = ['(สั่งตัด)', item.type, item.floors ? `${item.floors}ชั้น` : '', item.rail_head || '', item.color_name || ''].filter(Boolean)
+          const typeParts = [item.type, item.floors ? `${item.floors}ชั้น` : '', item.rail_head || '', item.color_name || ''].filter(Boolean)
           lines.push(typeParts.join(' '))
         } else {
-          const typeParts = ['(สั่งตัด)', item.type, item.floors ? `${item.floors}ชั้น` : ''].filter(Boolean)
+          const typeParts = [item.type, item.floors ? `${item.floors}ชั้น` : '', item.color_name || ''].filter(Boolean)
           lines.push(typeParts.join(' '))
-          const colorParts = [item.color_code, item.color_name].filter(Boolean)
-          if (colorParts.length) lines.push(`${colorParts.join(' ')} ·`)
+          const brandParts = [item.fabric_type || '', item.color_code || '', item.color_desc || ''].filter(Boolean)
+          if (brandParts.length) lines.push(brandParts.join(' '))
         }
         const w = Number(item.width), h = Number(item.height)
         const wStr = w > 0 ? w.toFixed(2) : ''
         const hStr = h > 0 ? h.toFixed(2) : ''
-        const dim = wStr && hStr ? `ก${wStr}*สูง${hStr}` : wStr ? `ก${wStr}` : ''
-        if (dim) lines.push(` ${dim} =${item.quantity}${item.unit}${item.note ? ` (${item.note})` : ''}`)
-        else lines.push(` =${item.quantity}${item.unit}${item.note ? ` (${item.note})` : ''}`)
+        const dim = wStr && hStr ? `ก${wStr}*ส${hStr}` : wStr ? `ก${wStr}` : ''
+        if (dim) lines.push(`${dim} = ${item.quantity} ${item.unit}${item.note ? ` (${item.note})` : ''}`)
+        else lines.push(`= ${item.quantity} ${item.unit}${item.note ? ` (${item.note})` : ''}`)
       })
     }
 
@@ -455,8 +457,10 @@ export default function OrderEntryPage() {
       if (it.type) parts.push(it.type)
       if (it.floors) parts.push(`${it.floors}ชั้น`)
       if (it.rail_head) parts.push(it.rail_head)
+      if (it.fabric_type) parts.push(it.fabric_type)
       if (it.color_code) parts.push(it.color_code)
       if (it.color_name) parts.push(it.color_name)
+      if (it.color_desc) parts.push(it.color_desc)
       const w = Number(it.width), h = Number(it.height)
       if (w > 0 && h > 0) parts.push(`${w}×${h}`)
       else if (w > 0) parts.push(`${w}`)
@@ -2210,8 +2214,8 @@ ${toPrint.map((r, i) => {
                     <button type="button" onClick={() => setModalItems(prev => prev.filter((_, i) => i !== idx))}
                       style={{ border: 'none', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontSize: 12, padding: 0 }}>ลบ</button>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 2fr 2fr 2fr', gap: '6px 8px', marginBottom: 6 }}>
-                    {([['ประเภท', 'type', 'text'], ['ชั้น', 'floors', 'number'], ['หัวราง', 'rail_head', 'text'], ['รหัสสี', 'color_code', 'text'], ['ชื่อสี', 'color_name', 'text']] as [string, keyof Item, string][]).map(([lbl, key, type]) => (
+                  <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 2fr 2fr 2fr 2fr 2fr', gap: '6px 8px', marginBottom: 6 }}>
+                    {([['ประเภท', 'type', 'text'], ['ชั้น', 'floors', 'number'], ['หัวราง', 'rail_head', 'text'], ['ประเภทผ้า', 'fabric_type', 'text'], ['แบรนด์', 'color_code', 'text'], ['ลาย/สไตล์', 'color_name', 'text'], ['สีจริง', 'color_desc', 'text']] as [string, keyof Item, string][]).map(([lbl, key, type]) => (
                       <div key={key}>
                         <label style={{ fontSize: 11, color: 'var(--ink-4)', display: 'block', marginBottom: 2 }}>{lbl}</label>
                         <input type={type} step={type === 'number' ? '1' : undefined}
