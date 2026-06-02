@@ -413,10 +413,27 @@ export default function OrderEntryPage() {
     }
   }
 
+  const syncWorkStatus = async (orderNumber: string, customerName: string, status: string, now: string) => {
+    if (status === 'รอดำเนินการ') return
+    const term = orderNumber || customerName
+    if (!term) return
+    const { data: matches } = await supabase.from('work_status').select('id, order_number')
+      .or(`order_number.ilike.%${term}%,order_number.ilike.%${customerName}%`)
+    if (matches && matches.length > 0) {
+      await supabase.from('work_status')
+        .update({ status, status_updated_at: now })
+        .in('id', matches.map(m => m.id))
+    }
+  }
+
   const updateField = async (id: string, field: string, value: string | boolean) => {
     const now = new Date().toISOString()
     const { error: err } = await supabase.from('order_entries').update({ [field]: value, updated_at: now }).eq('id', id)
     if (!err) {
+      if (field === 'order_status' && typeof value === 'string') {
+        const row = rows.find(r => r.id === id)
+        if (row) await syncWorkStatus(row.order_number, row.customer_name, value, now)
+      }
       const sy = window.scrollY
       flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value, updated_at: now } as Entry : r)))
       window.scrollTo(window.scrollX, sy)
@@ -431,6 +448,7 @@ export default function OrderEntryPage() {
       : { is_urgent: false, order_status: 'รอดำเนินการ', updated_at: now }
     const { error: err } = await supabase.from('order_entries').update(updates).eq('id', id)
     if (!err) {
+      if (row) await syncWorkStatus(row.order_number, row.customer_name, updates.order_status, now)
       const sy = window.scrollY
       flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, ...updates } as Entry : r)))
       window.scrollTo(window.scrollX, sy)
