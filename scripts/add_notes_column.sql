@@ -1,0 +1,1 @@
+ALTER TABLE stock ADD COLUMN IF NOT EXISTS notes text;
