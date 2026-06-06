@@ -157,8 +157,8 @@ export default function InstallationsPage() {
     setError('')
     const dt = apptDate && apptTime ? `${apptDate}T${apptTime.padStart(5, '0')}:00+07:00` : modal.data.appointment_datetime
     const d = modal.data
-    const instStatus = (modal.mode === 'add' || INITIAL_STATUSES.includes(d.installation_status))
-      ? (STATUS_BY_TYPE[d.work_type] ?? d.installation_status)
+    const instStatus = (modal.mode === 'add' || INITIAL_STATUSES.includes(d.installation_status ?? ''))
+      ? (STATUS_BY_TYPE[d.work_type ?? ''] ?? d.installation_status)
       : d.installation_status
     const payload = { ...d, appointment_datetime: dt, installation_status: instStatus, serial_no: modal.mode === 'add' ? nextSerial() : d.serial_no }
     let err
