@@ -388,13 +388,18 @@ export default function DashboardPage() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         {DEPTS.map(dept => {
           const rows = filtered.filter(o => o.order_status === dept.status)
+          const active = statusFilters.length === 1 && statusFilters[0] === dept.status
           return (
-            <div key={dept.label} style={{
+            <div key={dept.label}
+              onClick={() => setStatusFilters(active ? [] : [dept.status])}
+              style={{
               background: 'var(--surface)',
-              border: `1px solid ${dept.border}`,
+              border: `1px solid ${active ? dept.color : dept.border}`,
               borderRadius: 20,
-              boxShadow: `0 4px 20px ${dept.color}0a, 0 1px 4px rgba(0,0,0,0.04)`,
+              boxShadow: active ? `0 6px 24px ${dept.color}28` : `0 4px 20px ${dept.color}0a, 0 1px 4px rgba(0,0,0,0.04)`,
               overflow: 'hidden',
+              cursor: 'pointer',
+              transition: 'border-color 0.15s, box-shadow 0.15s',
             }}>
               {/* Card header */}
               <div style={{
@@ -430,8 +435,7 @@ export default function DashboardPage() {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column' }}>
                     {rows.slice(0, 5).map((o, idx) => {
-                      const dl = o.deadline?.split('T')[0]
-                      const over = dl && dl < today
+                      const days = daysRemaining(effectiveISODate(o) ?? '')
                       return (
                         <div key={o.id} style={{
                           display: 'flex', alignItems: 'center', gap: 10,
@@ -440,8 +444,9 @@ export default function DashboardPage() {
                         }}>
                           <span style={{ fontWeight: 600, color: 'var(--blue)', fontSize: 12, minWidth: 80 }}>{o.order_number}</span>
                           <span style={{ color: 'var(--ink)', fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.customer_name}</span>
-                          <span style={{ fontSize: 11, color: over ? 'var(--red)' : 'var(--ink-3)', fontWeight: over ? 600 : 400, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                            {over && '⚠ '}{dl ? new Date(o.deadline!).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }) : '—'}
+                          <span style={{ fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0,
+                            color: days === null ? 'var(--ink-4)' : days < 0 ? 'var(--red)' : days <= 2 ? '#ff9f0a' : '#34c759' }}>
+                            {days === null ? 'รอกำหนด' : days < 0 ? `เกิน ${Math.abs(days)} วัน` : `${days} วัน`}
                           </span>
                         </div>
                       )

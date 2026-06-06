@@ -226,7 +226,7 @@ export default function OrderEntryPage() {
   const [editCell, setEditCell] = useState<{id: string; field: string; val: string} | null>(null)
   const [printModal, setPrintModal] = useState(false)
   const [printMaxDays, setPrintMaxDays] = useState(3)
-  const [quickFilter, setQuickFilter] = useState<'all' | 'platform' | 'outside' | 'install'>('all')
+  const [quickFilter, setQuickFilter] = useState<'all' | 'platform' | 'outside' | 'install' | 'claim'>('all')
   const [addTypeModal, setAddTypeModal] = useState(false)
   const [incompleteFilter, setIncompleteFilter] = useState(false)
   const [allDaysSort, setAllDaysSort] = useState<'asc' | 'desc' | null>('asc')
@@ -238,7 +238,7 @@ export default function OrderEntryPage() {
   const [allDoneFilter, setAllDoneFilter] = useState<boolean | null>(null)
   const [allCourierFilters, setAllCourierFilters] = useState<string[]>([])
   const [openAllFilter, setOpenAllFilter] = useState<'days'|'deadline'|'platform'|'courier'|'status'|'done'|'updated'|null>(null)
-  const [addType, setAddType] = useState<'platform' | 'outside' | 'install' | null>(null)
+  const [addType, setAddType] = useState<'platform' | 'outside' | 'install' | 'claim' | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [formParseLoading, setFormParseLoading] = useState(false)
   const [formParseError, setFormParseError] = useState('')
@@ -303,6 +303,11 @@ export default function OrderEntryPage() {
     setError('')
     const d = modal.data
     const now = new Date().toISOString()
+    // งานเคลม: บังคับให้ platform ขึ้นต้นด้วย "เคลม:" เสมอ เพื่อให้ไปอยู่ tab งานเคลม
+    const isClaimAdd = modal.mode === 'add' && addType === 'claim'
+    const platformVal = d.platform
+      ? (isClaimAdd && !d.platform.startsWith('เคลม:') ? `เคลม:${d.platform}` : d.platform)
+      : null
     const payload = {
       entry_date: d.entry_date || null,
       deadline: d.deadline || null,
@@ -314,7 +319,7 @@ export default function OrderEntryPage() {
       order_number: d.order_number || null,
       shipping_date: d.shipping_date || null,
       is_urgent: !!d.is_urgent,
-      platform: d.platform || null,
+      platform: platformVal,
       items: modalItems.length > 0 ? modalItems : null,
       order_status: d.order_status || 'รอดำเนินการ',
       courier: d.courier || null,
@@ -737,9 +742,11 @@ export default function OrderEntryPage() {
       return true
     })()
     const p = r.platform ?? ''
+    const isClaim = p.startsWith('เคลม:')
     const matchQuick = quickFilter === 'all' ? true
-      : quickFilter === 'platform' ? (p === 'Shopee' || p === 'Tiktok' || p === 'Lazada' || p === 'เคลม:Shopee' || p === 'เคลม:Tiktok' || p === 'เคลม:Lazada')
-      : quickFilter === 'outside' ? (OUTSIDE_PLATFORMS.includes(p) && !r.is_installation)
+      : quickFilter === 'claim' ? isClaim
+      : quickFilter === 'platform' ? (!isClaim && (p === 'Shopee' || p === 'Tiktok' || p === 'Lazada'))
+      : quickFilter === 'outside' ? (!isClaim && OUTSIDE_PLATFORMS.includes(p) && !r.is_installation)
       : r.is_installation === true
     const matchIncomplete = !incompleteFilter || (!r.items || r.items.length === 0 || !r.deadline || r.price == null || !r.customer_name || (OUTSIDE_PLATFORMS.includes(r.platform ?? '') && (!r.order_assigned || r.order_assigned === 'รออัพเดท')) || ((OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation) && (!r.payment_status || r.payment_status === 'ยังไม่ชำระ')))
     return matchSearch && matchStatus && matchPlatform && matchCourier && matchAdmin && matchTech && matchUrgent && matchInstall && matchShipping && matchQuick && matchIncomplete
@@ -826,7 +833,7 @@ export default function OrderEntryPage() {
     return rs
   })()
 
-  const activeDisplayed = quickFilter === 'all' ? displayedAll
+  const activeDisplayed = (quickFilter === 'all' || quickFilter === 'claim') ? displayedAll
     : (quickFilter === 'outside' || quickFilter === 'install') ? displayedOut
     : displayed
 
@@ -1080,7 +1087,7 @@ ${toPrint.map((r, i) => {
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        {([['all', 'ทั้งหมด'], ['platform', 'งานแพลตฟอร์ม'], ['outside', 'งานนอก'], ['install', 'งานติดตั้ง']] as [typeof quickFilter, string][]).map(([val, label]) => (
+        {([['all', 'ทั้งหมด'], ['platform', 'งานแพลตฟอร์ม'], ['outside', 'งานนอก'], ['install', 'งานติดตั้ง'], ['claim', 'งานเคลม']] as [typeof quickFilter, string][]).map(([val, label]) => (
           <button key={val} onClick={() => setQuickFilter(val)}
             style={{ padding: '6px 16px', borderRadius: 20, border: quickFilter === val ? 'none' : '1px solid var(--border)', background: quickFilter === val ? 'var(--blue)' : 'var(--surface)', color: quickFilter === val ? '#fff' : 'var(--ink-3)', fontSize: 13, fontWeight: quickFilter === val ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
             {label}
@@ -1090,9 +1097,11 @@ ${toPrint.map((r, i) => {
         {(() => {
           const incompleteCount = rows.filter(r => {
             const p = r.platform ?? ''
+            const isClaim = p.startsWith('เคลม:')
             const matchQ = quickFilter === 'all' ? true
-              : quickFilter === 'platform' ? (p === 'Shopee' || p === 'Tiktok' || p === 'Lazada' || p === 'เคลม:Shopee' || p === 'เคลม:Tiktok' || p === 'เคลม:Lazada')
-              : quickFilter === 'outside' ? (OUTSIDE_PLATFORMS.includes(p) && !r.is_installation)
+              : quickFilter === 'claim' ? isClaim
+              : quickFilter === 'platform' ? (!isClaim && (p === 'Shopee' || p === 'Tiktok' || p === 'Lazada'))
+              : quickFilter === 'outside' ? (!isClaim && OUTSIDE_PLATFORMS.includes(p) && !r.is_installation)
               : r.is_installation === true
             return matchQ && (!r.items || r.items.length === 0 || !r.deadline || r.price == null || !r.customer_name || (OUTSIDE_PLATFORMS.includes(r.platform ?? '') && (!r.order_assigned || r.order_assigned === 'รออัพเดท')) || ((OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation) && (!r.payment_status || r.payment_status === 'ยังไม่ชำระ')))
           }).length
@@ -1462,7 +1471,7 @@ ${toPrint.map((r, i) => {
               })}
             </tbody>
           </table>
-        ) : quickFilter === 'all' ? (
+        ) : (quickFilter === 'all' || quickFilter === 'claim') ? (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
@@ -2172,7 +2181,7 @@ ${toPrint.map((r, i) => {
               const ft = modal.mode === 'add' ? addType
                 : modal.data.is_installation ? 'install'
                 : OUTSIDE_PLATFORMS.includes(modal.data.platform ?? '') ? 'outside' : 'platform'
-              const isOutside = ft === 'outside' || ft === 'install'
+              const isOutside = ft === 'outside' || ft === 'install' || ft === 'claim'
               const isInstall = ft === 'install'
               return (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
@@ -2267,7 +2276,7 @@ ${toPrint.map((r, i) => {
               const ft = modal.mode === 'add' ? addType
                 : modal.data.is_installation ? 'install'
                 : OUTSIDE_PLATFORMS.includes(modal.data.platform ?? '') ? 'outside' : 'platform'
-              const isOutside = ft === 'outside' || ft === 'install'
+              const isOutside = ft === 'outside' || ft === 'install' || ft === 'claim'
               return isOutside ? (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
                   <div style={{ marginBottom: 14 }}>
@@ -2333,7 +2342,8 @@ ${toPrint.map((r, i) => {
                 ['งานแพลตฟอร์ม', '🛍️', 'Shopee / Tiktok / Lazada', 'platform', {}],
                 ['งานนอก', '💬', 'Facebook / Line / หน้าร้าน', 'outside', {}],
                 ['งานติดตั้ง', '🔨', 'สั่งพร้อมติดตั้ง', 'install', { is_installation: true }],
-              ] as [string, string, string, 'platform'|'outside'|'install', object][]).map(([label, icon, desc, type, extra]) => (
+                ['งานเคลม', '🛠️', 'เคลมสินค้าจากทุกช่องทาง', 'claim', {}],
+              ] as [string, string, string, 'platform'|'outside'|'install'|'claim', object][]).map(([label, icon, desc, type, extra]) => (
                 <button key={label} onClick={() => {
                   setAddTypeModal(false)
                   setAddType(type)

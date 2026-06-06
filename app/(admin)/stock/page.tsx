@@ -429,7 +429,7 @@ export default function StockPage() {
                               รอของเข้า
                             </span>
                           )}
-                          <span style={{ fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap', flexShrink: 0 }}>{i.shop_name || '—'}</span>
+                          <span style={{ fontSize: 11, color: color, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>{i.roll_count ?? 0} ม้วน</span>
                         </div>
                       ))}
                       {list.length > 5 && (

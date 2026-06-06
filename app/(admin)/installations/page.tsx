@@ -33,10 +33,19 @@ const PLATFORMS = ['Tiktok','Tiktok-Chat','Shopee','Shopee-Chat','Lazada','Faceb
 const TIMES = ['8:00','9:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00']
 const ENTERED_BY = ['เก๋','หนูนา','สู้','ยุน']
 const WORK_TYPES = ['งานติดตั้ง','งานวัดพื้นที่','งานแก้']
-const INST_STATUS = ['รอการติดตั้ง','รอเช็คงาน/เหลือจ่ายเงิน','งานช่างนอกติดตั้งสำเร็จ','ติดตั้งสำเร็จ','ติดตั้ง50%','งานรอแก้']
+const INST_STATUS = ['รอการติดตั้ง','รอวัดพื้นที่','รอเช็คงาน/เหลือจ่ายเงิน','งานช่างนอกติดตั้งสำเร็จ','ติดตั้งสำเร็จ','ติดตั้ง50%','งานรอแก้']
+
+// สถานะตั้งต้นตามลักษณะงาน (ช่องสถานะถูกเอาออกจากฟอร์ม จึงกำหนดอัตโนมัติ)
+const STATUS_BY_TYPE: Record<string, string> = {
+  'งานติดตั้ง': 'รอการติดตั้ง',
+  'งานวัดพื้นที่': 'รอวัดพื้นที่',
+  'งานแก้': 'งานรอแก้',
+}
+const INITIAL_STATUSES = ['รอการติดตั้ง', 'รอวัดพื้นที่', 'งานรอแก้']
 
 const STATUS_COLOR: Record<string, string> = {
   'รอการติดตั้ง': '#34c759',
+  'รอวัดพื้นที่': '#5ac8fa',
   'รอเช็คงาน/เหลือจ่ายเงิน': '#ff9f0a',
   'งานรอแก้': 'var(--red)',
   'ติดตั้งสำเร็จ': 'var(--blue)',
@@ -102,11 +111,11 @@ function Calendar({ year, month, installs, onDayClick }: {
 }
 
 const emptyForm = (): Omit<Installation, 'id' | 'created_at' | 'serial_no'> => ({
-  appointment_datetime: '', work_type: 'งานติดตั้ง', platform: '', customer_id: '',
+  appointment_datetime: '', work_type: 'งานวัดพื้นที่', platform: '', customer_id: '',
   customer_real_name: '', province: '', phone: '', work_details: '', location_link: '',
   price: 0, notes: '', payment_status: 'รอมัดจำ', appointment_status: 'รอนัดหมาย',
   production_status: 'กำลังผลิต', send_to_technician: 'หน้าร้าน',
-  installation_status: 'รอการติดตั้ง', entered_by: '',
+  installation_status: 'รอวัดพื้นที่', entered_by: '',
 })
 
 export default function InstallationsPage() {
@@ -146,9 +155,12 @@ export default function InstallationsPage() {
     if (!modal) return
     setSaving(true)
     setError('')
-    const dt = apptDate && apptTime ? `${apptDate}T${apptTime.padStart(5, '0')}:00` : modal.data.appointment_datetime
+    const dt = apptDate && apptTime ? `${apptDate}T${apptTime.padStart(5, '0')}:00+07:00` : modal.data.appointment_datetime
     const d = modal.data
-    const payload = { ...d, appointment_datetime: dt, serial_no: modal.mode === 'add' ? nextSerial() : d.serial_no }
+    const instStatus = (modal.mode === 'add' || INITIAL_STATUSES.includes(d.installation_status))
+      ? (STATUS_BY_TYPE[d.work_type] ?? d.installation_status)
+      : d.installation_status
+    const payload = { ...d, appointment_datetime: dt, installation_status: instStatus, serial_no: modal.mode === 'add' ? nextSerial() : d.serial_no }
     let err
     if (modal.mode === 'add') {
       const res = await supabase.from('installations').insert(payload)
@@ -341,16 +353,28 @@ export default function InstallationsPage() {
 
       {/* Add/Edit modal */}
       {modal && (
-        <div onClick={() => setModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 680, maxHeight: '90vh', overflowY: 'auto' }}>
+        <div onMouseDown={e => { if (e.target === e.currentTarget) setModal(null) }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 680, maxHeight: '90vh', overflowY: 'auto' }}>
             <h2 style={{ fontSize: 17, fontWeight: 700, marginBottom: 20 }}>
               {modal.mode === 'add' ? '+ เพิ่มรายการติดตั้ง' : 'แก้ไขรายการ'}
             </h2>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
               <div style={{ marginBottom: 12 }}>
                 <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>วันที่นัดหมาย</label>
-                <input type="date" lang="en-GB" value={apptDate} onChange={e => setApptDate(e.target.value)}
-                  style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="date"
+                    value={/^\d{4}-\d{2}-\d{2}$/.test(apptDate) ? apptDate : ''}
+                    onChange={e => { if (e.target.value) setApptDate(e.target.value) }}
+                    onMouseDown={e => { e.preventDefault(); try { (e.target as HTMLInputElement).showPicker() } catch {} }}
+                    style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box', color: apptDate ? 'transparent' : 'var(--ink-3)' }}
+                  />
+                  {apptDate && (
+                    <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, display: 'flex', alignItems: 'center', paddingLeft: 10, fontSize: 13, color: 'var(--ink)', pointerEvents: 'none' }}>
+                      {apptDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$3/$2/$1')}
+                    </div>
+                  )}
+                </div>
               </div>
               <div style={{ marginBottom: 12 }}>
                 <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>เวลานัด</label>
@@ -366,12 +390,7 @@ export default function InstallationsPage() {
               {inp('ชื่อจริงลูกค้า', 'customer_real_name')}
               {inp('จังหวัด', 'province')}
               {inp('เบอร์โทร', 'phone')}
-              {inp('ราคา', 'price', 'number')}
-              {sel('สถานะชำระเงิน', 'payment_status', ['รอมัดจำ','มัดจำแล้ว','ชำระครบ'])}
               {sel('การนัดหมาย', 'appointment_status', ['รอนัดหมาย','นัดหมายแล้ว','จัดส่งตามที่อยู่'])}
-              {sel('สถานะการผลิต', 'production_status', ['กำลังผลิต','ผลิตเสร็จแล้ว'])}
-              {sel('ส่งงานช่าง', 'send_to_technician', ['หน้าร้าน','พี่ฟอง','เชียงใหม่'])}
-              {sel('สถานะการติดตั้ง', 'installation_status', INST_STATUS)}
             </div>
             {inp('ลิงค์โลเคชั่น', 'location_link')}
             <div style={{ marginBottom: 12 }}>
