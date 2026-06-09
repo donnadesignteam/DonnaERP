@@ -69,7 +69,7 @@ ${text}`
   }
 
   const data: AnthropicResponse = await response.json()
-  const raw = data.content.find(c => c.type === 'text')?.text ?? ''
+  const raw = (Array.isArray(data.content) ? data.content : []).find(c => c.type === 'text')?.text ?? ''
 
   const jsonMatch = raw.match(/\[[\s\S]*\]/)
   if (!jsonMatch) {
