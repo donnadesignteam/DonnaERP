@@ -91,7 +91,7 @@ export default function Sidebar() {
                 <span style={{ opacity: active ? 1 : 0.7, flexShrink: 0, display: 'flex', width: 16 }}>{icon}</span>
                 <span style={{ paddingLeft: 9, maxWidth: expanded ? 160 : 0, overflow: 'hidden', transition: 'max-width 0.22s ease', display: 'flex', flexDirection: 'column', gap: 1 }}>
                   <span style={{ whiteSpace: 'nowrap' }}>{label}</span>
-                  {href !== '/dashboard' && href !== '/order-entry' && href !== '/stock' && (
+                  {href !== '/dashboard' && href !== '/order-entry' && href !== '/stock' && href !== '/claims' && (
                     <span style={{ fontSize: 9, color: 'rgba(250,246,240,0.3)', fontWeight: 400, whiteSpace: 'nowrap', letterSpacing: '0.01em' }}>ยังไม่เปิดใช้งาน</span>
                   )}
                 </span>
