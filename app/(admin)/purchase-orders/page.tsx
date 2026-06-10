@@ -12,6 +12,7 @@ type PO = {
   status: string
   supplier: string
   created_at: string
+  updated_at: string
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -19,7 +20,7 @@ const STATUS_COLOR: Record<string, string> = {
   'ของเข้าแล้ว': '#34c759',
 }
 
-const empty = (): Omit<PO, 'id' | 'created_at'> => ({
+const empty = (): Omit<PO, 'id' | 'created_at' | 'updated_at'> => ({
   customer_name: '', order_number: '', items: '', notes: '', status: 'รอของ', supplier: '',
 })
 
@@ -30,6 +31,11 @@ export default function PurchaseOrdersPage() {
   const [saving, setSaving] = useState(false)
   const [filter, setFilter] = useState<'all' | 'รอของ' | 'ของเข้าแล้ว'>('all')
   const [error, setError] = useState('')
+  const [pasteText, setPasteText] = useState('')
+  const [parsing, setParsing] = useState(false)
+  const [parseError, setParseError] = useState('')
+  const [actionMenu, setActionMenu] = useState<{ id: string; top: number; left: number } | null>(null)
+  const [search, setSearch] = useState('')
 
   const load = async () => {
     setLoading(true)
@@ -46,7 +52,7 @@ export default function PurchaseOrdersPage() {
     setSaving(true)
     setError('')
     const { customer_name, order_number, items, notes, status, supplier } = modal.data
-    const payload = { customer_name, order_number, items, notes, status, supplier }
+    const payload = { customer_name, order_number, items, notes, status, supplier, updated_at: new Date().toISOString() }
     let err
     if (modal.mode === 'add') {
       const res = await supabase.from('purchase_orders').insert(payload)
@@ -71,13 +77,40 @@ export default function PurchaseOrdersPage() {
   }
 
   const updateStatus = async (id: string, status: string) => {
-    await supabase.from('purchase_orders').update({ status }).eq('id', id)
+    await supabase.from('purchase_orders').update({ status, updated_at: new Date().toISOString() }).eq('id', id)
     load()
   }
 
   const set = (k: string, v: string) => setModal(m => m ? { ...m, data: { ...m.data, [k]: v } } : null)
 
-  const displayed = filter === 'all' ? rows : rows.filter(r => r.status === filter)
+  const parseFromLine = async () => {
+    if (!pasteText.trim()) return
+    setParsing(true); setParseError('')
+    try {
+      const res = await fetch('/api/parse-po', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: pasteText }) })
+      const data = await res.json()
+      if (!res.ok || data.error) throw new Error(data.error || 'แปลงไม่สำเร็จ')
+      const p = data.po || {}
+      setModal(m => m ? { ...m, data: { ...m.data,
+        ...(p.customer_name ? { customer_name: String(p.customer_name) } : {}),
+        ...(p.order_number ? { order_number: String(p.order_number) } : {}),
+        ...(p.supplier ? { supplier: String(p.supplier) } : {}),
+        ...(p.items ? { items: String(p.items) } : {}),
+        ...(p.notes ? { notes: String(p.notes) } : {}),
+      } } : m)
+    } catch (e: unknown) {
+      setParseError(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด')
+    } finally {
+      setParsing(false)
+    }
+  }
+
+  const byStatus = filter === 'all' ? rows : rows.filter(r => r.status === filter)
+  const q = search.trim().toLowerCase()
+  const displayed = !q ? byStatus : byStatus.filter(r =>
+    [r.customer_name, r.order_number, r.items, r.supplier, r.notes, r.status]
+      .some(v => (v ?? '').toLowerCase().includes(q))
+  )
 
   return (
     <div>
@@ -86,7 +119,7 @@ export default function PurchaseOrdersPage() {
           <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px' }}>สั่งซื้อ</h1>
           <p style={{ fontSize: 14, color: 'var(--ink-3)', marginTop: 4 }}>{rows.length} รายการ</p>
         </div>
-        <button onClick={() => setModal({ mode: 'add', data: empty() })}
+        <button onClick={() => { setPasteText(''); setParseError(''); setModal({ mode: 'add', data: empty() }) }}
           style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,122,255,0.3)' }}>
           + เพิ่มรายการ
         </button>
@@ -98,6 +131,18 @@ export default function PurchaseOrdersPage() {
           <button onClick={() => setError('')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--red)', fontSize: 16 }}>✕</button>
         </div>
       )}
+
+      <div style={{ position: 'relative', marginBottom: 12 }}>
+        <input value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="ค้นหา ชื่อลูกค้า / เลขคำสั่งซื้อ / รายการ / Supplier / หมายเหตุ"
+          style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', paddingRight: search ? 36 : 14, fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+        {search && (
+          <button onClick={() => setSearch('')}
+            style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'var(--border)', color: 'var(--ink-3)', borderRadius: '50%', width: 20, height: 20, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, padding: 0 }}>
+            ✕
+          </button>
+        )}
+      </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
         {(['all', 'รอของ', 'ของเข้าแล้ว'] as const).map(f => (
@@ -119,7 +164,7 @@ export default function PurchaseOrdersPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
-                {['ชื่อลูกค้า', 'เลขคำสั่งซื้อ', 'รายการ', 'Supplier', 'สถานะ', 'วันที่สร้าง', ''].map(h => (
+                {['ชื่อลูกค้า', 'เลขคำสั่งซื้อ', 'รายการ', 'Supplier', 'สถานะ', 'แก้ไขล่าสุด', ''].map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '13px 16px', color: 'var(--ink-3)', fontWeight: 500 }}>{h}</th>
                 ))}
               </tr>
@@ -138,14 +183,20 @@ export default function PurchaseOrdersPage() {
                       <option>ของเข้าแล้ว</option>
                     </select>
                   </td>
-                  <td style={{ padding: '13px 16px', color: 'var(--ink-3)' }}>{new Date(r.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' })}</td>
+                  <td style={{ padding: '13px 16px', whiteSpace: 'nowrap', color: 'var(--ink-4)', fontSize: 11 }}>
+                    {r.updated_at ? (
+                      <div>
+                        <div>{new Date(r.updated_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}</div>
+                        <div>{new Date(r.updated_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>
+                      </div>
+                    ) : '-'}
+                  </td>
                   <td style={{ padding: '13px 16px' }}>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={() => setModal({ mode: 'edit', data: { ...r } })}
-                        style={{ padding: '5px 12px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 12 }}>แก้ไข</button>
-                      <button onClick={() => del(r.id)}
-                        style={{ padding: '5px 12px', borderRadius: 7, border: 'none', background: '#ff375f22', color: 'var(--red)', cursor: 'pointer', fontSize: 12 }}>ลบ</button>
-                    </div>
+                    <button onClick={e => {
+                      const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
+                      setActionMenu(actionMenu?.id === r.id ? null : { id: r.id, top: rect.bottom + 4, left: rect.right - 120 })
+                    }}
+                      style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 16, lineHeight: 1, color: 'var(--ink-3)' }}>⋯</button>
                   </td>
                 </tr>
               ))}
@@ -154,10 +205,40 @@ export default function PurchaseOrdersPage() {
         )}
       </div>
 
+      {actionMenu && (() => {
+        const r = rows.find(x => x.id === actionMenu.id)
+        if (!r) return null
+        return (
+          <>
+            <div onMouseDown={() => setActionMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 1500 }} />
+            <div style={{ position: 'fixed', top: actionMenu.top, left: actionMenu.left, width: 120, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 1600, overflow: 'hidden' }}>
+              <button onClick={() => { setModal({ mode: 'edit', data: { ...r } }); setActionMenu(null) }}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: '#fff', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>แก้ไข</button>
+              <button onClick={() => { setActionMenu(null); del(r.id) }}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', borderTop: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 13, color: 'var(--red)' }}>ลบ</button>
+            </div>
+          </>
+        )
+      })()}
+
       {modal && (
         <div onClick={() => setModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 32, width: '100%', maxWidth: 500, maxHeight: '90vh', overflowY: 'auto' }}>
             <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 24 }}>{modal.mode === 'add' ? '+ เพิ่มรายการสั่งซื้อ' : 'แก้ไขรายการ'}</h2>
+            {modal.mode === 'add' && (
+              <div style={{ marginBottom: 20, padding: 14, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10 }}>
+                <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 6 }}>วางข้อความจากไลน์</label>
+                <textarea value={pasteText} onChange={e => { setPasteText(e.target.value); setParseError('') }} rows={4}
+                  style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 13px', fontSize: 14, outline: 'none', background: 'var(--surface)', resize: 'vertical', boxSizing: 'border-box' }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
+                  <button type="button" onClick={parseFromLine} disabled={parsing || !pasteText.trim()}
+                    style={{ background: parsing || !pasteText.trim() ? 'var(--border)' : 'var(--blue)', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 18px', fontSize: 13, fontWeight: 600, cursor: parsing ? 'default' : 'pointer' }}>
+                    {parsing ? 'กำลังแปลงข้อมูล…' : '✨ แปลงข้อมูล'}
+                  </button>
+                  {parseError && <span style={{ color: 'var(--red)', fontSize: 12 }}>{parseError}</span>}
+                </div>
+              </div>
+            )}
             {[
               { key: 'customer_name', label: 'ชื่อลูกค้า', type: 'text' },
               { key: 'order_number', label: 'เลขคำสั่งซื้อ', type: 'text' },

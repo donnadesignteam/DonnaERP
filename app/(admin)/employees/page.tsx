@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { HOLIDAYS } from '@/lib/holidays'
 
 type Leave = {
   id: string
@@ -60,7 +61,6 @@ const RED_ZONES = new Set(['2026-01-02','2026-01-03','2026-01-16','2026-01-17','
 
 const CAMPAIGNS: Record<string, string> = {'2026-07-25':'Payday','2026-08-08':'Fashion and Beauty Sale','2026-08-15':'Mid month Sale','2026-08-25':'Payday','2026-09-09':'SuperShoping Day','2026-09-15':'Mid month Sale','2026-09-25':'Payday','2026-10-10':'Brand Festival','2026-10-15':'Mid month Sale','2026-10-25':'Payday','2026-11-11':'Big Sale','2026-11-15':'Mid month Sale','2026-11-25':'Payday','2026-12-12':'BirthDay Sale','2026-12-15':'Mid month Sale','2026-12-25':'Payday'}
 
-const HOLIDAYS: Record<string, string> = {'2026-01-01':'วันขึ้นปีใหม่','2026-01-02':'วันขึ้นปีใหม่','2026-03-03':'วันมาฆบูชา','2026-04-12':'ปิดวันสงกรานต์','2026-04-13':'ปิดวันสงกรานต์','2026-04-14':'ปิดวันสงกรานต์','2026-04-15':'ปิดวันสงกรานต์','2026-05-01':'วันแรงงาน','2026-06-03':'วันเฉลิมพระชนมพรรษาราชินี','2026-07-28':'วันเฉลิมพระชนมพรรษาราชินี','2026-08-12':'วันแม่แห่งชาติ','2026-10-13':'วันนวมินทรมหาราช','2026-10-23':'วันปิยมหาราช','2026-12-05':'วันพ่อแห่งชาติ','2026-12-25':'วันคริสต์มาส','2026-12-31':'วันสิ้นปี'}
 
 const DAYS = ['จ.','อ.','พ.','พฤ.','ศ.','ส.','อา.']
 const TH_MONTHS = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
@@ -167,7 +167,7 @@ export default function EmployeesPage() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px' }}>พนักงาน</h1>
+        <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px' }}>ปฏิทินร้าน</h1>
         <button onClick={() => setModal(true)}
           style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,122,255,0.3)' }}>
           + เพิ่มรายการ
@@ -203,7 +203,6 @@ export default function EmployeesPage() {
             return (
               <div key={i} style={{ minHeight: 85, background: bg, borderRadius: 8, padding: '6px 7px', border: isToday ? '2px solid var(--blue)' : '1px solid rgba(0,0,0,0.06)', position: 'relative', overflow: 'hidden' }}>
                 <div style={{ fontSize: 12, fontWeight: isToday ? 700 : 400, color: isToday ? 'var(--blue)' : 'var(--ink)', marginBottom: 2 }}>{day}</div>
-                {isRedZone && <div style={{ background: 'var(--red)', height: 2, borderRadius: 1, marginBottom: 2 }} />}
                 {holiday && <div style={{ fontSize: 9, color: '#b45309', fontWeight: 600, lineHeight: 1.3, marginBottom: 2 }}>{holiday}</div>}
                 {campaign && <div style={{ fontSize: 9, color: '#c2510a', fontWeight: 600, lineHeight: 1.3, marginBottom: 2 }}>{campaign}</div>}
                 {dayLeaves.slice(0, 2).map(l => (
