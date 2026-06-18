@@ -5,14 +5,14 @@ import { supabase } from '@/lib/supabase'
 
 const statusColor: Record<string, string> = {
   'รอดำเนินการ': '#ff9f0a',
-  'ตัดผ้าแล้ว': '#30d158',
-  'เย็บแล้ว': 'var(--blue)',
-  'รีดแล้ว': '#bf5af2',
-  'แพ็คแล้ว': 'var(--red)',
+  'กำลังตัด': '#30d158',
+  'กำลังเย็บ': 'var(--blue)',
+  'กำลังรีด': '#bf5af2',
+  'กำลังแพ็ค': 'var(--red)',
   'สำเร็จ': '#34c759',
 }
 
-const stages = ['รอดำเนินการ', 'ตัดผ้าแล้ว', 'เย็บแล้ว', 'รีดแล้ว', 'แพ็คแล้ว', 'สำเร็จ']
+const stages = ['รอดำเนินการ', 'กำลังตัด', 'กำลังเย็บ', 'กำลังรีด', 'กำลังแพ็ค', 'สำเร็จ']
 
 export default function WorkStatusPage() {
   const [orders, setOrders] = useState<any[]>([])
