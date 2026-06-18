@@ -3,14 +3,12 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 const statusColor: Record<string, string> = {
-  'รอคิว': '#ff9f0a',
   'รอดำเนินการ': '#ff9f0a',
   'ตัดผ้าแล้ว': '#30d158',
   'เย็บแล้ว': 'var(--blue)',
   'รีดแล้ว': '#bf5af2',
   'แพ็คแล้ว': 'var(--red)',
   'สำเร็จ': '#34c759',
-  'ยกเลิก': '#8e8e93',
 }
 
 async function getOrder(orderNumber: string) {
