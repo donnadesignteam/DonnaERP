@@ -51,10 +51,10 @@ function daysRemaining(dateStr: string): number | null {
 
 const STATUS_COLOR: Record<string, string> = {
   'รอดำเนินการ': '#f59e0b',
-  'กำลังตัด': '#10b981',
-  'กำลังเย็บ': '#3b82f6',
-  'กำลังรีด': '#8b5cf6',
-  'กำลังแพ็ค': '#ef4444',
+  'ตัดผ้าแล้ว': '#10b981',
+  'เย็บแล้ว': '#3b82f6',
+  'รีดแล้ว': '#8b5cf6',
+  'แพ็คแล้ว': '#ef4444',
   'งานเสร็จ': '#22c55e',
   'รอจัดส่ง': '#6366f1',
   'จัดส่งแล้ว': '#22c55e',
@@ -113,13 +113,13 @@ const STATS_META = [
 ]
 
 const DEPTS = [
-  { label: 'แผนกตัดผ้า', status: 'กำลังตัด', color: '#10b981', bg: 'rgba(16,185,129,0.06)', border: 'rgba(16,185,129,0.18)',
+  { label: 'แผนกตัดผ้า', status: 'ตัดผ้าแล้ว', color: '#10b981', bg: 'rgba(16,185,129,0.06)', border: 'rgba(16,185,129,0.18)',
     icon: <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path strokeLinecap="round" d="M20 4L8.12 15.88M14.47 14.48L20 20M8.12 8.12L12 12"/></svg> },
-  { label: 'แผนกเย็บผ้า', status: 'กำลังเย็บ', color: '#3b82f6', bg: 'rgba(59,130,246,0.06)', border: 'rgba(59,130,246,0.18)',
+  { label: 'แผนกเย็บผ้า', status: 'เย็บแล้ว', color: '#3b82f6', bg: 'rgba(59,130,246,0.06)', border: 'rgba(59,130,246,0.18)',
     icon: <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/><path strokeLinecap="round" strokeLinejoin="round" d="M18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z"/></svg> },
-  { label: 'แผนกรีดผ้า', status: 'กำลังรีด', color: '#8b5cf6', bg: 'rgba(139,92,246,0.06)', border: 'rgba(139,92,246,0.18)',
+  { label: 'แผนกรีดผ้า', status: 'รีดแล้ว', color: '#8b5cf6', bg: 'rgba(139,92,246,0.06)', border: 'rgba(139,92,246,0.18)',
     icon: <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.362 5.214A8.252 8.252 0 0112 21 8.25 8.25 0 016.038 7.048 8.287 8.287 0 009 9.6a8.983 8.983 0 013.361-6.867 8.21 8.21 0 003 2.48z"/></svg> },
-  { label: 'แผนกแพ็คสินค้า', status: 'กำลังแพ็ค', color: '#ef4444', bg: 'rgba(239,68,68,0.06)', border: 'rgba(239,68,68,0.18)',
+  { label: 'แผนกแพ็คสินค้า', status: 'แพ็คแล้ว', color: '#ef4444', bg: 'rgba(239,68,68,0.06)', border: 'rgba(239,68,68,0.18)',
     icon: <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg> },
 ]
 

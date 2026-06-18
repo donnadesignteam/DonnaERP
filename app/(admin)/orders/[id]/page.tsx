@@ -4,10 +4,10 @@ import { notFound } from 'next/navigation'
 
 const statusColor: Record<string, string> = {
   'รอดำเนินการ': '#ff9f0a',
-  'กำลังตัด': '#30d158',
-  'กำลังเย็บ': 'var(--blue)',
-  'กำลังรีด': '#bf5af2',
-  'กำลังแพ็ค': 'var(--red)',
+  'ตัดผ้าแล้ว': '#30d158',
+  'เย็บแล้ว': 'var(--blue)',
+  'รีดแล้ว': '#bf5af2',
+  'แพ็คแล้ว': 'var(--red)',
   'สำเร็จ': '#34c759',
 }
 
