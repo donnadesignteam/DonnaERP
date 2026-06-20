@@ -479,7 +479,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const railItemsOf = (r: Entry) => (Array.isArray(r.items) ? r.items : []).filter(it => typeof it.type === 'string' && it.type.startsWith('ราง'))
   const hasRail = (r: Entry) => railItemsOf(r).length > 0
   const openRailCalc = (r: Entry) => {
-    const RAIL_URL = process.env.NEXT_PUBLIC_RAIL_URL || 'http://localhost:5200'
+    const RAIL_URL = process.env.NEXT_PUBLIC_RAIL_URL || 'https://donna-rail.vercel.app'
     const typeMap: Record<string, string> = { 'รางม่านจีบ': 'รางจีบ', 'รางม่านลอนเทป': 'รางลอนเทป', 'รางม่านตาไก่': 'รางตาไก่' }
     const courier = (r.courier || '').toLowerCase()
     const carrier = r.is_installation ? 'ติดตั้ง'
