@@ -40,6 +40,10 @@ type Entry = {
   is_installation: boolean
   is_dropoff: boolean
   installation_date: string
+  install_time: string
+  province: string
+  phone: string
+  location_link: string
   notes: string
   price: number | null
   payment_status: string
@@ -68,6 +72,7 @@ const COURIERS = [
 
 const ADMINS = ['กาย', 'แพท', 'หนูนา']
 const TECHS = ['ช่างดอนน่า', 'ช่างพี่ฟอง', 'ช่างเชียงใหม่']
+const TIMES = ['8:00','9:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00']
 
 function calcShipping(deadline: string, courier: string): string {
   if (!deadline || !courier) return '-'
@@ -119,6 +124,10 @@ const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping
   is_installation: false,
   is_dropoff: false,
   installation_date: '',
+  install_time: '9:00',
+  province: '',
+  phone: '',
+  location_link: '',
   notes: '',
   price: null,
   payment_status: 'ยังไม่ชำระ',
@@ -364,6 +373,57 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       return { ...m, data: updated }
     })
 
+  // sync ออเดอร์ติดตั้ง → ปฏิทินงานติดตั้ง (ตาราง installations) ผูกด้วย source_order_id
+  // ออเดอร์เป็นเจ้าของข้อมูลการนัด (วัน/เวลา/จังหวัด/เบอร์/โลเคชั่น) → push ทุกครั้งที่บันทึก
+  // ส่วนสถานะติดตั้ง/ลักษณะงาน เป็นของฝั่งปฏิทิน ไม่ทับ
+  // - ปลด is_installation: ลบแถวในปฏิทิน (ลบออเดอร์ทั้งแถวมี FK cascade จัดการเอง)
+  const syncInstallation = async (p: Record<string, unknown>, orderId: string) => {
+    if (!orderId) return
+    if (p.is_installation) {
+      // "กำหนดติดตั้ง" เก็บที่ deadline (installation_date มักว่าง) + เวลานัดจาก install_time
+      const instDate = p.installation_date || p.deadline
+      const t = String(p.install_time || '9:00').split(':')
+      const hhmm = `${(t[0] || '9').padStart(2, '0')}:${(t[1] || '00').padStart(2, '0')}`
+      const apptFromDate = instDate ? `${String(instDate)}T${hhmm}:00+07:00` : null
+      // ข้อมูลที่ออเดอร์เป็นเจ้าของ (ไม่รวม serial_no — กำหนดครั้งเดียวตอนสร้าง ไม่เปลี่ยนตอนแก้)
+      const onsite = {
+        appointment_datetime: apptFromDate,
+        platform: p.platform || '',
+        customer_id: p.customer_name || '',
+        customer_real_name: p.customer_name || '',
+        province: p.province || '',
+        phone: p.phone || '',
+        location_link: p.location_link || '',
+        price: p.price ?? 0,
+        notes: p.notes || '',
+        entered_by: p.admin_name || '',
+        updated_at: p.updated_at,
+      }
+      const { data: existing } = await supabase.from('installations').select('id').eq('source_order_id', orderId).maybeSingle()
+      if (existing) {
+        await supabase.from('installations').update(onsite).eq('source_order_id', orderId)
+      } else {
+        // รัน serial เลข 4 หลักต่อจากที่มีอยู่ (เหมือนรายการที่ลงในหน้าปฏิทินเอง)
+        const { data: serials } = await supabase.from('installations').select('serial_no')
+        const maxN = (serials ?? []).reduce((mx, r) => Math.max(mx, parseInt(String(r.serial_no), 10) || 0), 0)
+        await supabase.from('installations').insert({
+          source_order_id: orderId,
+          serial_no: String(maxN + 1).padStart(4, '0'),
+          work_type: 'งานติดตั้ง',
+          work_details: '',
+          payment_status: p.payment_status || 'รอมัดจำ',
+          appointment_status: 'นัดหมายแล้ว',
+          production_status: 'กำลังผลิต',
+          send_to_technician: 'หน้าร้าน',
+          installation_status: 'ติดตั้ง',
+          ...onsite,
+        })
+      }
+    } else {
+      await supabase.from('installations').delete().eq('source_order_id', orderId)
+    }
+  }
+
   const save = async () => {
     if (!modal) return
     setSaving(true)
@@ -392,6 +452,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       courier: d.courier || null,
       is_installation: !!d.is_installation,
       installation_date: d.is_installation ? (d.installation_date || null) : null,
+      install_time: d.is_installation ? (d.install_time || '9:00') : null,
+      province: d.is_installation ? (d.province || null) : null,
+      phone: d.is_installation ? (d.phone || null) : null,
+      location_link: d.is_installation ? (d.location_link || null) : null,
       notes: d.notes || null,
       price: d.price ? Number(d.price) : null,
       payment_status: d.payment_status || 'ยังไม่ชำระ',
@@ -401,13 +465,15 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     }
     if (modal.mode === 'add') {
       const res = await supabase.from('order_entries').insert(payload).select().single()
+      if (res.error) { setSaving(false); setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
+      await syncInstallation(payload, (res.data as Entry).id)
       setSaving(false)
-      if (res.error) { setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
       setRows(prev => [res.data as Entry, ...prev])
     } else {
       const res = await supabase.from('order_entries').update(payload).eq('id', d.id).select().single()
+      if (res.error) { setSaving(false); setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
+      await syncInstallation(payload, String(d.id))
       setSaving(false)
-      if (res.error) { setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
       setRows(prev => prev.map(r => r.id === d.id ? res.data as Entry : r))
     }
     setModal(null)
@@ -2590,6 +2656,10 @@ ${toPrint.map((r, i) => {
               {!isOutside && inp('เลขคำสั่งซื้อ', 'order_number')}
               {inp('วันที่สร้าง', 'entry_date', 'date')}
               {inp(isInstall ? 'กำหนดติดตั้ง' : 'กำหนดส่งงาน', 'deadline', 'date')}
+              {isInstall && sel('เวลานัด', 'install_time', TIMES)}
+              {isInstall && inp('จังหวัด', 'province')}
+              {isInstall && inp('เบอร์โทร', 'phone')}
+              {isInstall && inp('ลิงก์โลเคชั่น', 'location_link')}
               {!isInstall && !isOutside && (
                 <div style={{ marginBottom: 14 }}>
                   <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>วันและเวลาที่ต้องส่ง</label>

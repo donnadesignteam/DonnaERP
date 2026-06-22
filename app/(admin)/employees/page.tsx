@@ -69,10 +69,41 @@ function toYMD(y: number, m: number, d: number) {
   return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
 }
 
-function leaveCondition(code: string): string {
-  const emp = EMPLOYEES.find(e => e.code === code)
-  if (!emp) return ''
-  return `${emp.role} · ${emp.dept}`
+// วันเริ่มงานพนักงาน (จาก Google Sheet Master_Data คอลัมน์ G) — ใช้คำนวณอายุงาน
+const START_DATES: Record<string, string> = {
+  DN001:'2022-01-17', DN002:'2022-03-01', DN003:'2022-09-29', DN004:'2022-10-15',
+  DN005:'2022-12-01', DN006:'2022-12-18', DN007:'2023-06-15', DN008:'2023-08-02',
+  DN009:'2023-11-13', DN010:'2023-10-01', DN011:'2024-01-15', DN013:'2024-03-31',
+  DN014:'2024-04-01', DN015:'2024-03-31', DN016:'2024-02-01', DN017:'2024-06-17',
+  DN018:'2025-01-10', DN019:'2025-02-10', DN020:'2025-02-07', DN021:'2025-02-13',
+  DN022:'2025-03-02', DN023:'2025-05-21', DN024:'2025-05-28', DN025:'2025-11-02',
+  DN026:'2025-08-25', DN027:'2025-08-20', DN028:'2025-09-08', DN029:'2025-09-08',
+  DN030:'2025-10-02', DN031:'2025-10-21', DN032:'2025-10-09', DN033:'2026-01-05',
+  DN034:'2026-01-27',
+}
+
+// อายุงานเป็นวัน (วันนี้ − วันเริ่มงาน); null = ไม่พบวันเริ่มงาน
+function tenureDays(code: string): number | null {
+  const s = START_DATES[code]
+  if (!s) return null
+  return Math.floor((Date.now() - new Date(s + 'T00:00:00').getTime()) / 86400000)
+}
+
+// เงื่อนไขลาพักร้อน: คืนจำนวนวันต่อเนื่องสูงสุดต่อครั้ง (0 = ยังไม่มีสิทธิ)
+// ยึดตามสูตรใน Google Sheet 'ชีทบันทึกการลา' คอลัมน์ H (อายุงาน = วันยื่นลา − วันเริ่มงาน):
+//   ≤365 ไม่มีสิทธิ (ไม่ครบ 1 ปี) · ≤730 ไม่เกิน 3 · ≤1095 ไม่เกิน 4 · มากกว่านั้น 6
+// (ในชีท >1460 คืนค่าว่าง ซึ่งดูเป็นบั๊ก — ที่นี่ให้ >1095 ได้ 6 ตามเจตนา ไม่ปล่อยว่าง)
+function vacationMaxDays(days: number): number {
+  if (days <= 365) return 0
+  if (days <= 730) return 3
+  if (days <= 1095) return 4
+  return 6
+}
+
+// ข้อความอายุงาน เช่น "4 ปี 28 วัน"
+function tenureText(days: number): string {
+  const y = Math.floor(days / 365), d = days % 365
+  return y > 0 ? `${y} ปี ${d} วัน` : `${d} วัน`
 }
 
 export default function EmployeesPage() {
@@ -121,6 +152,9 @@ export default function EmployeesPage() {
   }
 
   const save = async () => {
+    // กันลาพักร้อนเมื่อยังไม่มีสิทธิ (เผื่อปุ่มถูกข้าม)
+    const td = form.employee_code ? tenureDays(form.employee_code) : null
+    if (form.leave_type === 'ลาพักร้อน' && td != null && vacationMaxDays(td) === 0) return
     setSaving(true)
     await supabase.from('leave_requests').insert({
       employee_code: form.employee_code,
@@ -164,6 +198,11 @@ export default function EmployeesPage() {
     return d.getFullYear() === year && d.getMonth() === month
   })
 
+  // อายุงาน + สิทธิลาพักร้อน ของพนักงานที่เลือกในฟอร์มลา
+  const selTenure = form.employee_code ? tenureDays(form.employee_code) : null
+  const selVacMax = selTenure == null ? null : vacationMaxDays(selTenure)
+  const vacBlocked = form.leave_type === 'ลาพักร้อน' && selVacMax === 0
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
@@ -194,15 +233,18 @@ export default function EmployeesPage() {
             const holiday = HOLIDAYS[ymd]
             const dayLeaves = monthLeaves.filter(l => l.leave_date === ymd)
             const isToday = ymd === new Date().toISOString().split('T')[0]
+            const isSunday = new Date(year, month, day).getDay() === 0
 
             let bg = '#fff'
             if (holiday) bg = '#fff9e6'
             else if (campaign) bg = '#fff3e6'
             else if (isRedZone) bg = '#fff0f0'
+            else if (isSunday) bg = '#f4f4f5'
 
             return (
               <div key={i} style={{ minHeight: 85, background: bg, borderRadius: 8, padding: '6px 7px', border: isToday ? '2px solid var(--blue)' : '1px solid rgba(0,0,0,0.06)', position: 'relative', overflow: 'hidden' }}>
                 <div style={{ fontSize: 12, fontWeight: isToday ? 700 : 400, color: isToday ? 'var(--blue)' : 'var(--ink)', marginBottom: 2 }}>{day}</div>
+                {isSunday && <div style={{ fontSize: 9, color: '#6b7280', fontWeight: 600, lineHeight: 1.3, marginBottom: 2 }}>ร้านปิด</div>}
                 {holiday && <div style={{ fontSize: 9, color: '#b45309', fontWeight: 600, lineHeight: 1.3, marginBottom: 2 }}>{holiday}</div>}
                 {campaign && <div style={{ fontSize: 9, color: '#c2510a', fontWeight: 600, lineHeight: 1.3, marginBottom: 2 }}>{campaign}</div>}
                 {dayLeaves.slice(0, 2).map(l => (
@@ -218,7 +260,7 @@ export default function EmployeesPage() {
 
         {/* Legend */}
         <div style={{ display: 'flex', gap: 16, marginTop: 14, flexWrap: 'wrap' }}>
-          {[['var(--red)','RedZone'],['#f59e0b','Campaign'],['#eab308','วันหยุด'],['var(--blue)','ใบลา']].map(([c,l]) => (
+          {[['var(--red)','RedZone'],['#f59e0b','Campaign'],['#eab308','วันหยุด'],['var(--blue)','ใบลา'],['#9ca3af','ร้านปิด (อา.)']].map(([c,l]) => (
             <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <span style={{ width: 10, height: 10, borderRadius: 2, background: c, display: 'inline-block' }} />
               <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{l}</span>
@@ -311,6 +353,18 @@ export default function EmployeesPage() {
                 <div><span style={{ color: 'var(--ink-3)' }}>รหัส: </span><strong>{form.employee_code}</strong></div>
                 <div><span style={{ color: 'var(--ink-3)' }}>แผนก: </span><strong>{form.department}</strong></div>
                 <div style={{ gridColumn: '1/-1' }}><span style={{ color: 'var(--ink-3)' }}>ชื่อจริง: </span><strong>{form.employee_name}</strong></div>
+                <div style={{ gridColumn: '1/-1' }}>
+                  <span style={{ color: 'var(--ink-3)' }}>อายุงาน: </span>
+                  <strong>{selTenure == null ? 'ไม่พบวันเริ่มงาน' : tenureText(selTenure)}</strong>
+                </div>
+                {selTenure != null && (
+                  <div style={{ gridColumn: '1/-1' }}>
+                    <span style={{ color: 'var(--ink-3)' }}>เงื่อนไขลาพักร้อน: </span>
+                    <strong style={{ color: selVacMax === 0 ? 'var(--red)' : '#34c759' }}>
+                      {selVacMax === 0 ? 'ยังไม่มีสิทธิ (ทำงานไม่ครบ 1 ปี)' : `ต่อเนื่องได้ไม่เกิน ${selVacMax} วัน/ครั้ง`}
+                    </strong>
+                  </div>
+                )}
               </div>
             )}
 
@@ -340,6 +394,16 @@ export default function EmployeesPage() {
                 <option value="">— เลือก —</option>
                 {['ลาป่วย','ลากิจเต็มวัน','ลากิจครึ่งวัน','ลาพักร้อน','WOPเต็มวัน','WOPครึ่งวัน','WOPรายชั่วโมง','มาสาย'].map(o => <option key={o}>{o}</option>)}
               </select>
+              {form.leave_type === 'ลาพักร้อน' && selTenure != null && (
+                <div style={{ marginTop: 8, padding: '9px 13px', borderRadius: 8, fontSize: 12.5, fontWeight: 500,
+                  background: vacBlocked ? '#ff375f11' : '#34c75915',
+                  border: `1px solid ${vacBlocked ? '#ff375f44' : '#34c75944'}`,
+                  color: vacBlocked ? 'var(--red)' : '#1a7f37' }}>
+                  {vacBlocked
+                    ? `❌ อายุงาน ${tenureText(selTenure)} — ทำงานไม่ครบ 1 ปี ยังไม่มีสิทธิลาพักร้อน บันทึกไม่ได้`
+                    : `✅ ลาพักร้อนต่อเนื่องได้ไม่เกิน ${selVacMax} วัน/ครั้ง (อายุงาน ${tenureText(selTenure)})`}
+                </div>
+              )}
             </div>
 
             <div style={{ marginBottom: 14 }}>
@@ -351,8 +415,8 @@ export default function EmployeesPage() {
             <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
               <button onClick={() => setModal(false)}
                 style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ยกเลิก</button>
-              <button onClick={save} disabled={saving || !form.employee_code || !form.leave_date || !form.leave_type}
-                style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (!form.employee_code || !form.leave_date || !form.leave_type) ? 0.5 : 1 }}>
+              <button onClick={save} disabled={saving || !form.employee_code || !form.leave_date || !form.leave_type || vacBlocked}
+                style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', cursor: vacBlocked ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 600, opacity: (!form.employee_code || !form.leave_date || !form.leave_type || vacBlocked) ? 0.5 : 1 }}>
                 {saving ? 'กำลังบันทึก…' : 'บันทึก'}
               </button>
             </div>

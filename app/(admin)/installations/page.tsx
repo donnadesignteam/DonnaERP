@@ -85,12 +85,14 @@ function Calendar({ year, month, installs, onDayClick }: {
           }) : []
           const isToday = day === new Date().getDate() && month === new Date().getMonth() && year === new Date().getFullYear()
           const holiday = day ? HOLIDAYS[`${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`] : undefined
+          const isSunday = day ? new Date(year, month, day).getDay() === 0 : false
           return (
             <div key={i} onClick={() => day && onDayClick(day)}
-              style={{ minHeight: 90, background: day ? (holiday ? '#fff9e6' : '#fff') : 'transparent', borderRadius: 8, padding: '6px 8px', cursor: day ? 'pointer' : 'default', border: isToday ? '2px solid var(--blue)' : '1px solid rgba(0,0,0,0.06)', transition: 'background 0.1s' }}>
+              style={{ minHeight: 90, background: day ? (holiday ? '#fff9e6' : isSunday ? '#f4f4f5' : '#fff') : 'transparent', borderRadius: 8, padding: '6px 8px', cursor: day ? 'pointer' : 'default', border: isToday ? '2px solid var(--blue)' : '1px solid rgba(0,0,0,0.06)', transition: 'background 0.1s' }}>
               {day && (
                 <>
                   <div style={{ fontSize: 13, fontWeight: isToday ? 700 : 400, color: isToday ? 'var(--blue)' : 'var(--ink)', marginBottom: 4 }}>{day}</div>
+                  {isSunday && <div style={{ fontSize: 9, color: '#6b7280', fontWeight: 600, lineHeight: 1.3, marginBottom: 2 }}>ร้านปิด</div>}
                   {holiday && <div style={{ fontSize: 9, color: '#b45309', fontWeight: 600, lineHeight: 1.3, marginBottom: 2 }}>{holiday}</div>}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                     {dayInstalls.slice(0, 3).map(ins => {
@@ -161,7 +163,8 @@ export default function InstallationsPage() {
 
   useEffect(() => { load() }, [])
 
-  const nextSerial = () => pad(installs.length + 1)
+  // รัน serial ต่อจากเลขสูงสุดที่มี (กันชนกับเลขที่ sync มาจากออเดอร์)
+  const nextSerial = () => pad(installs.reduce((mx, r) => Math.max(mx, parseInt(r.serial_no, 10) || 0), 0) + 1)
 
   const openAdd = () => {
     setApptDate('')
@@ -331,7 +334,7 @@ export default function InstallationsPage() {
         }} />
         {/* Legend */}
         <div style={{ display: 'flex', gap: 16, marginTop: 16, flexWrap: 'wrap' }}>
-          {[['#5ac8fa', 'วัดหน้างาน'], ['#ff9f0a', 'ติดตั้ง'], ['var(--red)', 'รอแก้'], ['#eab308', 'วันหยุด']].map(([c, l]) => (
+          {[['#5ac8fa', 'วัดหน้างาน'], ['#ff9f0a', 'ติดตั้ง'], ['var(--red)', 'รอแก้'], ['#eab308', 'วันหยุด'], ['#9ca3af', 'ร้านปิด (อา.)']].map(([c, l]) => (
             <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <span style={{ width: 10, height: 10, borderRadius: 2, background: c, display: 'inline-block' }} />
               <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{l}</span>
