@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
+import QRCode from 'qrcode'
 
 type Item = {
   type: string
@@ -281,6 +282,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [itemsModalError, setItemsModalError] = useState('')
   const [openAction, setOpenAction] = useState<string | null>(null)
   const [actionRect, setActionRect] = useState<DOMRect | null>(null)
+  const [printAsk, setPrintAsk] = useState<Entry[] | null>(null) // หลายรายการ → ถามก่อนว่าตาราง/ฟอร์ม
   const [editCell, setEditCell] = useState<{id: string; field: string; val: string} | null>(null)
   const [printModal, setPrintModal] = useState(false)
   const [printMaxDays, setPrintMaxDays] = useState(3)
@@ -1144,7 +1146,44 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     })
   }
 
-  function openPrintWindow(toPrint: Entry[], title: string) {
+  async function openPrintWindow(toPrint: Entry[], title: string, mode: 'auto' | 'table' | 'form' = 'auto') {
+    const escHtml = (v: unknown) => String(v ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!))
+
+    // auto: 1 รายการ = ฟอร์ม, หลายรายการ = ตาราง · form: ฟอร์มทุกใบ (แบ่งหน้า) · table: ตารางเสมอ
+    const asForm = mode === 'form' || (mode === 'auto' && toPrint.length === 1)
+
+    // เปิดหน้าต่างทันที (กัน popup block) แล้วค่อยใส่เนื้อหาหลังสร้าง QR เสร็จ
+    const win = window.open('', '_blank', 'width=1200,height=750')
+    if (!win) { alert('เบราว์เซอร์บล็อก popup — โปรดอนุญาต popup เพื่อปริ้น'); return }
+    win.document.write('<!DOCTYPE html><meta charset="UTF-8"><body style="font-family:sans-serif;padding:24px;color:#666">กำลังเตรียมเอกสาร…</body>')
+
+    // ฟอร์ม → สร้าง QR ต่อออเดอร์ (ชี้ไปหน้า /scan บนโดเมนเดียวกับที่เปิดอยู่)
+    let qrs: string[] = []
+    if (asForm) {
+      const origin = window.location.origin
+      qrs = await Promise.all(toPrint.map(r =>
+        QRCode.toDataURL(`${origin}/scan?o=${encodeURIComponent(r.order_number || '')}`, { margin: 1, width: 240 }).catch(() => '')
+      ))
+    }
+
+    const body = asForm
+      ? toPrint.map((r, i) => `<div class="order"><pre class="copy">${escHtml(formatOrderText(r))}</pre>${qrs[i] ? `<div class="qr-box"><img class="qr" src="${qrs[i]}"/><div class="qr-cap">สแกนเพื่ออัปเดตสถานะ</div></div>` : ''}</div>`).join('')
+      : `<h2>${escHtml(title)} (${toPrint.length} รายการ)</h2>
+<table>
+<thead><tr>
+  <th>#</th><th>วันที่เหลือ</th><th>ต้องจัดส่งภายใน</th><th>เลขคำสั่งซื้อ</th><th>ลูกค้า</th><th>ช่างที่รับผิดชอบ</th><th>แพลตฟอร์ม</th><th>สถานะงาน</th><th>บริษัทขนส่ง</th>
+</tr></thead>
+<tbody>
+${toPrint.map((r, i) => {
+  const es = (r.is_dropoff && r.shipping_datetime) ? shiftShippingDatetime(r.shipping_datetime, 2) : r.shipping_datetime
+  const d = es ? daysRemaining(es) : null
+  const cls = d !== null ? (d < 0 ? 'dr' : d <= 2 ? 'do' : 'dg') : ''
+  const dtext = d !== null ? (d < 0 ? `เกิน ${Math.abs(d)} วัน` : `${d} วัน`) : '-'
+  return `<tr><td>${i + 1}</td><td class="${cls}">${dtext}</td><td>${es || '-'}</td><td>${r.order_number || '-'}</td><td>${r.customer_name || '-'}</td><td>${r.technician || '-'}</td><td>${r.platform || '-'}</td><td>${r.order_status || '-'}</td><td>${r.courier || '-'}</td></tr>`
+}).join('\n')}
+</tbody>
+</table>`
+
     const html = `<!DOCTYPE html>
 <html lang="th">
 <head>
@@ -1160,29 +1199,32 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   .dr { color: #c00; font-weight: 700; }
   .do { color: #b05000; font-weight: 700; }
   .dg { color: #006000; font-weight: 700; }
-  @media print { body { padding: 6px; } }
+  pre.copy { font-family: 'Sarabun', 'Noto Sans Thai', sans-serif; font-size: 16px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; margin: 0; flex: 1; }
+  .order { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; page-break-inside: avoid; padding-bottom: 32px; margin-bottom: 32px; border-bottom: 1px dashed #b0b0b0; }
+  .order:last-child { padding-bottom: 0; margin-bottom: 0; border-bottom: none; }
+  .qr-box { flex-shrink: 0; text-align: center; }
+  .qr { width: 150px; height: 150px; display: block; }
+  .qr-cap { font-size: 11px; color: #555; margin-top: 4px; }
+  /* margin:0 ทำให้เบราว์เซอร์ไม่พิมพ์หัว/ท้ายกระดาษ (วันที่-เวลา + ชื่อหน้า) */
+  @page { size: A4; margin: 0; }
+  @media print { body { padding: 14mm; } }
 </style>
 </head>
 <body>
-<h2>${title} (${toPrint.length} รายการ)</h2>
-<table>
-<thead><tr>
-  <th>#</th><th>วันที่เหลือ</th><th>ต้องจัดส่งภายใน</th><th>เลขคำสั่งซื้อ</th><th>ลูกค้า</th><th>ช่างที่รับผิดชอบ</th><th>แพลตฟอร์ม</th><th>สถานะงาน</th><th>บริษัทขนส่ง</th>
-</tr></thead>
-<tbody>
-${toPrint.map((r, i) => {
-  const es = (r.is_dropoff && r.shipping_datetime) ? shiftShippingDatetime(r.shipping_datetime, 2) : r.shipping_datetime
-  const d = es ? daysRemaining(es) : null
-  const cls = d !== null ? (d < 0 ? 'dr' : d <= 2 ? 'do' : 'dg') : ''
-  const dtext = d !== null ? (d < 0 ? `เกิน ${Math.abs(d)} วัน` : `${d} วัน`) : '-'
-  return `<tr><td>${i + 1}</td><td class="${cls}">${dtext}</td><td>${es || '-'}</td><td>${r.order_number || '-'}</td><td>${r.customer_name || '-'}</td><td>${r.technician || '-'}</td><td>${r.platform || '-'}</td><td>${r.order_status || '-'}</td><td>${r.courier || '-'}</td></tr>`
-}).join('\n')}
-</tbody>
-</table>
+${body}
 </body>
 </html>`
-    const win = window.open('', '_blank', 'width=1200,height=750')
-    if (win) { win.document.write(html); win.document.close(); win.focus(); win.print() }
+    win.document.open(); win.document.write(html); win.document.close(); win.focus()
+    setTimeout(() => { try { win.print() } catch {} }, 300)
+  }
+
+  const printTitle = (list: Entry[]) => `ออเดอร์ที่เลือก ${list.length} รายการ — ${new Date().toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' })}`
+
+  // ปริ้น: 1 รายการ → ฟอร์มทันที / หลายรายการ → ถามก่อนว่าตารางหรือฟอร์ม
+  const requestPrint = (list: Entry[]) => {
+    if (list.length === 0) return
+    if (list.length === 1) { openPrintWindow(list, printTitle(list)); return }
+    setPrintAsk(list)
   }
 
   function doPrint() {
@@ -1257,7 +1299,7 @@ ${toPrint.map((r, i) => {
           )}
           <button onClick={() => {
               if (selectedIds.size > 0) {
-                openPrintWindow(rows.filter(r => selectedIds.has(r.id)), `ออเดอร์ที่เลือก ${selectedIds.size} รายการ — ${new Date().toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' })}`)
+                requestPrint(rows.filter(r => selectedIds.has(r.id)))
               } else { setPrintModal(true) }
             }}
             style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
@@ -2438,7 +2480,7 @@ ${toPrint.map((r, i) => {
               <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
               {copiedId === r.id ? 'คัดลอกแล้ว' : 'คัดลอก'}
             </button>
-            <button onClick={() => { setOpenAction(null); setActionRect(null); openPrintWindow([r], `ออเดอร์ ${r.customer_name || r.order_number || ''} — ${new Date().toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' })}`) }}
+            <button onClick={() => { setOpenAction(null); setActionRect(null); requestPrint(selectedIds.size > 1 ? rows.filter(x => selectedIds.has(x.id)) : [r]) }}
               style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)' }}>
               <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z"/></svg>
               ปริ้น
@@ -2464,6 +2506,28 @@ ${toPrint.map((r, i) => {
           </div>
         )
       })()}
+
+      {/* ถามรูปแบบการปริ้น เมื่อเลือกหลายรายการ */}
+      {printAsk && (
+        <div onClick={() => setPrintAsk(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 24 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 24, width: '100%', maxWidth: 380 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>ปริ้น {printAsk.length} รายการ</h3>
+            <p style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 20 }}>เลือกรูปแบบการปริ้น</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <button onClick={() => { const l = printAsk; setPrintAsk(null); openPrintWindow(l, printTitle(l), 'table') }}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: 'var(--ink)', textAlign: 'left' }}>
+                📋 ปริ้นแบบตาราง<span style={{ fontWeight: 400, color: 'var(--ink-3)', fontSize: 12 }}>— สรุปรวมในหน้าเดียว</span>
+              </button>
+              <button onClick={() => { const l = printAsk; setPrintAsk(null); openPrintWindow(l, printTitle(l), 'form') }}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: 'var(--ink)', textAlign: 'left' }}>
+                🧾 ปริ้นแบบออเดอร์<span style={{ fontWeight: 400, color: 'var(--ink-3)', fontSize: 12 }}>— ฟอร์มแยกใบ/แผ่น</span>
+              </button>
+            </div>
+            <button onClick={() => setPrintAsk(null)}
+              style={{ width: '100%', marginTop: 16, padding: '9px', borderRadius: 10, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, color: 'var(--ink-3)' }}>ยกเลิก</button>
+          </div>
+        </div>
+      )}
 
       {/* Modal form */}
       {modal && (
