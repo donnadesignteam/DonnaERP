@@ -1,77 +1,123 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { EMPLOYEES, STAGES, stageByKey, canAdvance, statusRank } from '@/lib/staff'
+import { EMPLOYEES, STAGES, stageByKey, canAdvance } from '@/lib/staff'
 
 const LS_KEY = 'donna-scan-tech'
 type Tech = { code: string; name: string; stageKey: string }
+type Phase = 'scanning' | 'working' | 'done' | 'already' | 'noorder' | 'error'
 
 function loadTech(): Tech | null {
   try { const v = localStorage.getItem(LS_KEY); return v ? JSON.parse(v) : null } catch { return null }
 }
 
-const wrap: React.CSSProperties = { minHeight: '100dvh', background: '#0b1220', color: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'Sarabun, -apple-system, "Segoe UI", sans-serif', textAlign: 'center' }
+// ดึงเลขออเดอร์จาก QR (รองรับทั้ง URL .../scan?o=XXX และข้อความเลขเปล่า)
+function extractOrder(text: string): string {
+  try { const u = new URL(text); const o = u.searchParams.get('o'); if (o) return o } catch {}
+  const m = String(text).match(/[?&]o=([^&\s]+)/); if (m) return decodeURIComponent(m[1])
+  return String(text).trim()
+}
+
+const wrap: React.CSSProperties = { minHeight: '100dvh', background: '#0b1220', color: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 0, fontFamily: 'Sarabun, -apple-system, "Segoe UI", sans-serif', textAlign: 'center' }
+const centerWrap: React.CSSProperties = { ...wrap, justifyContent: 'center', padding: 24 }
 const card: React.CSSProperties = { background: '#fff', color: '#1a1a1a', borderRadius: 18, padding: 24, width: '100%', maxWidth: 440, boxShadow: '0 10px 40px rgba(0,0,0,0.4)' }
 
 function ScanContent() {
   const sp = useSearchParams()
-  const orderNo = (sp.get('o') || '').trim()
+  const urlOrder = (sp.get('o') || '').trim()
 
   const [tech, setTech] = useState<Tech | null>(null)
   const [ready, setReady] = useState(false)
-  const [phase, setPhase] = useState<'idle' | 'working' | 'done' | 'already' | 'error' | 'noorder'>('idle')
+  const [phase, setPhase] = useState<Phase>('scanning')
   const [order, setOrder] = useState<any>(null)
   const [msg, setMsg] = useState('')
+  const [camState, setCamState] = useState<'idle' | 'starting' | 'on' | 'error'>('idle')
+  const [camErr, setCamErr] = useState('')
 
   // login form
   const [q, setQ] = useState('')
   const [pickCode, setPickCode] = useState('')
   const [pickStage, setPickStage] = useState('')
 
+  const scannerRef = useRef<any>(null)
+  const busyRef = useRef(false)
+  const startedRef = useRef(false)
+
   useEffect(() => { setTech(loadTech()); setReady(true) }, [])
 
-  // เมื่อมี tech + เลขออเดอร์ → ดำเนินการสแกนอัตโนมัติ
+  // กรณีเปิดจากลิงก์ที่มีเลขออเดอร์ (เช่นสแกนด้วยแอปกล้องของเครื่อง) → อัปเดตครั้งเดียว
   useEffect(() => {
-    if (!ready || !tech || !orderNo || phase !== 'idle') return
-    runScan(tech)
+    if (!ready || !tech || !urlOrder) return
+    runScan(tech, urlOrder)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, tech, orderNo])
+  }, [ready, tech, urlOrder])
 
-  async function runScan(t: Tech) {
+  // โหมดสแกนในแอป: เปิดกล้องสแกนต่อเนื่อง (เมื่อ login แล้ว และไม่ได้มาจากลิงก์)
+  async function startCamera() {
+    if (startedRef.current || !tech) return
+    startedRef.current = true
+    setCamState('starting'); setCamErr('')
+    try {
+      const { Html5Qrcode } = await import('html5-qrcode')
+      const html5 = new Html5Qrcode('qr-reader', { verbose: false } as any)
+      scannerRef.current = html5
+      await html5.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        async (decoded: string) => {
+          if (busyRef.current) return
+          busyRef.current = true
+          try { await html5.pause(true) } catch {}
+          await runScan(tech!, extractOrder(decoded))
+          setTimeout(() => { try { html5.resume() } catch {}; busyRef.current = false; setPhase('scanning') }, 2600)
+        },
+        () => {} // ละเว้น error รายเฟรม
+      )
+      setCamState('on')
+    } catch (e: any) {
+      startedRef.current = false
+      setCamState('error'); setCamErr(e?.message || String(e))
+    }
+  }
+
+  useEffect(() => {
+    if (!ready || !tech || urlOrder) return
+    startCamera()
+    return () => {
+      const s = scannerRef.current
+      if (s) { try { s.stop().then(() => s.clear()).catch(() => {}) } catch {} ; scannerRef.current = null; startedRef.current = false }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, tech, urlOrder])
+
+  async function runScan(t: Tech, ord: string) {
     const stage = stageByKey(t.stageKey)
     if (!stage) { setPhase('error'); setMsg('ไม่พบแผนกของผู้ใช้ กรุณาตั้งค่าใหม่'); return }
+    if (!ord) { setPhase('noorder'); setMsg(''); return }
     setPhase('working')
-    // ใช้ตาราง order_entries (ตารางจริงของหน้าออเดอร์)
-    const { data } = await supabase.from('order_entries').select('id, order_number, customer_name, order_status').eq('order_number', orderNo).order('id', { ascending: false }).limit(1)
+    const { data } = await supabase.from('order_entries').select('id, order_number, customer_name, order_status').eq('order_number', ord).order('id', { ascending: false }).limit(1)
     const o = data && data[0]
-    if (!o) { setPhase('noorder'); return }
+    if (!o) { setOrder({ order_number: ord }); setPhase('noorder'); return }
     setOrder(o)
 
     if (!canAdvance(o.order_status, stage.status)) {
-      // อยู่ขั้นเท่ากันหรือเลยไปแล้ว → ไม่ถอยหลัง
       setPhase('already'); setMsg(`สถานะปัจจุบัน: ${o.order_status || 'รอดำเนินการ'}`); return
     }
 
     const now = new Date().toISOString()
-    const { error } = await supabase.from('order_entries').update({ order_status: stage.status, updated_at: now }).eq('order_number', orderNo)
+    const { error } = await supabase.from('order_entries').update({ order_status: stage.status, updated_at: now }).eq('order_number', ord)
     if (error) { setPhase('error'); setMsg(error.message); return }
 
-    // sync ไปตาราง work_status (เหมือน UI แอดมิน) — best-effort
     try {
       const term = o.order_number || o.customer_name
       if (term) {
-        const { data: matches } = await supabase.from('work_status').select('id')
-          .or(`order_number.ilike.%${term}%,order_number.ilike.%${o.customer_name}%`)
-        if (matches && matches.length > 0) {
-          await supabase.from('work_status').update({ status: stage.status, status_updated_at: now }).in('id', matches.map((m: any) => m.id))
-        }
+        const { data: matches } = await supabase.from('work_status').select('id').or(`order_number.ilike.%${term}%,order_number.ilike.%${o.customer_name}%`)
+        if (matches && matches.length > 0) await supabase.from('work_status').update({ status: stage.status, status_updated_at: now }).in('id', matches.map((m: any) => m.id))
       }
     } catch {}
-
-    // บันทึก log การสแกน (best-effort — ถ้าไม่มีตารางก็ข้าม)
-    try { await supabase.from('production_scans').insert({ order_number: orderNo, stage: stage.label, status: stage.status, tech_code: t.code, tech_name: t.name, scanned_at: now }) } catch {}
+    try { await supabase.from('production_scans').insert({ order_number: ord, stage: stage.label, status: stage.status, tech_code: t.code, tech_name: t.name, scanned_at: now }) } catch {}
 
     setOrder({ ...o, order_status: stage.status })
     setPhase('done')
@@ -80,27 +126,28 @@ function ScanContent() {
   function saveLogin() {
     const emp = EMPLOYEES.find(e => e.code === pickCode)
     if (!emp || !pickStage) return
-    const t: Tech = { code: emp.code, name: `${emp.nickname} (${emp.code})`, stageKey: pickStage }
-    localStorage.setItem(LS_KEY, JSON.stringify(t))
-    setTech(t); setPhase('idle')
+    localStorage.setItem(LS_KEY, JSON.stringify({ code: emp.code, name: `${emp.nickname} (${emp.code})`, stageKey: pickStage }))
+    setTech(loadTech())
   }
 
-  function logout() { localStorage.removeItem(LS_KEY); setTech(null); setPhase('idle'); setQ(''); setPickCode(''); setPickStage('') }
+  function logout() {
+    const s = scannerRef.current
+    if (s) { try { s.stop().catch(() => {}) } catch {} }
+    localStorage.removeItem(LS_KEY); setTech(null); startedRef.current = false; setCamState('idle')
+    setQ(''); setPickCode(''); setPickStage('')
+  }
 
-  if (!ready) return <div style={wrap}><div style={{ opacity: 0.6 }}>กำลังโหลด…</div></div>
+  if (!ready) return <div style={centerWrap}><div style={{ opacity: 0.6 }}>กำลังโหลด…</div></div>
 
-  // ---- ยังไม่ได้ login บนเครื่องนี้ ----
+  // ---------- ตั้งค่าครั้งแรก ----------
   if (!tech) {
-    const matches = q.trim()
-      ? EMPLOYEES.filter(e => e.nickname.includes(q) || e.realName.includes(q) || e.code.toLowerCase().includes(q.toLowerCase())).slice(0, 8)
-      : []
+    const matches = q.trim() ? EMPLOYEES.filter(e => e.nickname.includes(q) || e.realName.includes(q) || e.code.toLowerCase().includes(q.toLowerCase())).slice(0, 8) : []
     const picked = EMPLOYEES.find(e => e.code === pickCode)
     return (
-      <div style={wrap}>
+      <div style={centerWrap}>
         <div style={card}>
           <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>ตั้งค่าเครื่องสแกน</h1>
           <p style={{ fontSize: 14, color: '#666', marginBottom: 20 }}>ทำครั้งเดียวต่อมือถือ — เลือกชื่อและแผนกของคุณ</p>
-
           <label style={{ display: 'block', fontSize: 13, fontWeight: 600, textAlign: 'left', marginBottom: 6 }}>1. ชื่อพนักงาน</label>
           {picked ? (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #2563eb', background: '#eff6ff', borderRadius: 10, padding: '10px 14px', marginBottom: 18 }}>
@@ -122,82 +169,137 @@ function ScanContent() {
               )}
             </div>
           )}
-
           <label style={{ display: 'block', fontSize: 13, fontWeight: 600, textAlign: 'left', marginBottom: 6 }}>2. แผนกของคุณ</label>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 22 }}>
             {STAGES.map(s => (
               <button key={s.key} onClick={() => setPickStage(s.key)}
-                style={{ padding: '14px', borderRadius: 12, border: pickStage === s.key ? '2px solid #2563eb' : '1px solid #ccc', background: pickStage === s.key ? '#eff6ff' : '#fff', cursor: 'pointer', fontSize: 16, fontWeight: 700, color: '#1a1a1a' }}>
+                style={{ padding: 14, borderRadius: 12, border: pickStage === s.key ? '2px solid #2563eb' : '1px solid #ccc', background: pickStage === s.key ? '#eff6ff' : '#fff', cursor: 'pointer', fontSize: 16, fontWeight: 700, color: '#1a1a1a' }}>
                 {s.label}<div style={{ fontSize: 11, fontWeight: 400, color: '#888' }}>→ {s.status}</div>
               </button>
             ))}
           </div>
-
           <button onClick={saveLogin} disabled={!pickCode || !pickStage}
-            style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: (!pickCode || !pickStage) ? '#c7c7c7' : '#2563eb', color: '#fff', fontSize: 16, fontWeight: 700, cursor: (!pickCode || !pickStage) ? 'not-allowed' : 'pointer' }}>
-            บันทึก
-          </button>
+            style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: (!pickCode || !pickStage) ? '#c7c7c7' : '#2563eb', color: '#fff', fontSize: 16, fontWeight: 700, cursor: (!pickCode || !pickStage) ? 'not-allowed' : 'pointer' }}>บันทึก</button>
         </div>
       </div>
     )
   }
 
-  // ---- login แล้ว ----
   const stage = stageByKey(tech.stageKey)
+  const stageColor = '#2563eb'
+
+  // ---------- โหมดลิงก์ (มาจากแอปกล้องของเครื่อง) ----------
+  if (urlOrder) {
+    return (
+      <div style={centerWrap}>
+        <div style={card}>
+          <Identity tech={tech} stageLabel={stage?.label} onLogout={logout} />
+          <Result phase={phase} order={order} msg={msg} stage={stage} />
+          <a href="/scan" style={{ display: 'inline-block', marginTop: 18, color: stageColor, fontSize: 14, fontWeight: 600 }}>เปิดกล้องสแกนต่อ →</a>
+        </div>
+      </div>
+    )
+  }
+
+  // ---------- โหมดสแกนในแอป ----------
+  const showOverlay = phase !== 'scanning'
   return (
     <div style={wrap}>
-      <div style={card}>
-        <div style={{ fontSize: 13, color: '#666', marginBottom: 16 }}>
-          {tech.name} · แผนก <b style={{ color: '#1a1a1a' }}>{stage?.label}</b>
-          <button onClick={logout} style={{ marginLeft: 8, border: 'none', background: 'transparent', color: '#2563eb', cursor: 'pointer', fontSize: 12, textDecoration: 'underline' }}>เปลี่ยน</button>
+      <div style={{ width: '100%', maxWidth: 480, padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+        <div style={{ textAlign: 'left', fontSize: 13 }}>
+          <div style={{ fontWeight: 700 }}>{tech.name}</div>
+          <div style={{ color: '#7dd3fc' }}>แผนก {stage?.label} → {stage?.status}</div>
         </div>
+        <button onClick={logout} style={{ border: '1px solid rgba(255,255,255,0.25)', background: 'transparent', color: '#fff', borderRadius: 8, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>เปลี่ยน</button>
+      </div>
 
-        {!orderNo ? (
-          <>
-            <div style={{ fontSize: 54, marginBottom: 8 }}>📷</div>
-            <h1 style={{ fontSize: 20, fontWeight: 800, marginBottom: 6 }}>พร้อมสแกน</h1>
-            <p style={{ fontSize: 14, color: '#666' }}>ใช้กล้องมือถือสแกน QR บนใบออเดอร์ สถานะจะเปลี่ยนเป็น <b>{stage?.status}</b> อัตโนมัติ</p>
-          </>
-        ) : phase === 'working' ? (
-          <div style={{ fontSize: 16, padding: '24px 0' }}>⏳ กำลังอัปเดต…</div>
-        ) : phase === 'done' ? (
-          <>
-            <div style={{ fontSize: 54, marginBottom: 8 }}>✅</div>
-            <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6, color: '#16a34a' }}>{stage?.status}</h1>
-            <p style={{ fontSize: 15 }}>ออเดอร์ <b>{order?.order_number}</b></p>
-            <p style={{ fontSize: 14, color: '#666' }}>{order?.customer_name}</p>
-          </>
-        ) : phase === 'already' ? (
-          <>
-            <div style={{ fontSize: 54, marginBottom: 8 }}>ℹ️</div>
-            <h1 style={{ fontSize: 19, fontWeight: 800, marginBottom: 6, color: '#d97706' }}>ไม่อัปเดต (กันข้ามขั้น)</h1>
-            <p style={{ fontSize: 15 }}>ออเดอร์ <b>{order?.order_number}</b></p>
-            <p style={{ fontSize: 14, color: '#666' }}>{msg}</p>
-            <p style={{ fontSize: 13, color: '#999', marginTop: 6 }}>แผนก{stage?.label} → {stage?.status} อยู่ก่อน/เท่ากับสถานะปัจจุบัน</p>
-          </>
-        ) : phase === 'noorder' ? (
-          <>
-            <div style={{ fontSize: 54, marginBottom: 8 }}>❓</div>
-            <h1 style={{ fontSize: 19, fontWeight: 800, marginBottom: 6, color: '#dc2626' }}>ไม่พบออเดอร์</h1>
-            <p style={{ fontSize: 14, color: '#666' }}>เลขออเดอร์: {orderNo}</p>
-          </>
-        ) : phase === 'error' ? (
-          <>
-            <div style={{ fontSize: 54, marginBottom: 8 }}>⚠️</div>
-            <h1 style={{ fontSize: 19, fontWeight: 800, marginBottom: 6, color: '#dc2626' }}>เกิดข้อผิดพลาด</h1>
-            <p style={{ fontSize: 13, color: '#666' }}>{msg}</p>
-          </>
-        ) : (
-          <div style={{ fontSize: 16, padding: '24px 0' }}>⏳ กำลังโหลด…</div>
+      <div style={{ position: 'relative', width: '100%', maxWidth: 480, flex: 1 }}>
+        <div id="qr-reader" style={{ width: '100%' }} />
+
+        {camState !== 'on' && (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+            {camState === 'error' ? (
+              <>
+                <div style={{ fontSize: 44, marginBottom: 10 }}>📷</div>
+                <p style={{ fontSize: 14, color: '#fca5a5', marginBottom: 14 }}>เปิดกล้องไม่ได้ — โปรดอนุญาตให้เว็บใช้กล้อง<br /><span style={{ fontSize: 12, color: '#94a3b8' }}>{camErr}</span></p>
+                <button onClick={() => { startedRef.current = false; startCamera() }} style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: 12, padding: '12px 24px', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>ลองอีกครั้ง</button>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 44, marginBottom: 10 }}>📷</div>
+                <button onClick={() => { startedRef.current = false; startCamera() }} style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: 12, padding: '14px 28px', fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>
+                  {camState === 'starting' ? 'กำลังเปิดกล้อง…' : 'แตะเพื่อเปิดกล้อง'}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        {camState === 'on' && !showOverlay && (
+          <div style={{ position: 'absolute', bottom: 20, left: 0, right: 0, textAlign: 'center', fontSize: 15, color: '#fff', textShadow: '0 1px 4px #000' }}>
+            จ่อ QR บนใบออเดอร์ให้อยู่ในกรอบ
+          </div>
+        )}
+
+        {showOverlay && (
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(11,18,32,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+            <div style={{ ...card, maxWidth: 380 }}>
+              <Result phase={phase} order={order} msg={msg} stage={stage} />
+            </div>
+          </div>
         )}
       </div>
     </div>
   )
 }
 
+function Identity({ tech, stageLabel, onLogout }: { tech: Tech; stageLabel?: string; onLogout: () => void }) {
+  return (
+    <div style={{ fontSize: 13, color: '#666', marginBottom: 16 }}>
+      {tech.name} · แผนก <b style={{ color: '#1a1a1a' }}>{stageLabel}</b>
+      <button onClick={onLogout} style={{ marginLeft: 8, border: 'none', background: 'transparent', color: '#2563eb', cursor: 'pointer', fontSize: 12, textDecoration: 'underline' }}>เปลี่ยน</button>
+    </div>
+  )
+}
+
+function Result({ phase, order, msg, stage }: { phase: Phase; order: any; msg: string; stage: any }) {
+  if (phase === 'working') return <div style={{ fontSize: 16, padding: '24px 0' }}>⏳ กำลังอัปเดต…</div>
+  if (phase === 'done') return (
+    <>
+      <div style={{ fontSize: 54, marginBottom: 8 }}>✅</div>
+      <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6, color: '#16a34a' }}>{stage?.status}</h1>
+      <p style={{ fontSize: 15 }}>ออเดอร์ <b>{order?.order_number}</b></p>
+      <p style={{ fontSize: 14, color: '#666' }}>{order?.customer_name}</p>
+    </>
+  )
+  if (phase === 'already') return (
+    <>
+      <div style={{ fontSize: 54, marginBottom: 8 }}>ℹ️</div>
+      <h1 style={{ fontSize: 19, fontWeight: 800, marginBottom: 6, color: '#d97706' }}>ไม่อัปเดต (กันข้ามขั้น)</h1>
+      <p style={{ fontSize: 15 }}>ออเดอร์ <b>{order?.order_number}</b></p>
+      <p style={{ fontSize: 14, color: '#666' }}>{msg}</p>
+    </>
+  )
+  if (phase === 'noorder') return (
+    <>
+      <div style={{ fontSize: 54, marginBottom: 8 }}>❓</div>
+      <h1 style={{ fontSize: 19, fontWeight: 800, marginBottom: 6, color: '#dc2626' }}>ไม่พบออเดอร์</h1>
+      <p style={{ fontSize: 14, color: '#666' }}>{order?.order_number || 'QR ไม่ถูกต้อง'}</p>
+    </>
+  )
+  if (phase === 'error') return (
+    <>
+      <div style={{ fontSize: 54, marginBottom: 8 }}>⚠️</div>
+      <h1 style={{ fontSize: 19, fontWeight: 800, marginBottom: 6, color: '#dc2626' }}>เกิดข้อผิดพลาด</h1>
+      <p style={{ fontSize: 13, color: '#666' }}>{msg}</p>
+    </>
+  )
+  return null
+}
+
 export default function ScanPage() {
   return (
-    <Suspense fallback={<div style={wrap}><div style={{ opacity: 0.6 }}>กำลังโหลด…</div></div>}>
+    <Suspense fallback={<div style={centerWrap}><div style={{ opacity: 0.6 }}>กำลังโหลด…</div></div>}>
       <ScanContent />
     </Suspense>
   )

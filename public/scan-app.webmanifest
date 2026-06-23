@@ -1,0 +1,15 @@
+{
+  "name": "Donna สแกนงาน",
+  "short_name": "สแกนงาน",
+  "description": "สแกน QR อัปเดตสถานะงานผลิต Donna Design",
+  "start_url": "/scan",
+  "scope": "/scan",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b1220",
+  "theme_color": "#0b1220",
+  "icons": [
+    { "src": "/donna-logo.jpg", "sizes": "any", "type": "image/jpeg", "purpose": "any" },
+    { "src": "/donna-logo.jpg", "sizes": "any", "type": "image/jpeg", "purpose": "maskable" }
+  ]
+}
