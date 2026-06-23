@@ -43,7 +43,8 @@ function ScanContent() {
     const stage = stageByKey(t.stageKey)
     if (!stage) { setPhase('error'); setMsg('ไม่พบแผนกของผู้ใช้ กรุณาตั้งค่าใหม่'); return }
     setPhase('working')
-    const { data } = await supabase.from('orders').select('*').eq('order_number', orderNo).order('created_at', { ascending: false }).limit(1)
+    // ใช้ตาราง order_entries (ตารางจริงของหน้าออเดอร์)
+    const { data } = await supabase.from('order_entries').select('id, order_number, customer_name, order_status').eq('order_number', orderNo).order('id', { ascending: false }).limit(1)
     const o = data && data[0]
     if (!o) { setPhase('noorder'); return }
     setOrder(o)
@@ -54,8 +55,20 @@ function ScanContent() {
     }
 
     const now = new Date().toISOString()
-    const { error } = await supabase.from('orders').update({ order_status: stage.status, updated_at: now }).eq('order_number', orderNo)
+    const { error } = await supabase.from('order_entries').update({ order_status: stage.status, updated_at: now }).eq('order_number', orderNo)
     if (error) { setPhase('error'); setMsg(error.message); return }
+
+    // sync ไปตาราง work_status (เหมือน UI แอดมิน) — best-effort
+    try {
+      const term = o.order_number || o.customer_name
+      if (term) {
+        const { data: matches } = await supabase.from('work_status').select('id')
+          .or(`order_number.ilike.%${term}%,order_number.ilike.%${o.customer_name}%`)
+        if (matches && matches.length > 0) {
+          await supabase.from('work_status').update({ status: stage.status, status_updated_at: now }).in('id', matches.map((m: any) => m.id))
+        }
+      }
+    } catch {}
 
     // บันทึก log การสแกน (best-effort — ถ้าไม่มีตารางก็ข้าม)
     try { await supabase.from('production_scans').insert({ order_number: orderNo, stage: stage.label, status: stage.status, tech_code: t.code, tech_name: t.name, scanned_at: now }) } catch {}
