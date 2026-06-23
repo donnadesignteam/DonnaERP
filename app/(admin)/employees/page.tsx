@@ -11,6 +11,7 @@ type Leave = {
   employee_nickname: string
   department: string
   leave_date: string
+  leave_end_date: string
   leave_time: string
   leave_type: string
   reason: string
@@ -69,6 +70,14 @@ function toYMD(y: number, m: number, d: number) {
   return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
 }
 
+// จำนวนวันแบบนับรวมหัวท้าย (เช่น 23→25 = 3 วัน); คืน 0 ถ้าข้อมูลไม่ครบ/วันสิ้นสุดก่อนวันเริ่ม
+function rangeDays(start: string, end: string): number {
+  if (!start) return 0
+  const e = end || start
+  const diff = Math.round((new Date(e + 'T00:00:00').getTime() - new Date(start + 'T00:00:00').getTime()) / 86400000)
+  return diff < 0 ? 0 : diff + 1
+}
+
 // วันเริ่มงานพนักงาน (จาก Google Sheet Master_Data คอลัมน์ G) — ใช้คำนวณอายุงาน
 const START_DATES: Record<string, string> = {
   DN001:'2022-01-17', DN002:'2022-03-01', DN003:'2022-09-29', DN004:'2022-10-15',
@@ -112,7 +121,7 @@ export default function EmployeesPage() {
   const [year, setYear] = useState(new Date().getFullYear())
   const [month, setMonth] = useState(new Date().getMonth())
   const [modal, setModal] = useState(false)
-  const [form, setForm] = useState({ nickname: '', employee_code: '', employee_name: '', department: '', leave_date: '', leave_time: '08:00', leave_type: '', reason: '' })
+  const [form, setForm] = useState({ nickname: '', employee_code: '', employee_name: '', department: '', leave_date: '', leave_end_date: '', leave_time: '08:00', leave_type: '', reason: '' })
   const [saving, setSaving] = useState(false)
   const [conflict, setConflict] = useState('')
   const [suggestions, setSuggestions] = useState<typeof EMPLOYEES>([])
@@ -143,18 +152,28 @@ export default function EmployeesPage() {
     setConflict('')
   }
 
-  const checkConflict = async (date: string, dept: string) => {
-    if (!date || !dept) return
-    const { data } = await supabase.from('leave_requests').select('employee_nickname, department').eq('leave_date', date).eq('department', dept)
-    if (data && data.length > 0) {
-      setConflict(`⚠️ มีพนักงานขอหยุดแล้วในวันดังกล่าวโปรดพิจารณาเลือกวันอื่น (${data.map((d: any) => d.employee_nickname).join(', ')})`)
+  const checkConflict = async (start: string, end: string, dept: string) => {
+    if (!start || !dept) return
+    const e = end || start
+    const { data } = await supabase.from('leave_requests').select('employee_nickname, leave_date, leave_end_date').eq('department', dept)
+    const overlap = (data ?? []).filter((d: any) => {
+      const ds = d.leave_date
+      const de = d.leave_end_date || d.leave_date
+      return ds <= e && de >= start // ช่วงทับซ้อนกัน
+    })
+    if (overlap.length > 0) {
+      setConflict(`⚠️ มีพนักงานขอหยุดแล้วในช่วงดังกล่าวโปรดพิจารณาเลือกวันอื่น (${[...new Set(overlap.map((d: any) => d.employee_nickname))].join(', ')})`)
     } else setConflict('')
   }
 
   const save = async () => {
-    // กันลาพักร้อนเมื่อยังไม่มีสิทธิ (เผื่อปุ่มถูกข้าม)
+    // กันลาพักร้อนเมื่อยังไม่มีสิทธิ / เกินจำนวนวันต่อเนื่อง (เผื่อปุ่มถูกข้าม)
     const td = form.employee_code ? tenureDays(form.employee_code) : null
-    if (form.leave_type === 'ลาพักร้อน' && td != null && vacationMaxDays(td) === 0) return
+    if (form.leave_type === 'ลาพักร้อน' && td != null) {
+      const max = vacationMaxDays(td)
+      if (max === 0) return
+      if (rangeDays(form.leave_date, form.leave_end_date) > max) return
+    }
     setSaving(true)
     await supabase.from('leave_requests').insert({
       employee_code: form.employee_code,
@@ -162,6 +181,7 @@ export default function EmployeesPage() {
       employee_nickname: form.nickname,
       department: form.department,
       leave_date: form.leave_date,
+      leave_end_date: form.leave_end_date || form.leave_date,
       leave_time: form.leave_time,
       leave_type: form.leave_type,
       reason: form.reason,
@@ -171,7 +191,7 @@ export default function EmployeesPage() {
     })
     setSaving(false)
     setModal(false)
-    setForm({ nickname: '', employee_code: '', employee_name: '', department: '', leave_date: '', leave_time: '08:00', leave_type: '', reason: '' })
+    setForm({ nickname: '', employee_code: '', employee_name: '', department: '', leave_date: '', leave_end_date: '', leave_time: '08:00', leave_type: '', reason: '' })
     load()
   }
 
@@ -193,15 +213,13 @@ export default function EmployeesPage() {
   const first = (new Date(year, month, 1).getDay() + 6) % 7
   const cells = Array.from({ length: 42 }, (_, i) => { const d = i - first + 1; return d > 0 && d <= dim ? d : null })
 
-  const monthLeaves = leaves.filter(l => {
-    const d = new Date(l.leave_date)
-    return d.getFullYear() === year && d.getMonth() === month
-  })
-
   // อายุงาน + สิทธิลาพักร้อน ของพนักงานที่เลือกในฟอร์มลา
   const selTenure = form.employee_code ? tenureDays(form.employee_code) : null
   const selVacMax = selTenure == null ? null : vacationMaxDays(selTenure)
-  const vacBlocked = form.leave_type === 'ลาพักร้อน' && selVacMax === 0
+  const selRangeDays = rangeDays(form.leave_date, form.leave_end_date)
+  const vacNoRight = form.leave_type === 'ลาพักร้อน' && selVacMax === 0
+  const vacOverDays = form.leave_type === 'ลาพักร้อน' && selVacMax != null && selVacMax > 0 && selRangeDays > selVacMax
+  const vacBlocked = vacNoRight || vacOverDays
 
   return (
     <div>
@@ -231,7 +249,7 @@ export default function EmployeesPage() {
             const isRedZone = RED_ZONES.has(ymd)
             const campaign = CAMPAIGNS[ymd]
             const holiday = HOLIDAYS[ymd]
-            const dayLeaves = monthLeaves.filter(l => l.leave_date === ymd)
+            const dayLeaves = leaves.filter(l => ymd >= l.leave_date && ymd <= (l.leave_end_date || l.leave_date))
             const isToday = ymd === new Date().toISOString().split('T')[0]
             const isSunday = new Date(year, month, day).getDay() === 0
 
@@ -292,7 +310,13 @@ export default function EmployeesPage() {
                   <td style={{ padding: '11px 13px' }}>{l.employee_name}</td>
                   <td style={{ padding: '11px 13px' }}>{l.employee_nickname}</td>
                   <td style={{ padding: '11px 13px', color: 'var(--ink-3)' }}>{l.department}</td>
-                  <td style={{ padding: '11px 13px', whiteSpace: 'nowrap' }}>{l.leave_date ? new Date(l.leave_date).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}</td>
+                  <td style={{ padding: '11px 13px', whiteSpace: 'nowrap' }}>
+                    {l.leave_date ? new Date(l.leave_date).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}
+                    {l.leave_end_date && l.leave_end_date !== l.leave_date && (
+                      <> – {new Date(l.leave_end_date).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                        <span style={{ color: 'var(--ink-3)', fontWeight: 600 }}> ({rangeDays(l.leave_date, l.leave_end_date)} วัน)</span></>
+                    )}
+                  </td>
                   <td style={{ padding: '11px 13px' }}>{l.leave_type}</td>
                   <td style={{ padding: '11px 13px', color: 'var(--ink-3)', maxWidth: 140 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.reason || '-'}</div></td>
                   <td style={{ padding: '11px 13px' }}>
@@ -370,16 +394,32 @@ export default function EmployeesPage() {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 12px' }}>
               <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 5 }}>วันที่ขอลา</label>
-                <input type="date" lang="en-GB" value={form.leave_date} onChange={e => { setF('leave_date', e.target.value); checkConflict(e.target.value, form.department) }}
+                <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 5 }}>วันที่เริ่มลา</label>
+                <input type="date" lang="en-GB" value={form.leave_date} onChange={e => {
+                    const v = e.target.value
+                    // ถ้ายังไม่เลือกวันสิ้นสุด หรือวันสิ้นสุดเดิมก่อนวันเริ่มใหม่ → ตั้งวันสิ้นสุด = วันเริ่ม
+                    const end = (!form.leave_end_date || form.leave_end_date < v) ? v : form.leave_end_date
+                    setForm(f => ({ ...f, leave_date: v, leave_end_date: end }))
+                    checkConflict(v, end, form.department)
+                  }}
                   style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
               </div>
               <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 5 }}>เวลา</label>
-                <input type="time" value={form.leave_time} onChange={e => setF('leave_time', e.target.value)}
+                <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 5 }}>วันที่สิ้นสุด</label>
+                <input type="date" lang="en-GB" value={form.leave_end_date} min={form.leave_date} onChange={e => { setF('leave_end_date', e.target.value); checkConflict(form.leave_date, e.target.value, form.department) }}
                   style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
               </div>
             </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 5 }}>เวลา</label>
+              <input type="time" value={form.leave_time} onChange={e => setF('leave_time', e.target.value)}
+                style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+            </div>
+            {rangeDays(form.leave_date, form.leave_end_date) > 1 && (
+              <div style={{ marginTop: -4, marginBottom: 14, fontSize: 12.5, color: 'var(--ink-3)' }}>
+                รวม <strong style={{ color: 'var(--ink)' }}>{rangeDays(form.leave_date, form.leave_end_date)} วัน</strong> ({new Date(form.leave_date).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit' })} – {new Date(form.leave_end_date).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit' })})
+              </div>
+            )}
 
             {conflict && (
               <div style={{ background: '#fff3cd', border: '1px solid #ffc107', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#856404' }}>
@@ -399,8 +439,10 @@ export default function EmployeesPage() {
                   background: vacBlocked ? '#ff375f11' : '#34c75915',
                   border: `1px solid ${vacBlocked ? '#ff375f44' : '#34c75944'}`,
                   color: vacBlocked ? 'var(--red)' : '#1a7f37' }}>
-                  {vacBlocked
+                  {vacNoRight
                     ? `❌ อายุงาน ${tenureText(selTenure)} — ทำงานไม่ครบ 1 ปี ยังไม่มีสิทธิลาพักร้อน บันทึกไม่ได้`
+                    : vacOverDays
+                    ? `❌ เลือกไว้ ${selRangeDays} วัน — เกินสิทธิลาพักร้อนต่อเนื่อง (ไม่เกิน ${selVacMax} วัน/ครั้ง) บันทึกไม่ได้`
                     : `✅ ลาพักร้อนต่อเนื่องได้ไม่เกิน ${selVacMax} วัน/ครั้ง (อายุงาน ${tenureText(selTenure)})`}
                 </div>
               )}
