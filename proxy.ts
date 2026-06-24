@@ -1,46 +1,43 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { AUTH_COOKIE, authToken } from './lib/auth'
 
 // ──────────────────────────────────────────────────────────────
-// Basic Auth gate สำหรับ DonnaERP (Next.js 16 = proxy.ts ไม่ใช่ middleware.ts)
-// กันทั้งหน้าแอดมิน + API parse-* + หน้า /scan ด้วยรหัสรวมตัวเดียว
+// Cookie auth gate สำหรับ DonnaERP (Next.js 16 = proxy.ts ไม่ใช่ middleware.ts)
+// กันทุกหน้า + API + /scan → ไม่ผ่าน redirect ไปหน้า /login (custom)
 //
-// ตั้งค่าใน Vercel → Project → Settings → Environment Variables:
+// env (Vercel → Settings → Environments → Production):
 //   SITE_USER  (ออปชัน, default = "donna")
-//   SITE_PASS  (รหัสผ่าน — ถ้าไม่ตั้ง = ปิด auth ปล่อยผ่าน เพื่อไม่ให้ dev/เผลอ misconfig ล็อกตัวเอง)
-// แล้ว redeploy
+//   SITE_PASS  (รหัสผ่าน — ถ้าไม่ตั้ง = ปิด auth ปล่อยผ่านหมด เพื่อไม่ให้ dev/misconfig ล็อกตัวเอง)
 // ──────────────────────────────────────────────────────────────
 
-export function proxy(request: NextRequest) {
-  const expectedPass = process.env.SITE_PASS
-  // ยังไม่ตั้งรหัส → ไม่กัน (กันล็อกตัวเองตอน dev / env ยังไม่พร้อม)
-  if (!expectedPass) return NextResponse.next()
+export async function proxy(request: NextRequest) {
+  const token = await authToken()
+  if (!token) return NextResponse.next() // ยังไม่ตั้ง SITE_PASS → ไม่กัน
 
-  const expectedUser = process.env.SITE_USER || 'donna'
+  const { pathname } = request.nextUrl
 
-  const header = request.headers.get('authorization')
-  if (header?.startsWith('Basic ')) {
-    try {
-      const decoded = atob(header.slice(6)) // "user:pass"
-      const idx = decoded.indexOf(':')
-      const user = decoded.slice(0, idx)
-      const pass = decoded.slice(idx + 1)
-      if (user === expectedUser && pass === expectedPass) {
-        return NextResponse.next()
-      }
-    } catch {
-      // base64 เพี้ยน → ตกไปขอรหัสใหม่
-    }
+  // หน้า/route ที่เข้าได้โดยไม่ต้อง login
+  if (pathname === '/login' || pathname === '/api/login' || pathname === '/api/logout') {
+    return NextResponse.next()
   }
 
-  return new NextResponse('ต้องเข้าสู่ระบบ', {
-    status: 401,
-    headers: { 'WWW-Authenticate': 'Basic realm="DonnaERP", charset="UTF-8"' },
-  })
+  const cookie = request.cookies.get(AUTH_COOKIE)?.value
+  if (cookie === token) return NextResponse.next()
+
+  // ไม่ผ่าน: API ตอบ 401, หน้าเว็บ redirect ไป /login
+  if (pathname.startsWith('/api/')) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  }
+  const url = request.nextUrl.clone()
+  url.pathname = '/login'
+  url.search = ''
+  url.searchParams.set('from', pathname)
+  return NextResponse.redirect(url)
 }
 
 export const config = {
-  // กันทุก path ยกเว้น static ของ Next + ไฟล์ PWA (manifest/logo เบราว์เซอร์โหลดแบบไม่มี credential)
+  // กันทุก path ยกเว้น static ของ Next + ไฟล์ PWA (manifest/logo เบราว์เซอร์โหลดแบบไม่มี cookie)
   matcher: [
     '/((?!_next/static|_next/image|favicon.ico|scan-app.webmanifest|donna-logo).*)',
   ],

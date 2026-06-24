@@ -1,6 +1,20 @@
 'use client'
 
+import { useState } from 'react'
+
 export default function SettingsPage() {
+  const [loggingOut, setLoggingOut] = useState(false)
+
+  async function logout() {
+    setLoggingOut(true)
+    try {
+      await fetch('/api/logout', { method: 'POST' })
+    } catch {
+      // เผื่อ network พลาด ก็ยังพาไปหน้า login (cookie จะถูกเช็คซ้ำที่ proxy)
+    }
+    window.location.href = '/login'
+  }
+
   return (
     <div>
       <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', marginBottom: 4, letterSpacing: '-0.5px' }}>ตั้งค่า</h1>
@@ -17,8 +31,8 @@ export default function SettingsPage() {
               <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>ระบบจัดการหลังบ้าน</div>
             </div>
           </div>
-          <button style={{ marginTop: 20, width: '100%', padding: '9px', borderRadius: 10, border: '1px solid #ff375f', background: '#fff', color: 'var(--red)', cursor: 'pointer', fontSize: 14, fontWeight: 500 }}>
-            🚪 Logout
+          <button onClick={logout} disabled={loggingOut} style={{ marginTop: 20, width: '100%', padding: '9px', borderRadius: 10, border: '1px solid #ff375f', background: '#fff', color: 'var(--red)', cursor: loggingOut ? 'default' : 'pointer', fontSize: 14, fontWeight: 500, opacity: loggingOut ? 0.6 : 1 }}>
+            {loggingOut ? 'กำลังออกจากระบบ…' : '🚪 Logout'}
           </button>
         </div>
       </div>
