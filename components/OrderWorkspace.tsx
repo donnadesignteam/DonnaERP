@@ -1200,10 +1200,10 @@ ${toPrint.map((r, i) => {
   .do { color: #b05000; font-weight: 700; }
   .dg { color: #006000; font-weight: 700; }
   pre.copy { font-family: 'Sarabun', 'Noto Sans Thai', sans-serif; font-size: 16px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; margin: 0; }
-  .order { display: flex; flex-direction: column; align-items: flex-start; gap: 18px; page-break-inside: avoid; padding-bottom: 32px; margin-bottom: 32px; border-bottom: 1px dashed #b0b0b0; }
+  .order { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; page-break-inside: avoid; padding-bottom: 28px; margin-bottom: 28px; border-bottom: 1px dashed #b0b0b0; }
   .order:last-child { padding-bottom: 0; margin-bottom: 0; border-bottom: none; }
   .qr-box { flex-shrink: 0; text-align: center; }
-  .qr { width: 150px; height: 150px; display: block; }
+  .qr { width: 120px; height: 120px; display: block; }
   .qr-cap { font-size: 11px; color: #555; margin-top: 4px; }
   /* margin:0 ทำให้เบราว์เซอร์ไม่พิมพ์หัว/ท้ายกระดาษ (วันที่-เวลา + ชื่อหน้า) */
   @page { size: A4; margin: 0; }
