@@ -1167,7 +1167,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     }
 
     const body = asForm
-      ? toPrint.map((r, i) => `<div class="order"><pre class="copy">${escHtml(formatOrderText(r))}</pre>${qrs[i] ? `<div class="qr-box"><img class="qr" src="${qrs[i]}"/><div class="qr-cap">สแกนเพื่ออัปเดตสถานะ</div></div>` : ''}</div>`).join('')
+      ? toPrint.map((r, i) => `<div class="order"><pre class="copy">${escHtml(formatOrderText(r))}</pre>${qrs[i] ? `<div class="qr-box"><img class="qr" src="${qrs[i]}"/></div>` : ''}</div>`).join('')
       : `<h2>${escHtml(title)} (${toPrint.length} รายการ)</h2>
 <table>
 <thead><tr>

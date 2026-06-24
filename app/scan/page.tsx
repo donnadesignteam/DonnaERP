@@ -55,6 +55,20 @@ function ScanContent() {
 
   useEffect(() => { setTech(loadTech()); setReady(true) }, [])
 
+  // พื้นหลังหน้า /scan เป็นสีเข้ม (กัน iOS bounce โชว์ขอบขาว) + กัน overscroll — คืนค่าเดิมตอนออกจากหน้า
+  useEffect(() => {
+    const html = document.documentElement, body = document.body
+    const prev = { htmlBg: html.style.background, bodyBg: body.style.background, htmlOver: html.style.overscrollBehavior, bodyOver: body.style.overscrollBehavior }
+    html.style.background = '#0b1220'
+    body.style.background = '#0b1220'
+    html.style.overscrollBehavior = 'none'
+    body.style.overscrollBehavior = 'none'
+    return () => {
+      html.style.background = prev.htmlBg; body.style.background = prev.bodyBg
+      html.style.overscrollBehavior = prev.htmlOver; body.style.overscrollBehavior = prev.bodyOver
+    }
+  }, [])
+
   // กรณีเปิดจากลิงก์ที่มี id/เลขออเดอร์ (เช่นสแกนด้วยแอปกล้องของเครื่อง) → อัปเดตครั้งเดียว
   useEffect(() => {
     if (!ready || !tech || (!urlOrder && !urlId)) return
