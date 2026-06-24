@@ -29,16 +29,17 @@ export async function proxy(request: NextRequest) {
   if (pathname.startsWith('/api/')) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
+  const from = pathname + (request.nextUrl.search || '') // เก็บ query เดิม (เช่น /scan?o=XXX) ไว้ด้วย
   const url = request.nextUrl.clone()
   url.pathname = '/login'
   url.search = ''
-  url.searchParams.set('from', pathname)
+  url.searchParams.set('from', from)
   return NextResponse.redirect(url)
 }
 
 export const config = {
   // กันทุก path ยกเว้น static ของ Next + ไฟล์ PWA (manifest/logo เบราว์เซอร์โหลดแบบไม่มี cookie)
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|scan-app.webmanifest|donna-logo).*)',
+    '/((?!_next/static|_next/image|favicon.ico|scan-app.webmanifest|donna-logo|icon-).*)',
   ],
 }
