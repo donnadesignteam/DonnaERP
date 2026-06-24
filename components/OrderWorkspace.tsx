@@ -491,49 +491,63 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     }
   }
 
-  function formatOrderText(r: Entry): string {
-    const lines: string[] = []
+  // สร้างบรรทัดของใบออเดอร์ พร้อมธง rail (บรรทัดของรายการ "ราง")
+  function formatOrderLines(r: Entry): { t: string; rail?: boolean }[] {
+    const lines: { t: string; rail?: boolean }[] = []
+    const push = (t: string, rail = false) => lines.push({ t, rail })
 
     if (r.entry_date) {
-      lines.push(new Date(r.entry_date).toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' }))
+      push(new Date(r.entry_date).toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' }))
     }
 
     const platformLine = [r.platform, r.customer_name].filter(Boolean).join(': ')
-    if (platformLine) lines.push(platformLine)
-    if (r.order_number) lines.push(r.order_number)
+    if (platformLine) push(platformLine)
+    if (r.order_number) push(r.order_number)
 
-    lines.push('')
+    push('')
 
     if (r.items && r.items.length > 0) {
       r.items.forEach((item, idx) => {
-        if (idx > 0) lines.push('')
+        if (idx > 0) push('')
         const isRail = item.type.startsWith('ราง')
         if (isRail) {
           const typeParts = [item.type, item.floors ? `${item.floors}ชั้น` : '', item.rail_head || '', item.color_name || ''].filter(Boolean)
-          lines.push(typeParts.join(' '))
+          push(typeParts.join(' '), true)
         } else {
           const typeParts = [item.type, item.floors ? `${item.floors}ชั้น` : '', item.color_name || ''].filter(Boolean)
-          lines.push(typeParts.join(' '))
+          push(typeParts.join(' '))
           const brandParts = [item.fabric_type || '', item.color_code || '', item.color_desc || ''].filter(Boolean)
-          if (brandParts.length) lines.push(brandParts.join(' '))
+          if (brandParts.length) push(brandParts.join(' '))
         }
         const w = Number(item.width), h = Number(item.height)
         const wStr = w > 0 ? w.toFixed(2) : ''
         const hStr = h > 0 ? h.toFixed(2) : ''
         const dim = wStr && hStr ? `ก${wStr}*ส${hStr}` : wStr ? `ก${wStr}` : ''
-        if (dim) lines.push(`${dim} = ${item.quantity} ${item.unit}${item.note ? ` (${item.note})` : ''}`)
-        else lines.push(`= ${item.quantity} ${item.unit}${item.note ? ` (${item.note})` : ''}`)
+        if (dim) push(`${dim} = ${item.quantity} ${item.unit}${item.note ? ` (${item.note})` : ''}`, isRail)
+        else push(`= ${item.quantity} ${item.unit}${item.note ? ` (${item.note})` : ''}`, isRail)
       })
     }
 
-    lines.push('')
+    push('')
 
     if (r.shipping_datetime && r.shipping_datetime !== '-') {
-      lines.push(`ส่งก่อน ${r.shipping_datetime}`)
+      push(`ส่งก่อน ${r.shipping_datetime}`)
     }
-    if (r.courier) lines.push(r.courier)
+    if (r.courier) push(r.courier)
 
-    return lines.join('\n')
+    return lines
+  }
+
+  function formatOrderText(r: Entry): string {
+    return formatOrderLines(r).map(l => l.t).join('\n')
+  }
+
+  // เวอร์ชัน HTML สำหรับปริ้น: บรรทัดของราง = สีแดง
+  function formatOrderHtml(r: Entry): string {
+    const esc = (v: string) => v.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!))
+    return formatOrderLines(r)
+      .map(l => l.rail ? `<span class="rail">${esc(l.t)}</span>` : esc(l.t))
+      .join('\n')
   }
 
   const copyOrderText = async (r: Entry) => {
@@ -1167,7 +1181,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     }
 
     const body = asForm
-      ? toPrint.map((r, i) => `<div class="order"><pre class="copy">${escHtml(formatOrderText(r))}</pre>${qrs[i] ? `<div class="qr-box"><img class="qr" src="${qrs[i]}"/></div>` : ''}</div>`).join('')
+      ? toPrint.map((r, i) => `<div class="order"><pre class="copy">${formatOrderHtml(r)}</pre>${qrs[i] ? `<div class="qr-box"><img class="qr" src="${qrs[i]}"/></div>` : ''}</div>`).join('')
       : `<h2>${escHtml(title)} (${toPrint.length} รายการ)</h2>
 <table>
 <thead><tr>
@@ -1200,6 +1214,7 @@ ${toPrint.map((r, i) => {
   .do { color: #b05000; font-weight: 700; }
   .dg { color: #006000; font-weight: 700; }
   pre.copy { font-family: 'Sarabun', 'Noto Sans Thai', sans-serif; font-size: 16px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; margin: 0; }
+  pre.copy .rail { color: #c00; }
   .order { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; page-break-inside: avoid; padding-bottom: 28px; margin-bottom: 28px; border-bottom: 1px dashed #b0b0b0; }
   .order:last-child { padding-bottom: 0; margin-bottom: 0; border-bottom: none; }
   .qr-box { flex-shrink: 0; text-align: center; }
