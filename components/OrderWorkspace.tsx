@@ -1162,7 +1162,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     if (asForm) {
       const origin = window.location.origin
       qrs = await Promise.all(toPrint.map(r =>
-        QRCode.toDataURL(`${origin}/scan?o=${encodeURIComponent(r.order_number || '')}`, { margin: 1, width: 240 }).catch(() => '')
+        QRCode.toDataURL(`${origin}/scan?id=${r.id}&o=${encodeURIComponent(r.order_number || '')}`, { margin: 1, width: 240 }).catch(() => '')
       ))
     }
 

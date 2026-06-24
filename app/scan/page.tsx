@@ -20,6 +20,13 @@ function extractOrder(text: string): string {
   return String(text).trim()
 }
 
+// ดึง id ของแถวจาก QR (QR ใหม่ฝัง ?id=NNN — แม่นยำกว่า order_number)
+function extractId(text: string): string {
+  try { const u = new URL(text); const id = u.searchParams.get('id'); if (id) return id } catch {}
+  const m = String(text).match(/[?&]id=([^&\s]+)/); if (m) return decodeURIComponent(m[1])
+  return ''
+}
+
 const wrap: React.CSSProperties = { minHeight: '100dvh', background: '#0b1220', color: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 0, fontFamily: 'Sarabun, -apple-system, "Segoe UI", sans-serif', textAlign: 'center' }
 const centerWrap: React.CSSProperties = { ...wrap, justifyContent: 'center', padding: 24 }
 const card: React.CSSProperties = { background: '#fff', color: '#1a1a1a', borderRadius: 18, padding: 24, width: '100%', maxWidth: 440, boxShadow: '0 10px 40px rgba(0,0,0,0.4)' }
@@ -27,6 +34,7 @@ const card: React.CSSProperties = { background: '#fff', color: '#1a1a1a', border
 function ScanContent() {
   const sp = useSearchParams()
   const urlOrder = (sp.get('o') || '').trim()
+  const urlId = (sp.get('id') || '').trim()
 
   const [tech, setTech] = useState<Tech | null>(null)
   const [ready, setReady] = useState(false)
@@ -47,12 +55,12 @@ function ScanContent() {
 
   useEffect(() => { setTech(loadTech()); setReady(true) }, [])
 
-  // กรณีเปิดจากลิงก์ที่มีเลขออเดอร์ (เช่นสแกนด้วยแอปกล้องของเครื่อง) → อัปเดตครั้งเดียว
+  // กรณีเปิดจากลิงก์ที่มี id/เลขออเดอร์ (เช่นสแกนด้วยแอปกล้องของเครื่อง) → อัปเดตครั้งเดียว
   useEffect(() => {
-    if (!ready || !tech || !urlOrder) return
-    runScan(tech, urlOrder)
+    if (!ready || !tech || (!urlOrder && !urlId)) return
+    runScan(tech, urlId, urlOrder)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, tech, urlOrder])
+  }, [ready, tech, urlOrder, urlId])
 
   // โหมดสแกนในแอป: เปิดกล้องสแกนต่อเนื่อง (เมื่อ login แล้ว และไม่ได้มาจากลิงก์)
   async function startCamera() {
@@ -70,7 +78,7 @@ function ScanContent() {
           if (busyRef.current) return
           busyRef.current = true
           try { await html5.pause(true) } catch {}
-          await runScan(tech!, extractOrder(decoded))
+          await runScan(tech!, extractId(decoded), extractOrder(decoded))
           setTimeout(() => { try { html5.resume() } catch {}; busyRef.current = false; setPhase('scanning') }, 2600)
         },
         () => {} // ละเว้น error รายเฟรม
@@ -83,23 +91,39 @@ function ScanContent() {
   }
 
   useEffect(() => {
-    if (!ready || !tech || urlOrder) return
+    if (!ready || !tech || urlOrder || urlId) return
     startCamera()
     return () => {
       const s = scannerRef.current
       if (s) { try { s.stop().then(() => s.clear()).catch(() => {}) } catch {} ; scannerRef.current = null; startedRef.current = false }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, tech, urlOrder])
+  }, [ready, tech, urlOrder, urlId])
 
-  async function runScan(t: Tech, ord: string) {
+  // ค้นออเดอร์: id ก่อน (แม่นสุด) → order_number แบบไม่สนตัวพิมพ์ → contains (เผื่อช่องว่าง/QR เก่า)
+  async function findOrder(id: string, ord: string) {
+    const cols = 'id, order_number, customer_name, order_status'
+    if (id) {
+      const { data } = await supabase.from('order_entries').select(cols).eq('id', id).limit(1)
+      if (data && data[0]) return data[0]
+    }
+    const term = ord.trim()
+    if (term) {
+      const exact = await supabase.from('order_entries').select(cols).ilike('order_number', term).order('id', { ascending: false }).limit(1)
+      if (exact.data && exact.data[0]) return exact.data[0]
+      const like = await supabase.from('order_entries').select(cols).ilike('order_number', `%${term}%`).order('id', { ascending: false }).limit(1)
+      if (like.data && like.data[0]) return like.data[0]
+    }
+    return null
+  }
+
+  async function runScan(t: Tech, id: string, ord: string) {
     const stage = stageByKey(t.stageKey)
     if (!stage) { setPhase('error'); setMsg('ไม่พบแผนกของผู้ใช้ กรุณาตั้งค่าใหม่'); return }
-    if (!ord) { setPhase('noorder'); setMsg(''); return }
+    if (!id && !ord) { setPhase('noorder'); setMsg(''); return }
     setPhase('working')
-    const { data } = await supabase.from('order_entries').select('id, order_number, customer_name, order_status').eq('order_number', ord).order('id', { ascending: false }).limit(1)
-    const o = data && data[0]
-    if (!o) { setOrder({ order_number: ord }); setPhase('noorder'); return }
+    const o = await findOrder(id, ord)
+    if (!o) { setOrder({ order_number: ord || `id:${id}` }); setPhase('noorder'); return }
     setOrder(o)
 
     if (!canAdvance(o.order_status, stage.status)) {
@@ -107,7 +131,7 @@ function ScanContent() {
     }
 
     const now = new Date().toISOString()
-    const { error } = await supabase.from('order_entries').update({ order_status: stage.status, updated_at: now }).eq('order_number', ord)
+    const { error } = await supabase.from('order_entries').update({ order_status: stage.status, updated_at: now }).eq('id', o.id)
     if (error) { setPhase('error'); setMsg(error.message); return }
 
     try {
@@ -117,7 +141,7 @@ function ScanContent() {
         if (matches && matches.length > 0) await supabase.from('work_status').update({ status: stage.status, status_updated_at: now }).in('id', matches.map((m: any) => m.id))
       }
     } catch {}
-    try { await supabase.from('production_scans').insert({ order_number: ord, stage: stage.label, status: stage.status, tech_code: t.code, tech_name: t.name, scanned_at: now }) } catch {}
+    try { await supabase.from('production_scans').insert({ order_number: o.order_number || ord, stage: stage.label, status: stage.status, tech_code: t.code, tech_name: t.name, scanned_at: now }) } catch {}
 
     setOrder({ ...o, order_status: stage.status })
     setPhase('done')
@@ -189,7 +213,7 @@ function ScanContent() {
   const stageColor = '#2563eb'
 
   // ---------- โหมดลิงก์ (มาจากแอปกล้องของเครื่อง) ----------
-  if (urlOrder) {
+  if (urlOrder || urlId) {
     return (
       <div style={centerWrap}>
         <div style={card}>
