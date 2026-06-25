@@ -6,9 +6,11 @@ import Link from 'next/link'
 
 type Leave = { filed: string | null; date: string | null; time: string | null; type: string | null; reason: string | null; redzone: string | null; lateMin: string | null; status: string | null; supervisor: string | null }
 type Scan = { order_number: string; customer_name: string | null; status: string | null; stages: string[]; last: string | null }
-type AdminOrder = { order_number: string | null; customer_name: string | null; platform: string | null; status: string | null; category: string }
+type AdminOrder = { order_number: string | null; customer_name: string | null; platform: string | null; status: string | null; price: number; category: string }
 type Claim = { order_number: string | null; customer: string | null; type: string | null; status: string | null }
-type Work = { scans: Scan[]; orders: AdminOrder[]; claims: Claim[] }
+type CatSum = { cat: string; count: number; sales: number }
+type OrderSummary = { count: number; sales: number; byCat: CatSum[] }
+type Work = { scans: Scan[]; orders: AdminOrder[]; claims: Claim[]; orderSummary?: OrderSummary }
 type Emp = {
   code: string; name: string | null; nickname: string | null; position: string | null; division: string | null
   sick: { avail: number | null; used: number | null; left: number | null }
@@ -19,6 +21,7 @@ type Emp = {
 }
 
 const n = (v: number | null | undefined) => (v == null ? '—' : String(v))
+const baht = (v: number) => '฿' + v.toLocaleString('th-TH')
 
 function BalanceCard({ title, left, avail, used, color }: { title: string; left: number | null; avail: number | null; used: number | null; color: string }) {
   const pct = avail && avail > 0 && used != null ? Math.min(100, Math.round((used / avail) * 100)) : 0
@@ -137,20 +140,29 @@ export default function StaffDetailPage() {
             </>
           )}
 
-          {/* แอดมิน — ออเดอร์ที่รับผิดชอบ */}
+          {/* แอดมิน — สรุปยอด + ออเดอร์ที่รับผิดชอบ */}
           {work && work.orders.length > 0 && (
             <>
-              <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink)', marginBottom: 4 }}>ออเดอร์ที่รับผิดชอบ · {work.orders.length}</h2>
-              <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 12 }}>
-                {['แพลตฟอร์ม', 'งานนอก', 'ติดตั้ง'].map((cat) => {
-                  const c = work.orders.filter((o) => o.category === cat).length
-                  return c ? <span key={cat} style={{ marginRight: 14 }}>{cat} <b style={{ color: 'var(--ink)' }}>{c}</b></span> : null
-                })}
-              </div>
+              <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink)', marginBottom: 12 }}>สรุปยอดของแอดมิน</h2>
+              {work.orderSummary && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14, marginBottom: 14 }}>
+                  {stat('ออเดอร์ทั้งหมด', `${work.orderSummary.count} ออเดอร์`)}
+                  {stat('ยอดขายรวม', baht(work.orderSummary.sales), '#30c759')}
+                  {work.orderSummary.byCat.map((c) => (
+                    <div key={c.cat} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, boxShadow: 'var(--shadow)' }}>
+                      <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 600 }}>{c.cat}</div>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink)', marginTop: 8 }}>{baht(c.sales)}</div>
+                      <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 4 }}>{c.count} ออเดอร์</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink)', margin: '12px 0' }}>ออเดอร์ที่รับผิดชอบ · {work.orders.length}</h2>
               <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'auto', boxShadow: 'var(--shadow)', marginBottom: 26 }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 660 }}>
                   <thead><tr>
-                    <th style={th}>ออเดอร์</th><th style={th}>ลูกค้า</th><th style={th}>ประเภท</th><th style={th}>แพลตฟอร์ม</th><th style={th}>สถานะ</th>
+                    <th style={th}>ออเดอร์</th><th style={th}>ลูกค้า</th><th style={th}>ประเภท</th><th style={th}>แพลตฟอร์ม</th><th style={th}>สถานะ</th><th style={{ ...th, textAlign: 'right' }}>ยอดขาย</th>
                   </tr></thead>
                   <tbody>
                     {work.orders.map((o, i) => (
@@ -160,6 +172,7 @@ export default function StaffDetailPage() {
                         <td style={{ ...td, whiteSpace: 'nowrap' }}><span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: 'var(--blue-bg)', color: 'var(--blue)' }}>{o.category}</span></td>
                         <td style={{ ...td, whiteSpace: 'nowrap' }}>{o.platform || '—'}</td>
                         <td style={{ ...td, whiteSpace: 'nowrap' }}>{o.status || '—'}</td>
+                        <td style={{ ...td, whiteSpace: 'nowrap', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{o.price ? baht(o.price) : '—'}</td>
                       </tr>
                     ))}
                   </tbody>

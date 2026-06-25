@@ -142,7 +142,7 @@ export default function ActivityLog() {
   const cats = ['', 'ออเดอร์', 'เคลม', 'งานติดตั้ง', 'สั่งซื้อ', 'สต็อก', 'ใบลา', 'สแกนผลิต']
 
   return (
-    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: 24, marginTop: 24 }}>
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: 24 }}>
       <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 4, color: 'var(--ink)' }}>ประวัติการแก้ไข</h2>
       <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 16 }}>ทุกการเพิ่ม/แก้ไข/ลบ ในระบบ — เชื่อมทั้งร้านอัตโนมัติ</p>
 

@@ -21,9 +21,9 @@ export default function SettingsPage() {
       <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', marginBottom: 4, letterSpacing: '-0.5px' }}>ตั้งค่า</h1>
       <p style={{ color: 'var(--ink-3)', marginBottom: 32, fontSize: 14 }}>ข้อมูลบัญชีที่เข้าใช้งาน</p>
 
-      <div style={{ maxWidth: 720 }}>
+      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         {/* Account info */}
-        <div style={{ maxWidth: 380, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '24px' }}>
+        <div style={{ width: 340, flexShrink: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '24px' }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 18, color: 'var(--ink)' }}>บัญชีที่เข้าใช้งาน</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <div style={{ width: 48, height: 48, borderRadius: 24, background: 'var(--blue)22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>👤</div>
@@ -37,8 +37,10 @@ export default function SettingsPage() {
           </button>
         </div>
 
-        {/* ประวัติการแก้ไขทั้งร้าน */}
-        <ActivityLog />
+        {/* ประวัติการแก้ไขทั้งร้าน — อยู่ขวาของการ์ดบัญชี */}
+        <div style={{ flex: 1, minWidth: 320 }}>
+          <ActivityLog />
+        </div>
       </div>
     </div>
   )

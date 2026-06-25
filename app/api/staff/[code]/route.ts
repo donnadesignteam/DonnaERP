@@ -39,7 +39,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
     const nickname = employee.nickname
     const { data: aoRaw } = nickname
       ? await supabase.from('order_entries')
-          .select('order_number, customer_name, platform, is_installation, order_status, deadline, updated_at')
+          .select('order_number, customer_name, platform, is_installation, order_status, deadline, price, updated_at')
           .eq('admin_name', nickname).order('updated_at', { ascending: false })
       : { data: [] as any[] }
     const orders = (aoRaw || [])
@@ -47,8 +47,20 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
       .map((o) => ({
         order_number: o.order_number, customer_name: o.customer_name,
         platform: o.platform, status: o.order_status,
+        price: typeof o.price === 'number' ? o.price : Number(o.price) || 0,
         category: categorize(o.platform, !!o.is_installation),
       }))
+
+    // สรุปยอดของแอดมิน: จำนวน + ยอดขายรวม แยกตามประเภท
+    const CATS = ['แพลตฟอร์ม', 'งานนอก', 'ติดตั้ง'] as const
+    const orderSummary = {
+      count: orders.length,
+      sales: orders.reduce((s, o) => s + o.price, 0),
+      byCat: CATS.map((cat) => {
+        const list = orders.filter((o) => o.category === cat)
+        return { cat, count: list.length, sales: list.reduce((s, o) => s + o.price, 0) }
+      }).filter((c) => c.count > 0),
+    }
 
     // เคลม: ผูกผ่านออเดอร์เดิมของแอดมิน (claims.original_order_number) — มีผลเมื่อกรอกเลขออเดอร์เดิม
     const orderNums = orders.map((o) => o.order_number).filter(Boolean)
@@ -62,7 +74,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
 
     return NextResponse.json({
       employee, startDate: ld.startDate, leaves: ld.leaves,
-      work: { scans, orders, claims },
+      work: { scans, orders, claims, orderSummary },
     })
   } catch (e) {
     return NextResponse.json({ error: 'โหลดข้อมูลไม่สำเร็จ', detail: String(e) }, { status: 502 })
