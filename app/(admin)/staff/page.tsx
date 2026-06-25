@@ -75,7 +75,7 @@ export default function StaffPage() {
     <div>
       <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', marginBottom: 4, letterSpacing: '-0.5px' }}>พนักงาน</h1>
       <p style={{ color: 'var(--ink-3)', marginBottom: 20, fontSize: 14 }}>
-        ข้อมูลพนักงานและสิทธิการลา (ดึงสดจาก Google Sheet ฝ่ายบุคคล) · {rows.length} คน
+        ข้อมูลพนักงานและสิทธิการลา
       </p>
 
       {!loading && !error && (
