@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# data dump พนักงาน (PII, regenerate จาก migrate_staff_from_sheet.mjs --sql)
+scripts/staff_migration_full.sql

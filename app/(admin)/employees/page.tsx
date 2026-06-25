@@ -19,6 +19,7 @@ type Leave = {
   leave_status: string
   supervisor_approval: string
   hr_approval: string
+  medical_cert_url: string | null
   created_at: string
 }
 
@@ -90,6 +91,8 @@ export default function EmployeesPage() {
   const [saving, setSaving] = useState(false)
   const [conflict, setConflict] = useState('')
   const [suggestions, setSuggestions] = useState<typeof EMPLOYEES>([])
+  const [certFile, setCertFile] = useState<File | null>(null)
+  const [certBusy, setCertBusy] = useState<string | null>(null)  // id แถวที่กำลังอัปโหลดใบรับรองทีหลัง
 
   const load = async () => {
     setLoading(true)
@@ -131,6 +134,41 @@ export default function EmployeesPage() {
     } else setConflict('')
   }
 
+  // อัปโหลดรูปใบรับรองแพทย์เข้า Supabase Storage → คืน public URL (null = ไม่มีไฟล์/พลาด)
+  const uploadCert = async (file: File, code: string): Promise<string | null> => {
+    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+    const path = `${code || 'unknown'}/${Date.now()}.${ext}`
+    const { error } = await supabase.storage.from('medical-certs').upload(path, file, { upsert: true })
+    if (error) { alert('อัปโหลดใบรับรองแพทย์ไม่สำเร็จ: ' + error.message); return null }
+    return supabase.storage.from('medical-certs').getPublicUrl(path).data.publicUrl
+  }
+
+  // ผลของการลาแต่ละประเภทต่อช่องสิทธิลาในตาราง staff (จะคูณด้วย sign ตอนเพิ่ม/ลบ)
+  const leaveEffect = (type: string, days: number): Record<string, number> => {
+    switch (type) {
+      case 'ลาป่วย':       return { sick_used: days, sick_left: -days }
+      case 'ลากิจเต็มวัน': return { personal_full: days, personal_left: -days }
+      case 'ลากิจครึ่งวัน': return { personal_half: 1, personal_left: -0.5 }
+      case 'ลาพักร้อน':    return { vacation_used: days, vacation_left: -days }
+      case 'WOPเต็มวัน':    return { wop_full: 1 }
+      case 'WOPครึ่งวัน':   return { wop_half: 1 }
+      case 'WOPรายชั่วโมง': return { wop_hours: 1 }
+      case 'มาสาย':        return { late: 1 }
+      default: return {}
+    }
+  }
+
+  // อัปเดตสิทธิลาในตาราง staff ตามการลา (sign=1 เพิ่ม, sign=-1 ลบ/ย้อนกลับ)
+  const applyLeaveToStaff = async (code: string, type: string, days: number, sign: 1 | -1) => {
+    const delta = leaveEffect(type, days)
+    if (!code || !Object.keys(delta).length) return
+    const { data: s, error } = await supabase.from('staff').select('*').eq('code', code.toUpperCase()).maybeSingle()
+    if (error || !s) return  // ยังไม่ได้ migrate ตาราง staff → ข้ามไป ไม่ให้พัง
+    const patch: Record<string, number> = {}
+    for (const [k, v] of Object.entries(delta)) patch[k] = (Number((s as Record<string, unknown>)[k] ?? 0)) + sign * v
+    await supabase.from('staff').update(patch).eq('code', code.toUpperCase())
+  }
+
   const save = async () => {
     // กันลาพักร้อนเมื่อยังไม่มีสิทธิ / เกินจำนวนวันต่อเนื่อง (เผื่อปุ่มถูกข้าม)
     const td = form.employee_code ? tenureDays(form.employee_code) : null
@@ -140,6 +178,8 @@ export default function EmployeesPage() {
       if (rangeDays(form.leave_date, form.leave_end_date) > max) return
     }
     setSaving(true)
+    // แนบใบรับรองแพทย์ถ้ามี (ไม่บังคับ — ไม่แนบก็บันทึกได้)
+    const certUrl = certFile ? await uploadCert(certFile, form.employee_code) : null
     await supabase.from('leave_requests').insert({
       employee_code: form.employee_code,
       employee_name: form.employee_name,
@@ -153,16 +193,32 @@ export default function EmployeesPage() {
       leave_status: 'รออนุมัติ',
       supervisor_approval: 'รออนุมัติ',
       hr_approval: 'รออนุมัติ',
+      medical_cert_url: certUrl,
     })
+    // อัปเดตสิทธิลาในหน้าพนักงาน (staff) ให้ตรงกัน
+    await applyLeaveToStaff(form.employee_code, form.leave_type, rangeDays(form.leave_date, form.leave_end_date || form.leave_date), 1)
     setSaving(false)
     setModal(false)
     setForm({ nickname: '', employee_code: '', employee_name: '', department: '', leave_date: '', leave_end_date: '', leave_time: '08:00', leave_type: '', reason: '' })
+    setCertFile(null)
+    load()
+  }
+
+  // แนบ/เปลี่ยนใบรับรองแพทย์ทีหลังจากในตาราง
+  const attachCert = async (l: Leave, file: File) => {
+    setCertBusy(l.id)
+    const url = await uploadCert(file, l.employee_code)
+    if (url) await supabase.from('leave_requests').update({ medical_cert_url: url }).eq('id', l.id)
+    setCertBusy(null)
     load()
   }
 
   const del = async (id: string) => {
     if (!confirm('ลบรายการนี้?')) return
+    const l = leaves.find((x) => x.id === id)
     await supabase.from('leave_requests').delete().eq('id', id)
+    // ย้อนสิทธิลาในตาราง staff กลับ
+    if (l) await applyLeaveToStaff(l.employee_code, l.leave_type, rangeDays(l.leave_date, l.leave_end_date || l.leave_date), -1)
     load()
   }
 
@@ -263,7 +319,7 @@ export default function EmployeesPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
-                {['รหัส','ชื่อ-นามสกุล','ชื่อเล่น','แผนก','วันที่ลา','ประเภท','เหตุผล','สถานะ','หัวหน้า','บุคคล',''].map(h => (
+                {['รหัส','ชื่อ-นามสกุล','ชื่อเล่น','แผนก','วันที่ลา','ประเภท','เหตุผล','ใบรับรอง','สถานะ','หัวหน้า','บุคคล',''].map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '11px 13px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -284,6 +340,24 @@ export default function EmployeesPage() {
                   </td>
                   <td style={{ padding: '11px 13px' }}>{l.leave_type}</td>
                   <td style={{ padding: '11px 13px', color: 'var(--ink-3)', maxWidth: 140 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.reason || '-'}</div></td>
+                  <td style={{ padding: '11px 13px', whiteSpace: 'nowrap' }}>
+                    {l.leave_type !== 'ลาป่วย' ? (
+                      <span style={{ color: 'var(--ink-4)' }}>-</span>
+                    ) : certBusy === l.id ? (
+                      <span style={{ color: 'var(--ink-3)' }}>กำลังอัปโหลด…</span>
+                    ) : (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        {l.medical_cert_url && (
+                          <a href={l.medical_cert_url} target="_blank" rel="noreferrer" style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>📄 ดู</a>
+                        )}
+                        <label style={{ color: l.medical_cert_url ? 'var(--ink-3)' : 'var(--blue)', cursor: 'pointer', fontSize: 11, textDecoration: 'underline' }}>
+                          {l.medical_cert_url ? 'เปลี่ยน' : '+ แนบไฟล์'}
+                          <input type="file" accept="image/*,application/pdf" style={{ display: 'none' }}
+                            onChange={e => { const f = e.target.files?.[0]; if (f) attachCert(l, f); e.target.value = '' }} />
+                        </label>
+                      </span>
+                    )}
+                  </td>
                   <td style={{ padding: '11px 13px' }}>
                     <select value={l.leave_status} onChange={e => updateLeave(l.id, 'leave_status', e.target.value)}
                       style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 6px', fontSize: 11, outline: 'none' }}>
@@ -315,7 +389,7 @@ export default function EmployeesPage() {
 
       {/* Add leave modal */}
       {modal && (
-        <div onClick={() => setModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+        <div onClick={() => { setModal(false); setCertFile(null) }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto' }}>
             <h2 style={{ fontSize: 17, fontWeight: 700, marginBottom: 20 }}>+ เพิ่มรายการลา</h2>
 
@@ -413,6 +487,15 @@ export default function EmployeesPage() {
               )}
             </div>
 
+            {form.leave_type === 'ลาป่วย' && (
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 5 }}>ใบรับรองแพทย์ <span style={{ color: 'var(--ink-4)' }}>(ไม่บังคับ — แนบทีหลังได้)</span></label>
+                <input type="file" accept="image/*,application/pdf" onChange={e => setCertFile(e.target.files?.[0] || null)}
+                  style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                {certFile && <div style={{ fontSize: 12, color: '#34c759', marginTop: 5 }}>✓ เลือกไฟล์: {certFile.name}</div>}
+              </div>
+            )}
+
             <div style={{ marginBottom: 14 }}>
               <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 5 }}>เหตุผล</label>
               <textarea value={form.reason} onChange={e => setF('reason', e.target.value)} rows={2}
@@ -420,7 +503,7 @@ export default function EmployeesPage() {
             </div>
 
             <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-              <button onClick={() => setModal(false)}
+              <button onClick={() => { setModal(false); setCertFile(null) }}
                 style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ยกเลิก</button>
               <button onClick={save} disabled={saving || !form.employee_code || !form.leave_date || !form.leave_type || vacBlocked}
                 style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', cursor: vacBlocked ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 600, opacity: (!form.employee_code || !form.leave_date || !form.leave_type || vacBlocked) ? 0.5 : 1 }}>

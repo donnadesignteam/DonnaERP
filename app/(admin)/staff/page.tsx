@@ -2,22 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-
-type Leave3 = { avail: number | null; used?: number | null; left: number | null }
-type Staff = {
-  code: string
-  name: string | null
-  nickname: string | null
-  position: string | null
-  division: string | null
-  sick: Leave3
-  personal: { avail: number | null; full: number | null; half: number | null; left: number | null }
-  vacation: Leave3
-  wop: { full: number | null; half: number | null; hours: number | null }
-  late: number | null
-  warning: string | null
-  note: string | null
-}
+import { fetchStaffList, type Staff } from '@/lib/staffDb'
 
 const n = (v: number | null | undefined) => (v == null ? '—' : String(v))
 
@@ -45,10 +30,9 @@ export default function StaffPage() {
   const [div, setDiv] = useState('')
 
   useEffect(() => {
-    fetch('/api/staff')
-      .then((r) => r.json())
-      .then((d) => { if (d.error) setError(d.error); else setStaff(d.staff || []) })
-      .catch(() => setError('เชื่อมต่อไม่ได้'))
+    fetchStaffList()
+      .then(setStaff)
+      .catch((e) => setError(e?.message?.includes('staff') || e?.code === '42P01' ? 'ยังไม่ได้รัน scripts/add_staff_table.sql + migrate_staff_from_sheet.mjs' : (e?.message || 'เชื่อมต่อไม่ได้')))
       .finally(() => setLoading(false))
   }, [])
 
