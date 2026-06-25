@@ -29,6 +29,7 @@ const RED_ZONES = new Set(['2026-01-02','2026-01-03','2026-01-16','2026-01-17','
 const CAMPAIGNS: Record<string, string> = {'2026-07-25':'Payday','2026-08-08':'Fashion and Beauty Sale','2026-08-15':'Mid month Sale','2026-08-25':'Payday','2026-09-09':'SuperShoping Day','2026-09-15':'Mid month Sale','2026-09-25':'Payday','2026-10-10':'Brand Festival','2026-10-15':'Mid month Sale','2026-10-25':'Payday','2026-11-11':'Big Sale','2026-11-15':'Mid month Sale','2026-11-25':'Payday','2026-12-12':'BirthDay Sale','2026-12-15':'Mid month Sale','2026-12-25':'Payday'}
 
 
+const STATUS_COLOR: Record<string, string> = { 'ใบลาเรียบร้อย': '#30c759', 'อนุมัติ': '#30c759', 'รออนุมัติ': '#a1a1aa', 'ยังไม่เขียนไปลา': '#f59e0b', 'ไม่อนุมัติ': '#ff375f' }
 const DAYS = ['จ.','อ.','พ.','พฤ.','ศ.','ส.','อา.']
 const TH_MONTHS = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
 
@@ -93,6 +94,7 @@ export default function EmployeesPage() {
   const [suggestions, setSuggestions] = useState<typeof EMPLOYEES>([])
   const [certFile, setCertFile] = useState<File | null>(null)
   const [certBusy, setCertBusy] = useState<string | null>(null)  // id แถวที่กำลังอัปโหลดใบรับรองทีหลัง
+  const [dayModal, setDayModal] = useState<{ ymd: string; day: number; leaves: Leave[] } | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -281,7 +283,7 @@ export default function EmployeesPage() {
             else if (isSunday) bg = '#f4f4f5'
 
             return (
-              <div key={i} style={{ minHeight: 85, background: bg, borderRadius: 8, padding: '6px 7px', border: isToday ? '2px solid var(--blue)' : '1px solid rgba(0,0,0,0.06)', position: 'relative', overflow: 'hidden' }}>
+              <div key={i} onClick={() => setDayModal({ ymd, day, leaves: dayLeaves })} style={{ minHeight: 85, background: bg, borderRadius: 8, padding: '6px 7px', border: isToday ? '2px solid var(--blue)' : '1px solid rgba(0,0,0,0.06)', position: 'relative', overflow: 'hidden', cursor: 'pointer' }}>
                 <div style={{ fontSize: 12, fontWeight: isToday ? 700 : 400, color: isToday ? 'var(--blue)' : 'var(--ink)', marginBottom: 2 }}>{day}</div>
                 {isSunday && <div style={{ fontSize: 9, color: '#6b7280', fontWeight: 600, lineHeight: 1.3, marginBottom: 2 }}>ร้านปิด</div>}
                 {holiday && <div style={{ fontSize: 9, color: '#b45309', fontWeight: 600, lineHeight: 1.3, marginBottom: 2 }}>{holiday}</div>}
@@ -386,6 +388,56 @@ export default function EmployeesPage() {
           </table>
         )}
       </div>
+
+      {/* Day detail modal (คลิกวันในปฏิทิน) */}
+      {dayModal && (
+        <div onClick={() => setDayModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 520, maxHeight: '80vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+              <h2 style={{ fontSize: 17, fontWeight: 700 }}>วันที่ {dayModal.day} {TH_MONTHS[month]} {year + 543}</h2>
+              <button onClick={() => setDayModal(null)} style={{ border: 'none', background: 'rgba(0,0,0,0.10)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>✕</button>
+            </div>
+
+            {/* แถบสถานะวัน */}
+            {new Date(dayModal.ymd + 'T00:00').getDay() === 0 && (
+              <div style={{ background: '#f4f4f5', border: '1px solid #e4e4e7', borderRadius: 10, padding: '9px 14px', marginBottom: 10, color: '#52525b', fontSize: 13, fontWeight: 600 }}>🏪 ร้านปิด (วันอาทิตย์)</div>
+            )}
+            {HOLIDAYS[dayModal.ymd] && (
+              <div style={{ background: '#fff9e6', border: '1px solid #f0d98c', borderRadius: 10, padding: '9px 14px', marginBottom: 10, color: '#b45309', fontSize: 13, fontWeight: 600 }}>🏖️ วันหยุดร้าน · {HOLIDAYS[dayModal.ymd]}</div>
+            )}
+            {CAMPAIGNS[dayModal.ymd] && (
+              <div style={{ background: '#fff3e6', border: '1px solid #f0c89c', borderRadius: 10, padding: '9px 14px', marginBottom: 10, color: '#c2510a', fontSize: 13, fontWeight: 600 }}>📣 แคมเปญ · {CAMPAIGNS[dayModal.ymd]}</div>
+            )}
+            {RED_ZONES.has(dayModal.ymd) && (
+              <div style={{ background: '#fff0f0', border: '1px solid #f5b5b5', borderRadius: 10, padding: '9px 14px', marginBottom: 10, color: 'var(--red)', fontSize: 13, fontWeight: 600 }}>🔴 ช่วงห้ามลา (Red Zone)</div>
+            )}
+
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 600, margin: '14px 0 8px' }}>การลา ({dayModal.leaves.length})</div>
+            {dayModal.leaves.length === 0 ? (
+              <p style={{ color: 'var(--ink-3)', textAlign: 'center', padding: '18px 0', fontSize: 13 }}>ไม่มีการลาในวันนี้</p>
+            ) : dayModal.leaves.map(l => (
+              <div key={l.id} style={{ borderLeft: '4px solid var(--blue)', borderRadius: 10, padding: '12px 14px', background: 'var(--bg)', marginBottom: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                  <span style={{ fontWeight: 700 }}>{l.employee_nickname || l.employee_name} <span style={{ fontWeight: 400, color: 'var(--ink-3)', fontSize: 13 }}>{l.employee_code}{l.department ? ` · ${l.department}` : ''}</span></span>
+                  {l.leave_time && <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{l.leave_time}</span>}
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ background: 'var(--blue)22', color: 'var(--blue)', padding: '2px 9px', borderRadius: 980, fontSize: 11, fontWeight: 600 }}>{l.leave_type}</span>
+                  {l.leave_status && <span style={{ fontSize: 12, color: STATUS_COLOR[l.leave_status] || 'var(--ink-3)', fontWeight: 600 }}>{l.leave_status}</span>}
+                  {l.leave_end_date && l.leave_end_date !== l.leave_date && <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>({rangeDays(l.leave_date, l.leave_end_date)} วัน)</span>}
+                </div>
+                {l.reason && <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 6 }}>{l.reason}</div>}
+                {l.medical_cert_url && <a href={l.medical_cert_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: 'var(--blue)', display: 'inline-block', marginTop: 6, textDecoration: 'none' }}>📄 ใบรับรองแพทย์</a>}
+              </div>
+            ))}
+
+            <button onClick={() => { setForm(f => ({ ...f, leave_date: dayModal.ymd, leave_end_date: dayModal.ymd })); setDayModal(null); setModal(true) }}
+              style={{ marginTop: 8, width: '100%', padding: '10px', borderRadius: 10, border: '1px dashed var(--border-2)', background: 'var(--surface)', color: 'var(--blue)', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
+              + เพิ่มลาในวันนี้
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Add leave modal */}
       {modal && (
