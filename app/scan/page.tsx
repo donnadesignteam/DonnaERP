@@ -7,6 +7,14 @@ import { EMPLOYEES, STAGES, stageByKey, canAdvance } from '@/lib/staff'
 
 const LS_KEY = 'donna-scan-tech'
 type Tech = { code: string; name: string; stageKey: string }
+
+// งานพิเศษ (ไม่ใช่สายผลิตปกติ) — แพ็คราง = ติ๊ก rail_packed, จัดส่งแล้ว = ตั้ง order_status+shipped_at
+type SpecialKind = 'rail' | 'shipped'
+const SPECIAL_STAGES: { key: string; label: string; status: string; special: SpecialKind }[] = [
+  { key: 'rail_pack', label: 'แพ็คราง', status: 'แพ็คราง', special: 'rail' },
+  { key: 'shipped', label: 'จัดส่งแล้ว', status: 'จัดส่งแล้ว', special: 'shipped' },
+]
+const resolveStage = (key: string): any => stageByKey(key) || SPECIAL_STAGES.find(s => s.key === key)
 type Phase = 'scanning' | 'working' | 'done' | 'already' | 'noorder' | 'error'
 
 function loadTech(): Tech | null {
@@ -132,13 +140,37 @@ function ScanContent() {
   }
 
   async function runScan(t: Tech, id: string, ord: string) {
-    const stage = stageByKey(t.stageKey)
+    const stage = resolveStage(t.stageKey)
     if (!stage) { setPhase('error'); setMsg('ไม่พบแผนกของผู้ใช้ กรุณาตั้งค่าใหม่'); return }
     if (!id && !ord) { setPhase('noorder'); setMsg(''); return }
     setPhase('working')
     const o = await findOrder(id, ord)
     if (!o) { setOrder({ order_number: ord || `id:${id}` }); setPhase('noorder'); return }
     setOrder(o)
+
+    // ===== งานพิเศษ: แพ็คราง / จัดส่งแล้ว (ไม่ผ่านด่านกันข้ามขั้น) =====
+    const special: SpecialKind | undefined = stage.special
+    if (special === 'rail') {
+      const now = new Date().toISOString()
+      const { error } = await supabase.from('order_entries').update({ rail_packed: true, rail_packed_at: now, updated_at: now }).eq('id', o.id)
+      if (error) { setPhase('error'); setMsg(error.message); return }
+      try { await supabase.from('production_scans').insert({ order_number: o.order_number || ord, stage: stage.label, status: stage.status, tech_code: t.code, tech_name: t.name, scanned_at: now }) } catch {}
+      setPhase('done'); return
+    }
+    if (special === 'shipped') {
+      const now = new Date().toISOString()
+      const { error } = await supabase.from('order_entries').update({ order_status: 'จัดส่งแล้ว', shipped_at: now, is_urgent: true, updated_at: now }).eq('id', o.id)
+      if (error) { setPhase('error'); setMsg(error.message); return }
+      try {
+        const term = o.order_number || o.customer_name
+        if (term) {
+          const { data: matches } = await supabase.from('work_status').select('id').or(`order_number.ilike.%${term}%,order_number.ilike.%${o.customer_name}%`)
+          if (matches && matches.length > 0) await supabase.from('work_status').update({ status: 'จัดส่งแล้ว', status_updated_at: now }).in('id', matches.map((m: any) => m.id))
+        }
+      } catch {}
+      try { await supabase.from('production_scans').insert({ order_number: o.order_number || ord, stage: stage.label, status: stage.status, tech_code: t.code, tech_name: t.name, scanned_at: now }) } catch {}
+      setOrder({ ...o, order_status: 'จัดส่งแล้ว' }); setPhase('done'); return
+    }
 
     if (!canAdvance(o.order_status, stage.status)) {
       setPhase('already'); setMsg(`สถานะปัจจุบัน: ${o.order_status || 'รอดำเนินการ'}`); return
@@ -209,7 +241,7 @@ function ScanContent() {
           )}
           <label style={{ display: 'block', fontSize: 13, fontWeight: 600, textAlign: 'left', marginBottom: 6 }}>2. แผนกของคุณ</label>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 22 }}>
-            {STAGES.map(s => (
+            {[...STAGES, ...SPECIAL_STAGES].map(s => (
               <button key={s.key} onClick={() => setPickStage(s.key)}
                 style={{ padding: 14, borderRadius: 12, border: pickStage === s.key ? '2px solid #2563eb' : '1px solid #ccc', background: pickStage === s.key ? '#eff6ff' : '#fff', cursor: 'pointer', fontSize: 16, fontWeight: 700, color: '#1a1a1a' }}>
                 {s.label}<div style={{ fontSize: 11, fontWeight: 400, color: '#888' }}>→ {s.status}</div>
@@ -223,7 +255,7 @@ function ScanContent() {
     )
   }
 
-  const stage = stageByKey(tech.stageKey)
+  const stage = resolveStage(tech.stageKey)
   const stageColor = '#2563eb'
 
   // ---------- โหมดลิงก์ (มาจากแอปกล้องของเครื่อง) ----------

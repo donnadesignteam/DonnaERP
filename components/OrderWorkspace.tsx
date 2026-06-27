@@ -53,6 +53,8 @@ type Entry = {
   created_at: string
   updated_at: string
   shipped_at: string | null
+  rail_packed: boolean
+  rail_packed_at: string | null
 }
 
 const emptyItem = (): Item => ({ type: '', floors: null, rail_head: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', note: '' })
@@ -116,7 +118,7 @@ function daysRemaining(dateStr: string): number | null {
   return isNaN(result) ? null : result
 }
 
-const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping_datetime' | 'shipped_at'> => ({
+const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping_datetime' | 'shipped_at' | 'rail_packed' | 'rail_packed_at'> => ({
   entry_date: new Date().toISOString().split('T')[0],
   deadline: '',
   status: 'อยู่ในกำหนด',
@@ -196,6 +198,7 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
     { id: 'customer', label: 'ลูกค้า' }, { id: 'platform', label: 'แพลตฟอร์ม' },
     { id: 'courier', label: 'บริษัทจัดส่ง' }, { id: 'status', label: 'สถานะงาน' },
     { id: 'done', label: 'งานเสร็จ' }, { id: 'shipped', label: 'จัดส่งแล้ว' },
+    { id: 'rail', label: 'สถานะราง' },
     { id: 'notes', label: 'หมายเหตุ' }, { id: 'updated', label: 'แก้ไขล่าสุด' },
   ],
   platform: [
@@ -207,6 +210,7 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
     { id: 'admin', label: 'แอดมิน' }, { id: 'tech', label: 'ช่าง' },
     { id: 'status', label: 'สถานะงาน' }, { id: 'dropoff', label: 'Drop-off' },
     { id: 'done', label: 'งานเสร็จ' }, { id: 'shipped', label: 'จัดส่งแล้ว' },
+    { id: 'rail', label: 'สถานะราง' },
     { id: 'notes', label: 'หมายเหตุ' }, { id: 'updated', label: 'เวลาที่แก้ไข' },
   ],
   outside: [
@@ -216,6 +220,7 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
     { id: 'payment', label: 'ชำระ' }, { id: 'paybefore', label: 'ยอดชำระก่อนจัดส่ง' },
     { id: 'assigned', label: 'ลงออเดอร์' }, { id: 'status', label: 'สถานะงาน' },
     { id: 'done', label: 'งานเสร็จ' }, { id: 'shipped', label: 'จัดส่งแล้ว' },
+    { id: 'rail', label: 'สถานะราง' },
     { id: 'created', label: 'วันที่สร้าง' }, { id: 'notes', label: 'หมายเหตุ' },
     { id: 'updated', label: 'แก้ไขล่าสุด' },
   ],
@@ -226,6 +231,7 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
     { id: 'payment', label: 'ชำระ' }, { id: 'paybefore', label: 'ยอดชำระหลังติดตั้ง' },
     { id: 'assigned', label: 'ลงออเดอร์' }, { id: 'status', label: 'สถานะงาน' },
     { id: 'done', label: 'งานเสร็จ' }, { id: 'installed', label: 'ติดตั้ง' },
+    { id: 'rail', label: 'สถานะราง' },
     { id: 'created', label: 'วันที่สร้าง' }, { id: 'notes', label: 'หมายเหตุ' },
     { id: 'updated', label: 'แก้ไขล่าสุด' },
   ],
@@ -588,7 +594,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       head: it.rail_head || undefined,
       carrier,
     }))
-    const payload = { cust: r.customer_name || '', order: r.order_number || '', platform: r.platform || '', note: r.notes || '', items }
+    const scanBase = typeof window !== 'undefined' ? window.location.origin : ''
+    const payload = { cust: r.customer_name || '', order: r.order_number || '', platform: r.platform || '', note: r.notes || '', id: r.id, scanBase, items }
     window.open(`${RAIL_URL}/?prefill=${encodeURIComponent(JSON.stringify(payload))}`, '_blank')
   }
 
@@ -655,6 +662,18 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const { error: err } = await supabase.from('order_entries').update(updates).eq('id', id)
     if (!err) {
       if (row) await syncWorkStatus(row.order_number, row.customer_name, updates.order_status, now)
+      const sy = window.scrollY
+      flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, ...updates } as Entry : r)))
+      window.scrollTo(window.scrollX, sy)
+    }
+  }
+
+  // ติ๊ก "สถานะราง" (แพ็ครางเสร็จ) — ไม่ยุ่งกับ order_status สายผลิต
+  const toggleRailPacked = async (id: string, checked: boolean) => {
+    const now = new Date().toISOString()
+    const updates = { rail_packed: checked, rail_packed_at: checked ? now : null, updated_at: now }
+    const { error: err } = await supabase.from('order_entries').update(updates).eq('id', id)
+    if (!err) {
       const sy = window.scrollY
       flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, ...updates } as Entry : r)))
       window.scrollTo(window.scrollX, sy)
@@ -1623,6 +1642,9 @@ ${body}
                     </button>
                   </th>
                 )}
+                {showCol('rail') && (
+                <th style={{ textAlign: 'center', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>สถานะราง</th>
+                )}
                 {showCol('created') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>วันที่สร้าง</th>
                 )}
@@ -1813,6 +1835,21 @@ ${body}
                           style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
                       </td>
                     )}
+                    {showCol('rail') && (
+                    <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      {hasRail(r) ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                          <input type="checkbox" checked={!!r.rail_packed} onChange={e => toggleRailPacked(r.id, e.target.checked)}
+                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                          {r.rail_packed && r.rail_packed_at && (
+                            <span style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3 }}>
+                              {new Date(r.rail_packed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                            </span>
+                          )}
+                        </div>
+                      ) : <span style={{ color: 'var(--ink-4)' }}>–</span>}
+                    </td>
+                    )}
                     {showCol('created') && (
                     <td style={{ padding: '8px 14px' }}>{dateCell('entry_date')}</td>
                     )}
@@ -1970,6 +2007,9 @@ ${body}
                 {showCol('shipped') && (
                 <th style={{ textAlign: 'center', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>จัดส่งแล้ว</th>
                 )}
+                {showCol('rail') && (
+                <th style={{ textAlign: 'center', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>สถานะราง</th>
+                )}
                 {showCol('notes') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>หมายเหตุ</th>
                 )}
@@ -2073,6 +2113,21 @@ ${body}
                           )}
                         </div>
                       )}
+                    </td>
+                    )}
+                    {showCol('rail') && (
+                    <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      {hasRail(r) ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                          <input type="checkbox" checked={!!r.rail_packed} onChange={e => toggleRailPacked(r.id, e.target.checked)}
+                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                          {r.rail_packed && r.rail_packed_at && (
+                            <span style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3 }}>
+                              {new Date(r.rail_packed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                            </span>
+                          )}
+                        </div>
+                      ) : <span style={{ color: 'var(--ink-4)' }}>–</span>}
                     </td>
                     )}
                     {showCol('notes') && (
@@ -2302,6 +2357,9 @@ ${body}
                 {showCol('shipped') && (
                 <th style={{ textAlign: 'center', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>จัดส่งแล้ว</th>
                 )}
+                {showCol('rail') && (
+                <th style={{ textAlign: 'center', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>สถานะราง</th>
+                )}
                 {showCol('notes') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>หมายเหตุ</th>
                 )}
@@ -2450,6 +2508,21 @@ ${body}
                           </span>
                         )}
                       </div>
+                    </td>
+                    )}
+                    {showCol('rail') && (
+                    <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      {hasRail(r) ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                          <input type="checkbox" checked={!!r.rail_packed} onChange={e => toggleRailPacked(r.id, e.target.checked)}
+                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                          {r.rail_packed && r.rail_packed_at && (
+                            <span style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3 }}>
+                              {new Date(r.rail_packed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                            </span>
+                          )}
+                        </div>
+                      ) : <span style={{ color: 'var(--ink-4)' }}>–</span>}
                     </td>
                     )}
                     {showCol('notes') && (
