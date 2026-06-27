@@ -55,6 +55,7 @@ type Entry = {
   shipped_at: string | null
   rail_packed: boolean
   rail_packed_at: string | null
+  done_at: string | null
 }
 
 const emptyItem = (): Item => ({ type: '', floors: null, rail_head: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', note: '' })
@@ -118,7 +119,7 @@ function daysRemaining(dateStr: string): number | null {
   return isNaN(result) ? null : result
 }
 
-const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping_datetime' | 'shipped_at' | 'rail_packed' | 'rail_packed_at'> => ({
+const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping_datetime' | 'shipped_at' | 'rail_packed' | 'rail_packed_at' | 'done_at'> => ({
   entry_date: new Date().toISOString().split('T')[0],
   deadline: '',
   status: 'อยู่ในกำหนด',
@@ -640,8 +641,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const row = rows.find(r => r.id === id)
     const now = new Date().toISOString()
     const updates = checked
-      ? { is_urgent: true, order_status: row?.is_installation ? 'รอติดตั้ง' : 'รอจัดส่ง', updated_at: now }
-      : { is_urgent: false, order_status: 'รอดำเนินการ', updated_at: now }
+      ? { is_urgent: true, order_status: row?.is_installation ? 'รอติดตั้ง' : 'รอจัดส่ง', done_at: now, updated_at: now }
+      : { is_urgent: false, order_status: 'รอดำเนินการ', done_at: null, updated_at: now }
     const { error: err } = await supabase.from('order_entries').update(updates).eq('id', id)
     if (!err) {
       if (row) await syncWorkStatus(row.order_number, row.customer_name, updates.order_status, now)
@@ -1810,9 +1811,17 @@ ${body}
                     </td>
                     )}
                     {showCol('done') && (
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>
-                      <input type="checkbox" checked={!!r.is_urgent} onChange={e => toggleDone(r.id, e.target.checked)}
-                        style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                    <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                        <input type="checkbox" checked={!!r.is_urgent} onChange={e => toggleDone(r.id, e.target.checked)}
+                          style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                        {r.is_urgent && r.done_at && (
+                          <span style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3 }}>
+                            {new Date(r.done_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
+                            {new Date(r.done_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     )}
                     {quickFilter !== 'install' && showCol('shipped') && (
@@ -1843,7 +1852,8 @@ ${body}
                             style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
                           {r.rail_packed && r.rail_packed_at && (
                             <span style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3 }}>
-                              {new Date(r.rail_packed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                              {new Date(r.rail_packed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
+                              {new Date(r.rail_packed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                             </span>
                           )}
                         </div>
@@ -2092,9 +2102,17 @@ ${body}
                     </td>
                     )}
                     {showCol('done') && (
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>
-                      <input type="checkbox" checked={!!r.is_urgent} onChange={e => toggleDone(r.id, e.target.checked)}
-                        style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                    <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                        <input type="checkbox" checked={!!r.is_urgent} onChange={e => toggleDone(r.id, e.target.checked)}
+                          style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                        {r.is_urgent && r.done_at && (
+                          <span style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3 }}>
+                            {new Date(r.done_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
+                            {new Date(r.done_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     )}
                     {showCol('shipped') && (
@@ -2123,7 +2141,8 @@ ${body}
                             style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
                           {r.rail_packed && r.rail_packed_at && (
                             <span style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3 }}>
-                              {new Date(r.rail_packed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                              {new Date(r.rail_packed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
+                              {new Date(r.rail_packed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                             </span>
                           )}
                         </div>
@@ -2491,9 +2510,17 @@ ${body}
                     </td>
                     )}
                     {showCol('done') && (
-                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>
-                      <input type="checkbox" checked={!!r.is_urgent} onChange={e => toggleDone(r.id, e.target.checked)}
-                        style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                    <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                        <input type="checkbox" checked={!!r.is_urgent} onChange={e => toggleDone(r.id, e.target.checked)}
+                          style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                        {r.is_urgent && r.done_at && (
+                          <span style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3 }}>
+                            {new Date(r.done_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
+                            {new Date(r.done_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     )}
                     {showCol('shipped') && (
@@ -2518,7 +2545,8 @@ ${body}
                             style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
                           {r.rail_packed && r.rail_packed_at && (
                             <span style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3 }}>
-                              {new Date(r.rail_packed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                              {new Date(r.rail_packed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
+                              {new Date(r.rail_packed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                             </span>
                           )}
                         </div>
