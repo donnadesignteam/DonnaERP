@@ -57,6 +57,14 @@ type Entry = {
 
 const emptyItem = (): Item => ({ type: '', floors: null, rail_head: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', note: '' })
 
+// ความกว้างอาจเป็น "1.69+0.49" (รางต่อโค้ง) ต้องเก็บทั้งสองค่าไว้ให้ช่างเห็น
+const widthText = (w: number | string): string => {
+  const raw = typeof w === 'string' ? w.trim() : ''
+  if (raw.includes('+')) return raw
+  const n = Number(w)
+  return n > 0 ? n.toFixed(2) : ''
+}
+
 const PLATFORMS = ['Tiktok','Tiktok-Chat','Shopee','Shopee-Chat','Lazada','Facebook','LineOA',
   'Lineส่วนตัวยุน','Lineส่วนตัวสู้','Lineส่วนตัวเฟิร์น','หน้าร้าน',
   'เคลม:Shopee','เคลม:Lazada','เคลม:Tiktok','เคลม:Facebook','เคลม:หน้าร้าน',
@@ -514,13 +522,13 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
           const typeParts = [item.type, item.floors ? `${item.floors}ชั้น` : '', item.rail_head || '', item.color_name || ''].filter(Boolean)
           push(typeParts.join(' '), true)
         } else {
-          const typeParts = [item.type, item.floors ? `${item.floors}ชั้น` : '', item.color_name || ''].filter(Boolean)
+          const typeParts = [item.type, item.floors ? `${item.floors}ชั้น` : '', item.rail_head || ''].filter(Boolean)
           push(typeParts.join(' '))
-          const brandParts = [item.fabric_type || '', item.color_code || '', item.color_desc || ''].filter(Boolean)
+          const brandParts = [item.fabric_type || '', item.color_code || '', item.color_name || '', item.color_desc || ''].filter(Boolean)
           if (brandParts.length) push(brandParts.join(' '))
         }
-        const w = Number(item.width), h = Number(item.height)
-        const wStr = w > 0 ? w.toFixed(2) : ''
+        const h = Number(item.height)
+        const wStr = widthText(item.width)
         const hStr = h > 0 ? h.toFixed(2) : ''
         const dim = wStr && hStr ? `ก${wStr}*ส${hStr}` : wStr ? `ก${wStr}` : ''
         if (dim) push(`${dim} = ${item.quantity} ${item.unit}${item.note ? ` (${item.note})` : ''}`, isRail)
@@ -561,7 +569,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const railItemsOf = (r: Entry) => (Array.isArray(r.items) ? r.items : []).filter(it => typeof it.type === 'string' && it.type.startsWith('ราง'))
   const hasRail = (r: Entry) => railItemsOf(r).length > 0
   const openRailCalc = (r: Entry) => {
-    const RAIL_URL = process.env.NEXT_PUBLIC_RAIL_URL || 'https://donna-rail.vercel.app'
+    const isLocal = typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname)
+    const RAIL_URL = isLocal ? 'http://localhost:5200' : (process.env.NEXT_PUBLIC_RAIL_URL || 'https://donna-rail.vercel.app')
     const typeMap: Record<string, string> = { 'รางม่านจีบ': 'รางจีบ', 'รางม่านลอนเทป': 'รางลอนเทป', 'รางม่านตาไก่': 'รางตาไก่' }
     const courier = (r.courier || '').toLowerCase()
     const carrier = r.is_installation ? 'ติดตั้ง'
@@ -571,7 +580,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       : 'อื่นๆ'
     const items = railItemsOf(r).map(it => ({
       type: typeMap[it.type] || 'รางจีบ',
-      size: Number(it.width) || 0,
+      size: typeof it.width === 'string' && it.width.includes('+') ? it.width.trim() : (Number(it.width) || 0),
       qty: Number(it.quantity) || 1,
       layers: Number(it.floors) === 2 ? 2 : 1,
       color: (it.color_name || '').replace(/^สี/, '') || undefined,
@@ -676,9 +685,9 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       if (it.color_code) parts.push(it.color_code)
       if (it.color_name) parts.push(it.color_name)
       if (it.color_desc) parts.push(it.color_desc)
-      const w = Number(it.width), h = Number(it.height)
-      if (w > 0 && h > 0) parts.push(`${w}×${h}`)
-      else if (w > 0) parts.push(`${w}`)
+      const wTxt = widthText(it.width), h = Number(it.height)
+      if (wTxt && h > 0) parts.push(`${wTxt}×${h}`)
+      else if (wTxt) parts.push(`${wTxt}`)
       if (it.quantity) parts.push(`×${it.quantity}${it.unit}`)
       return parts.join(' ')
     })
@@ -2793,7 +2802,7 @@ ${body}
                       style={{ border: 'none', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontSize: 12, padding: 0 }}>ลบ</button>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 2fr 2fr 2fr 2fr 2fr', gap: '6px 8px', marginBottom: 6 }}>
-                    {([['ประเภท', 'type', 'text'], ['ชั้น', 'floors', 'number'], ['หัวราง', 'rail_head', 'text'], ['ประเภทผ้า', 'fabric_type', 'text'], ['แบรนด์', 'color_code', 'text'], ['ลาย/สไตล์', 'color_name', 'text'], ['สีจริง', 'color_desc', 'text']] as [string, keyof Item, string][]).map(([lbl, key, type]) => (
+                    {([['ประเภท', 'type', 'text'], ['ชั้น', 'floors', 'number'], ['หัวราง/หัวม่าน', 'rail_head', 'text'], ['ประเภทผ้า', 'fabric_type', 'text'], ['แบรนด์', 'color_code', 'text'], ['ลาย/สไตล์', 'color_name', 'text'], ['สีจริง', 'color_desc', 'text']] as [string, keyof Item, string][]).map(([lbl, key, type]) => (
                       <div key={key}>
                         <label style={{ fontSize: 11, color: 'var(--ink-4)', display: 'block', marginBottom: 2 }}>{lbl}</label>
                         <input type={type} step={type === 'number' ? '1' : undefined}
@@ -2807,7 +2816,7 @@ ${body}
                     ))}
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr 2fr', gap: '6px 8px' }}>
-                    {([['กว้าง (ม.)', 'width', 'number'], ['สูง (ม.)', 'height', 'number'], ['จำนวน', 'quantity', 'number'], ['หน่วย', 'unit', 'text'], ['กระดูม', 'hooks', 'text'], ['หมายเหตุ', 'note', 'text']] as [string, keyof Item, string][]).map(([lbl, key, type]) => (
+                    {([['กว้าง (ม.)', 'width', 'text'], ['สูง (ม.)', 'height', 'number'], ['จำนวน', 'quantity', 'number'], ['หน่วย', 'unit', 'text'], ['กระดูม', 'hooks', 'text'], ['หมายเหตุ', 'note', 'text']] as [string, keyof Item, string][]).map(([lbl, key, type]) => (
                       <div key={key}>
                         <label style={{ fontSize: 11, color: 'var(--ink-4)', display: 'block', marginBottom: 2 }}>{lbl}</label>
                         <input type={type} step={type === 'number' ? '0.01' : undefined}
@@ -2982,7 +2991,7 @@ ${body}
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr style={{ background: '#FAFAFA', borderBottom: '1px solid var(--border)' }}>
-                    {['#', 'ประเภท', 'ชั้น', 'หัวราง', 'รหัสสี', 'ชื่อสี', 'กว้าง (ม.)', 'สูง (ม.)', 'จำนวน', 'หน่วย', 'กระดูม', 'หมายเหตุ'].map(h => (
+                    {['#', 'ประเภท', 'ชั้น', 'หัวราง/หัวม่าน', 'รหัสสี', 'ชื่อสี', 'กว้าง (ม.)', 'สูง (ม.)', 'จำนวน', 'หน่วย', 'กระดูม', 'หมายเหตุ'].map(h => (
                       <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 500, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                     <th style={{ padding: '8px 10px', position: 'sticky', right: 0, background: '#FAFAFA', zIndex: 1 }} />
@@ -2998,7 +3007,7 @@ ${body}
                         ['rail_head', 'text', 64],
                         ['color_code', 'text', 60],
                         ['color_name', 'text', 90],
-                        ['width', 'number', 56],
+                        ['width', 'text', 56],
                         ['height', 'number', 56],
                         ['quantity', 'number', 50],
                         ['unit', 'text', 46],
