@@ -377,6 +377,22 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
 
   useEffect(() => { load() }, [])
 
+  // อัปเดตสด: สแกน/แก้จากเครื่องอื่นแล้วตารางนี้เปลี่ยนเองโดยไม่ต้องรีเฟรช
+  useEffect(() => {
+    const ch = supabase
+      .channel('order_entries_live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_entries' }, (payload) => {
+        if (payload.eventType === 'UPDATE') {
+          const row = payload.new as Entry
+          setRows(prev => prev.map(r => r.id === row.id ? { ...r, ...row } : r))
+        } else {
+          load()   // INSERT/DELETE — โหลดใหม่ให้ลำดับถูก (เกิดไม่บ่อย)
+        }
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [])
+
   const set = (k: string, v: string | boolean) =>
     setModal(m => {
       if (!m) return null
