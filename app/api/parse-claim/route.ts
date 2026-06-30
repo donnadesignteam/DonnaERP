@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { fabricTypeFromCode } from '@/lib/fabrics'
 
 type ContentBlock = { type: string; text?: string }
 type AnthropicResponse = { content: ContentBlock[] }
@@ -41,7 +42,8 @@ schema ของแต่ละ item ใน items:
   "type": "ประเภท เช่น ม่านตาไก่, รางม่านจีบ, ม่านพับ, ผ้าม่านตาไก่, มู่ลี่ไม้",
   "floors": null หรือจำนวนชั้น (สำหรับราง),
   "rail_head": "หัวราง เช่น กระดุม วงแหวน ถ้าไม่มีใส่ว่าง",
-  "fabric_type": "ผ้าโปร่ง/ผ้าทึบ/ผ้ากึ่งทึบ ถ้าไม่ใช่ผ้าใส่ว่าง",
+  "eyelet_color": "สีของห่วงตาไก่ (เฉพาะม่านตาไก่/ผ้าม่านตาไก่) เช่น สีขาว สีสัก สีดำ — มักเขียนต่อหลังคำว่า 'ม่านตาไก่' ถ้าไม่ใช่ม่านตาไก่หรือไม่ระบุใส่ว่าง",
+  "fabric_type": "ชนิดผ้า: ผ้าโปร่ง | ผ้า Dimout | ผ้าทึบ — ใส่เฉพาะที่ระบุชัดในข้อความ ห้ามเดาจากรหัสสี ถ้าไม่ใช่ผ้าใส่ว่าง (ระบบจะเติมให้เองจากรหัสสี)",
   "color_code": "แบรนด์/รหัสสี เช่น M20, SHB98, C77BO-3 ถ้าไม่มีใส่ว่าง",
   "color_name": "ชื่อลาย/สี เช่น เบจ, oatmeal, ขาว ถ้าไม่มีใส่ว่าง",
   "color_desc": "สีจริง ถ้าไม่มีใส่ว่าง",
@@ -91,6 +93,14 @@ ${text}`
 
   try {
     const claim = JSON.parse(jsonMatch[0])
+    // เติม/แก้ fabric_type จากแคตตาล็อกรหัสผ้า (เฉพาะรายการผ้า ไม่ใช่ราง)
+    if (Array.isArray(claim?.items)) {
+      claim.items = claim.items.map((it: { type?: string; color_code?: string; fabric_type?: string }) => {
+        if (typeof it?.type === 'string' && it.type.startsWith('ราง')) return it
+        const ft = fabricTypeFromCode(it?.color_code)
+        return ft ? { ...it, fabric_type: ft } : it
+      })
+    }
     return NextResponse.json({ claim })
   } catch {
     return NextResponse.json({ error: 'JSON ไม่ถูกต้อง', raw }, { status: 500 })

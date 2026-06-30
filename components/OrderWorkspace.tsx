@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { itemBlockLines } from '@/lib/itemFormat'
 import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
 
@@ -10,6 +12,7 @@ type Item = {
   type: string
   floors: number | null
   rail_head: string
+  eyelet_color?: string   // สีห่วงตาไก่ (เฉพาะม่านตาไก่) เช่น สีขาว สีสัก สีดำ
   fabric_type: string
   color_code: string
   color_name: string
@@ -20,6 +23,12 @@ type Item = {
   unit: string
   hooks: string
   note: string
+}
+
+type StatusEvent = {
+  status: string
+  at: string
+  by: string | null   // ใครทำ — ยังว่าง (null) จนกว่าจะเริ่มใช้ตัวสแกนเดือนหน้า
 }
 
 type Entry = {
@@ -56,9 +65,10 @@ type Entry = {
   rail_packed: boolean
   rail_packed_at: string | null
   done_at: string | null
+  status_history: StatusEvent[] | null
 }
 
-const emptyItem = (): Item => ({ type: '', floors: null, rail_head: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', note: '' })
+const emptyItem = (): Item => ({ type: '', floors: null, rail_head: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', note: '' })
 
 // ความกว้างอาจเป็น "1.69+0.49" (รางต่อโค้ง) ต้องเก็บทั้งสองค่าไว้ให้ช่างเห็น
 const widthText = (w: number | string): string => {
@@ -119,7 +129,7 @@ function daysRemaining(dateStr: string): number | null {
   return isNaN(result) ? null : result
 }
 
-const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping_datetime' | 'shipped_at' | 'rail_packed' | 'rail_packed_at' | 'done_at'> => ({
+const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping_datetime' | 'shipped_at' | 'rail_packed' | 'rail_packed_at' | 'done_at' | 'status_history'> => ({
   entry_date: new Date().toISOString().split('T')[0],
   deadline: '',
   status: 'อยู่ในกำหนด',
@@ -540,22 +550,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     if (r.items && r.items.length > 0) {
       r.items.forEach((item, idx) => {
         if (idx > 0) push('')
-        const isRail = item.type.startsWith('ราง')
-        if (isRail) {
-          const typeParts = [item.type, item.floors ? `${item.floors}ชั้น` : '', item.rail_head || '', item.color_name || ''].filter(Boolean)
-          push(typeParts.join(' '), true)
-        } else {
-          const typeParts = [item.type, item.floors ? `${item.floors}ชั้น` : '', item.rail_head || ''].filter(Boolean)
-          push(typeParts.join(' '))
-          const brandParts = [item.fabric_type || '', item.color_code || '', item.color_name || '', item.color_desc || ''].filter(Boolean)
-          if (brandParts.length) push(brandParts.join(' '))
-        }
-        const h = Number(item.height)
-        const wStr = widthText(item.width)
-        const hStr = h > 0 ? h.toFixed(2) : ''
-        const dim = wStr && hStr ? `ก${wStr}*ส${hStr}` : wStr ? `ก${wStr}` : ''
-        if (dim) push(`${dim} = ${item.quantity} ${item.unit}${item.note ? ` (${item.note})` : ''}`, isRail)
-        else push(`= ${item.quantity} ${item.unit}${item.note ? ` (${item.note})` : ''}`, isRail)
+        for (const ln of itemBlockLines(item)) push(ln.t, ln.rail)
       })
     }
 
@@ -639,13 +634,27 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     }
   }
 
+  // บันทึกประวัติสถานะ (สถานะ + เวลา + ใครทำ) แบบ best-effort
+  // แยกออกจาก update หลัก เผื่อคอลัมน์ status_history ยังไม่ถูกสร้าง จะได้ไม่พังสถานะหลัก
+  const logStatus = async (id: string, status: string, now: string, existing: StatusEvent[] | null | undefined) => {
+    if (!status) return
+    const prev = Array.isArray(existing) ? existing : []
+    if (prev.length && prev[prev.length - 1]?.status === status) return  // กันบันทึกซ้ำสถานะเดิม
+    const next = [...prev, { status, at: now, by: null }]
+    const { error } = await supabase.from('order_entries').update({ status_history: next }).eq('id', id)
+    if (!error) setRows(p => p.map(r => r.id === id ? { ...r, status_history: next } as Entry : r))
+  }
+
   const updateField = async (id: string, field: string, value: string | boolean) => {
     const now = new Date().toISOString()
     const { error: err } = await supabase.from('order_entries').update({ [field]: value, updated_at: now }).eq('id', id)
     if (!err) {
       if (field === 'order_status' && typeof value === 'string') {
         const row = rows.find(r => r.id === id)
-        if (row) await syncWorkStatus(row.order_number, row.customer_name, value, now)
+        if (row) {
+          await syncWorkStatus(row.order_number, row.customer_name, value, now)
+          await logStatus(id, value, now, row.status_history)
+        }
       }
       const sy = window.scrollY
       flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value, updated_at: now } as Entry : r)))
@@ -661,7 +670,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       : { is_urgent: false, order_status: 'รอดำเนินการ', done_at: null, updated_at: now }
     const { error: err } = await supabase.from('order_entries').update(updates).eq('id', id)
     if (!err) {
-      if (row) await syncWorkStatus(row.order_number, row.customer_name, updates.order_status, now)
+      if (row) {
+        await syncWorkStatus(row.order_number, row.customer_name, updates.order_status, now)
+        await logStatus(id, updates.order_status, now, row.status_history)
+      }
       const sy = window.scrollY
       flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, ...updates } as Entry : r)))
       window.scrollTo(window.scrollX, sy)
@@ -678,7 +690,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       : { is_urgent: true, order_status: 'รอจัดส่ง', shipped_at: null, updated_at: now }
     const { error: err } = await supabase.from('order_entries').update(updates).eq('id', id)
     if (!err) {
-      if (row) await syncWorkStatus(row.order_number, row.customer_name, updates.order_status, now)
+      if (row) {
+        await syncWorkStatus(row.order_number, row.customer_name, updates.order_status, now)
+        await logStatus(id, updates.order_status, now, row.status_history)
+      }
       const sy = window.scrollY
       flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, ...updates } as Entry : r)))
       window.scrollTo(window.scrollX, sy)
@@ -715,6 +730,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     return items.map(it => {
       const parts: string[] = []
       if (it.type) parts.push(it.type)
+      if (it.eyelet_color) parts.push(it.eyelet_color)
       if (it.floors) parts.push(`${it.floors}ชั้น`)
       if (it.rail_head) parts.push(it.rail_head)
       if (it.fabric_type) parts.push(it.fabric_type)
@@ -939,6 +955,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
           type: c[0]?.trim() || '',
           floors: null,
           rail_head: '',
+          eyelet_color: '',
           fabric_type: '',
           color_code: c[1]?.trim() || '',
           color_name: c[2]?.trim() || '',
@@ -1707,7 +1724,7 @@ ${body}
                       style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: '100%', minWidth: 100, outline: 'none', padding: '2px 0' }} />
                   ) : (
                     <div onClick={() => setEditCell({ id: r.id, field, val })}
-                      style={{ cursor: 'text', color: val ? 'var(--ink)' : 'var(--ink-4)', maxWidth: field === 'notes' ? 160 : undefined, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      style={{ cursor: 'text', color: val ? (field === 'customer_name' ? 'var(--blue)' : 'var(--ink)') : 'var(--ink-4)', fontWeight: field === 'customer_name' && val ? 600 : undefined, maxWidth: field === 'notes' ? 160 : undefined, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {val || placeholder}
                     </div>
                   )
@@ -1761,7 +1778,11 @@ ${body}
                     </td>
                     )}
                     {showCol('customer') && (
-                    <td style={{ padding: '8px 14px', minWidth: 100 }}>{textCell('customer_name')}</td>
+                    <td style={{ padding: '8px 14px', minWidth: 100 }}>
+                      {r.customer_name
+                        ? <Link href={`/customers?name=${encodeURIComponent(r.customer_name)}`} title="ดูประวัติลูกค้า" style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>{r.customer_name}</Link>
+                        : <span style={{ color: 'var(--ink-4)' }}>—</span>}
+                    </td>
                     )}
                     {showCol('platform') && (
                     <td style={{ padding: '8px 14px' }}>
@@ -2098,7 +2119,11 @@ ${body}
                     </td>
                     )}
                     {showCol('customer') && (
-                    <td style={{ padding: '12px 14px' }}>{r.customer_name || '-'}</td>
+                    <td style={{ padding: '12px 14px' }}>
+                      {r.customer_name
+                        ? <Link href={`/customers?name=${encodeURIComponent(r.customer_name)}`} title="ดูประวัติลูกค้า" style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>{r.customer_name}</Link>
+                        : <span style={{ color: 'var(--ink-4)' }}>-</span>}
+                    </td>
                     )}
                     {showCol('platform') && (
                     <td style={{ padding: '12px 14px', color: 'var(--ink-3)' }}>{r.platform || '-'}</td>
@@ -2450,10 +2475,14 @@ ${body}
                     </td>
                     )}
                     {showCol('order_number') && (
-                    <td style={{ padding: '12px 14px', color: 'var(--blue)', fontWeight: 600 }}>{r.order_number || '-'}</td>
+                    <td style={{ padding: '12px 14px', color: 'var(--ink)', fontWeight: 600 }}>{r.order_number || '-'}</td>
                     )}
                     {showCol('customer') && (
-                    <td style={{ padding: '12px 14px' }}>{r.customer_name || '-'}</td>
+                    <td style={{ padding: '12px 14px' }}>
+                      {r.customer_name
+                        ? <Link href={`/customers?name=${encodeURIComponent(r.customer_name)}`} title="ดูประวัติลูกค้า" style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>{r.customer_name}</Link>
+                        : <span style={{ color: 'var(--ink-4)' }}>-</span>}
+                    </td>
                     )}
                     {showCol('price') && (
                     <td style={{ padding: '12px 14px', textAlign: 'right', whiteSpace: 'nowrap', fontWeight: r.price ? 600 : 400, color: r.price ? 'var(--ink)' : 'var(--ink-4)' }}>
@@ -2918,12 +2947,12 @@ ${body}
                     <button type="button" onClick={() => setModalItems(prev => prev.filter((_, i) => i !== idx))}
                       style={{ border: 'none', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontSize: 12, padding: 0 }}>ลบ</button>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 2fr 2fr 2fr 2fr 2fr', gap: '6px 8px', marginBottom: 6 }}>
-                    {([['ประเภท', 'type', 'text'], ['ชั้น', 'floors', 'number'], ['หัวราง/หัวม่าน', 'rail_head', 'text'], ['ประเภทผ้า', 'fabric_type', 'text'], ['แบรนด์', 'color_code', 'text'], ['ลาย/สไตล์', 'color_name', 'text'], ['สีจริง', 'color_desc', 'text']] as [string, keyof Item, string][]).map(([lbl, key, type]) => (
+                  <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr 1fr 2fr 2fr 2fr 2fr 2fr', gap: '6px 8px', marginBottom: 6 }}>
+                    {([['ประเภท', 'type', 'text'], ['สีตาไก่', 'eyelet_color', 'text'], ['ชั้น', 'floors', 'number'], ['หัวราง/หัวม่าน', 'rail_head', 'text'], ['ประเภทผ้า', 'fabric_type', 'text'], ['แบรนด์', 'color_code', 'text'], ['ลาย/สไตล์', 'color_name', 'text'], ['สีจริง', 'color_desc', 'text']] as [string, keyof Item, string][]).map(([lbl, key, type]) => (
                       <div key={key}>
                         <label style={{ fontSize: 11, color: 'var(--ink-4)', display: 'block', marginBottom: 2 }}>{lbl}</label>
                         <input type={type} step={type === 'number' ? '1' : undefined}
-                          value={item[key] === null ? '' : String(item[key])}
+                          value={item[key] == null ? '' : String(item[key])}
                           onChange={e => {
                             const val = key === 'floors' ? (e.target.value === '' ? null : Number(e.target.value)) : e.target.value
                             setModalItems(prev => prev.map((it, i) => i === idx ? { ...it, [key]: val } : it))
@@ -3108,7 +3137,7 @@ ${body}
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr style={{ background: '#FAFAFA', borderBottom: '1px solid var(--border)' }}>
-                    {['#', 'ประเภท', 'ชั้น', 'หัวราง/หัวม่าน', 'รหัสสี', 'ชื่อสี', 'กว้าง (ม.)', 'สูง (ม.)', 'จำนวน', 'หน่วย', 'กระดูม', 'หมายเหตุ'].map(h => (
+                    {['#', 'ประเภท', 'สีตาไก่', 'ชั้น', 'หัวราง/หัวม่าน', 'รหัสสี', 'ชื่อสี', 'กว้าง (ม.)', 'สูง (ม.)', 'จำนวน', 'หน่วย', 'กระดูม', 'หมายเหตุ'].map(h => (
                       <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 500, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                     <th style={{ padding: '8px 10px', position: 'sticky', right: 0, background: '#FAFAFA', zIndex: 1 }} />
@@ -3120,6 +3149,7 @@ ${body}
                       <td style={{ padding: '6px 10px', color: 'var(--ink-4)', fontWeight: 500, width: 28 }}>{idx + 1}</td>
                       {([
                         ['type', 'text', 100],
+                        ['eyelet_color', 'text', 64],
                         ['floors', 'number', 44],
                         ['rail_head', 'text', 64],
                         ['color_code', 'text', 60],
@@ -3135,7 +3165,7 @@ ${body}
                           <input
                             type={type}
                             step={type === 'number' ? '0.01' : undefined}
-                            value={item[key] === null ? '' : String(item[key])}
+                            value={item[key] == null ? '' : String(item[key])}
                             onChange={e => {
                               const val = key === 'floors'
                                 ? (e.target.value === '' ? null : Number(e.target.value))
@@ -3154,7 +3184,7 @@ ${body}
                   ))}
                   {itemsModal.items.length === 0 && (
                     <tr>
-                      <td colSpan={13} style={{ padding: '20px', textAlign: 'center', color: 'var(--ink-4)', fontSize: 12 }}>
+                      <td colSpan={14} style={{ padding: '20px', textAlign: 'center', color: 'var(--ink-4)', fontSize: 12 }}>
                         ยังไม่มีรายการ — วางข้อความด้านบนแล้วกดแปลง หรือกดเพิ่มแถว
                       </td>
                     </tr>

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { fabricTypeFromCode } from '@/lib/fabrics'
 
 type ContentBlock = { type: string; text?: string }
 type AnthropicResponse = { content: ContentBlock[] }
@@ -21,7 +22,8 @@ schema แต่ละ item:
   "type": "ประเภท เช่น ม่านพับมินิมอล, รางม่านลอนเทป, ผ้าม่านตาไก่, ผ้าโปร่ง, มู่ลี่ไม้ ฯลฯ",
   "floors": null หรือตัวเลขจำนวนชั้น (สำหรับราง),
   "rail_head": "หัวราง/หัวม่าน — สำหรับราง เช่น กระดูม วงแหวน; สำหรับผ้าม่านให้เก็บแบบหัวม่านครบถ้วน เช่น '2จีบ ตะขอยาว', 'ตะขอสั้น', 'ตะขอเพดาน' ถ้าไม่มีใส่ว่าง",
-  "fabric_type": "ประเภทผ้า เช่น ผ้าโปร่ง ผ้าทึบ ผ้ากึ่งทึบ สำหรับรางหรือไม่ใช่ผ้าม่านใส่ว่าง",
+  "eyelet_color": "สีของห่วงตาไก่ (เฉพาะม่านตาไก่/ผ้าม่านตาไก่) เช่น สีขาว สีสัก สีดำ — มักเขียนต่อหลังคำว่า 'ม่านตาไก่' ถ้าไม่ใช่ม่านตาไก่หรือไม่ระบุใส่ว่าง",
+  "fabric_type": "ชนิดผ้า: ผ้าโปร่ง | ผ้า Dimout | ผ้าทึบ — ใส่เฉพาะที่ระบุชัดในข้อความ ห้ามเดาจากรหัสสี สำหรับรางหรือไม่ใช่ผ้าม่านใส่ว่าง (ระบบจะเติมให้เองจากรหัสสี)",
   "color_code": "แบรนด์หรือรหัสสี เช่น Richy, Berjaya, H22-9, A11 ถ้าไม่มีใส่ว่าง",
   "color_name": "ชื่อลาย/สไตล์ เช่น ตาไก่สีโอ๊ค ครีมมินิมอล ลายฝนขาวสว่าง ถ้าไม่มีใส่ว่าง",
   "color_desc": "คำอธิบายสีจริง เช่น เบจน้ำตาลเข้ม ขาวครีม เทาอ่อน ถ้าไม่มีหรือเป็นรางใส่ว่าง",
@@ -35,6 +37,7 @@ schema แต่ละ item:
 
 กฎสำคัญ:
 1. ราง = type ขึ้นต้นด้วย "ราง", floors=จำนวนชั้น, rail_head=หัวราง, color_name=สีราง, fabric_type=""
+1ก. ม่านตาไก่/ผ้าม่านตาไก่: สีที่เขียนต่อจาก "ม่านตาไก่" คือสีห่วงตาไก่ ใส่ใน eyelet_color (เช่น "ผ้าม่านตาไก่ สีขาว" → eyelet_color="สีขาว") ห้ามปนกับสีผ้า
 2. ผ้าม่าน/ม่านผ้า = ให้ระบุ fabric_type จากบริบท เช่น "ผ้าโปร่ง" "ผ้าทึบ" "ผ้ากึ่งทึบ" ถ้าไม่ชัดเจนใส่ว่าง
 3. จำนวนชั้นและหัวรางให้ใส่ใน floors และ rail_head ห้ามใส่ใน note
 3.1 ผ้าม่านจีบ: เก็บจำนวนจีบ (1จีบ/2จีบ/3จีบ) + ชนิดตะขอ (ตะขอสั้น/ตะขอยาว/ตะขอเพดาน) ลงใน rail_head เช่น "2จีบ ตะขอยาว" ห้ามตัดคำว่า ยาว/สั้น/เพดาน หรือจำนวนจีบทิ้ง
@@ -82,7 +85,15 @@ ${text}`
 
   try {
     const items = JSON.parse(jsonMatch[0])
-    return NextResponse.json({ items })
+    // เติม/แก้ fabric_type จากแคตตาล็อกรหัสผ้า (เฉพาะรายการผ้า ไม่ใช่ราง)
+    const normalized = Array.isArray(items)
+      ? items.map((it: { type?: string; color_code?: string; fabric_type?: string }) => {
+          if (typeof it?.type === 'string' && it.type.startsWith('ราง')) return it
+          const ft = fabricTypeFromCode(it?.color_code)
+          return ft ? { ...it, fabric_type: ft } : it
+        })
+      : items
+    return NextResponse.json({ items: normalized })
   } catch {
     return NextResponse.json({ error: 'JSON ไม่ถูกต้อง', raw }, { status: 500 })
   }
