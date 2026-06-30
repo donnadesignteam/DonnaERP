@@ -303,10 +303,16 @@ export default function InstallationsPage() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px' }}>งานติดตั้ง</h1>
-        <button onClick={openAdd}
-          style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,122,255,0.3)' }}>
-          + เพิ่มรายการ
-        </button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={() => window.print()}
+            style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border-2)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+            🖨️ ปริ้นปฏิทิน
+          </button>
+          <button onClick={openAdd}
+            style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,122,255,0.3)' }}>
+            + เพิ่มรายการ
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -317,13 +323,13 @@ export default function InstallationsPage() {
       )}
 
       {/* Calendar */}
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '24px', marginBottom: 28 }}>
+      <div className="print-area" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '24px', marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-          <button onClick={prevMonth} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 14, background: '#fff' }}>‹</button>
+          <button className="no-print" onClick={prevMonth} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 14, background: '#fff' }}>‹</button>
           <h2 style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', flex: 1, textAlign: 'center' }}>
             {TH_MONTHS[month]} {year + 543}
           </h2>
-          <button onClick={nextMonth} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 14, background: '#fff' }}>›</button>
+          <button className="no-print" onClick={nextMonth} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 14, background: '#fff' }}>›</button>
         </div>
         <Calendar year={year} month={month} installs={calendarInstalls} onDayClick={day => {
           const items = calendarInstalls.filter(ins => {
