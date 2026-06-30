@@ -26,6 +26,7 @@ type Order = {
   status_history: StatusEvent[] | null
   done_at: string | null
   shipped_at: string | null
+  packing_photos?: string[] | null   // ภาพตอนแพ็คราง/แพ็คม่าน (อนาคต) — array ของ URL รูป
 }
 
 const fmtDate = (d: string | null) =>
@@ -169,6 +170,25 @@ function CustomerFolder() {
                 ) : (
                   <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>
                     {o.order_status ? <>สถานะปัจจุบัน: <strong style={{ color: 'var(--ink-3)' }}>{o.order_status}</strong> — ยังไม่มีประวัติย้อนหลัง (เริ่มบันทึกเมื่อมีการเปลี่ยนสถานะครั้งถัดไป)</> : 'ยังไม่มีประวัติสถานะ'}
+                  </div>
+                )}
+              </div>
+
+              {/* ภาพการแพ็ค (ราง/ม่าน) — ช่องไว้ก่อน รองรับเก็บรูปในอนาคต */}
+              <div style={{ margin: '12px 0 0', padding: '12px 0 0', borderTop: '1px solid var(--border)' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', marginBottom: 8 }}>ภาพการแพ็ค (ราง/ม่าน)</div>
+                {o.packing_photos && o.packing_photos.length > 0 ? (
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {o.packing_photos.map((url, k) => (
+                      <a key={k} href={url} target="_blank" rel="noreferrer">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={url} alt="ภาพการแพ็ค" style={{ width: 84, height: 84, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)', display: 'block' }} />
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 72, border: '1.5px dashed var(--border-2)', borderRadius: 8, color: 'var(--ink-4)', fontSize: 12, gap: 6 }}>
+                    📷 ยังไม่มีภาพการแพ็ค — ช่องเก็บภาพในอนาคต
                   </div>
                 )}
               </div>
