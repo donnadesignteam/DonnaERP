@@ -2948,7 +2948,7 @@ ${body}
                       style={{ border: 'none', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontSize: 12, padding: 0 }}>ลบ</button>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr 1fr 2fr 2fr 2fr 2fr 2fr', gap: '6px 8px', marginBottom: 6 }}>
-                    {([['ประเภท', 'type', 'text'], ['สีตาไก่', 'eyelet_color', 'text'], ['ชั้น', 'floors', 'number'], ['หัวราง/หัวม่าน', 'rail_head', 'text'], ['ประเภทผ้า', 'fabric_type', 'text'], ['แบรนด์', 'color_code', 'text'], ['ลาย/สไตล์', 'color_name', 'text'], ['สีจริง', 'color_desc', 'text']] as [string, keyof Item, string][]).map(([lbl, key, type]) => (
+                    {([['ประเภท', 'type', 'text'], ['สีตาไก่', 'eyelet_color', 'text'], ['ชั้น', 'floors', 'number'], ['หัวราง/หัวม่าน', 'rail_head', 'text'], ['ประเภทผ้า', 'fabric_type', 'text'], ['รหัสสี', 'color_code', 'text'], ['ลาย/สไตล์', 'color_name', 'text'], ['สีจริง', 'color_desc', 'text']] as [string, keyof Item, string][]).map(([lbl, key, type]) => (
                       <div key={key}>
                         <label style={{ fontSize: 11, color: 'var(--ink-4)', display: 'block', marginBottom: 2 }}>{lbl}</label>
                         <input type={type} step={type === 'number' ? '1' : undefined}

@@ -14,6 +14,7 @@ export type RawItem = {
   height?: number | string
   quantity?: number | string
   unit?: string
+  hooks?: string          // จำนวนกระดูม/ตะขอ เช่น "(30+30)", "(16)"
   note?: string
 }
 
@@ -61,7 +62,11 @@ export function itemBlockLines(item: RawItem): { t: string; rail?: boolean }[] {
   const wStr = widthText(item.width)
   const hStr = h > 0 ? h.toFixed(2) : ''
   const dim = wStr && hStr ? `ก${wStr}*ส${hStr}` : wStr ? `ก${wStr}` : ''
-  const tail = `${item.quantity} ${item.unit || ''}${item.note ? ` (${item.note})` : ''}`
+  // กระดูม/ตะขอ เช่น "(30+30)" — ใส่ต่อท้ายบรรทัดขนาดให้เหมือนใบออเดอร์ต้นฉบับ
+  // เผื่อบางเคสเก็บมาไม่มีวงเล็บ (30+30) ให้เติมวงเล็บให้เอง
+  const hooksRaw = (item.hooks ?? '').trim()
+  const hooksStr = hooksRaw && !hooksRaw.startsWith('(') ? `(${hooksRaw})` : hooksRaw
+  const tail = `${item.quantity} ${item.unit || ''}${item.note ? ` (${item.note})` : ''}${hooksStr ? ` ${hooksStr}` : ''}`
   out.push({ t: dim ? `${dim} = ${tail}` : `= ${tail}`, rail: isRail })
   return out
 }
