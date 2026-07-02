@@ -1298,9 +1298,19 @@ ${toPrint.map((r, i) => {
   .qr-box { flex-shrink: 0; text-align: center; }
   .qr { width: 120px; height: 120px; display: block; }
   .qr-cap { font-size: 11px; color: #555; margin-top: 4px; }
-  /* margin:0 ทำให้เบราว์เซอร์ไม่พิมพ์หัว/ท้ายกระดาษ (วันที่-เวลา + ชื่อหน้า) */
-  @page { size: A4; margin: 0; }
-  @media print { body { padding: 14mm; } }
+  /* margin:0 ทำให้เบราว์เซอร์ไม่พิมพ์หัว/ท้ายกระดาษ (วันที่-เวลา + ชื่อหน้า)
+     ไม่ fix size → ใช้ขนาดกระดาษที่เลือกใน dialog ปริ้น */
+  @page { margin: 0; }
+  /* ตอนปริ้น: ขนาดตัวอักษร/QR อิงความกว้างกระดาษ (vw) → เลือกกระดาษเล็ก-ใหญ่แล้ว fit พอดีเสมอ */
+  @media print {
+    body { padding: 5vw; font-size: 1.6vw; }
+    h2 { font-size: 1.9vw; margin-bottom: 1.2vw; }
+    th, td { padding: 0.65vw 1vw; }
+    pre.copy { font-size: 2.1vw; }
+    .order { gap: 1.8vw; padding-bottom: 3.5vw; margin-bottom: 3.5vw; }
+    .qr { width: 16vw; height: 16vw; }
+    .qr-cap { font-size: 1.4vw; margin-top: 0.5vw; }
+  }
 </style>
 </head>
 <body>
