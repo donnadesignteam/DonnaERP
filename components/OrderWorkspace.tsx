@@ -920,9 +920,15 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       return existing && !existing.is_dropoff
     })
     // สถานะ excel = สำเร็จ/ผู้ซื้อได้รับสินค้าแล้ว → ติ๊กจัดส่งแล้ว + วันที่ตามช่องเวลาส่งสินค้า
-    // (ถ้าติ๊กอยู่แล้วก็อัพเดทวันที่ให้ตรงตามใบ excel)
-    const shippedUpdateRows = pasteRows.filter(r =>
-      r.isDuplicate && isDeliveredStatus(r.orderStatus) && rows.some(row => row.order_number === r.orderNumber)
+    // (ถ้าติ๊กจัดส่งไปแล้ว → ข้าม ไม่อัพเดทซ้ำ)
+    const shippedUpdateRows = pasteRows.filter(r => {
+      if (!r.isDuplicate || !isDeliveredStatus(r.orderStatus)) return false
+      const existing = rows.find(row => row.order_number === r.orderNumber)
+      return existing && existing.order_status !== 'จัดส่งแล้ว'
+    })
+    // สถานะ excel = ยกเลิก + มีออเดอร์ในระบบ → ลบออเดอร์ออก
+    const cancelDeleteRows = pasteRows.filter(r =>
+      r.orderStatus.includes('ยกเลิก') && r.isDuplicate && rows.some(row => row.order_number === r.orderNumber)
     )
 
     const insertPayload = newRows.map(r => {
@@ -975,7 +981,19 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       }
     }
 
-    if (insertPayload.length === 0 && updatedIds.length === 0 && shippedApplied.size === 0) {
+    // ลบออเดอร์ที่ยกเลิกใน excel
+    const deletedIds: string[] = []
+    if (cancelDeleteRows.length > 0) {
+      const ids = cancelDeleteRows
+        .map(r => rows.find(row => row.order_number === r.orderNumber)?.id)
+        .filter(Boolean) as string[]
+      if (ids.length > 0) {
+        const { error: err } = await supabase.from('order_entries').delete().in('id', ids)
+        if (!err) deletedIds.push(...ids)
+      }
+    }
+
+    if (insertPayload.length === 0 && updatedIds.length === 0 && shippedApplied.size === 0 && deletedIds.length === 0) {
       setPasteSaving(false)
       setModal(null)
       resetCols()
@@ -992,7 +1010,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     setPasteSaving(false)
     setRows(prev => [
       ...insertedRows,
-      ...prev.map(r => {
+      ...prev.filter(r => !deletedIds.includes(r.id)).map(r => {
         const shipped = shippedApplied.get(r.id)
         const dropoff = updatedIds.includes(r.id) ? { is_dropoff: true } : null
         return (shipped || dropoff) ? { ...r, ...dropoff, ...shipped } as Entry : r
@@ -2924,11 +2942,12 @@ ${body}
                     {(() => {
                       const saveCount = pasteRows.filter(isPasteRowSaveable).length
                       const dropoffCount = pasteRows.filter(r => r.isDuplicate && r.isDropoff && !rows.find(row => row.order_number === r.orderNumber)?.is_dropoff).length
-                      const shippedCount = pasteRows.filter(r => r.isDuplicate && isDeliveredStatus(r.orderStatus) && rows.some(row => row.order_number === r.orderNumber)).length
-                      const skipCount = pasteRows.length - saveCount - dropoffCount - shippedCount
+                      const shippedCount = pasteRows.filter(r => r.isDuplicate && isDeliveredStatus(r.orderStatus) && rows.find(row => row.order_number === r.orderNumber)?.order_status !== 'จัดส่งแล้ว' && rows.some(row => row.order_number === r.orderNumber)).length
+                      const cancelCount = pasteRows.filter(r => r.orderStatus.includes('ยกเลิก') && r.isDuplicate && rows.some(row => row.order_number === r.orderNumber)).length
+                      const skipCount = pasteRows.length - saveCount - dropoffCount - shippedCount - cancelCount
                       return (
                         <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 8 }}>
-                          พบ {pasteRows.length} ออเดอร์ — บันทึกใหม่ <strong style={{ color: 'var(--ink)' }}>{saveCount}</strong>{shippedCount > 0 && <> · จัดส่งแล้ว <strong style={{ color: '#22c55e' }}>{shippedCount}</strong></>}{dropoffCount > 0 && <> · อัพเดท Drop-off <strong style={{ color: '#6366f1' }}>{dropoffCount}</strong></>}{skipCount > 0 && <> · ข้าม <strong style={{ color: 'var(--red)' }}>{skipCount}</strong></>} รายการ
+                          พบ {pasteRows.length} ออเดอร์ — บันทึกใหม่ <strong style={{ color: 'var(--ink)' }}>{saveCount}</strong>{shippedCount > 0 && <> · จัดส่งแล้ว <strong style={{ color: '#22c55e' }}>{shippedCount}</strong></>}{cancelCount > 0 && <> · ลบ (ยกเลิก) <strong style={{ color: 'var(--red)' }}>{cancelCount}</strong></>}{dropoffCount > 0 && <> · อัพเดท Drop-off <strong style={{ color: '#6366f1' }}>{dropoffCount}</strong></>}{skipCount > 0 && <> · ข้าม <strong style={{ color: 'var(--red)' }}>{skipCount}</strong></>} รายการ
                         </p>
                       )
                     })()}
@@ -2945,13 +2964,18 @@ ${body}
                           {pasteRows.map((r, i) => {
                             const isCancelled = r.orderStatus.includes('ยกเลิก')
                             const saveable = isPasteRowSaveable(r)
-                            const isDropoffUpdate = r.isDuplicate && r.isDropoff && !rows.find(row => row.order_number === r.orderNumber)?.is_dropoff
-                            const isShippedRow = isDeliveredStatus(r.orderStatus) && (!r.isDuplicate || rows.some(row => row.order_number === r.orderNumber))
+                            const existingRow = rows.find(row => row.order_number === r.orderNumber)
+                            const isDropoffUpdate = r.isDuplicate && r.isDropoff && existingRow && !existingRow.is_dropoff
+                            const isCancelDelete = isCancelled && r.isDuplicate && !!existingRow
+                            // ติ๊กจัดส่งไปแล้ว → ข้าม ไม่อัพเดทซ้ำ
+                            const isShippedRow = isDeliveredStatus(r.orderStatus) && (!r.isDuplicate || (existingRow && existingRow.order_status !== 'จัดส่งแล้ว'))
                             return (
-                              <tr key={i} style={{ borderBottom: '1px solid var(--border)', opacity: (saveable || isDropoffUpdate || isShippedRow) ? 1 : 0.55 }}>
+                              <tr key={i} style={{ borderBottom: '1px solid var(--border)', opacity: (saveable || isDropoffUpdate || isShippedRow || isCancelDelete) ? 1 : 0.55 }}>
                                 <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
                                   {isShippedRow ? (
                                     <span style={{ fontSize: 10, fontWeight: 600, color: '#22c55e', background: '#dcfce7', borderRadius: 4, padding: '2px 6px' }}>จัดส่งแล้ว{r.shippedDate ? ` · ${r.shippedDate}` : ''}</span>
+                                  ) : isCancelDelete ? (
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#ef4444', background: '#fee2e2', borderRadius: 4, padding: '2px 6px' }}>ลบออเดอร์ (ยกเลิก)</span>
                                   ) : isDropoffUpdate ? (
                                     <span style={{ fontSize: 10, fontWeight: 600, color: '#6366f1', background: '#ede9fe', borderRadius: 4, padding: '2px 6px' }}>อัพเดท Drop-off</span>
                                   ) : r.isDuplicate ? (
@@ -2984,10 +3008,12 @@ ${body}
                         {pasteSaving ? 'กำลังบันทึก…' : (() => {
                           const n = pasteRows.filter(isPasteRowSaveable).length
                           const d = pasteRows.filter(r => r.isDuplicate && r.isDropoff && !rows.find(row => row.order_number === r.orderNumber)?.is_dropoff).length
-                          const s = pasteRows.filter(r => r.isDuplicate && isDeliveredStatus(r.orderStatus) && rows.some(row => row.order_number === r.orderNumber)).length
+                          const s = pasteRows.filter(r => r.isDuplicate && isDeliveredStatus(r.orderStatus) && rows.find(row => row.order_number === r.orderNumber)?.order_status !== 'จัดส่งแล้ว' && rows.some(row => row.order_number === r.orderNumber)).length
+                          const c = pasteRows.filter(r => r.orderStatus.includes('ยกเลิก') && r.isDuplicate && rows.some(row => row.order_number === r.orderNumber)).length
                           const parts: string[] = []
                           if (n > 0) parts.push(`บันทึก ${n} ใหม่`)
                           if (s > 0) parts.push(`จัดส่งแล้ว ${s}`)
+                          if (c > 0) parts.push(`ลบ ${c}`)
                           if (d > 0) parts.push(`Drop-off ${d}`)
                           return parts.length ? parts.join(' · ') : 'บันทึก 0 รายการ'
                         })()}
