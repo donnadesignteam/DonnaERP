@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { itemBlockLines } from '@/lib/itemFormat'
 import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
@@ -128,6 +129,10 @@ function daysRemaining(dateStr: string): number | null {
   const result = Math.ceil(diff / 86400000)
   return isNaN(result) ? null : result
 }
+
+// สี/ข้อความคอลัมน์วันที่เหลือ: เกินกำหนด+0 วัน = แดง (0 = ต้องจัดส่งวันนี้), 1-10 วัน = เหลือง, >10 วัน = เขียว
+const daysLabel = (d: number) => d < 0 ? `เกิน ${Math.abs(d)} วัน` : d === 0 ? 'ต้องจัดส่งวันนี้' : `${d} วัน`
+const daysColor = (d: number) => d <= 0 ? 'var(--red)' : d <= 10 ? '#eab308' : '#34c759'
 
 const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping_datetime' | 'shipped_at' | 'rail_packed' | 'rail_packed_at' | 'done_at' | 'status_history'> => ({
   entry_date: new Date().toISOString().split('T')[0],
@@ -254,8 +259,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const selectAllRef = useRef<HTMLInputElement>(null)
   const modalDownOnBackdrop = useRef(false)
   const tableCardRef = useRef<HTMLDivElement>(null)
-  const [rows, setRows] = useState<Entry[]>([])
-  const [loading, setLoading] = useState(true)
+  // เปิดหน้าซ้ำ → โชว์ข้อมูลรอบก่อนทันที แล้ว load() ดึงของใหม่เบื้องหลัง (stale-while-revalidate)
+  const cached = getPageCache<{ rows: Entry[]; sortOrder: string[] }>('order_entries')
+  const [rows, setRows] = useState<Entry[]>(cached?.rows ?? [])
+  const [loading, setLoading] = useState(!cached)
   const [modal, setModal] = useState<{ mode: 'add' | 'edit'; data: Partial<Entry> } | null>(null)
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
@@ -271,7 +278,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [shippingDateTo, setShippingDateTo] = useState('')
   const [openFilter, setOpenFilter] = useState<'platform' | 'courier' | 'status' | 'admin' | 'tech' | 'shipping' | 'urgent' | 'install' | 'days' | 'updated' | 'out-days' | 'out-deadline' | 'out-platform' | 'out-payment' | 'out-assigned' | 'out-status' | 'out-done' | 'out-installed' | 'out-updated' | null>(null)
   const [daysSort, setDaysSort] = useState<'asc' | 'desc' | null>('asc')
-  const [sortOrder, setSortOrder] = useState<string[]>([])
+  const [sortOrder, setSortOrder] = useState<string[]>(cached?.sortOrder ?? [])
   const [updatedSort, setUpdatedSort] = useState<'asc' | 'desc' | null>(null)
   const [outDaysSort, setOutDaysSort] = useState<'asc' | 'desc' | null>('asc')
   const [outUpdatedSort, setOutUpdatedSort] = useState<'asc' | 'desc' | null>(null)
@@ -311,13 +318,13 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [editCell, setEditCell] = useState<{id: string; field: string; val: string} | null>(null)
   const [printModal, setPrintModal] = useState(false)
   const [printMaxDays, setPrintMaxDays] = useState(3)
-  const [quickFilter, setQuickFilter] = useState<'all' | 'platform' | 'outside' | 'install' | 'claim'>('all')
+  const [quickFilter, setQuickFilter] = useState<'all' | 'platform' | 'outside' | 'install' | 'claim' | 'shipped'>('all')
   const [hiddenCols, setHiddenCols] = useState<Record<string, string[]>>(() => {
     if (typeof window === 'undefined') return {}
     try { return JSON.parse(localStorage.getItem(`ow_hidden_cols_${scope}`) || '{}') } catch { return {} }
   })
   const [openColMenu, setOpenColMenu] = useState(false)
-  const colTabKey = quickFilter === 'claim' ? 'all' : quickFilter
+  const colTabKey = (quickFilter === 'claim' || quickFilter === 'shipped') ? 'all' : quickFilter
   const tabHidden = hiddenCols[colTabKey] ?? []
   const showCol = (id: string) => !tabHidden.includes(id)
   const toggleCol = (id: string) => setHiddenCols(prev => {
@@ -376,12 +383,13 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   }
 
   const load = async () => {
-    setLoading(true)
     const { data, error: err } = await supabase.from('order_entries').select('*').order('entry_date', { ascending: false, nullsFirst: false }).order('id', { ascending: true })
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
     const entries = (data ?? []) as Entry[]
+    const order = computeSortOrder(entries, daysSort)
+    setPageCache('order_entries', { rows: entries, sortOrder: order })
     setRows(entries)
-    setSortOrder(computeSortOrder(entries, daysSort))
+    setSortOrder(order)
     setLoading(false)
   }
 
@@ -999,8 +1007,12 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     })()
     const p = r.platform ?? ''
     const isClaim = p.startsWith('เคลม:')
-    const matchQuick = quickFilter === 'all' ? true
+    // จัดส่งแล้ว → ย้ายไปอยู่หมวด "จัดส่งแล้ว" หมวดเดียว หายจากหมวดอื่นทั้งหมด
+    const isShipped = r.order_status === 'จัดส่งแล้ว'
+    const matchQuick = quickFilter === 'shipped' ? isShipped
       : quickFilter === 'claim' ? isClaim
+      : isShipped ? false
+      : quickFilter === 'all' ? true
       : quickFilter === 'platform' ? (!isClaim && (p === 'Shopee' || p === 'Tiktok' || p === 'Lazada'))
       : quickFilter === 'outside' ? (!isClaim && OUTSIDE_PLATFORMS.includes(p) && !r.is_installation)
       : r.is_installation === true
@@ -1042,6 +1054,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       })
     } else if (outDaysSort) {
       rs = [...rs].sort((a, b) => {
+        // เรียงน้อยไปมาก: งานเสร็จ (is_urgent) เลื่อนไปอยู่ล่างสุดเสมอ
+        if (outDaysSort === 'asc' && !!a.is_urgent !== !!b.is_urgent) return a.is_urgent ? 1 : -1
         const da = a.deadline ? new Date(a.deadline).getTime() : (outDaysSort === 'asc' ? Infinity : -Infinity)
         const db = b.deadline ? new Date(b.deadline).getTime() : (outDaysSort === 'asc' ? Infinity : -Infinity)
         return outDaysSort === 'asc' ? da - db : db - da
@@ -1071,6 +1085,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       })
     } else if (allDaysSort) {
       rs = [...rs].sort((a, b) => {
+        // เรียงน้อยไปมาก: งานเสร็จ (is_urgent) เลื่อนไปอยู่ล่างสุดเสมอ
+        if (allDaysSort === 'asc' && !!a.is_urgent !== !!b.is_urgent) return a.is_urgent ? 1 : -1
         const getMs = (r: Entry) => {
           const isOut = OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation
           if (isOut) return r.deadline ? new Date(r.deadline).getTime() : null
@@ -1089,7 +1105,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     return rs
   })()
 
-  const activeDisplayed = (quickFilter === 'all' || quickFilter === 'claim') ? displayedAll
+  const activeDisplayed = (quickFilter === 'all' || quickFilter === 'claim' || quickFilter === 'shipped') ? displayedAll
     : (quickFilter === 'outside' || quickFilter === 'install') ? displayedOut
     : displayed
 
@@ -1253,8 +1269,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
 ${toPrint.map((r, i) => {
   const es = (r.is_dropoff && r.shipping_datetime) ? shiftShippingDatetime(r.shipping_datetime, 2) : r.shipping_datetime
   const d = es ? daysRemaining(es) : null
-  const cls = d !== null ? (d < 0 ? 'dr' : d <= 2 ? 'do' : 'dg') : ''
-  const dtext = d !== null ? (d < 0 ? `เกิน ${Math.abs(d)} วัน` : `${d} วัน`) : '-'
+  const cls = d !== null ? (d <= 0 ? 'dr' : d <= 10 ? 'do' : 'dg') : ''
+  const dtext = d !== null ? daysLabel(d) : '-'
   return `<tr><td>${i + 1}</td><td class="${cls}">${dtext}</td><td>${es || '-'}</td><td>${r.order_number || '-'}</td><td>${r.customer_name || '-'}</td><td>${r.technician || '-'}</td><td>${r.platform || '-'}</td><td>${r.order_status || '-'}</td><td>${r.courier || '-'}</td></tr>`
 }).join('\n')}
 </tbody>
@@ -1408,7 +1424,7 @@ ${body}
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        {scope === 'orders' && ([['all', 'ทั้งหมด'], ['platform', 'งานแพลตฟอร์ม'], ['outside', 'งานนอก'], ['install', 'งานติดตั้ง']] as [typeof quickFilter, string][]).map(([val, label]) => (
+        {scope === 'orders' && ([['all', 'ทั้งหมด'], ['platform', 'งานแพลตฟอร์ม'], ['outside', 'งานนอก'], ['install', 'งานติดตั้ง'], ['shipped', 'จัดส่งแล้ว']] as [typeof quickFilter, string][]).map(([val, label]) => (
           <button key={val} onClick={() => setQuickFilter(val)}
             style={{ padding: '6px 16px', borderRadius: 20, border: quickFilter === val ? 'none' : '1px solid var(--border)', background: quickFilter === val ? 'var(--blue)' : 'var(--surface)', color: quickFilter === val ? '#fff' : 'var(--ink-3)', fontSize: 13, fontWeight: quickFilter === val ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
             {label}
@@ -1419,8 +1435,11 @@ ${body}
           const incompleteCount = scopedRows.filter(r => {
             const p = r.platform ?? ''
             const isClaim = p.startsWith('เคลม:')
-            const matchQ = quickFilter === 'all' ? true
+            const isShipped = r.order_status === 'จัดส่งแล้ว'
+            const matchQ = quickFilter === 'shipped' ? isShipped
               : quickFilter === 'claim' ? isClaim
+              : isShipped ? false
+              : quickFilter === 'all' ? true
               : quickFilter === 'platform' ? (!isClaim && (p === 'Shopee' || p === 'Tiktok' || p === 'Lazada'))
               : quickFilter === 'outside' ? (!isClaim && OUTSIDE_PLATFORMS.includes(p) && !r.is_installation)
               : r.is_installation === true
@@ -1478,6 +1497,11 @@ ${body}
                   {label}
                 </div>
               ))}
+              {/* filter งานเสร็จ: กดเพื่อดูเฉพาะงานเสร็จ กดซ้ำเพื่อยกเลิก */}
+              <div onClick={() => { setOutDoneFilter(outDoneFilter === true ? null : true); setOpenFilter(null); setOutFilterPos(null) }}
+                style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: outDoneFilter === true ? 600 : 400, color: outDoneFilter === true ? '#22c55e' : 'var(--ink)', background: outDoneFilter === true ? 'rgba(34,197,94,0.08)' : 'transparent', borderTop: '1px solid var(--border)' }}>
+                งานเสร็จ {outDoneFilter === true && '✓'}
+              </div>
             </div>
           )
           if (openFilter === 'out-deadline') return (
@@ -1763,8 +1787,8 @@ ${body}
                       ) : isDone ? (
                         <span style={{ fontWeight: 700, color: '#22c55e' }}>เสร็จสิ้น</span>
                       ) : outDays !== null ? (
-                        <span style={{ fontWeight: 700, color: outDays < 0 ? 'var(--red)' : outDays <= 2 ? '#ff9f0a' : '#34c759' }}>
-                          {outDays < 0 ? `เกิน ${Math.abs(outDays)}` : outDays} วัน
+                        <span style={{ fontWeight: 700, color: daysColor(outDays) }}>
+                          {outDays === 0 && quickFilter === 'install' ? 'ต้องติดตั้งวันนี้' : daysLabel(outDays)}
                         </span>
                       ) : <span style={{ color: 'var(--ink-4)' }}>รอกำหนด</span>}
                     </td>
@@ -1924,7 +1948,7 @@ ${body}
               })}
             </tbody>
           </table>
-        ) : (quickFilter === 'all' || quickFilter === 'claim') ? (
+        ) : (quickFilter === 'all' || quickFilter === 'claim' || quickFilter === 'shipped') ? (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
@@ -1948,6 +1972,11 @@ ${body}
                           {label}
                         </div>
                       ))}
+                      {/* filter งานเสร็จ: กดเพื่อดูเฉพาะงานเสร็จ กดซ้ำเพื่อยกเลิก */}
+                      <div onClick={() => { setAllDoneFilter(allDoneFilter === true ? null : true); setOpenAllFilter(null) }}
+                        style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: allDoneFilter === true ? 600 : 400, color: allDoneFilter === true ? '#22c55e' : 'var(--ink)', background: allDoneFilter === true ? 'rgba(34,197,94,0.08)' : 'transparent', borderTop: '1px solid var(--border)' }}>
+                        งานเสร็จ {allDoneFilter === true && '✓'}
+                      </div>
                     </div>
                   )}
                 </th>
@@ -2101,8 +2130,8 @@ ${body}
                       ) : r.is_urgent ? (
                         <span style={{ fontWeight: 700, color: '#22c55e' }}>งานเสร็จ</span>
                       ) : allDays !== null ? (
-                        <span style={{ fontWeight: 700, color: allDays < 0 ? 'var(--red)' : allDays <= 2 ? '#ff9f0a' : '#34c759' }}>
-                          {allDays < 0 ? `เกิน ${Math.abs(allDays)}` : allDays} วัน
+                        <span style={{ fontWeight: 700, color: daysColor(allDays) }}>
+                          {daysLabel(allDays)}
                         </span>
                       ) : <span style={{ color: 'var(--ink-4)' }}>รอกำหนด</span>}
                     </td>
@@ -2252,6 +2281,11 @@ ${body}
                           {label}
                         </div>
                       ))}
+                      {/* filter งานเสร็จ: กดเพื่อดูเฉพาะงานเสร็จ กดซ้ำเพื่อยกเลิก */}
+                      <div onClick={() => { setUrgentFilter(urgentFilter === true ? null : true); setOpenFilter(null) }}
+                        style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: urgentFilter === true ? 600 : 400, color: urgentFilter === true ? '#22c55e' : 'var(--ink)', background: urgentFilter === true ? 'rgba(34,197,94,0.08)' : 'transparent', borderTop: '1px solid var(--border)' }}>
+                        งานเสร็จ {urgentFilter === true && '✓'}
+                      </div>
                     </div>
                   )}
                 </th>
@@ -2461,8 +2495,8 @@ ${body}
                       ) : r.is_urgent ? (
                         <span style={{ fontWeight: 700, color: '#22c55e' }}>งานเสร็จ</span>
                       ) : days !== null ? (
-                        <span style={{ fontWeight: 700, color: days < 0 ? 'var(--red)' : days <= 2 ? '#ff9f0a' : '#34c759' }}>
-                          {days < 0 ? `เกิน ${Math.abs(days)}` : days} วัน
+                        <span style={{ fontWeight: 700, color: daysColor(days) }}>
+                          {daysLabel(days)}
                         </span>
                       ) : <span style={{ color: 'var(--ink-4)' }}>รอกำหนด</span>}
                     </td>

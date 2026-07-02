@@ -55,7 +55,7 @@ function CustomerFolder() {
       setLoading(true)
       const { data } = await supabase
         .from('order_entries')
-        .select('id, entry_date, created_at, updated_at, order_number, platform, order_status, payment_status, is_installation, price, items, notes, status_history, done_at, shipped_at')
+        .select('id, entry_date, created_at, updated_at, order_number, platform, order_status, payment_status, is_installation, price, items, notes, status_history, done_at, shipped_at, packing_photos')
         .eq('customer_name', name)
         .order('entry_date', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })

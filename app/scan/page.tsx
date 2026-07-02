@@ -17,6 +17,13 @@ const SPECIAL_STAGES: { key: string; label: string; status: string; special: Spe
 const resolveStage = (key: string): any => stageByKey(key) || SPECIAL_STAGES.find(s => s.key === key)
 type Phase = 'scanning' | 'working' | 'done' | 'already' | 'noorder' | 'error'
 
+// รูปที่แต่ละแผนกอัพโหลดได้หลังสแกน → เก็บลง order_entries.packing_photos (โชว์ในโฟลเดอร์ลูกค้า)
+const UPLOAD_SLOTS: Record<string, { tag: string; label: string }[]> = {
+  pack: [{ tag: 'rail', label: 'ภาพรางม่าน' }, { tag: 'packed', label: 'ภาพแพ็คแล้ว' }],
+  rail_pack: [{ tag: 'rail', label: 'ภาพรางม่าน' }, { tag: 'packed', label: 'ภาพแพ็คแล้ว' }],
+  iron: [{ tag: 'ironed', label: 'ภาพม่านที่รีด' }],
+}
+
 function loadTech(): Tech | null {
   try { const v = localStorage.getItem(LS_KEY); return v ? JSON.parse(v) : null } catch { return null }
 }
@@ -51,6 +58,11 @@ function ScanContent() {
   const [msg, setMsg] = useState('')
   const [camState, setCamState] = useState<'idle' | 'starting' | 'on' | 'error'>('idle')
   const [camErr, setCamErr] = useState('')
+
+  // อัพโหลดรูปหลังสแกน (แผนกรีด/แพ็ค/แพ็คราง)
+  const [uploading, setUploading] = useState<string | null>(null)
+  const [uploadedCnt, setUploadedCnt] = useState<Record<string, number>>({})
+  const [uploadErr, setUploadErr] = useState('')
 
   // login form
   const [q, setQ] = useState('')
@@ -101,7 +113,10 @@ function ScanContent() {
           busyRef.current = true
           try { await html5.pause(true) } catch {}
           await runScan(tech!, extractId(decoded), extractOrder(decoded))
-          setTimeout(() => { try { html5.resume() } catch {}; busyRef.current = false; setPhase('scanning') }, 2600)
+          // แผนกที่อัพโหลดรูปได้ → ค้างหน้าผลไว้ให้อัพรูปก่อน กด "สแกนต่อ" เอง
+          if ((UPLOAD_SLOTS[tech!.stageKey] ?? []).length === 0) {
+            setTimeout(() => { try { html5.resume() } catch {}; busyRef.current = false; setPhase('scanning') }, 2600)
+          }
         },
         () => {} // ละเว้น error รายเฟรม
       )
@@ -139,10 +154,41 @@ function ScanContent() {
     return null
   }
 
+  // กลับไปสแกนต่อ (ปุ่มกดเองของแผนกที่อัพโหลดรูปได้)
+  function resumeScan() {
+    setUploadedCnt({}); setUploadErr('')
+    setPhase('scanning')
+    busyRef.current = false
+    try { scannerRef.current?.resume() } catch {}
+  }
+
+  // อัพโหลดรูปเข้า storage แล้ว append URL เข้า order_entries.packing_photos
+  async function uploadPhoto(file: File, tag: string) {
+    if (!order?.id) return
+    setUploading(tag); setUploadErr('')
+    try {
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+      const path = `${order.id}/${tag}-${Date.now()}.${ext}`
+      const up = await supabase.storage.from('packing-photos').upload(path, file, { contentType: file.type || 'image/jpeg' })
+      if (up.error) throw up.error
+      const { data: pub } = supabase.storage.from('packing-photos').getPublicUrl(path)
+      const { data: row } = await supabase.from('order_entries').select('packing_photos').eq('id', order.id).single()
+      const cur = Array.isArray(row?.packing_photos) ? row.packing_photos : []
+      const { error: err } = await supabase.from('order_entries')
+        .update({ packing_photos: [...cur, pub.publicUrl], updated_at: new Date().toISOString() }).eq('id', order.id)
+      if (err) throw err
+      setUploadedCnt(c => ({ ...c, [tag]: (c[tag] || 0) + 1 }))
+    } catch (e: any) {
+      setUploadErr(e?.message || String(e))
+    }
+    setUploading(null)
+  }
+
   async function runScan(t: Tech, id: string, ord: string) {
     const stage = resolveStage(t.stageKey)
     if (!stage) { setPhase('error'); setMsg('ไม่พบแผนกของผู้ใช้ กรุณาตั้งค่าใหม่'); return }
     if (!id && !ord) { setPhase('noorder'); setMsg(''); return }
+    setUploadedCnt({}); setUploadErr('')
     setPhase('working')
     const o = await findOrder(id, ord)
     if (!o) { setOrder({ order_number: ord || `id:${id}` }); setPhase('noorder'); return }
@@ -257,6 +303,9 @@ function ScanContent() {
 
   const stage = resolveStage(tech.stageKey)
   const stageColor = '#2563eb'
+  const slots = UPLOAD_SLOTS[tech.stageKey] ?? []
+  // อัพรูปได้เมื่อเจอออเดอร์แล้ว (done หรือ already — เผื่อสแกนซ้ำเพื่อเพิ่มรูป)
+  const canUpload = slots.length > 0 && (phase === 'done' || phase === 'already') && order?.id
 
   // ---------- โหมดลิงก์ (มาจากแอปกล้องของเครื่อง) ----------
   if (urlOrder || urlId) {
@@ -265,6 +314,7 @@ function ScanContent() {
         <div style={card}>
           <Identity tech={tech} stageLabel={stage?.label} onLogout={logout} />
           <Result phase={phase} order={order} msg={msg} stage={stage} />
+          {canUpload && <PhotoUpload slots={slots} uploading={uploading} counts={uploadedCnt} err={uploadErr} onPick={uploadPhoto} />}
           <a href="/scan" style={{ display: 'inline-block', marginTop: 18, color: stageColor, fontSize: 14, fontWeight: 600 }}>เปิดกล้องสแกนต่อ →</a>
         </div>
       </div>
@@ -312,13 +362,52 @@ function ScanContent() {
         )}
 
         {showOverlay && (
-          <div style={{ position: 'absolute', inset: 0, background: 'rgba(11,18,32,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(11,18,32,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, overflowY: 'auto' }}>
             <div style={{ ...card, maxWidth: 380 }}>
               <Result phase={phase} order={order} msg={msg} stage={stage} />
+              {canUpload && <PhotoUpload slots={slots} uploading={uploading} counts={uploadedCnt} err={uploadErr} onPick={uploadPhoto} />}
+              {slots.length > 0 && phase !== 'working' && (
+                <button onClick={resumeScan} disabled={uploading !== null}
+                  style={{ width: '100%', marginTop: 16, padding: 13, borderRadius: 12, border: 'none', background: uploading ? '#c7c7c7' : '#2563eb', color: '#fff', fontSize: 15, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer' }}>
+                  สแกนต่อ →
+                </button>
+              )}
             </div>
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+// ปุ่มถ่าย/เลือกรูปอัพโหลด — อัพซ้ำได้หลายรูปต่อช่อง
+function PhotoUpload({ slots, uploading, counts, err, onPick }: {
+  slots: { tag: string; label: string }[]
+  uploading: string | null
+  counts: Record<string, number>
+  err: string
+  onPick: (file: File, tag: string) => void
+}) {
+  return (
+    <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #eee', textAlign: 'left' }}>
+      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: '#1a1a1a' }}>📷 อัพโหลดรูป</div>
+      <div style={{ display: 'grid', gap: 8 }}>
+        {slots.map(s => {
+          const done = counts[s.tag] || 0
+          const busy = uploading === s.tag
+          return (
+            <label key={s.tag} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: done ? '1.5px solid #16a34a' : '1.5px dashed #94a3b8', background: done ? '#f0fdf4' : '#f8fafc', borderRadius: 12, padding: '12px 14px', cursor: busy ? 'wait' : 'pointer', fontSize: 14, fontWeight: 600, color: '#1a1a1a' }}>
+              <input type="file" accept="image/*" capture="environment" disabled={busy} style={{ display: 'none' }}
+                onChange={e => { const f = e.target.files?.[0]; if (f) onPick(f, s.tag); e.target.value = '' }} />
+              <span>{busy ? '⏳ กำลังอัพโหลด…' : s.label}</span>
+              <span style={{ fontSize: 12, color: done ? '#16a34a' : '#94a3b8', fontWeight: 700 }}>
+                {done > 0 ? `✓ ${done} รูป · ถ่ายเพิ่ม` : 'แตะเพื่อถ่าย'}
+              </span>
+            </label>
+          )
+        })}
+      </div>
+      {err && <p style={{ color: '#dc2626', fontSize: 12, marginTop: 8 }}>อัพโหลดไม่สำเร็จ: {err}</p>}
     </div>
   )
 }

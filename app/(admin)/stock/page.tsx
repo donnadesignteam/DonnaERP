@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { FABRIC_LOOKUP } from '@/lib/fabrics'
 
 
@@ -76,8 +77,10 @@ const autoInputStyle: React.CSSProperties = {
 }
 
 export default function StockPage() {
-  const [items, setItems] = useState<StockItem[]>([])
-  const [loading, setLoading] = useState(true)
+  // เปิดหน้าซ้ำ → โชว์ข้อมูลรอบก่อนทันที แล้ว load() ดึงของใหม่เบื้องหลัง (stale-while-revalidate)
+  const cached = getPageCache<StockItem[]>('stock')
+  const [items, setItems] = useState<StockItem[]>(cached ?? [])
+  const [loading, setLoading] = useState(!cached)
   const [modal, setModal] = useState<{ mode: 'add' | 'edit'; data: Partial<StockItem> } | null>(null)
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
@@ -97,10 +100,11 @@ export default function StockPage() {
   const tableCardRef = useRef<HTMLDivElement>(null)
 
   const load = async () => {
-    setLoading(true)
     const { data, error: err } = await supabase.from('stock').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('fabric_code')
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
-    setItems((data ?? []) as StockItem[])
+    const rows = (data ?? []) as StockItem[]
+    setPageCache('stock', rows)
+    setItems(rows)
     setLoading(false)
   }
 

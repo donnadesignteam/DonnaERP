@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { getPageCache, setPageCache } from '@/lib/pageCache'
 
 type Item = {
   type: string; floors: number | null; rail_head: string; fabric_type: string
@@ -79,8 +80,10 @@ function itemLine(it: Item): string {
 }
 
 export default function ClaimsWorkspace() {
-  const [rows, setRows] = useState<Claim[]>([])
-  const [loading, setLoading] = useState(true)
+  // เปิดหน้าซ้ำ → โชว์ข้อมูลรอบก่อนทันที แล้ว load() ดึงของใหม่เบื้องหลัง (stale-while-revalidate)
+  const cached = getPageCache<Claim[]>('claims')
+  const [rows, setRows] = useState<Claim[]>(cached ?? [])
+  const [loading, setLoading] = useState(!cached)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<string>('all')
@@ -98,12 +101,13 @@ export default function ClaimsWorkspace() {
   const [itemsParseErr, setItemsParseErr] = useState('')
 
   const load = async () => {
-    setLoading(true)
     const { data, error: err } = await supabase.from('claims').select('*')
       .order('claim_date', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message} — รัน scripts/create_claims_table.sql ใน Supabase ก่อนนะคะ`)
-    setRows((data ?? []) as Claim[])
+    const claims = (data ?? []) as Claim[]
+    setPageCache('claims', claims)
+    setRows(claims)
     setLoading(false)
   }
   useEffect(() => { load() }, [])

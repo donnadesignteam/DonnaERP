@@ -2,14 +2,18 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { getPageCache, setPageCache } from '@/lib/pageCache'
 
 export default function SupplierPage() {
-  const [suppliers, setSuppliers] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
+  // เปิดหน้าซ้ำ → โชว์ข้อมูลรอบก่อนทันที แล้วดึงของใหม่เบื้องหลัง (stale-while-revalidate)
+  const cached = getPageCache<any[]>('suppliers')
+  const [suppliers, setSuppliers] = useState<any[]>(cached ?? [])
+  const [loading, setLoading] = useState(!cached)
 
   useEffect(() => {
     ;(async () => {
       const { data } = await supabase.from('suppliers').select('*').order('name')
+      setPageCache('suppliers', data ?? [])
       setSuppliers(data ?? [])
       setLoading(false)
     })()

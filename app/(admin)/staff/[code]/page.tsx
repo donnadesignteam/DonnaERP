@@ -8,10 +8,11 @@ import { fetchStaffOne, type Staff } from '@/lib/staffDb'
 
 type Leave = { filed: string | null; date: string | null; time: string | null; type: string | null; reason: string | null; status: string | null; supervisor: string | null }
 type Scan = { order_number: string; customer_name: string | null; status: string | null; stages: string[]; last: string | null }
-type AdminOrder = { order_number: string | null; customer_name: string | null; platform: string | null; status: string | null; price: number; category: string }
+type AdminOrder = { order_number: string | null; customer_name: string | null; platform: string | null; status: string | null; price: number; category: string; date: string | null }
 type Claim = { order_number: string | null; customer: string | null; type: string | null; status: string | null }
 type CatSum = { cat: string; count: number; sales: number }
-type OrderSummary = { count: number; sales: number; byCat: CatSum[] }
+type MonthSum = { ym: string; label: string; count: number; sales: number }
+type OrderSummary = { count: number; sales: number; byCat: CatSum[]; byMonth: MonthSum[]; bonus: { label: string; count: number; sales: number } }
 type Work = { scans: Scan[]; orders: AdminOrder[]; claims: Claim[]; orderSummary: OrderSummary }
 
 const PLATFORMS = ['Shopee', 'Tiktok', 'Lazada']
@@ -82,6 +83,7 @@ export default function StaffDetailPage() {
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState<Form>({})
   const [saving, setSaving] = useState(false)
+  const [monthFilter, setMonthFilter] = useState<string>('all') // filter เดือนของออเดอร์แอดมิน ('all' | 'YYYY-MM')
 
   const loadAll = useCallback(async () => {
     setLoading(true); setError('')
@@ -97,7 +99,7 @@ export default function StaffDetailPage() {
         supabase.from('leave_requests').select('*').eq('employee_code', cc).order('leave_date', { ascending: false }),
         supabase.from('production_scans').select('order_number, stage, status, scanned_at').eq('tech_code', cc),
         nickname
-          ? supabase.from('order_entries').select('order_number, customer_name, platform, is_installation, order_status, price, updated_at').eq('admin_name', nickname).order('updated_at', { ascending: false })
+          ? supabase.from('order_entries').select('order_number, customer_name, platform, is_installation, order_status, price, updated_at, entry_date, created_at').eq('admin_name', nickname).order('updated_at', { ascending: false })
           : Promise.resolve({ data: [] as Record<string, unknown>[] }),
       ])
 
@@ -120,8 +122,44 @@ export default function StaffDetailPage() {
           order_number: o.order_number, customer_name: o.customer_name, platform: o.platform,
           status: o.order_status, price: typeof o.price === 'number' ? o.price : Number(o.price) || 0,
           category: categorize(o.platform, !!o.is_installation),
+          date: o.entry_date || o.created_at || null,
         }))
       const CATS = ['แพลตฟอร์ม', 'งานนอก', 'ติดตั้ง']
+
+      // ยอดขายแยกรายเดือน (ตาม entry_date)
+      const monthMap = new Map<string, { count: number; sales: number }>()
+      for (const o of orders) {
+        if (!o.date) continue
+        const ym = o.date.slice(0, 7) // YYYY-MM
+        const cur = monthMap.get(ym) ?? { count: 0, sales: 0 }
+        monthMap.set(ym, { count: cur.count + 1, sales: cur.sales + o.price })
+      }
+      const byMonth: MonthSum[] = [...monthMap.entries()]
+        .sort((a, b) => b[0].localeCompare(a[0]))
+        .map(([ym, v]) => ({
+          ym,
+          label: new Date(ym + '-01').toLocaleDateString('th-TH', { month: 'long', year: 'numeric' }),
+          ...v,
+        }))
+
+      // ยอดช่วงคิดโบนัส: 28 เดือนก่อน – 29 เดือนนี้ (ถ้าวันนี้ ≥ 28 เลื่อนเป็น 28 เดือนนี้ – 29 เดือนหน้า)
+      const today = new Date()
+      const bStart = today.getDate() >= 28
+        ? new Date(today.getFullYear(), today.getMonth(), 28)
+        : new Date(today.getFullYear(), today.getMonth() - 1, 28)
+      const bEnd = new Date(bStart.getFullYear(), bStart.getMonth() + 1, 29, 23, 59, 59, 999)
+      const inBonus = orders.filter((o) => {
+        if (!o.date) return false
+        const d = new Date(o.date)
+        return d >= bStart && d <= bEnd
+      })
+      const fmtD = (d: Date) => d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })
+      const bonus = {
+        label: `${fmtD(bStart)} – ${fmtD(bEnd)}`,
+        count: inBonus.length,
+        sales: inBonus.reduce((sum, o) => sum + o.price, 0),
+      }
+
       const orderSummary: OrderSummary = {
         count: orders.length,
         sales: orders.reduce((sum, o) => sum + o.price, 0),
@@ -129,6 +167,8 @@ export default function StaffDetailPage() {
           const list = orders.filter((o) => o.category === cat)
           return { cat, count: list.length, sales: list.reduce((sum, o) => sum + o.price, 0) }
         }).filter((c) => c.count > 0),
+        byMonth,
+        bonus,
       }
 
       // เฟส 2 (ยิงพร้อมกัน): ออเดอร์ของเลขที่สแกน + เคลมที่ผูกกับออเดอร์แอดมิน
@@ -312,17 +352,69 @@ export default function StaffDetailPage() {
                     <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 4 }}>{c.count} ออเดอร์</div>
                   </div>
                 ))}
+                {/* ยอดช่วงคิดโบนัส 28 เดือนก่อน – 29 เดือนนี้ */}
+                <div style={{ background: 'var(--surface)', border: '1.5px solid #c47e3a55', borderRadius: 14, padding: 18, boxShadow: 'var(--shadow)' }}>
+                  <div style={{ fontSize: 13, color: '#c47e3a', fontWeight: 700 }}>ยอดช่วงโบนัส ({work.orderSummary.bonus.label})</div>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: '#c47e3a', marginTop: 8 }}>{baht(work.orderSummary.bonus.sales)}</div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 4 }}>{work.orderSummary.bonus.count} ออเดอร์</div>
+                </div>
               </div>
 
-              <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink)', margin: '12px 0' }}>ออเดอร์ที่รับผิดชอบ · {work.orders.length}</h2>
+              {/* ยอดขายแยกรายเดือน */}
+              {work.orderSummary.byMonth.length > 0 && (
+                <>
+                  <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink)', margin: '12px 0' }}>ยอดขายรายเดือน</h2>
+                  <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'auto', boxShadow: 'var(--shadow)', marginBottom: 26 }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 400 }}>
+                      <thead><tr>
+                        <th style={th}>เดือน</th><th style={{ ...th, textAlign: 'right' }}>ออเดอร์</th><th style={{ ...th, textAlign: 'right' }}>ยอดขาย</th>
+                      </tr></thead>
+                      <tbody>
+                        {work.orderSummary.byMonth.map((m) => (
+                          <tr key={m.ym}>
+                            <td style={{ ...td, whiteSpace: 'nowrap', fontWeight: 600 }}>{m.label}</td>
+                            <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{m.count}</td>
+                            <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: '#30c759' }}>{baht(m.sales)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+
+              {(() => {
+                // เรียงใหม่→เก่า + filter เลือกเดือน
+                const shownOrders = work.orders
+                  .filter((o) => monthFilter === 'all' || (o.date ?? '').slice(0, 7) === monthFilter)
+                  .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''))
+                const fmtOrderDate = (d: string | null) => d ? new Date(d).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'
+                return (
+              <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '12px 0', flexWrap: 'wrap' }}>
+                <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink)' }}>ออเดอร์ที่รับผิดชอบ · {shownOrders.length}</h2>
+                <select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)}
+                  style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: monthFilter === 'all' ? 'var(--ink-3)' : 'var(--blue)', fontSize: 13, fontWeight: monthFilter === 'all' ? 400 : 600, cursor: 'pointer', outline: 'none' }}>
+                  <option value="all">ทุกเดือน</option>
+                  {work.orderSummary.byMonth.map((m) => (
+                    <option key={m.ym} value={m.ym}>{m.label}</option>
+                  ))}
+                </select>
+                {monthFilter !== 'all' && (
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#30c759' }}>
+                    ยอดเดือนนี้ {baht(shownOrders.reduce((s, o) => s + o.price, 0))}
+                  </span>
+                )}
+              </div>
               <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'auto', boxShadow: 'var(--shadow)', marginBottom: 26 }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 660 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
                   <thead><tr>
-                    <th style={th}>ออเดอร์</th><th style={th}>ลูกค้า</th><th style={th}>ประเภท</th><th style={th}>แพลตฟอร์ม</th><th style={th}>สถานะ</th><th style={{ ...th, textAlign: 'right' }}>ยอดขาย</th>
+                    <th style={th}>วันที่</th><th style={th}>ออเดอร์</th><th style={th}>ลูกค้า</th><th style={th}>ประเภท</th><th style={th}>แพลตฟอร์ม</th><th style={th}>สถานะ</th><th style={{ ...th, textAlign: 'right' }}>ยอดขาย</th>
                   </tr></thead>
                   <tbody>
-                    {work.orders.map((o, i) => (
+                    {shownOrders.map((o, i) => (
                       <tr key={i}>
+                        <td style={{ ...td, whiteSpace: 'nowrap', color: 'var(--ink-3)', fontSize: 12 }}>{fmtOrderDate(o.date)}</td>
                         <td style={{ ...td, color: 'var(--blue)', fontWeight: 600, whiteSpace: 'nowrap' }}>{o.order_number || '—'}</td>
                         <td style={td}>{o.customer_name || '—'}</td>
                         <td style={{ ...td, whiteSpace: 'nowrap' }}><span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: 'var(--blue-bg)', color: 'var(--blue)' }}>{o.category}</span></td>
@@ -334,6 +426,9 @@ export default function StaffDetailPage() {
                   </tbody>
                 </table>
               </div>
+              </>
+                )
+              })()}
             </>
           )}
 

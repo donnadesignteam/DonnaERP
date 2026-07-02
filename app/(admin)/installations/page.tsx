@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { HOLIDAYS } from '@/lib/holidays'
 
 type Installation = {
@@ -125,8 +126,10 @@ const emptyForm = (): Omit<Installation, 'id' | 'created_at' | 'updated_at' | 's
 })
 
 export default function InstallationsPage() {
-  const [installs, setInstalls] = useState<Installation[]>([])
-  const [loading, setLoading] = useState(true)
+  // เปิดหน้าซ้ำ → โชว์ข้อมูลรอบก่อนทันที แล้ว load() ดึงของใหม่เบื้องหลัง (stale-while-revalidate)
+  const cached = getPageCache<Installation[]>('installations')
+  const [installs, setInstalls] = useState<Installation[]>(cached ?? [])
+  const [loading, setLoading] = useState(!cached)
   const [year, setYear] = useState(new Date().getFullYear())
   const [month, setMonth] = useState(new Date().getMonth())
   const [modal, setModal] = useState<{ mode: 'add' | 'edit'; data: Partial<Installation> } | null>(null)
@@ -145,7 +148,6 @@ export default function InstallationsPage() {
   const [editAppt, setEditAppt] = useState<{ id: string; date: string; time: string } | null>(null)
 
   const load = async () => {
-    setLoading(true)
     const { data, error: err } = await supabase.from('installations').select('*').order('appointment_datetime', { ascending: false })
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
     let rows = (data ?? []) as Installation[]
@@ -157,6 +159,7 @@ export default function InstallationsPage() {
       await supabase.from('installations').update({ installation_status: 'วัดหน้างานแล้ว' }).in('id', ids)
       rows = rows.map(r => ids.includes(r.id) ? { ...r, installation_status: 'วัดหน้างานแล้ว' } : r)
     }
+    setPageCache('installations', rows)
     setInstalls(rows)
     setLoading(false)
   }

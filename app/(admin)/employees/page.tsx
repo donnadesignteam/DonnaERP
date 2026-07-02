@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { HOLIDAYS } from '@/lib/holidays'
 import { EMPLOYEES } from '@/lib/staff'
 
@@ -83,8 +84,10 @@ function tenureText(days: number): string {
 }
 
 export default function EmployeesPage() {
-  const [leaves, setLeaves] = useState<Leave[]>([])
-  const [loading, setLoading] = useState(true)
+  // เปิดหน้าซ้ำ → โชว์ข้อมูลรอบก่อนทันที แล้ว load() ดึงของใหม่เบื้องหลัง (stale-while-revalidate)
+  const cached = getPageCache<Leave[]>('leave_requests')
+  const [leaves, setLeaves] = useState<Leave[]>(cached ?? [])
+  const [loading, setLoading] = useState(!cached)
   const [year, setYear] = useState(new Date().getFullYear())
   const [month, setMonth] = useState(new Date().getMonth())
   const [modal, setModal] = useState(false)
@@ -97,9 +100,10 @@ export default function EmployeesPage() {
   const [dayModal, setDayModal] = useState<{ ymd: string; day: number; leaves: Leave[] } | null>(null)
 
   const load = async () => {
-    setLoading(true)
     const { data } = await supabase.from('leave_requests').select('*').order('leave_date', { ascending: false })
-    setLeaves((data ?? []) as Leave[])
+    const rows = (data ?? []) as Leave[]
+    setPageCache('leave_requests', rows)
+    setLeaves(rows)
     setLoading(false)
   }
 

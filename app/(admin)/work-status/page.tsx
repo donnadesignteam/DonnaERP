@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { getPageCache, setPageCache } from '@/lib/pageCache'
 
 const statusColor: Record<string, string> = {
   'รอดำเนินการ': '#ff9f0a',
@@ -19,9 +20,11 @@ const statusColor: Record<string, string> = {
 const stages = ['รอดำเนินการ', 'ตัดผ้าแล้ว', 'เย็บแล้ว', 'รีดแล้ว', 'แพ็คแล้ว', 'สำเร็จ']
 
 export default function WorkStatusPage() {
-  const [orders, setOrders] = useState<any[]>([])
-  const [workStatus, setWorkStatus] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
+  // เปิดหน้าซ้ำ → โชว์ข้อมูลรอบก่อนทันที แล้วดึงของใหม่เบื้องหลัง (stale-while-revalidate)
+  const cached = getPageCache<{ ws: any[]; ord: any[] }>('work-status')
+  const [orders, setOrders] = useState<any[]>(cached?.ord ?? [])
+  const [workStatus, setWorkStatus] = useState<any[]>(cached?.ws ?? [])
+  const [loading, setLoading] = useState(!cached)
 
   useEffect(() => {
     ;(async () => {
@@ -29,6 +32,7 @@ export default function WorkStatusPage() {
         supabase.from('work_status').select('*'),
         supabase.from('orders').select('order_number, customer_name, status, deadline').neq('status', 'สำเร็จ'),
       ])
+      setPageCache('work-status', { ws: ws ?? [], ord: ord ?? [] })
       setWorkStatus(ws ?? [])
       setOrders(ord ?? [])
       setLoading(false)

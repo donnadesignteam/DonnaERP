@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { getPageCache, setPageCache } from '@/lib/pageCache'
 
 const colLabel: Record<string, string> = {
   type: 'ประเภท', product_type: 'ประเภทสินค้า', name: 'ชื่อ',
@@ -9,12 +10,15 @@ const colLabel: Record<string, string> = {
 }
 
 export default function PricingPage() {
-  const [pricing, setPricing] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
+  // เปิดหน้าซ้ำ → โชว์ข้อมูลรอบก่อนทันที แล้วดึงของใหม่เบื้องหลัง (stale-while-revalidate)
+  const cached = getPageCache<any[]>('pricing')
+  const [pricing, setPricing] = useState<any[]>(cached ?? [])
+  const [loading, setLoading] = useState(!cached)
 
   useEffect(() => {
     ;(async () => {
       const { data } = await supabase.from('pricing').select('*').order('id')
+      setPageCache('pricing', data ?? [])
       setPricing(data ?? [])
       setLoading(false)
     })()

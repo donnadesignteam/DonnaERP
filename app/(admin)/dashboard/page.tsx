@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import { getPageCache, setPageCache } from '@/lib/pageCache'
 
 type Order = {
   id: string
@@ -114,6 +115,18 @@ const STATS_META = [
       </svg>
     ),
   },
+  {
+    key: 'toship',
+    label: 'รอจัดส่ง',
+    color: '#6366F1',
+    gradLight: 'linear-gradient(135deg, #EEF2FF 0%, #C7D2FE 100%)',
+    gradDark: 'linear-gradient(135deg, #1e1b4b 0%, #4338ca30 100%)',
+    icon: (
+      <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 00-3.213-9.193 2.056 2.056 0 00-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 00-10.026 0 1.106 1.106 0 00-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12"/>
+      </svg>
+    ),
+  },
 ]
 
 const DEPTS = [
@@ -127,9 +140,9 @@ const DEPTS = [
     icon: <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg> },
 ]
 
-type ModalData = { title: string; orders: Order[]; showPrint?: boolean } | null
+type ModalData = { title: string; orders: Order[]; showPrint?: boolean; showShipToggle?: boolean } | null
 
-function OrderTable({ orders, today }: { orders: Order[]; today: string }) {
+function OrderTable({ orders, today, onShip }: { orders: Order[]; today: string; onShip?: (id: string) => void }) {
   if (orders.length === 0) return (
     <p style={{ color: 'var(--ink-3)', textAlign: 'center', padding: '32px 0', fontSize: 13 }}>ไม่มีข้อมูล</p>
   )
@@ -137,7 +150,7 @@ function OrderTable({ orders, today }: { orders: Order[]; today: string }) {
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
       <thead>
         <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
-          {['เลขที่', 'ลูกค้า', 'สถานะ', 'กำหนดส่ง', 'วันที่สั่ง'].map(h => (
+          {['เลขที่', 'ลูกค้า', 'สถานะ', 'กำหนดส่ง', 'วันที่สั่ง', ...(onShip ? ['จัดส่งแล้ว'] : [])].map(h => (
             <th key={h} style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, fontSize: 12 }}>{h}</th>
           ))}
         </tr>
@@ -159,6 +172,12 @@ function OrderTable({ orders, today }: { orders: Order[]; today: string }) {
                 {dl ? new Date(o.deadline!).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}
               </td>
               <td style={{ padding: '10px 14px', color: 'var(--ink-3)' }}>{new Date(o.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' })}</td>
+              {onShip && (
+                <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                  <input type="checkbox" onChange={e => { if (e.target.checked) onShip(o.id) }}
+                    style={{ cursor: 'pointer', width: 16, height: 16, accentColor: '#22c55e' }} />
+                </td>
+              )}
             </tr>
           )
         })}
@@ -168,13 +187,15 @@ function OrderTable({ orders, today }: { orders: Order[]; today: string }) {
 }
 
 export default function DashboardPage() {
-  const [all, setAll] = useState<Order[]>([])
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
+  // เปิดหน้าซ้ำ → โชว์ข้อมูลรอบก่อนทันที แล้วดึงของใหม่เบื้องหลัง (stale-while-revalidate)
+  const cached = getPageCache<Order[]>('dashboard:order_entries')
+  const [all, setAll] = useState<Order[]>(cached ?? [])
+  const [dateFrom, setDateFrom] = useState(cached?.length ? cached[0].created_at.split('T')[0] : '')
+  const [dateTo, setDateTo] = useState(cached?.length ? cached[cached.length - 1].created_at.split('T')[0] : '')
   const fromRef = useRef<HTMLInputElement>(null)
   const toRef = useRef<HTMLInputElement>(null)
   const [modal, setModal] = useState<ModalData>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!cached)
   const [isDark, setIsDark] = useState(false)
   const [orderSearch, setOrderSearch] = useState('')
   const [daysSort, setDaysSort] = useState<'asc'|'desc'|null>('asc')
@@ -206,6 +227,7 @@ export default function DashboardPage() {
     ;(async () => {
       const { data } = await supabase.from('order_entries').select('id,order_number,customer_name,order_status,deadline,created_at,platform,courier,is_installation,is_urgent,is_dropoff,shipping_datetime,notes,updated_at').order('created_at', { ascending: true })
       const rows = (data ?? []) as Order[]
+      setPageCache('dashboard:order_entries', rows)
       setAll(rows)
       if (rows.length > 0) {
         setDateFrom(rows[0].created_at.split('T')[0])
@@ -267,22 +289,52 @@ export default function DashboardPage() {
   }
   const todayDue = filtered.filter(o => effectiveISODate(o) === today)
   const overdue = filtered.filter(o => { const iso = effectiveISODate(o); return iso && iso < today && !DONE_STATUSES.includes(o.order_status) })
+  // งานเสร็จ (is_urgent) ที่ยังไม่ได้จัดส่ง → รอติ๊กจัดส่งใน popup
+  const toShip = filtered.filter(o => o.is_urgent && o.order_status !== 'จัดส่งแล้ว')
+
+  // ติ๊กจัดส่งจาก popup: อัปเดตเหมือนหน้าออเดอร์ (สถานะ+shipped_at+sync work_status+ประวัติ)
+  const markShipped = async (id: string) => {
+    const row = all.find(o => o.id === id)
+    const now = new Date().toISOString()
+    const updates = { is_urgent: true, order_status: 'จัดส่งแล้ว', shipped_at: now, updated_at: now }
+    const { error } = await supabase.from('order_entries').update(updates).eq('id', id)
+    if (error) return
+    try {
+      const term = row?.order_number || row?.customer_name
+      if (term) {
+        const { data: matches } = await supabase.from('work_status').select('id').or(`order_number.ilike.%${term}%,order_number.ilike.%${row?.customer_name}%`)
+        if (matches && matches.length > 0) await supabase.from('work_status').update({ status: 'จัดส่งแล้ว', status_updated_at: now }).in('id', matches.map(m => m.id))
+      }
+      const { data: r2 } = await supabase.from('order_entries').select('status_history').eq('id', id).single()
+      const prev = Array.isArray(r2?.status_history) ? r2.status_history : []
+      if (!prev.length || prev[prev.length - 1]?.status !== 'จัดส่งแล้ว') {
+        await supabase.from('order_entries').update({ status_history: [...prev, { status: 'จัดส่งแล้ว', at: now, by: null }] }).eq('id', id)
+      }
+    } catch {}
+    setAll(prev => {
+      const next = prev.map(o => o.id === id ? { ...o, order_status: 'จัดส่งแล้ว', updated_at: now } : o)
+      setPageCache('dashboard:order_entries', next)
+      return next
+    })
+    setModal(m => m ? { ...m, orders: m.orders.filter(o => o.id !== id) } : m)
+  }
 
   const now = new Date()
   const last7 = all.filter(o => (now.getTime() - new Date(o.created_at).getTime()) <= 7 * 864e5).length
   const prev7 = all.filter(o => { const age = (now.getTime() - new Date(o.created_at).getTime()) / 864e5; return age > 7 && age <= 14 }).length
   const totalTrend = prev7 === 0 ? null : Math.round((last7 - prev7) / prev7 * 100)
 
-  const statCounts = [filtered.length, pending.length, todayDue.length, overdue.length]
-  const statOrders = [filtered, pending, todayDue, overdue]
-  const statPrint = [true, true, true, true]
+  const statCounts = [filtered.length, pending.length, todayDue.length, overdue.length, toShip.length]
+  const statOrders = [filtered, pending, todayDue, overdue, toShip]
+  const statPrint = [true, true, true, true, true]
   const statTrends: (number | null)[] = [
     totalTrend,
     filtered.length > 0 ? Math.round(pending.length / filtered.length * 100) : null,
     null,
     pending.length > 0 ? Math.round(overdue.length / pending.length * 100) : null,
+    null,
   ]
-  const statTrendLabels = ['vs สัปดาห์ที่แล้ว', '% ของทั้งหมด', null, '% ของค้างส่ง']
+  const statTrendLabels = ['vs สัปดาห์ที่แล้ว', '% ของทั้งหมด', null, '% ของค้างส่ง', null]
 
   return (
     <div>
@@ -311,7 +363,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stat cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 28 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14, marginBottom: 28 }}>
         {STATS_META.map((s, i) => {
           const trend = statTrends[i]
           const trendLabel = statTrendLabels[i]
@@ -320,7 +372,7 @@ export default function DashboardPage() {
 
           return (
             <button key={s.key}
-              onClick={() => setModal({ title: s.label, orders: statOrders[i], showPrint: statPrint[i] })}
+              onClick={() => setModal({ title: s.key === 'toship' ? 'รอจัดส่ง — ติ๊กเพื่อจัดส่ง' : s.label, orders: statOrders[i], showPrint: statPrint[i], showShipToggle: s.key === 'toship' })}
               style={{
                 background: isDark ? s.gradDark : s.gradLight,
                 border: `1px solid ${s.color}22`,
@@ -668,7 +720,7 @@ export default function DashboardPage() {
               </div>
             </div>
             <div style={{ overflow: 'auto', flex: 1 }}>
-              <OrderTable orders={modal.orders} today={today} />
+              <OrderTable orders={modal.orders} today={today} onShip={modal.showShipToggle ? markShipped : undefined} />
             </div>
           </div>
         </div>

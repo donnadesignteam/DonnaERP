@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { getPageCache, setPageCache } from '@/lib/pageCache'
 
 type PO = {
   id: string
@@ -25,8 +26,10 @@ const empty = (): Omit<PO, 'id' | 'created_at' | 'updated_at'> => ({
 })
 
 export default function PurchaseOrdersPage() {
-  const [rows, setRows] = useState<PO[]>([])
-  const [loading, setLoading] = useState(true)
+  // เปิดหน้าซ้ำ → โชว์ข้อมูลรอบก่อนทันที แล้ว load() ดึงของใหม่เบื้องหลัง (stale-while-revalidate)
+  const cached = getPageCache<PO[]>('purchase_orders')
+  const [rows, setRows] = useState<PO[]>(cached ?? [])
+  const [loading, setLoading] = useState(!cached)
   const [modal, setModal] = useState<{ mode: 'add' | 'edit'; data: Partial<PO> } | null>(null)
   const [saving, setSaving] = useState(false)
   const [filter, setFilter] = useState<'all' | 'รอของ' | 'ของเข้าแล้ว'>('all')
@@ -38,10 +41,11 @@ export default function PurchaseOrdersPage() {
   const [search, setSearch] = useState('')
 
   const load = async () => {
-    setLoading(true)
     const { data, error: err } = await supabase.from('purchase_orders').select('*').order('created_at', { ascending: false })
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
-    setRows((data ?? []) as PO[])
+    const pos = (data ?? []) as PO[]
+    setPageCache('purchase_orders', pos)
+    setRows(pos)
     setLoading(false)
   }
 
