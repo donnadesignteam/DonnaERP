@@ -143,13 +143,15 @@ export default function StaffDetailPage() {
         }))
 
       // ยอดช่วงคิดโบนัส: 28 เดือนก่อน – 29 เดือนนี้ (ถ้าวันนี้ ≥ 28 เลื่อนเป็น 28 เดือนนี้ – 29 เดือนหน้า)
+      // นับเฉพาะออเดอร์ที่ส่งถึงมือลูกค้าแล้ว (จัดส่งแล้ว/เสร็จสิ้น) — อยู่ระหว่างจัดส่งยังไม่นับ
       const today = new Date()
       const bStart = today.getDate() >= 28
         ? new Date(today.getFullYear(), today.getMonth(), 28)
         : new Date(today.getFullYear(), today.getMonth() - 1, 28)
       const bEnd = new Date(bStart.getFullYear(), bStart.getMonth() + 1, 29, 23, 59, 59, 999)
+      const isDelivered = (s: string | null) => s === 'จัดส่งแล้ว' || s === 'เสร็จสิ้น'
       const inBonus = orders.filter((o) => {
-        if (!o.date) return false
+        if (!o.date || !isDelivered(o.status)) return false
         const d = new Date(o.date)
         return d >= bStart && d <= bEnd
       })
@@ -356,7 +358,7 @@ export default function StaffDetailPage() {
                 <div style={{ background: 'var(--surface)', border: '1.5px solid #c47e3a55', borderRadius: 14, padding: 18, boxShadow: 'var(--shadow)' }}>
                   <div style={{ fontSize: 13, color: '#c47e3a', fontWeight: 700 }}>ยอดช่วงโบนัส ({work.orderSummary.bonus.label})</div>
                   <div style={{ fontSize: 22, fontWeight: 700, color: '#c47e3a', marginTop: 8 }}>{baht(work.orderSummary.bonus.sales)}</div>
-                  <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 4 }}>{work.orderSummary.bonus.count} ออเดอร์</div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 4 }}>{work.orderSummary.bonus.count} ออเดอร์ · นับเฉพาะส่งถึงลูกค้าแล้ว</div>
                 </div>
               </div>
 

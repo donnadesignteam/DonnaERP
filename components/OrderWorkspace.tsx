@@ -303,7 +303,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [pasteCol6, setPasteCol6] = useState('')
   const [pasteCol7, setPasteCol7] = useState('')
   const [pasteCol8, setPasteCol8] = useState('')
-  const [pasteRows, setPasteRows] = useState<{ paymentDate: string; deadline: string; orderNumber: string; price: number; customerName: string; courier: string; orderStatus: string; isDuplicate: boolean; isDropoff: boolean }[]>([])
+  const [pasteCol9, setPasteCol9] = useState('') // เวลาส่งสินค้า (Shopee) → ใช้เป็นวันที่จัดส่งแล้ว
+  const [pasteRows, setPasteRows] = useState<{ paymentDate: string; deadline: string; orderNumber: string; price: number; customerName: string; courier: string; orderStatus: string; isDuplicate: boolean; isDropoff: boolean; shippedDate: string }[]>([])
   const [pasteSaving, setPasteSaving] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [modalItems, setModalItems] = useState<Item[]>([])
@@ -774,13 +775,14 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0]
   }
 
-  function computePasteRowsFromCols(c1: string, c2: string, c3: string, c4: string, c5: string, c6: string, c7: string, c8: string) {
+  function computePasteRowsFromCols(c1: string, c2: string, c3: string, c4: string, c5: string, c6: string, c7: string, c8: string, c9 = '') {
     const split = (s: string) => s.trimEnd().split('\n').map(x => x.trim())
     const orderNums = split(c1); const customers = split(c2); const payDates = split(c3); const couriers = split(c4)
     const deadlines = split(c5); const prices = split(c6); const statuses = split(c7); const dropoffs = split(c8)
+    const shippedDates = split(c9)
     const existingNums = new Set(rows.map(r => r.order_number).filter(Boolean))
     const len = Math.max(orderNums.length, customers.length, payDates.length, couriers.length, deadlines.length, prices.length, statuses.length, dropoffs.length)
-    const map = new Map<string, { paymentDate: string; deadline: string; orderNumber: string; price: number; customerName: string; courier: string; orderStatus: string; isDuplicate: boolean; isDropoff: boolean }>()
+    const map = new Map<string, { paymentDate: string; deadline: string; orderNumber: string; price: number; customerName: string; courier: string; orderStatus: string; isDuplicate: boolean; isDropoff: boolean; shippedDate: string }>()
     for (let i = 0; i < len; i++) {
       const orderNumber = orderNums[i] ?? ''
       const price = parseFloat((prices[i] ?? '0').replace(/,/g, '')) || 0
@@ -788,14 +790,30 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       if (map.has(orderNumber)) { map.get(orderNumber)!.price += price }
       else {
         const isDropoff = !!(dropoffs[i] ?? '').trim()
-        map.set(orderNumber, { paymentDate: payDates[i] ?? '', deadline: deadlines[i] ?? '', orderNumber, price, customerName: customers[i] ?? '', courier: normalizeCourier(couriers[i] ?? ''), orderStatus: statuses[i] ?? '', isDuplicate: existingNums.has(orderNumber), isDropoff })
+        map.set(orderNumber, { paymentDate: payDates[i] ?? '', deadline: deadlines[i] ?? '', orderNumber, price, customerName: customers[i] ?? '', courier: normalizeCourier(couriers[i] ?? ''), orderStatus: statuses[i] ?? '', isDuplicate: existingNums.has(orderNumber), isDropoff, shippedDate: shippedDates[i] ?? '' })
       }
     }
     setPasteRows(Array.from(map.values()))
   }
 
   function parsePasteData() {
-    computePasteRowsFromCols(pasteCol1, pasteCol2, pasteCol3, pasteCol4, pasteCol5, pasteCol6, pasteCol7, pasteCol8)
+    computePasteRowsFromCols(pasteCol1, pasteCol2, pasteCol3, pasteCol4, pasteCol5, pasteCol6, pasteCol7, pasteCol8, pasteCol9)
+  }
+
+  // สถานะ Shopee ที่ถือว่า "ส่งถึงมือลูกค้าแล้ว" → ติ๊กจัดส่งแล้วอัตโนมัติ + นับโบนัสแอดมิน
+  const isDeliveredStatus = (s: string) => s.includes('สำเร็จ') || s.includes('ได้รับสินค้าแล้ว')
+
+  // แปลง "เวลาส่งสินค้า" จาก excel เป็น ISO (รองรับ DD/MM/YYYY HH:mm, YYYY-MM-DD และ Date string)
+  function toShippedIso(s: string): string | null {
+    const t = (s || '').trim()
+    if (!t || t === '-') return null
+    const m = t.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2}):(\d{2}))?/)
+    if (m) {
+      const d = new Date(+m[3], +m[2] - 1, +m[1], +(m[4] ?? '12'), +(m[5] ?? '0'))
+      return isNaN(d.getTime()) ? null : d.toISOString()
+    }
+    const d = new Date(t)
+    return isNaN(d.getTime()) ? null : d.toISOString()
   }
 
   const XLSX_COL_MAP: Record<string, number> = {
@@ -807,6 +825,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     'ราคาขายสุทธิ': 5,            // col6 = ราคา
     'สถานะการสั่งซื้อ': 6,        // col7 = สถานะ
     'วิธีการจัดส่ง': 7,           // col8 = Drop-off
+    'เวลาส่งสินค้า': 8,           // col9 = วันที่ส่งถึงลูกค้า → ใช้เป็นวันที่จัดส่งแล้ว
   }
 
   function processRawRows(rawRows: string[][]) {
@@ -816,7 +835,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
 
     let cols: string[]
     if (isNamedHeader) {
-      const colIdx = new Array(8).fill(-1)
+      const colIdx = new Array(9).fill(-1)
       headers.forEach((h, i) => { if (XLSX_COL_MAP[h] !== undefined) colIdx[XLSX_COL_MAP[h]] = i })
       const data = rawRows.slice(1).filter(r => r.some(c => c.toString().trim()))
       if (data.length === 0) { setFileParseError('ไม่พบข้อมูล'); return }
@@ -825,13 +844,13 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       const hasHeader = headers.some(c => isNaN(parseFloat(c.replace(/,/g, ''))) && c.length > 0 && !/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/.test(c))
       const data = (hasHeader ? rawRows.slice(1) : rawRows).filter(r => r.some(c => c.toString().trim()))
       if (data.length === 0) { setFileParseError('ไม่พบข้อมูล'); return }
-      cols = [0,1,2,3,4,5,6,7].map(i => data.map(r => (r[i] ?? '').toString().trim()).join('\n'))
+      cols = [0,1,2,3,4,5,6,7,8].map(i => data.map(r => (r[i] ?? '').toString().trim()).join('\n'))
     }
 
-    const [c1,c2,c3,c4,c5,c6,c7,c8] = cols
+    const [c1,c2,c3,c4,c5,c6,c7,c8,c9] = cols
     setPasteCol1(c1); setPasteCol2(c2); setPasteCol3(c3); setPasteCol4(c4)
-    setPasteCol5(c5); setPasteCol6(c6); setPasteCol7(c7); setPasteCol8(c8)
-    computePasteRowsFromCols(c1, c2, c3, c4, c5, c6, c7, c8)
+    setPasteCol5(c5); setPasteCol6(c6); setPasteCol7(c7); setPasteCol8(c8); setPasteCol9(c9)
+    computePasteRowsFromCols(c1, c2, c3, c4, c5, c6, c7, c8, c9)
     setModalTab('paste')
   }
 
@@ -891,7 +910,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   async function savePasteRows() {
     setPasteSaving(true)
     const today = new Date().toISOString().split('T')[0]
-    const resetCols = () => { setPasteRows([]); setPasteCol1(''); setPasteCol2(''); setPasteCol3(''); setPasteCol4(''); setPasteCol5(''); setPasteCol6(''); setPasteCol7(''); setPasteCol8('') }
+    const resetCols = () => { setPasteRows([]); setPasteCol1(''); setPasteCol2(''); setPasteCol3(''); setPasteCol4(''); setPasteCol5(''); setPasteCol6(''); setPasteCol7(''); setPasteCol8(''); setPasteCol9('') }
 
     const newRows = pasteRows.filter(isPasteRowSaveable)
     const dropoffUpdateRows = pasteRows.filter(r => {
@@ -899,6 +918,11 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       const existing = rows.find(row => row.order_number === r.orderNumber)
       return existing && !existing.is_dropoff
     })
+    // สถานะ excel = สำเร็จ/ผู้ซื้อได้รับสินค้าแล้ว → ติ๊กจัดส่งแล้ว + วันที่ตามช่องเวลาส่งสินค้า
+    // (ถ้าติ๊กอยู่แล้วก็อัพเดทวันที่ให้ตรงตามใบ excel)
+    const shippedUpdateRows = pasteRows.filter(r =>
+      r.isDuplicate && isDeliveredStatus(r.orderStatus) && rows.some(row => row.order_number === r.orderNumber)
+    )
 
     const insertPayload = newRows.map(r => ({
       entry_date: (r.paymentDate && r.paymentDate !== '-') ? (toIsoDate(r.paymentDate) || today) : null,
@@ -927,7 +951,25 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       if (!err) updatedIds.push(existing.id)
     }
 
-    if (insertPayload.length === 0 && updatedIds.length === 0) {
+    // ติ๊กจัดส่งแล้วตามสถานะ excel (สำเร็จ/ผู้ซื้อได้รับสินค้าแล้ว)
+    const shippedApplied = new Map<string, Partial<Entry>>()
+    for (const r of shippedUpdateRows) {
+      const existing = rows.find(row => row.order_number === r.orderNumber)
+      if (!existing) continue
+      const now = new Date().toISOString()
+      const shippedAt = toShippedIso(r.shippedDate) || existing.shipped_at || now
+      const updates = { order_status: 'จัดส่งแล้ว', shipped_at: shippedAt, is_urgent: true, updated_at: now }
+      const { error: err } = await supabase.from('order_entries').update(updates).eq('id', existing.id)
+      if (!err) {
+        shippedApplied.set(existing.id, updates)
+        if (existing.order_status !== 'จัดส่งแล้ว') {
+          await syncWorkStatus(existing.order_number, existing.customer_name, 'จัดส่งแล้ว', now)
+          await logStatus(existing.id, 'จัดส่งแล้ว', now, existing.status_history)
+        }
+      }
+    }
+
+    if (insertPayload.length === 0 && updatedIds.length === 0 && shippedApplied.size === 0) {
       setPasteSaving(false)
       setModal(null)
       resetCols()
@@ -944,7 +986,11 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     setPasteSaving(false)
     setRows(prev => [
       ...insertedRows,
-      ...prev.map(r => updatedIds.includes(r.id) ? { ...r, is_dropoff: true } : r),
+      ...prev.map(r => {
+        const shipped = shippedApplied.get(r.id)
+        const dropoff = updatedIds.includes(r.id) ? { is_dropoff: true } : null
+        return (shipped || dropoff) ? { ...r, ...dropoff, ...shipped } as Entry : r
+      }),
     ])
     setModal(null)
     resetCols()
@@ -1259,7 +1305,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     }
 
     const body = asForm
-      ? toPrint.map((r, i) => `<div class="order"><pre class="copy">${formatOrderHtml(r)}</pre>${qrs[i] ? `<div class="qr-box"><img class="qr" src="${qrs[i]}"/></div>` : ''}</div>`).join('')
+      ? toPrint.map((r, i) => `<div class="order"><pre class="copy" contenteditable="true" spellcheck="false" data-id="${r.id}">${formatOrderHtml(r)}</pre>${qrs[i] ? `<div class="qr-box"><img class="qr" src="${qrs[i]}"/></div>` : ''}</div>`).join('')
       : `<h2>${escHtml(title)} (${toPrint.length} รายการ)</h2>
 <table>
 <thead><tr>
@@ -1298,28 +1344,67 @@ ${toPrint.map((r, i) => {
   .qr-box { flex-shrink: 0; text-align: center; }
   .qr { width: 120px; height: 120px; display: block; }
   .qr-cap { font-size: 11px; color: #555; margin-top: 4px; }
-  /* margin:0 ทำให้เบราว์เซอร์ไม่พิมพ์หัว/ท้ายกระดาษ (วันที่-เวลา + ชื่อหน้า)
-     ไม่ fix size → ใช้ขนาดกระดาษที่เลือกใน dialog ปริ้น */
+  /* margin:0 กันเบราว์เซอร์พิมพ์หัว/ท้ายกระดาษ — ไม่ fix ขนาด ใช้กระดาษที่เลือกใน dialog */
   @page { margin: 0; }
-  /* ตอนปริ้น: ขนาดตัวอักษร/QR อิงความกว้างกระดาษ (vw) → เลือกกระดาษเล็ก-ใหญ่แล้ว fit พอดีเสมอ */
-  @media print {
-    body { padding: 5vw; font-size: 1.6vw; }
-    h2 { font-size: 1.9vw; margin-bottom: 1.2vw; }
-    th, td { padding: 0.65vw 1vw; }
-    pre.copy { font-size: 2.1vw; }
-    .order { gap: 1.8vw; padding-bottom: 3.5vw; margin-bottom: 3.5vw; }
-    .qr { width: 16vw; height: 16vw; }
-    .qr-cap { font-size: 1.4vw; margin-top: 0.5vw; }
-  }
+  @media print { body { padding: 14mm; } .toolbar { display: none; } pre.copy { outline: none !important; background: transparent !important; } }
+  /* แก้ข้อความในใบได้ก่อนปริ้น */
+  pre.copy[contenteditable]:hover { outline: 1.5px dashed #c0c0c0; outline-offset: 4px; }
+  pre.copy[contenteditable]:focus { outline: 1.5px solid #2563eb; outline-offset: 4px; background: #fafcff; }
+  .toolbar { position: fixed; top: 10px; right: 10px; background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 8px 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.18); display: flex; gap: 10px; align-items: center; z-index: 99; }
+  .toolbar .hint { font-size: 12px; color: #888; }
+  .toolbar button.go { padding: 8px 20px; border-radius: 8px; border: none; background: #1a1a1a; color: #fff; cursor: pointer; font-size: 14px; font-weight: 700; font-family: inherit; }
 </style>
 </head>
 <body>
+<div class="toolbar">
+  <span class="hint">แตะข้อความเพื่อแก้ไขได้ก่อนปริ้น</span>
+  <button class="go">🖨 ปริ้น</button>
+</div>
 ${body}
+<script>
+  // จำข้อความเดิมไว้ กดปริ้นแล้วอันไหนถูกแก้ → ส่งกลับไปให้หน้าหลักบันทึกลงออเดอร์
+  var orig = {};
+  document.querySelectorAll('pre.copy[data-id]').forEach(function (p) { orig[p.dataset.id] = p.innerText; });
+  document.querySelector('.toolbar .go').onclick = function () {
+    document.querySelectorAll('pre.copy[data-id]').forEach(function (p) {
+      if (p.innerText !== orig[p.dataset.id] && window.opener) {
+        window.opener.postMessage({ type: 'donna-print-edited', id: p.dataset.id, text: p.innerText }, '*');
+        orig[p.dataset.id] = p.innerText;
+      }
+    });
+    window.print();
+  };
+</script>
 </body>
 </html>`
     win.document.open(); win.document.write(html); win.document.close(); win.focus()
-    setTimeout(() => { try { win.print() } catch {} }, 300)
+    // ไม่เปิด dialog ปริ้นอัตโนมัติ — ให้แก้ข้อความก่อนได้ แล้วกดปุ่ม 🖨 ปริ้น ในหน้านั้น
   }
+
+  // รับข้อความจากหน้าต่างปริ้น: แก้ในใบแล้วกดปริ้น → parse รายการกลับมาบันทึกลงออเดอร์
+  useEffect(() => {
+    const onMsg = async (e: MessageEvent) => {
+      const d = e.data
+      if (!d || d.type !== 'donna-print-edited' || !d.id || typeof d.text !== 'string') return
+      try {
+        const res = await fetch('/api/parse-order', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: d.text }) })
+        const data = await res.json()
+        if (!res.ok || data.error) throw new Error(data.error || 'แปลงไม่สำเร็จ')
+        const o = data.order || {}
+        if (!Array.isArray(o.items) || o.items.length === 0) throw new Error('อ่านรายการจากข้อความที่แก้ไม่ได้')
+        const now = new Date().toISOString()
+        const updates = { items: o.items as Item[], updated_at: now }
+        const { error: err } = await supabase.from('order_entries').update(updates).eq('id', d.id)
+        if (err) throw new Error(err.message)
+        setRows(prev => prev.map(r => r.id === d.id ? { ...r, ...updates } as Entry : r))
+      } catch (err) {
+        setError(`บันทึกรายการที่แก้จากใบปริ้นไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+    window.addEventListener('message', onMsg)
+    return () => window.removeEventListener('message', onMsg)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const printTitle = (list: Entry[]) => `ออเดอร์ที่เลือก ${list.length} รายการ — ${new Date().toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' })}`
 
@@ -2813,6 +2898,7 @@ ${body}
                     ['วันที่คาดว่าจะจัดส่ง', pasteCol5, setPasteCol5],
                     ['ราคาสุทธิ', pasteCol6, setPasteCol6],
                     ['Drop-off', pasteCol8, setPasteCol8],
+                    ['เวลาส่งสินค้า', pasteCol9, setPasteCol9],
                   ] as [string, string, (v: string) => void][]).map(([label, val, setter]) => (
                     <div key={label}>
                       <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>{label}</label>
@@ -2832,10 +2918,11 @@ ${body}
                     {(() => {
                       const saveCount = pasteRows.filter(isPasteRowSaveable).length
                       const dropoffCount = pasteRows.filter(r => r.isDuplicate && r.isDropoff && !rows.find(row => row.order_number === r.orderNumber)?.is_dropoff).length
-                      const skipCount = pasteRows.length - saveCount - dropoffCount
+                      const shippedCount = pasteRows.filter(r => r.isDuplicate && isDeliveredStatus(r.orderStatus) && rows.some(row => row.order_number === r.orderNumber)).length
+                      const skipCount = pasteRows.length - saveCount - dropoffCount - shippedCount
                       return (
                         <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 8 }}>
-                          พบ {pasteRows.length} ออเดอร์ — บันทึกใหม่ <strong style={{ color: 'var(--ink)' }}>{saveCount}</strong>{dropoffCount > 0 && <> · อัพเดท Drop-off <strong style={{ color: '#6366f1' }}>{dropoffCount}</strong></>}{skipCount > 0 && <> · ข้าม <strong style={{ color: 'var(--red)' }}>{skipCount}</strong></>} รายการ
+                          พบ {pasteRows.length} ออเดอร์ — บันทึกใหม่ <strong style={{ color: 'var(--ink)' }}>{saveCount}</strong>{shippedCount > 0 && <> · ติ๊กจัดส่งแล้ว <strong style={{ color: '#22c55e' }}>{shippedCount}</strong></>}{dropoffCount > 0 && <> · อัพเดท Drop-off <strong style={{ color: '#6366f1' }}>{dropoffCount}</strong></>}{skipCount > 0 && <> · ข้าม <strong style={{ color: 'var(--red)' }}>{skipCount}</strong></>} รายการ
                         </p>
                       )
                     })()}
@@ -2853,10 +2940,13 @@ ${body}
                             const isCancelled = r.orderStatus.includes('ยกเลิก')
                             const saveable = isPasteRowSaveable(r)
                             const isDropoffUpdate = r.isDuplicate && r.isDropoff && !rows.find(row => row.order_number === r.orderNumber)?.is_dropoff
+                            const isShippedUpdate = r.isDuplicate && isDeliveredStatus(r.orderStatus) && rows.some(row => row.order_number === r.orderNumber)
                             return (
-                              <tr key={i} style={{ borderBottom: '1px solid var(--border)', opacity: (saveable || isDropoffUpdate) ? 1 : 0.55 }}>
+                              <tr key={i} style={{ borderBottom: '1px solid var(--border)', opacity: (saveable || isDropoffUpdate || isShippedUpdate) ? 1 : 0.55 }}>
                                 <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
-                                  {isDropoffUpdate ? (
+                                  {isShippedUpdate ? (
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#22c55e', background: '#dcfce7', borderRadius: 4, padding: '2px 6px' }}>ติ๊กจัดส่งแล้ว{r.shippedDate ? ` · ${r.shippedDate}` : ''}</span>
+                                  ) : isDropoffUpdate ? (
                                     <span style={{ fontSize: 10, fontWeight: 600, color: '#6366f1', background: '#ede9fe', borderRadius: 4, padding: '2px 6px' }}>อัพเดท Drop-off</span>
                                   ) : r.isDuplicate ? (
                                     <span style={{ fontSize: 10, fontWeight: 600, color: '#f59e0b', background: '#fef3c7', borderRadius: 4, padding: '2px 6px' }}>มีออเดอร์นี้แล้ว</span>
@@ -2888,9 +2978,12 @@ ${body}
                         {pasteSaving ? 'กำลังบันทึก…' : (() => {
                           const n = pasteRows.filter(isPasteRowSaveable).length
                           const d = pasteRows.filter(r => r.isDuplicate && r.isDropoff && !rows.find(row => row.order_number === r.orderNumber)?.is_dropoff).length
-                          if (n > 0 && d > 0) return `บันทึก ${n} ใหม่ · อัพเดท Drop-off ${d}`
-                          if (d > 0) return `อัพเดท Drop-off ${d} ออเดอร์`
-                          return `บันทึก ${n} รายการ`
+                          const s = pasteRows.filter(r => r.isDuplicate && isDeliveredStatus(r.orderStatus) && rows.some(row => row.order_number === r.orderNumber)).length
+                          const parts: string[] = []
+                          if (n > 0) parts.push(`บันทึก ${n} ใหม่`)
+                          if (s > 0) parts.push(`ติ๊กจัดส่ง ${s}`)
+                          if (d > 0) parts.push(`Drop-off ${d}`)
+                          return parts.length ? parts.join(' · ') : 'บันทึก 0 รายการ'
                         })()}
                       </button>
                     </div>

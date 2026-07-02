@@ -2,6 +2,10 @@
 
 import { useState } from 'react'
 import ActivityLog from '@/components/ActivityLog'
+import { CHANGELOG } from '@/lib/changelog'
+
+const fmtChangeDate = (d: string) =>
+  new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })
 
 export default function SettingsPage() {
   const [loggingOut, setLoggingOut] = useState(false)
@@ -35,6 +39,24 @@ export default function SettingsPage() {
           <button onClick={logout} disabled={loggingOut} style={{ marginTop: 20, width: '100%', padding: '9px', borderRadius: 10, border: '1px solid #ff375f', background: '#fff', color: 'var(--red)', cursor: loggingOut ? 'default' : 'pointer', fontSize: 14, fontWeight: 500, opacity: loggingOut ? 0.6 : 1 }}>
             {loggingOut ? 'กำลังออกจากระบบ…' : '🚪 Logout'}
           </button>
+        </div>
+
+        {/* ประวัติการอัปเดตเว็บ — ฟีเจอร์/การแก้ไขที่เพิ่มเข้ามาแต่ละวัน */}
+        <div style={{ width: 400, flexShrink: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '24px' }}>
+          <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 4, color: 'var(--ink)' }}>🛠 ประวัติการอัปเดตเว็บ</h2>
+          <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 16 }}>ฟังก์ชั่นใหม่และการแก้ไขที่เพิ่มเข้ามา</p>
+          <div style={{ maxHeight: 480, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 18 }}>
+            {CHANGELOG.map((c) => (
+              <div key={c.date}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--blue)', marginBottom: 6 }}>{fmtChangeDate(c.date)}</div>
+                <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {c.items.map((it, i) => (
+                    <li key={i} style={{ fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.55 }}>{it}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* ประวัติการแก้ไขทั้งร้าน — อยู่ขวาของการ์ดบัญชี */}
