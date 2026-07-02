@@ -397,11 +397,12 @@ function PhotoUpload({ slots, uploading, counts, err, onPick }: {
           const busy = uploading === s.tag
           return (
             <label key={s.tag} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: done ? '1.5px solid #16a34a' : '1.5px dashed #94a3b8', background: done ? '#f0fdf4' : '#f8fafc', borderRadius: 12, padding: '12px 14px', cursor: busy ? 'wait' : 'pointer', fontSize: 14, fontWeight: 600, color: '#1a1a1a' }}>
-              <input type="file" accept="image/*" capture="environment" disabled={busy} style={{ display: 'none' }}
+              {/* ไม่ใส่ capture → มือถือให้เลือกได้ทั้งถ่ายใหม่และรูปในเครื่อง */}
+              <input type="file" accept="image/*" disabled={busy} style={{ display: 'none' }}
                 onChange={e => { const f = e.target.files?.[0]; if (f) onPick(f, s.tag); e.target.value = '' }} />
               <span>{busy ? '⏳ กำลังอัพโหลด…' : s.label}</span>
               <span style={{ fontSize: 12, color: done ? '#16a34a' : '#94a3b8', fontWeight: 700 }}>
-                {done > 0 ? `✓ ${done} รูป · ถ่ายเพิ่ม` : 'แตะเพื่อถ่าย'}
+                {done > 0 ? `✓ ${done} รูป · เพิ่มอีก` : 'ถ่าย/เลือกรูป'}
               </span>
             </label>
           )
