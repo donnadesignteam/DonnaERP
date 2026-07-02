@@ -2922,7 +2922,7 @@ ${body}
                       const skipCount = pasteRows.length - saveCount - dropoffCount - shippedCount
                       return (
                         <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 8 }}>
-                          พบ {pasteRows.length} ออเดอร์ — บันทึกใหม่ <strong style={{ color: 'var(--ink)' }}>{saveCount}</strong>{shippedCount > 0 && <> · ติ๊กจัดส่งแล้ว <strong style={{ color: '#22c55e' }}>{shippedCount}</strong></>}{dropoffCount > 0 && <> · อัพเดท Drop-off <strong style={{ color: '#6366f1' }}>{dropoffCount}</strong></>}{skipCount > 0 && <> · ข้าม <strong style={{ color: 'var(--red)' }}>{skipCount}</strong></>} รายการ
+                          พบ {pasteRows.length} ออเดอร์ — บันทึกใหม่ <strong style={{ color: 'var(--ink)' }}>{saveCount}</strong>{shippedCount > 0 && <> · จัดส่งแล้ว <strong style={{ color: '#22c55e' }}>{shippedCount}</strong></>}{dropoffCount > 0 && <> · อัพเดท Drop-off <strong style={{ color: '#6366f1' }}>{dropoffCount}</strong></>}{skipCount > 0 && <> · ข้าม <strong style={{ color: 'var(--red)' }}>{skipCount}</strong></>} รายการ
                         </p>
                       )
                     })()}
@@ -2945,7 +2945,7 @@ ${body}
                               <tr key={i} style={{ borderBottom: '1px solid var(--border)', opacity: (saveable || isDropoffUpdate || isShippedUpdate) ? 1 : 0.55 }}>
                                 <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
                                   {isShippedUpdate ? (
-                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#22c55e', background: '#dcfce7', borderRadius: 4, padding: '2px 6px' }}>ติ๊กจัดส่งแล้ว{r.shippedDate ? ` · ${r.shippedDate}` : ''}</span>
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#22c55e', background: '#dcfce7', borderRadius: 4, padding: '2px 6px' }}>จัดส่งแล้ว{r.shippedDate ? ` · ${r.shippedDate}` : ''}</span>
                                   ) : isDropoffUpdate ? (
                                     <span style={{ fontSize: 10, fontWeight: 600, color: '#6366f1', background: '#ede9fe', borderRadius: 4, padding: '2px 6px' }}>อัพเดท Drop-off</span>
                                   ) : r.isDuplicate ? (
@@ -2981,7 +2981,7 @@ ${body}
                           const s = pasteRows.filter(r => r.isDuplicate && isDeliveredStatus(r.orderStatus) && rows.some(row => row.order_number === r.orderNumber)).length
                           const parts: string[] = []
                           if (n > 0) parts.push(`บันทึก ${n} ใหม่`)
-                          if (s > 0) parts.push(`ติ๊กจัดส่ง ${s}`)
+                          if (s > 0) parts.push(`จัดส่งแล้ว ${s}`)
                           if (d > 0) parts.push(`Drop-off ${d}`)
                           return parts.length ? parts.join(' · ') : 'บันทึก 0 รายการ'
                         })()}
