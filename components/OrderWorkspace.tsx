@@ -904,7 +904,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     if (r.isDuplicate) return false
     const s = r.orderStatus.trim()
     if (!s) return true
-    return s.includes('ต้องจัดส่ง') || s.includes('จัดส่งแล้ว')
+    // รวมสถานะส่งถึงลูกค้าแล้ว (จัดส่งสำเร็จแล้ว/สำเร็จแล้ว/ได้รับสินค้าแล้ว) → บันทึกใหม่พร้อมติ๊กจัดส่งแล้ว
+    return s.includes('ต้องจัดส่ง') || s.includes('จัดส่งแล้ว') || isDeliveredStatus(s)
   }
 
   async function savePasteRows() {
@@ -924,23 +925,28 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       r.isDuplicate && isDeliveredStatus(r.orderStatus) && rows.some(row => row.order_number === r.orderNumber)
     )
 
-    const insertPayload = newRows.map(r => ({
-      entry_date: (r.paymentDate && r.paymentDate !== '-') ? (toIsoDate(r.paymentDate) || today) : null,
-      deadline: toIsoDate(r.deadline) || null,
-      shipping_datetime: (toIsoDate(r.deadline) && r.courier) ? calcShipping(toIsoDate(r.deadline)!, r.courier) : null,
-      status: 'อยู่ในกำหนด',
-      order_number: r.orderNumber || null,
-      notes: null,
-      price: r.price || null,
-      order_status: 'รอดำเนินการ',
-      is_urgent: false,
-      is_installation: false,
-      is_dropoff: r.isDropoff,
-      admin_name: null, technician: null,
-      customer_name: r.customerName || null,
-      courier: r.courier || null,
-      shipping_date: null, platform: 'Shopee', items: null, installation_date: null,
-    }))
+    const insertPayload = newRows.map(r => {
+      // สถานะ excel = ส่งถึงลูกค้าแล้ว → บันทึกเป็นจัดส่งแล้วเลย พร้อมวันที่จากช่องเวลาส่งสินค้า
+      const delivered = isDeliveredStatus(r.orderStatus)
+      return {
+        entry_date: (r.paymentDate && r.paymentDate !== '-') ? (toIsoDate(r.paymentDate) || today) : null,
+        deadline: toIsoDate(r.deadline) || null,
+        shipping_datetime: (toIsoDate(r.deadline) && r.courier) ? calcShipping(toIsoDate(r.deadline)!, r.courier) : null,
+        status: 'อยู่ในกำหนด',
+        order_number: r.orderNumber || null,
+        notes: null,
+        price: r.price || null,
+        order_status: delivered ? 'จัดส่งแล้ว' : 'รอดำเนินการ',
+        is_urgent: delivered,
+        shipped_at: delivered ? (toShippedIso(r.shippedDate) || new Date().toISOString()) : null,
+        is_installation: false,
+        is_dropoff: r.isDropoff,
+        admin_name: null, technician: null,
+        customer_name: r.customerName || null,
+        courier: r.courier || null,
+        shipping_date: null, platform: 'Shopee', items: null, installation_date: null,
+      }
+    })
 
     let updatedIds: string[] = []
     for (const r of dropoffUpdateRows) {
@@ -2940,11 +2946,11 @@ ${body}
                             const isCancelled = r.orderStatus.includes('ยกเลิก')
                             const saveable = isPasteRowSaveable(r)
                             const isDropoffUpdate = r.isDuplicate && r.isDropoff && !rows.find(row => row.order_number === r.orderNumber)?.is_dropoff
-                            const isShippedUpdate = r.isDuplicate && isDeliveredStatus(r.orderStatus) && rows.some(row => row.order_number === r.orderNumber)
+                            const isShippedRow = isDeliveredStatus(r.orderStatus) && (!r.isDuplicate || rows.some(row => row.order_number === r.orderNumber))
                             return (
-                              <tr key={i} style={{ borderBottom: '1px solid var(--border)', opacity: (saveable || isDropoffUpdate || isShippedUpdate) ? 1 : 0.55 }}>
+                              <tr key={i} style={{ borderBottom: '1px solid var(--border)', opacity: (saveable || isDropoffUpdate || isShippedRow) ? 1 : 0.55 }}>
                                 <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
-                                  {isShippedUpdate ? (
+                                  {isShippedRow ? (
                                     <span style={{ fontSize: 10, fontWeight: 600, color: '#22c55e', background: '#dcfce7', borderRadius: 4, padding: '2px 6px' }}>จัดส่งแล้ว{r.shippedDate ? ` · ${r.shippedDate}` : ''}</span>
                                   ) : isDropoffUpdate ? (
                                     <span style={{ fontSize: 10, fontWeight: 600, color: '#6366f1', background: '#ede9fe', borderRadius: 4, padding: '2px 6px' }}>อัพเดท Drop-off</span>
