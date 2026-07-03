@@ -5,6 +5,12 @@ export type ChangelogEntry = { date: string; items: string[] }
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    date: '2026-07-03',
+    items: [
+      'ใบปริ้นออเดอร์: แก้ปุ่ม 🖨 ปริ้น ติดออกมาในกระดาษตอนสั่งพิมพ์',
+    ],
+  },
+  {
     date: '2026-07-02',
     items: [
       'Drop file excel Shopee: สถานะ "จัดส่งสำเร็จแล้ว/สำเร็จแล้ว" → ติ๊กจัดส่งแล้วอัตโนมัติ วันที่ตามช่องเวลาส่งสินค้า (ติ๊กไปแล้วข้ามไม่อัพซ้ำ)',

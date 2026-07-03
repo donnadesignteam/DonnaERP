@@ -1370,7 +1370,7 @@ ${toPrint.map((r, i) => {
   .qr-cap { font-size: 11px; color: #555; margin-top: 4px; }
   /* margin:0 กันเบราว์เซอร์พิมพ์หัว/ท้ายกระดาษ — ไม่ fix ขนาด ใช้กระดาษที่เลือกใน dialog */
   @page { margin: 0; }
-  @media print { body { padding: 14mm; } .toolbar { display: none; } pre.copy { outline: none !important; background: transparent !important; } }
+  @media print { body { padding: 14mm; } .toolbar { display: none !important; } pre.copy { outline: none !important; background: transparent !important; } }
   /* แก้ข้อความในใบได้ก่อนปริ้น */
   pre.copy[contenteditable]:hover { outline: 1.5px dashed #c0c0c0; outline-offset: 4px; }
   pre.copy[contenteditable]:focus { outline: 1.5px solid #2563eb; outline-offset: 4px; background: #fafcff; }
