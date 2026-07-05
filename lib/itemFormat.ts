@@ -15,6 +15,7 @@ export type RawItem = {
   quantity?: number | string
   unit?: string
   hooks?: string          // จำนวนกระดูม/ตะขอ เช่น "(30+30)", "(16)"
+  orientation?: string    // การวางผ้า เช่น "ขวางผ้า" — โชว์ต่อท้ายบรรทัดสีตามใบออเดอร์ต้นฉบับ
   note?: string
 }
 
@@ -23,6 +24,14 @@ export const widthText = (w?: number | string): string => {
   const raw = typeof w === 'string' ? w.trim() : ''
   if (raw.includes('+')) return raw
   const n = Number(w)
+  return n > 0 ? n.toFixed(2) : ''
+}
+
+// ความสูงอาจเป็น "ซ2.845*ข3.345" (หน้าต่างสูงซ้าย-ขวาไม่เท่า) ต้องเก็บทั้งสองค่าไว้
+export const heightText = (h?: number | string): string => {
+  const raw = typeof h === 'string' ? h.trim() : ''
+  if (raw && /[^\d.]/.test(raw)) return raw
+  const n = Number(h)
   return n > 0 ? n.toFixed(2) : ''
 }
 
@@ -54,14 +63,17 @@ export function itemBlockLines(item: RawItem): { t: string; rail?: boolean }[] {
     const colorName = isSheer
       ? (item.color_name ?? '').replace(/^โปร่ง\s*/, '')   // โปร่งเรียบขาวนวล → เรียบขาวนวล
       : (item.color_name ?? '')
-    const brandParts = [item.color_code || '', colorName, item.color_desc || ''].filter(Boolean)
+    // การวางผ้า (ขวางผ้า) ต่อท้ายบรรทัดสี ให้ตรงตำแหน่งกับใบออเดอร์ต้นฉบับ — เติมวงเล็บให้ถ้าเก็บมาไม่มี
+    const oriRaw = (item.orientation ?? '').trim()
+    const oriStr = oriRaw && !oriRaw.startsWith('(') ? `(${oriRaw})` : oriRaw
+    const brandParts = [item.color_code || '', colorName, item.color_desc || '', oriStr].filter(Boolean)
     if (brandParts.length) out.push({ t: brandParts.join(' ') })
   }
 
-  const h = Number(item.height)
   const wStr = widthText(item.width)
-  const hStr = h > 0 ? h.toFixed(2) : ''
-  const dim = wStr && hStr ? `ก${wStr}*ส${hStr}` : wStr ? `ก${wStr}` : ''
+  const hStr = heightText(item.height)
+  // สูงแบบ "ซ2.845*ข3.345" มี label ซ้าย/ขวาในตัวแล้ว ไม่ต้องเติม "ส" นำหน้า
+  const dim = wStr && hStr ? (/^[\d.]+$/.test(hStr) ? `ก${wStr}*ส${hStr}` : `ก${wStr}*${hStr}`) : wStr ? `ก${wStr}` : ''
   // กระดูม/ตะขอ เช่น "(30+30)" — ใส่ต่อท้ายบรรทัดขนาดให้เหมือนใบออเดอร์ต้นฉบับ
   // เผื่อบางเคสเก็บมาไม่มีวงเล็บ (30+30) ให้เติมวงเล็บให้เอง
   const hooksRaw = (item.hooks ?? '').trim()

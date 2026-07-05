@@ -5,7 +5,7 @@ import { flushSync } from 'react-dom'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
-import { itemBlockLines } from '@/lib/itemFormat'
+import { itemBlockLines, heightText } from '@/lib/itemFormat'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
@@ -24,6 +24,7 @@ type Item = {
   quantity: number | string
   unit: string
   hooks: string
+  orientation?: string    // การวางผ้า เช่น "ขวางผ้า" — โชว์ต่อท้ายบรรทัดสีตามใบออเดอร์ต้นฉบับ
   note: string
 }
 
@@ -80,7 +81,7 @@ type Entry = {
   shipments: Shipment[] | null
 }
 
-const emptyItem = (): Item => ({ type: '', floors: null, rail_head: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', note: '' })
+const emptyItem = (): Item => ({ type: '', floors: null, rail_head: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', orientation: '', note: '' })
 
 // ความกว้างอาจเป็น "1.69+0.49" (รางต่อโค้ง) ต้องเก็บทั้งสองค่าไว้ให้ช่างเห็น
 const widthText = (w: number | string): string => {
@@ -198,16 +199,17 @@ const STATUS_COLOR: Record<string, string> = {
 
 const PROD_STATUSES = ['รอดำเนินการ', 'ตัดผ้าแล้ว', 'เย็บแล้ว', 'รีดแล้ว', 'แพ็คแล้ว', 'รอจัดส่ง', 'จัดส่งแล้ว']
 const INSTALL_STATUSES = ['รอดำเนินการ', 'ตัดผ้าแล้ว', 'เย็บแล้ว', 'รีดแล้ว', 'แพ็คแล้ว', 'รอติดตั้ง']
+// สีแยกตามขั้นผลิต: รอ=เหลือง → ตัด=ฟ้า → เย็บ=ม่วง → รีด=ชมพู → แพ็ค=เขียวอมฟ้า (คำเก่า "กำลังX" สีเดียวกับ "Xแล้ว")
 const PROD_STATUS_COLOR: Record<string, string> = {
   'รอดำเนินการ': '#f59e0b',
-  'ตัดผ้าแล้ว': '#f59e0b',
-  'เย็บแล้ว': '#f59e0b',
-  'รีดแล้ว': '#f59e0b',
-  'แพ็คแล้ว': '#f59e0b',
-  'กำลังตัด': '#f59e0b',
-  'กำลังเย็บ': '#f59e0b',
-  'กำลังรีด': '#f59e0b',
-  'กำลังแพ็ค': '#f59e0b',
+  'ตัดผ้าแล้ว': '#0ea5e9',
+  'เย็บแล้ว': '#8b5cf6',
+  'รีดแล้ว': '#ec4899',
+  'แพ็คแล้ว': '#14b8a6',
+  'กำลังตัด': '#0ea5e9',
+  'กำลังเย็บ': '#8b5cf6',
+  'กำลังรีด': '#ec4899',
+  'กำลังแพ็ค': '#14b8a6',
   'งานเสร็จ': '#22c55e',
   'รอจัดส่ง': '#6366f1',
   'จัดส่งแล้ว': '#22c55e',
@@ -356,13 +358,13 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [editCell, setEditCell] = useState<{id: string; field: string; val: string} | null>(null)
   const [printModal, setPrintModal] = useState(false)
   const [printMaxDays, setPrintMaxDays] = useState(3)
-  const [quickFilter, setQuickFilter] = useState<'all' | 'platform' | 'outside' | 'install' | 'claim' | 'shipped'>('all')
+  const [quickFilter, setQuickFilter] = useState<'all' | 'platform' | 'outside' | 'install' | 'claim' | 'shipped' | 'cancelled'>('all')
   const [hiddenCols, setHiddenCols] = useState<Record<string, string[]>>(() => {
     if (typeof window === 'undefined') return {}
     try { return JSON.parse(localStorage.getItem(`ow_hidden_cols_${scope}`) || '{}') } catch { return {} }
   })
   const [openColMenu, setOpenColMenu] = useState(false)
-  const colTabKey = (quickFilter === 'claim' || quickFilter === 'shipped') ? 'all' : quickFilter
+  const colTabKey = (quickFilter === 'claim' || quickFilter === 'shipped' || quickFilter === 'cancelled') ? 'all' : quickFilter
   const tabHidden = hiddenCols[colTabKey] ?? []
   const showCol = (id: string) => !tabHidden.includes(id)
   const toggleCol = (id: string) => setHiddenCols(prev => {
@@ -904,8 +906,9 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       if (it.color_code) parts.push(it.color_code)
       if (it.color_name) parts.push(it.color_name)
       if (it.color_desc) parts.push(it.color_desc)
-      const wTxt = widthText(it.width), h = Number(it.height)
-      if (wTxt && h > 0) parts.push(`${wTxt}×${h}`)
+      if (it.orientation) parts.push(it.orientation.startsWith('(') ? it.orientation : `(${it.orientation})`)
+      const wTxt = widthText(it.width), hTxt = heightText(it.height)
+      if (wTxt && hTxt) parts.push(`${wTxt}×${hTxt}`)
       else if (wTxt) parts.push(`${wTxt}`)
       if (it.quantity) parts.push(`×${it.quantity}${it.unit}`)
       return parts.join(' ')
@@ -1084,10 +1087,12 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       const existing = rows.find(row => row.order_number === r.orderNumber)
       return existing && existing.order_status !== 'จัดส่งแล้ว'
     })
-    // สถานะ excel = ยกเลิก + มีออเดอร์ในระบบ → ลบออเดอร์ออก
-    const cancelDeleteRows = pasteRows.filter(r =>
-      r.orderStatus.includes('ยกเลิก') && r.isDuplicate && rows.some(row => row.order_number === r.orderNumber)
-    )
+    // สถานะ excel = ยกเลิก + มีออเดอร์ในระบบ → ย้ายเข้าหมวด "ยกเลิก" (ไม่ลบทิ้ง เผื่อดูย้อนหลัง) — ยกเลิกอยู่แล้วข้าม
+    const cancelRows = pasteRows.filter(r => {
+      if (!r.orderStatus.includes('ยกเลิก') || !r.isDuplicate) return false
+      const existing = rows.find(row => row.order_number === r.orderNumber)
+      return existing && existing.order_status !== 'ยกเลิก'
+    })
 
     const insertPayload = newRows.map(r => {
       // สถานะ excel = ส่งถึงลูกค้าแล้ว → บันทึกเป็นจัดส่งแล้วเลย พร้อมวันที่จากช่องเวลาส่งสินค้า
@@ -1139,19 +1144,22 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       }
     }
 
-    // ลบออเดอร์ที่ยกเลิกใน excel
-    const deletedIds: string[] = []
-    if (cancelDeleteRows.length > 0) {
-      const ids = cancelDeleteRows
-        .map(r => rows.find(row => row.order_number === r.orderNumber)?.id)
-        .filter(Boolean) as string[]
-      if (ids.length > 0) {
-        const { error: err } = await supabase.from('order_entries').delete().in('id', ids)
-        if (!err) deletedIds.push(...ids)
+    // ย้ายออเดอร์ที่ยกเลิกใน excel เข้าหมวดยกเลิก
+    const cancelApplied = new Map<string, Partial<Entry>>()
+    for (const r of cancelRows) {
+      const existing = rows.find(row => row.order_number === r.orderNumber)
+      if (!existing) continue
+      const now = new Date().toISOString()
+      const updates = { order_status: 'ยกเลิก', updated_at: now }
+      const { error: err } = await supabase.from('order_entries').update(updates).eq('id', existing.id)
+      if (!err) {
+        cancelApplied.set(existing.id, updates)
+        await syncWorkStatus(existing.order_number, existing.customer_name, 'ยกเลิก', now)
+        await logStatus(existing.id, 'ยกเลิก', now, existing.status_history)
       }
     }
 
-    if (insertPayload.length === 0 && updatedIds.length === 0 && shippedApplied.size === 0 && deletedIds.length === 0) {
+    if (insertPayload.length === 0 && updatedIds.length === 0 && shippedApplied.size === 0 && cancelApplied.size === 0) {
       setPasteSaving(false)
       setModal(null)
       resetCols()
@@ -1168,10 +1176,11 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     setPasteSaving(false)
     setRows(prev => [
       ...insertedRows,
-      ...prev.filter(r => !deletedIds.includes(r.id)).map(r => {
+      ...prev.map(r => {
         const shipped = shippedApplied.get(r.id)
+        const cancelled = cancelApplied.get(r.id)
         const dropoff = updatedIds.includes(r.id) ? { is_dropoff: true } : null
-        return (shipped || dropoff) ? { ...r, ...dropoff, ...shipped } as Entry : r
+        return (shipped || cancelled || dropoff) ? { ...r, ...dropoff, ...shipped, ...cancelled } as Entry : r
       }),
     ])
     setModal(null)
@@ -1235,11 +1244,13 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     })()
     const p = r.platform ?? ''
     const isClaim = p.startsWith('เคลม:')
-    // จัดส่งแล้ว → ย้ายไปอยู่หมวด "จัดส่งแล้ว" หมวดเดียว หายจากหมวดอื่นทั้งหมด
+    // จัดส่งแล้ว/ยกเลิก → ย้ายไปอยู่หมวดของตัวเองหมวดเดียว หายจากหมวดอื่นทั้งหมด
     const isShipped = r.order_status === 'จัดส่งแล้ว'
+    const isCancelled = r.order_status === 'ยกเลิก'
     const matchQuick = quickFilter === 'shipped' ? isShipped
+      : quickFilter === 'cancelled' ? isCancelled
       : quickFilter === 'claim' ? isClaim
-      : isShipped ? false
+      : (isShipped || isCancelled) ? false
       : quickFilter === 'all' ? true
       : quickFilter === 'platform' ? (!isClaim && (p === 'Shopee' || p === 'Tiktok' || p === 'Lazada'))
       : quickFilter === 'outside' ? (!isClaim && OUTSIDE_PLATFORMS.includes(p) && !r.is_installation)
@@ -1701,7 +1712,7 @@ ${body}
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        {scope === 'orders' && ([['all', 'ทั้งหมด'], ['platform', 'งานแพลตฟอร์ม'], ['outside', 'งานนอก'], ['install', 'งานติดตั้ง'], ['shipped', 'จัดส่งแล้ว']] as [typeof quickFilter, string][]).map(([val, label]) => (
+        {scope === 'orders' && ([['all', 'ทั้งหมด'], ['platform', 'งานแพลตฟอร์ม'], ['outside', 'งานนอก'], ['install', 'งานติดตั้ง'], ['shipped', 'จัดส่งแล้ว'], ['cancelled', 'ยกเลิก']] as [typeof quickFilter, string][]).map(([val, label]) => (
           <button key={val} onClick={() => setQuickFilter(val)}
             style={{ padding: '6px 16px', borderRadius: 20, border: quickFilter === val ? 'none' : '1px solid var(--border)', background: quickFilter === val ? 'var(--blue)' : 'var(--surface)', color: quickFilter === val ? '#fff' : 'var(--ink-3)', fontSize: 13, fontWeight: quickFilter === val ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
             {label}
@@ -1713,9 +1724,11 @@ ${body}
             const p = r.platform ?? ''
             const isClaim = p.startsWith('เคลม:')
             const isShipped = r.order_status === 'จัดส่งแล้ว'
+            const isCancelled = r.order_status === 'ยกเลิก'
             const matchQ = quickFilter === 'shipped' ? isShipped
+              : quickFilter === 'cancelled' ? isCancelled
               : quickFilter === 'claim' ? isClaim
-              : isShipped ? false
+              : (isShipped || isCancelled) ? false
               : quickFilter === 'all' ? true
               : quickFilter === 'platform' ? (!isClaim && (p === 'Shopee' || p === 'Tiktok' || p === 'Lazada'))
               : quickFilter === 'outside' ? (!isClaim && OUTSIDE_PLATFORMS.includes(p) && !r.is_installation)
@@ -3283,11 +3296,11 @@ ${body}
                       const saveCount = pasteRows.filter(isPasteRowSaveable).length
                       const dropoffCount = pasteRows.filter(r => r.isDuplicate && r.isDropoff && !rows.find(row => row.order_number === r.orderNumber)?.is_dropoff).length
                       const shippedCount = pasteRows.filter(r => r.isDuplicate && isDeliveredStatus(r.orderStatus) && rows.find(row => row.order_number === r.orderNumber)?.order_status !== 'จัดส่งแล้ว' && rows.some(row => row.order_number === r.orderNumber)).length
-                      const cancelCount = pasteRows.filter(r => r.orderStatus.includes('ยกเลิก') && r.isDuplicate && rows.some(row => row.order_number === r.orderNumber)).length
+                      const cancelCount = pasteRows.filter(r => r.orderStatus.includes('ยกเลิก') && r.isDuplicate && (() => { const ex = rows.find(row => row.order_number === r.orderNumber); return ex && ex.order_status !== 'ยกเลิก' })()).length
                       const skipCount = pasteRows.length - saveCount - dropoffCount - shippedCount - cancelCount
                       return (
                         <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 8 }}>
-                          พบ {pasteRows.length} ออเดอร์ — บันทึกใหม่ <strong style={{ color: 'var(--ink)' }}>{saveCount}</strong>{shippedCount > 0 && <> · จัดส่งแล้ว <strong style={{ color: '#22c55e' }}>{shippedCount}</strong></>}{cancelCount > 0 && <> · ลบ (ยกเลิก) <strong style={{ color: 'var(--red)' }}>{cancelCount}</strong></>}{dropoffCount > 0 && <> · อัพเดท Drop-off <strong style={{ color: '#6366f1' }}>{dropoffCount}</strong></>}{skipCount > 0 && <> · ข้าม <strong style={{ color: 'var(--red)' }}>{skipCount}</strong></>} รายการ
+                          พบ {pasteRows.length} ออเดอร์ — บันทึกใหม่ <strong style={{ color: 'var(--ink)' }}>{saveCount}</strong>{shippedCount > 0 && <> · จัดส่งแล้ว <strong style={{ color: '#22c55e' }}>{shippedCount}</strong></>}{cancelCount > 0 && <> · ย้ายไปหมวดยกเลิก <strong style={{ color: 'var(--red)' }}>{cancelCount}</strong></>}{dropoffCount > 0 && <> · อัพเดท Drop-off <strong style={{ color: '#6366f1' }}>{dropoffCount}</strong></>}{skipCount > 0 && <> · ข้าม <strong style={{ color: 'var(--red)' }}>{skipCount}</strong></>} รายการ
                         </p>
                       )
                     })()}
@@ -3306,7 +3319,7 @@ ${body}
                             const saveable = isPasteRowSaveable(r)
                             const existingRow = rows.find(row => row.order_number === r.orderNumber)
                             const isDropoffUpdate = r.isDuplicate && r.isDropoff && existingRow && !existingRow.is_dropoff
-                            const isCancelDelete = isCancelled && r.isDuplicate && !!existingRow
+                            const isCancelDelete = isCancelled && r.isDuplicate && !!existingRow && existingRow.order_status !== 'ยกเลิก'
                             // ติ๊กจัดส่งไปแล้ว → ข้าม ไม่อัพเดทซ้ำ
                             const isShippedRow = isDeliveredStatus(r.orderStatus) && (!r.isDuplicate || (existingRow && existingRow.order_status !== 'จัดส่งแล้ว'))
                             return (
@@ -3315,7 +3328,7 @@ ${body}
                                   {isShippedRow ? (
                                     <span style={{ fontSize: 10, fontWeight: 600, color: '#22c55e', background: '#dcfce7', borderRadius: 4, padding: '2px 6px' }}>จัดส่งแล้ว{r.shippedDate ? ` · ${r.shippedDate}` : ''}</span>
                                   ) : isCancelDelete ? (
-                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#ef4444', background: '#fee2e2', borderRadius: 4, padding: '2px 6px' }}>ลบออเดอร์ (ยกเลิก)</span>
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#ef4444', background: '#fee2e2', borderRadius: 4, padding: '2px 6px' }}>ย้ายไปหมวดยกเลิก</span>
                                   ) : isDropoffUpdate ? (
                                     <span style={{ fontSize: 10, fontWeight: 600, color: '#6366f1', background: '#ede9fe', borderRadius: 4, padding: '2px 6px' }}>อัพเดท Drop-off</span>
                                   ) : r.isDuplicate ? (
@@ -3349,11 +3362,11 @@ ${body}
                           const n = pasteRows.filter(isPasteRowSaveable).length
                           const d = pasteRows.filter(r => r.isDuplicate && r.isDropoff && !rows.find(row => row.order_number === r.orderNumber)?.is_dropoff).length
                           const s = pasteRows.filter(r => r.isDuplicate && isDeliveredStatus(r.orderStatus) && rows.find(row => row.order_number === r.orderNumber)?.order_status !== 'จัดส่งแล้ว' && rows.some(row => row.order_number === r.orderNumber)).length
-                          const c = pasteRows.filter(r => r.orderStatus.includes('ยกเลิก') && r.isDuplicate && rows.some(row => row.order_number === r.orderNumber)).length
+                          const c = pasteRows.filter(r => r.orderStatus.includes('ยกเลิก') && r.isDuplicate && (() => { const ex = rows.find(row => row.order_number === r.orderNumber); return ex && ex.order_status !== 'ยกเลิก' })()).length
                           const parts: string[] = []
                           if (n > 0) parts.push(`บันทึก ${n} ใหม่`)
                           if (s > 0) parts.push(`จัดส่งแล้ว ${s}`)
-                          if (c > 0) parts.push(`ลบ ${c}`)
+                          if (c > 0) parts.push(`ยกเลิก ${c}`)
                           if (d > 0) parts.push(`Drop-off ${d}`)
                           return parts.length ? parts.join(' · ') : 'บันทึก 0 รายการ'
                         })()}
@@ -3471,7 +3484,7 @@ ${body}
                     ))}
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr 2fr', gap: '6px 8px' }}>
-                    {([['กว้าง (ม.)', 'width', 'text'], ['สูง (ม.)', 'height', 'number'], ['จำนวน', 'quantity', 'number'], ['หน่วย', 'unit', 'text'], ['กระดูม', 'hooks', 'text'], ['หมายเหตุ', 'note', 'text']] as [string, keyof Item, string][]).map(([lbl, key, type]) => (
+                    {([['กว้าง (ม.)', 'width', 'text'], ['สูง (ม.)', 'height', 'text'], ['จำนวน', 'quantity', 'number'], ['หน่วย', 'unit', 'text'], ['กระดูม', 'hooks', 'text'], ['ขวางผ้า', 'orientation', 'text'], ['หมายเหตุ', 'note', 'text']] as [string, keyof Item, string][]).map(([lbl, key, type]) => (
                       <div key={key}>
                         <label style={{ fontSize: 11, color: 'var(--ink-4)', display: 'block', marginBottom: 2 }}>{lbl}</label>
                         <input type={type} step={type === 'number' ? '0.01' : undefined}
@@ -3646,7 +3659,7 @@ ${body}
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr style={{ background: '#FAFAFA', borderBottom: '1px solid var(--border)' }}>
-                    {['#', 'ประเภท', 'สีตาไก่', 'ชั้น', 'หัวราง/หัวม่าน', 'รหัสสี', 'ชื่อสี', 'กว้าง (ม.)', 'สูง (ม.)', 'จำนวน', 'หน่วย', 'กระดูม', 'หมายเหตุ'].map(h => (
+                    {['#', 'ประเภท', 'สีตาไก่', 'ชั้น', 'หัวราง/หัวม่าน', 'รหัสสี', 'ชื่อสี', 'กว้าง (ม.)', 'สูง (ม.)', 'จำนวน', 'หน่วย', 'กระดูม', 'ขวางผ้า', 'หมายเหตุ'].map(h => (
                       <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 500, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                     <th style={{ padding: '8px 10px', position: 'sticky', right: 0, background: '#FAFAFA', zIndex: 1 }} />
@@ -3664,10 +3677,11 @@ ${body}
                         ['color_code', 'text', 60],
                         ['color_name', 'text', 90],
                         ['width', 'text', 56],
-                        ['height', 'number', 56],
+                        ['height', 'text', 56],
                         ['quantity', 'number', 50],
                         ['unit', 'text', 46],
                         ['hooks', 'text', 60],
+                        ['orientation', 'text', 60],
                         ['note', 'text', 90],
                       ] as [keyof Item, string, number][]).map(([key, type, w]) => (
                         <td key={key} style={{ padding: '4px 6px' }}>

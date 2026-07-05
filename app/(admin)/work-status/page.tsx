@@ -4,16 +4,17 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 
+// สีแยกตามขั้นผลิต — ให้ตรงกับหน้าออเดอร์ (PROD_STATUS_COLOR ใน OrderWorkspace)
 const statusColor: Record<string, string> = {
   'รอดำเนินการ': '#ff9f0a',
-  'ตัดผ้าแล้ว': '#ff9f0a',
-  'เย็บแล้ว': '#ff9f0a',
-  'รีดแล้ว': '#ff9f0a',
-  'แพ็คแล้ว': '#ff9f0a',
-  'กำลังตัด': '#ff9f0a',
-  'กำลังเย็บ': '#ff9f0a',
-  'กำลังรีด': '#ff9f0a',
-  'กำลังแพ็ค': '#ff9f0a',
+  'ตัดผ้าแล้ว': '#0ea5e9',
+  'เย็บแล้ว': '#8b5cf6',
+  'รีดแล้ว': '#ec4899',
+  'แพ็คแล้ว': '#14b8a6',
+  'กำลังตัด': '#0ea5e9',
+  'กำลังเย็บ': '#8b5cf6',
+  'กำลังรีด': '#ec4899',
+  'กำลังแพ็ค': '#14b8a6',
   'สำเร็จ': '#34c759',
 }
 
