@@ -1,0 +1,57 @@
+{
+  "manifest_version": 3,
+  "name": "Donna Track",
+  "version": "1.1",
+  "description": "เช็คสถานะพัสดุ (Flash / J&T / SPX / Kerry) ให้เว็บ donnaweb — เปิดแท็บเบื้องหลังไปหน้า tracking แล้วดึงข้อมูลกลับมา",
+  "background": { "service_worker": "background.js" },
+  "permissions": ["tabs"],
+  "host_permissions": [
+    "https://www.flashexpress.com/*",
+    "https://flashexpress.com/*",
+    "https://www.flashexpress.co.th/*",
+    "https://www.jtexpress.co.th/*",
+    "https://jtexpress.co.th/*",
+    "https://spx.co.th/*",
+    "https://www.spx.co.th/*",
+    "https://th.kerryexpress.com/*",
+    "https://www.kerryexpress.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["http://localhost:3000/*", "https://*.vercel.app/*"],
+      "js": ["bridge.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.flashexpress.com/*",
+        "https://flashexpress.com/*",
+        "https://www.flashexpress.co.th/*",
+        "https://www.jtexpress.co.th/*",
+        "https://jtexpress.co.th/*",
+        "https://spx.co.th/*",
+        "https://www.spx.co.th/*",
+        "https://th.kerryexpress.com/*",
+        "https://www.kerryexpress.com/*"
+      ],
+      "js": ["hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://www.flashexpress.com/*",
+        "https://flashexpress.com/*",
+        "https://www.flashexpress.co.th/*",
+        "https://www.jtexpress.co.th/*",
+        "https://jtexpress.co.th/*",
+        "https://spx.co.th/*",
+        "https://www.spx.co.th/*",
+        "https://th.kerryexpress.com/*",
+        "https://www.kerryexpress.com/*"
+      ],
+      "js": ["scraper.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

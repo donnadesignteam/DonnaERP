@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { EMPLOYEES, STAGES, stageByKey, canAdvance } from '@/lib/staff'
+import { detectCarrier } from '@/lib/carriers'
 
 const LS_KEY = 'donna-scan-tech'
 type Tech = { code: string; name: string; stageKey: string }
@@ -15,7 +16,14 @@ const SPECIAL_STAGES: { key: string; label: string; status: string; special: Spe
   { key: 'shipped', label: 'จัดส่งแล้ว', status: 'จัดส่งแล้ว', special: 'shipped' },
 ]
 const resolveStage = (key: string): any => stageByKey(key) || SPECIAL_STAGES.find(s => s.key === key)
-type Phase = 'scanning' | 'working' | 'done' | 'already' | 'noorder' | 'error'
+type Phase = 'scanning' | 'working' | 'done' | 'already' | 'noorder' | 'error' | 'barcode'
+
+// กรอบสแกน: QR = สี่เหลี่ยมจัตุรัส / บาร์โค้ด 1D บนใบปะหน้า = แนวนอนกว้าง
+const QR_BOX = { width: 250, height: 250 }
+const BARCODE_BOX = { width: 330, height: 140 }
+
+// เลขพัสดุจากบาร์โค้ด: ตัวอักษร/ตัวเลขล้วน ไม่ใช่ URL/QR ใบออเดอร์
+const isTrackingNo = (s: string) => /^[A-Z0-9-]{8,25}$/i.test(s) && !/^HTTP/i.test(s) && !s.includes('=')
 
 // รูปที่แต่ละแผนกอัพโหลดได้หลังสแกน → เก็บลง order_entries.packing_photos (โชว์ในโฟลเดอร์ลูกค้า)
 const UPLOAD_SLOTS: Record<string, { tag: string; label: string }[]> = {
@@ -73,6 +81,15 @@ function ScanContent() {
   const busyRef = useRef(false)
   const startedRef = useRef(false)
 
+  // โหมดสแกนบาร์โค้ดเลขพัสดุ (ต่อจากสแกนจัดส่งแล้ว) — ใช้ ref คู่ state เพราะ callback ของกล้องเป็น closure เก่า
+  const modeRef = useRef<'order' | 'barcode'>('order')
+  const shipRef = useRef<{ id: string; orderNumber: string; courier: string; existing: any[] } | null>(null)
+  const shipNosRef = useRef<string[]>([])
+  const [shipNos, setShipNos] = useState<string[]>([])
+  const [shipMsg, setShipMsg] = useState('')
+  const [shipSaving, setShipSaving] = useState(false)
+  const [shipToast, setShipToast] = useState('')
+
   useEffect(() => { setTech(loadTech()); setReady(true) }, [])
 
   // พื้นหลังหน้า /scan เป็นสีเข้ม (กัน iOS bounce โชว์ขอบขาว) + กัน overscroll — คืนค่าเดิมตอนออกจากหน้า
@@ -96,6 +113,62 @@ function ScanContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, tech, urlOrder, urlId])
 
+  // handler สแกน — เก็บใน ref ให้ callback ของกล้องเรียกตัวล่าสุดเสมอ (เปลี่ยนโหมด/state แล้วไม่ค้าง closure เก่า)
+  const decodeRef = useRef<(decoded: string) => void>(() => {})
+  decodeRef.current = async (decoded: string) => {
+    const html5 = scannerRef.current
+    if (busyRef.current || !html5 || !tech) return
+    busyRef.current = true
+    try { await html5.pause(true) } catch {}
+
+    // ---- โหมดบาร์โค้ดเลขพัสดุ ----
+    if (modeRef.current === 'barcode') {
+      const text = decoded.trim().toUpperCase()
+      const known = [...shipNosRef.current, ...(shipRef.current?.existing || []).map((s: any) => s.no)]
+      if (isTrackingNo(text) && !known.includes(text)) {
+        shipNosRef.current = [...shipNosRef.current, text]
+        setShipNos(shipNosRef.current)
+        setShipMsg('')
+        try { navigator.vibrate?.(120) } catch {}
+      } else if (isTrackingNo(text)) {
+        setShipMsg('เลขนี้สแกนไปแล้ว')
+        setTimeout(() => setShipMsg(''), 1800)
+      }
+      setTimeout(() => { try { html5.resume() } catch {}; busyRef.current = false }, 1100)
+      return
+    }
+
+    // ---- โหมดปกติ: สแกน QR ใบออเดอร์ ----
+    const res = await runScan(tech, extractId(decoded), extractOrder(decoded))
+    // แผนกจัดส่งแล้ว: ติ๊กเสร็จ → ต่อด้วยสแกนบาร์โค้ดเลขพัสดุทันที
+    if (tech.stageKey === 'shipped' && res?.id) {
+      shipRef.current = { id: res.id, orderNumber: res.order_number || '', courier: res.courier || '', existing: Array.isArray(res.shipments) ? res.shipments : [] }
+      shipNosRef.current = []; setShipNos([]); setShipMsg('')
+      modeRef.current = 'barcode'
+      setPhase('barcode')
+      await restartWithBox(BARCODE_BOX)
+      busyRef.current = false
+      return
+    }
+    // แผนกที่อัพโหลดรูปได้ → ค้างหน้าผลไว้ให้อัพรูปก่อน กด "สแกนต่อ" เอง
+    if ((UPLOAD_SLOTS[tech.stageKey] ?? []).length === 0) {
+      setTimeout(() => { try { html5.resume() } catch {}; busyRef.current = false; setPhase('scanning') }, 2600)
+    }
+  }
+
+  // เปิดกล้องใหม่ด้วยกรอบสแกนตามโหมด (สลับ QR จัตุรัส ↔ บาร์โค้ดแนวนอน)
+  async function restartWithBox(box: { width: number; height: number }) {
+    const s = scannerRef.current
+    if (!s) return
+    try { await s.stop() } catch {}
+    try {
+      await s.start({ facingMode: 'environment' }, { fps: 10, qrbox: box }, (d: string) => decodeRef.current(d), () => {})
+      setCamState('on')
+    } catch (e: any) {
+      setCamState('error'); setCamErr(e?.message || String(e)); startedRef.current = false
+    }
+  }
+
   // โหมดสแกนในแอป: เปิดกล้องสแกนต่อเนื่อง (เมื่อ login แล้ว และไม่ได้มาจากลิงก์)
   async function startCamera() {
     if (startedRef.current || !tech) return
@@ -107,17 +180,8 @@ function ScanContent() {
       scannerRef.current = html5
       await html5.start(
         { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        async (decoded: string) => {
-          if (busyRef.current) return
-          busyRef.current = true
-          try { await html5.pause(true) } catch {}
-          await runScan(tech!, extractId(decoded), extractOrder(decoded))
-          // แผนกที่อัพโหลดรูปได้ → ค้างหน้าผลไว้ให้อัพรูปก่อน กด "สแกนต่อ" เอง
-          if ((UPLOAD_SLOTS[tech!.stageKey] ?? []).length === 0) {
-            setTimeout(() => { try { html5.resume() } catch {}; busyRef.current = false; setPhase('scanning') }, 2600)
-          }
-        },
+        { fps: 10, qrbox: modeRef.current === 'barcode' ? BARCODE_BOX : QR_BOX },
+        (decoded: string) => decodeRef.current(decoded),
         () => {} // ละเว้น error รายเฟรม
       )
       setCamState('on')
@@ -125,6 +189,31 @@ function ScanContent() {
       startedRef.current = false
       setCamState('error'); setCamErr(e?.message || String(e))
     }
+  }
+
+  // จบโหมดบาร์โค้ด: บันทึกเลขที่สแกนได้ (ถ้ามี) แล้วกลับไปสแกน QR ออเดอร์ถัดไป
+  async function finishBarcode(save: boolean) {
+    const info = shipRef.current
+    let savedCnt = 0
+    if (save && info && shipNosRef.current.length > 0) {
+      setShipSaving(true)
+      const now = new Date().toISOString()
+      const list = [
+        ...info.existing,
+        ...shipNosRef.current.map(no => ({ no, carrier: detectCarrier(no, info.courier) || 'อื่นๆ', status: '', events: null, checked_at: null })),
+      ]
+      const { error } = await supabase.from('order_entries').update({ shipments: list, updated_at: now }).eq('id', info.id)
+      setShipSaving(false)
+      if (error) { setShipMsg(`บันทึกไม่สำเร็จ: ${error.message}`); return }
+      savedCnt = shipNosRef.current.length
+    }
+    modeRef.current = 'order'
+    shipRef.current = null
+    shipNosRef.current = []; setShipNos([]); setShipMsg('')
+    setPhase('scanning')
+    if (savedCnt > 0) { setShipToast(`✓ บันทึก ${savedCnt} เลขพัสดุแล้ว`); setTimeout(() => setShipToast(''), 3000) }
+    await restartWithBox(QR_BOX)
+    busyRef.current = false
   }
 
   useEffect(() => {
@@ -139,7 +228,7 @@ function ScanContent() {
 
   // ค้นออเดอร์: id ก่อน (แม่นสุด) → order_number แบบไม่สนตัวพิมพ์ → contains (เผื่อช่องว่าง/QR เก่า)
   async function findOrder(id: string, ord: string) {
-    const cols = 'id, order_number, customer_name, order_status'
+    const cols = 'id, order_number, customer_name, order_status, courier, shipments'
     if (id) {
       const { data } = await supabase.from('order_entries').select(cols).eq('id', id).limit(1)
       if (data && data[0]) return data[0]
@@ -184,14 +273,15 @@ function ScanContent() {
     setUploading(null)
   }
 
-  async function runScan(t: Tech, id: string, ord: string) {
+  // คืนค่า order ที่อัปเดตแล้วเมื่อสำเร็จ (แผนกจัดส่งแล้วใช้ต่อเป็นโหมดสแกนบาร์โค้ด) / null เมื่อไม่สำเร็จ
+  async function runScan(t: Tech, id: string, ord: string): Promise<any> {
     const stage = resolveStage(t.stageKey)
-    if (!stage) { setPhase('error'); setMsg('ไม่พบแผนกของผู้ใช้ กรุณาตั้งค่าใหม่'); return }
-    if (!id && !ord) { setPhase('noorder'); setMsg(''); return }
+    if (!stage) { setPhase('error'); setMsg('ไม่พบแผนกของผู้ใช้ กรุณาตั้งค่าใหม่'); return null }
+    if (!id && !ord) { setPhase('noorder'); setMsg(''); return null }
     setUploadedCnt({}); setUploadErr('')
     setPhase('working')
     const o = await findOrder(id, ord)
-    if (!o) { setOrder({ order_number: ord || `id:${id}` }); setPhase('noorder'); return }
+    if (!o) { setOrder({ order_number: ord || `id:${id}` }); setPhase('noorder'); return null }
     setOrder(o)
 
     // ===== งานพิเศษ: แพ็คราง / จัดส่งแล้ว (ไม่ผ่านด่านกันข้ามขั้น) =====
@@ -199,14 +289,14 @@ function ScanContent() {
     if (special === 'rail') {
       const now = new Date().toISOString()
       const { error } = await supabase.from('order_entries').update({ rail_packed: true, rail_packed_at: now, updated_at: now }).eq('id', o.id)
-      if (error) { setPhase('error'); setMsg(error.message); return }
+      if (error) { setPhase('error'); setMsg(error.message); return null }
       try { await supabase.from('production_scans').insert({ order_number: o.order_number || ord, stage: stage.label, status: stage.status, tech_code: t.code, tech_name: t.name, scanned_at: now }) } catch {}
-      setPhase('done'); return
+      setPhase('done'); return o
     }
     if (special === 'shipped') {
       const now = new Date().toISOString()
       const { error } = await supabase.from('order_entries').update({ order_status: 'จัดส่งแล้ว', shipped_at: now, is_urgent: true, updated_at: now }).eq('id', o.id)
-      if (error) { setPhase('error'); setMsg(error.message); return }
+      if (error) { setPhase('error'); setMsg(error.message); return null }
       try {
         const term = o.order_number || o.customer_name
         if (term) {
@@ -215,16 +305,17 @@ function ScanContent() {
         }
       } catch {}
       try { await supabase.from('production_scans').insert({ order_number: o.order_number || ord, stage: stage.label, status: stage.status, tech_code: t.code, tech_name: t.name, scanned_at: now }) } catch {}
-      setOrder({ ...o, order_status: 'จัดส่งแล้ว' }); setPhase('done'); return
+      const updated = { ...o, order_status: 'จัดส่งแล้ว' }
+      setOrder(updated); setPhase('done'); return updated
     }
 
     if (!canAdvance(o.order_status, stage.status)) {
-      setPhase('already'); setMsg(`สถานะปัจจุบัน: ${o.order_status || 'รอดำเนินการ'}`); return
+      setPhase('already'); setMsg(`สถานะปัจจุบัน: ${o.order_status || 'รอดำเนินการ'}`); return null
     }
 
     const now = new Date().toISOString()
     const { error } = await supabase.from('order_entries').update({ order_status: stage.status, updated_at: now }).eq('id', o.id)
-    if (error) { setPhase('error'); setMsg(error.message); return }
+    if (error) { setPhase('error'); setMsg(error.message); return null }
 
     try {
       const term = o.order_number || o.customer_name
@@ -235,8 +326,10 @@ function ScanContent() {
     } catch {}
     try { await supabase.from('production_scans').insert({ order_number: o.order_number || ord, stage: stage.label, status: stage.status, tech_code: t.code, tech_name: t.name, scanned_at: now }) } catch {}
 
-    setOrder({ ...o, order_status: stage.status })
+    const done = { ...o, order_status: stage.status }
+    setOrder(done)
     setPhase('done')
+    return done
   }
 
   function saveLogin() {
@@ -322,7 +415,7 @@ function ScanContent() {
   }
 
   // ---------- โหมดสแกนในแอป ----------
-  const showOverlay = phase !== 'scanning'
+  const showOverlay = phase !== 'scanning' && phase !== 'barcode'
   return (
     <div style={wrap}>
       <div style={{ width: '100%', maxWidth: 480, padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
@@ -355,9 +448,47 @@ function ScanContent() {
           </div>
         )}
 
-        {camState === 'on' && !showOverlay && (
+        {camState === 'on' && !showOverlay && phase !== 'barcode' && (
           <div style={{ position: 'absolute', bottom: 20, left: 0, right: 0, textAlign: 'center', fontSize: 15, color: '#fff', textShadow: '0 1px 4px #000' }}>
             จ่อ QR บนใบออเดอร์ให้อยู่ในกรอบ
+          </div>
+        )}
+
+        {shipToast && phase === 'scanning' && (
+          <div style={{ position: 'absolute', top: 16, left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
+            <div style={{ background: '#16a34a', color: '#fff', borderRadius: 10, padding: '8px 18px', fontSize: 14, fontWeight: 700, boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }}>{shipToast}</div>
+          </div>
+        )}
+
+        {/* โหมดสแกนบาร์โค้ดเลขพัสดุ — กล้องยังเปิดอยู่ แผงคุมอยู่ด้านล่าง */}
+        {phase === 'barcode' && (
+          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(11,18,32,0.95)', borderTop: '1px solid rgba(255,255,255,0.15)', padding: '14px 16px 18px', textAlign: 'left' }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: '#7dd3fc', marginBottom: 2 }}>
+              📦 สแกนบาร์โค้ดเลขพัสดุ
+            </div>
+            <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 10 }}>
+              ออเดอร์ <b style={{ color: '#fff' }}>{shipRef.current?.orderNumber || order?.customer_name || ''}</b> — จ่อบาร์โค้ดบนใบปะหน้าทีละกล่อง มีหลายกล่องสแกนต่อได้เลย
+            </div>
+            {shipNos.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                {shipNos.map(no => (
+                  <span key={no} style={{ background: '#16a34a', color: '#fff', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700 }}>
+                    ✓ {no} <span style={{ fontWeight: 400, opacity: 0.85 }}>· {detectCarrier(no, shipRef.current?.courier) || 'อื่นๆ'}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+            {shipMsg && <div style={{ fontSize: 12, color: '#fbbf24', marginBottom: 8 }}>{shipMsg}</div>}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => finishBarcode(false)} disabled={shipSaving}
+                style={{ flex: 1, padding: 12, borderRadius: 12, border: '1px solid rgba(255,255,255,0.3)', background: 'transparent', color: '#cbd5e1', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                ข้าม
+              </button>
+              <button onClick={() => finishBarcode(true)} disabled={shipSaving || shipNos.length === 0}
+                style={{ flex: 2, padding: 12, borderRadius: 12, border: 'none', background: shipNos.length === 0 ? '#475569' : '#16a34a', color: '#fff', fontSize: 15, fontWeight: 800, cursor: shipNos.length === 0 ? 'not-allowed' : 'pointer' }}>
+                {shipSaving ? 'กำลังบันทึก…' : shipNos.length > 0 ? `บันทึก ${shipNos.length} เลข ✓` : 'ยังไม่มีเลขพัสดุ'}
+              </button>
+            </div>
           </div>
         )}
 

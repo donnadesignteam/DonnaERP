@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { itemBlockLines } from '@/lib/itemFormat'
+import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
 
@@ -30,6 +31,15 @@ type StatusEvent = {
   status: string
   at: string
   by: string | null   // ใครทำ — ยังว่าง (null) จนกว่าจะเริ่มใช้ตัวสแกนเดือนหน้า
+}
+
+// พัสดุ 1 เลข = 1 รายการ — status/events เติมทีหลังจาก extension เช็คให้
+type Shipment = {
+  no: string
+  carrier: string
+  status: string                                    // ข้อความสถานะล่าสุด เช่น "กำลังนำส่ง"
+  events: { time: string; desc: string }[] | null   // timeline ใหม่ → เก่า
+  checked_at: string | null
 }
 
 type Entry = {
@@ -67,6 +77,7 @@ type Entry = {
   rail_packed_at: string | null
   done_at: string | null
   status_history: StatusEvent[] | null
+  shipments: Shipment[] | null
 }
 
 const emptyItem = (): Item => ({ type: '', floors: null, rail_head: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', note: '' })
@@ -130,11 +141,29 @@ function daysRemaining(dateStr: string): number | null {
   return isNaN(result) ? null : result
 }
 
+// detectCarrier/CARRIER_OPTIONS ย้ายไป lib/carriers.ts (ใช้ร่วมกับหน้า /scan)
+// เจ้าที่ extension เปิดแท็บดึงสถานะได้ — J&T มีสไลด์ captcha ต้องเปิดแท็บจริงให้คนเลื่อน 1 ครั้ง (active)
+// SPX เรียก API ตรงได้ผ่าน /api/track-spx, ไปรษณีย์ไทยใช้ API ทางการผ่าน /api/track-thailandpost (Kerry เว็บกันหนัก อาจ timeout)
+const EXT_CARRIERS = ['Flash Express', 'J&T Express', 'Kerry Express']
+const API_CARRIERS: Record<string, string> = { 'SPX Express': '/api/track-spx', 'ไปรษณีย์ไทย': '/api/track-thailandpost' }
+const isAutoCarrier = (c: string) => EXT_CARRIERS.includes(c) || c in API_CARRIERS
+
+const CARRIER_TRACK_URL: Record<string, (no: string) => string> = {
+  'Flash Express': no => `https://www.flashexpress.com/fle/tracking?se=${no}`,
+  'SPX Express': no => `https://spx.co.th/track?${no}`,
+  'ไปรษณีย์ไทย': no => `https://track.thailandpost.co.th/?trackNumber=${no}`,
+  'J&T Express': no => `https://www.jtexpress.co.th/service/track?bills=${no}`,
+  'Kerry Express': no => `https://th.kerryexpress.com/th/track/?track=${no}`,
+  'Ninja Van': no => `https://www.ninjavan.co/th-th/tracking?id=${no}`,
+}
+const carrierTrackUrl = (sh: Shipment) =>
+  CARRIER_TRACK_URL[sh.carrier]?.(sh.no) || `https://www.google.com/search?q=${encodeURIComponent(sh.no + ' เช็คพัสดุ')}`
+
 // สี/ข้อความคอลัมน์วันที่เหลือ: เกินกำหนด+0 วัน = แดง (0 = ต้องจัดส่งวันนี้), 1-10 วัน = เหลือง, >10 วัน = เขียว
 const daysLabel = (d: number) => d < 0 ? `เกิน ${Math.abs(d)} วัน` : d === 0 ? 'ต้องจัดส่งวันนี้' : `${d} วัน`
 const daysColor = (d: number) => d <= 0 ? 'var(--red)' : d <= 10 ? '#eab308' : '#34c759'
 
-const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping_datetime' | 'shipped_at' | 'rail_packed' | 'rail_packed_at' | 'done_at' | 'status_history'> => ({
+const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping_datetime' | 'shipped_at' | 'rail_packed' | 'rail_packed_at' | 'done_at' | 'status_history' | 'shipments'> => ({
   entry_date: new Date().toISOString().split('T')[0],
   deadline: '',
   status: 'อยู่ในกำหนด',
@@ -315,6 +344,14 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [itemsModalError, setItemsModalError] = useState('')
   const [openAction, setOpenAction] = useState<string | null>(null)
   const [actionRect, setActionRect] = useState<DOMRect | null>(null)
+  // จัดส่งแล้ว + ติดตามพัสดุ — manual = ผู้ใช้เลือกเจ้าเองจาก dropdown แล้ว ไม่ต้องเดาทับ
+  const [shipModal, setShipModal] = useState<{ id: string; parcels: { no: string; carrier: string; manual: boolean }[] } | null>(null)
+  const [shipSaving, setShipSaving] = useState(false)
+  const [trackModal, setTrackModal] = useState<string | null>(null)   // entry id ที่เปิดดูสถานะพัสดุ
+  const [trackChecking, setTrackChecking] = useState<string | null>(null)  // entry id ที่กำลังเช็ค — แยกต่อออเดอร์ กันเช็คตัวหนึ่งค้างแล้วล็อกทั้งหน้า
+  const [trackError, setTrackError] = useState('')
+  const [extReady, setExtReady] = useState(false)                     // Chrome extension "Donna Track" ติดตั้งอยู่ไหม
+  const [extPrompt, setExtPrompt] = useState<{ id: string; parcels: { no: string; carrier: string; manual: boolean }[] } | null>(null)  // popup ชวนติดตั้ง extension (เก็บ payload ไว้ไปต่อ shipModal)
   const [printAsk, setPrintAsk] = useState<Entry[] | null>(null) // หลายรายการ → ถามก่อนว่าตาราง/ฟอร์ม
   const [editCell, setEditCell] = useState<{id: string; field: string; val: string} | null>(null)
   const [printModal, setPrintModal] = useState(false)
@@ -708,6 +745,127 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       window.scrollTo(window.scrollX, sy)
     }
   }
+
+  // ===== ติดตามพัสดุ (Donna Track extension) =====
+  // จับมือกับ extension: extension ประกาศ READY ตอนโหลดหน้า / ตอบ PING
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (e.source !== window || e.data?.source !== 'donna-track-ext') return
+      if (e.data.type === 'READY') setExtReady(true)
+    }
+    window.addEventListener('message', onMsg)
+    window.postMessage({ source: 'donna-track', type: 'PING' }, window.location.origin)
+    return () => window.removeEventListener('message', onMsg)
+  }, [])
+
+  // บันทึกเลขพัสดุจาก popup "จัดส่งแล้ว" → ติ๊กจัดส่งแล้ว (เจ้าขนส่งตามที่โชว์/เลือกใน popup)
+  const saveShipments = async () => {
+    if (!shipModal) return
+    const row = rows.find(r => r.id === shipModal.id)
+    const parcels = shipModal.parcels.map(p => ({ ...p, no: p.no.trim() })).filter(p => p.no)
+    if (parcels.length === 0) { alert('กรอกเลขพัสดุอย่างน้อย 1 เลข'); return }
+    setShipSaving(true)
+    const now = new Date().toISOString()
+    const prev = Array.isArray(row?.shipments) ? row!.shipments! : []
+    const list: Shipment[] = parcels.map(p => {
+      const carrier = p.carrier || detectCarrier(p.no, row?.courier) || 'อื่นๆ'
+      const old = prev.find(s => s.no === p.no)
+      return old ? { ...old, carrier } : { no: p.no, carrier, status: '', events: null, checked_at: null }
+    })
+    const updates = { shipments: list, is_urgent: true, order_status: 'จัดส่งแล้ว', shipped_at: row?.shipped_at || now, updated_at: now }
+    const { error: err } = await supabase.from('order_entries').update(updates).eq('id', shipModal.id)
+    setShipSaving(false)
+    if (err) {
+      alert(`บันทึกไม่สำเร็จ: ${err.message}${/shipments/.test(err.message) ? '\n\n(ต้องรัน sql/add_shipments.sql ใน Supabase ก่อน)' : ''}`)
+      return
+    }
+    if (row) {
+      await syncWorkStatus(row.order_number, row.customer_name, 'จัดส่งแล้ว', now)
+      await logStatus(shipModal.id, 'จัดส่งแล้ว', now, row.status_history)
+    }
+    setRows(p => p.map(r => r.id === shipModal.id ? { ...r, ...updates } as Entry : r))
+    const id = shipModal.id
+    setShipModal(null)
+    setTrackModal(id)          // เปิดหน้าสถานะต่อเลย จะได้กดเช็คได้ทันที
+    setTrackError('')
+  }
+
+  // เช็คสถานะ: Flash/Kerry ผ่าน extension แท็บเบื้องหลัง, J&T ผ่าน extension แท็บจริง (มีสไลด์ captcha ให้คนเลื่อน),
+  // SPX + ไปรษณีย์ไทย ผ่าน API ฝั่งเซิร์ฟเวอร์ — ยิงพร้อมกันแล้วรวมผล
+  // รับ shipments ตรงๆ ไม่อ่านจาก rows ตอนผลกลับมา — กัน closure เก่าตอนถูกเรียกอัตโนมัติหลังเพิ่งบันทึก
+  const checkTracking = async (entryId: string, shipments: Shipment[]) => {
+    if (trackChecking === entryId) return
+    const extParcels = shipments.filter(s => EXT_CARRIERS.includes(s.carrier))
+    const apiParcels = shipments.filter(s => s.carrier in API_CARRIERS)
+    if (extParcels.length === 0 && apiParcels.length === 0) return
+    if (extParcels.length > 0 && !extReady && apiParcels.length === 0) {
+      setTrackError('ไม่พบ extension "Donna Track" — ติดตั้งใน Chrome ก่อน (โฟลเดอร์ extension ใน repo)')
+      return
+    }
+    setTrackChecking(entryId)
+    setTrackError('')
+    type CheckResult = { no: string; ok: boolean; status: string; events: { time: string; desc: string }[] }
+    const jobs: Promise<CheckResult[]>[] = []
+    let sideError = ''
+    if (extParcels.length > 0 && extReady) {
+      const reqId = `${entryId}-${Date.now()}`
+      jobs.push(new Promise<CheckResult[]>(resolve => {
+        // J&T ต้องรอคนเลื่อนสไลด์ → เผื่อเวลาเยอะกว่า
+        const budget = extParcels.reduce((t, s) => t + (s.carrier === 'J&T Express' ? 170000 : 60000), 0)
+        const timeout = setTimeout(() => { window.removeEventListener('message', onResult); resolve([]) }, budget)
+        const onResult = (e: MessageEvent) => {
+          if (e.source !== window || e.data?.source !== 'donna-track-ext' || e.data.type !== 'RESULT' || e.data.reqId !== reqId) return
+          window.removeEventListener('message', onResult)
+          clearTimeout(timeout)
+          resolve(e.data.results || [])
+        }
+        window.addEventListener('message', onResult)
+        window.postMessage({ source: 'donna-track', type: 'CHECK', reqId, parcels: extParcels.map(s => ({ no: s.no, carrier: s.carrier, url: carrierTrackUrl(s), active: s.carrier === 'J&T Express' })) }, window.location.origin)
+      }))
+    }
+    for (const [carrier, api] of Object.entries(API_CARRIERS)) {
+      const nos = apiParcels.filter(s => s.carrier === carrier).map(s => s.no)
+      if (nos.length === 0) continue
+      jobs.push(
+        fetch(api, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nos }) })
+          .then(async r => { const d = await r.json(); if (d.error) { sideError = d.error; return [] } return (d.results || []) as CheckResult[] })
+          .catch(() => [] as CheckResult[])
+      )
+    }
+    const results = (await Promise.all(jobs)).flat()
+    const now = new Date().toISOString()
+    const merged = shipments.map(s => {
+      const res = results.find(x => x.no === s.no)
+      return res?.ok ? { ...s, status: res.status || s.status, events: res.events?.length ? res.events : s.events, checked_at: now } : s
+    })
+    if (results.some(x => x.ok)) {
+      const { error: err } = await supabase.from('order_entries').update({ shipments: merged, updated_at: now }).eq('id', entryId)
+      if (!err) setRows(p => p.map(r => r.id === entryId ? { ...r, shipments: merged } as Entry : r))
+    }
+    setTrackChecking(c => c === entryId ? null : c)
+    if (results.length === 0 || results.every(x => !x.ok)) {
+      setTrackError(sideError || 'ดึงสถานะไม่ได้ — ลองใหม่ หรือกดเปิดเว็บขนส่งดูตรงๆ')
+    } else if (sideError) {
+      setTrackError(sideError)
+    }
+  }
+
+  // เปิดหน้าสถานะพัสดุเมื่อไหร่ (รวมถึงเด้งมาหลังกดยืนยันเลขพัสดุ) → เช็คให้เองถ้ามีเลข Flash ที่ยังไม่เคยเช็ค
+  // autoCheckedRef กันยิงวนถ้าเช็คไม่สำเร็จ (checked_at ยัง null อยู่) — อัตโนมัติแค่ครั้งเดียวต่อการเปิด ที่เหลือใช้ปุ่ม
+  const autoCheckedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!trackModal) { autoCheckedRef.current = null; return }
+    if (trackChecking === trackModal || autoCheckedRef.current === trackModal) return
+    const r = rows.find(x => x.id === trackModal)
+    const sh = Array.isArray(r?.shipments) ? r!.shipments! : []
+    // extension-เจ้า ต้องมี extension / เจ้าที่เช็คผ่าน API (SPX/ไปรษณีย์ไทย) เช็คได้เสมอ
+    const need = sh.some(s => !s.checked_at && (EXT_CARRIERS.includes(s.carrier) ? extReady : s.carrier in API_CARRIERS))
+    if (need) {
+      autoCheckedRef.current = trackModal
+      checkTracking(trackModal, sh)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trackModal, extReady, rows])
 
   // ติ๊ก "สถานะราง" (แพ็ครางเสร็จ) — ไม่ยุ่งกับ order_status สายผลิต
   const toggleRailPacked = async (id: string, checked: boolean) => {
@@ -2015,6 +2173,12 @@ ${body}
                               {new Date(r.shipped_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                             </span>
                           )}
+                          {Array.isArray(r.shipments) && r.shipments.length > 0 && (
+                            <button onClick={() => { setTrackModal(r.id); setTrackError('') }} title="ดูสถานะพัสดุ"
+                              style={{ border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 6, padding: '1px 6px', fontSize: 10, cursor: 'pointer', color: 'var(--ink-2)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              📦 {r.shipments[0].status || `${r.shipments.length} เลขพัสดุ`}
+                            </button>
+                          )}
                         </div>
                       </td>
                     )}
@@ -2317,6 +2481,12 @@ ${body}
                               {new Date(r.shipped_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
                               {new Date(r.shipped_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                             </span>
+                          )}
+                          {Array.isArray(r.shipments) && r.shipments.length > 0 && (
+                            <button onClick={() => { setTrackModal(r.id); setTrackError('') }} title="ดูสถานะพัสดุ"
+                              style={{ border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 6, padding: '1px 6px', fontSize: 10, cursor: 'pointer', color: 'var(--ink-2)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              📦 {r.shipments[0].status || `${r.shipments.length} เลขพัสดุ`}
+                            </button>
                           )}
                         </div>
                       )}
@@ -2732,6 +2902,12 @@ ${body}
                             {new Date(r.shipped_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         )}
+                        {Array.isArray(r.shipments) && r.shipments.length > 0 && (
+                          <button onClick={() => { setTrackModal(r.id); setTrackError('') }} title="ดูสถานะพัสดุ"
+                            style={{ border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 6, padding: '1px 6px', fontSize: 10, cursor: 'pointer', color: 'var(--ink-2)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            📦 {r.shipments[0].status || `${r.shipments.length} เลขพัสดุ`}
+                          </button>
+                        )}
                       </div>
                     </td>
                     )}
@@ -2815,6 +2991,24 @@ ${body}
                 ปริ้นอุปกรณ์ราง
               </button>
             )}
+            <button onClick={() => {
+              setOpenAction(null); setActionRect(null)
+              const payload = { id: r.id, parcels: (r.shipments || []).map(s => ({ no: s.no, carrier: s.carrier, manual: true })).concat([{ no: '', carrier: '', manual: false }]) }
+              // ยังไม่ติดตั้ง extension → ชวนติดตั้งก่อน (กดข้ามไปกรอกเลขได้ / กดไม่เตือนอีกได้)
+              if (!extReady && localStorage.getItem('donna_track_ext_dismissed') !== '1') setExtPrompt(payload)
+              else setShipModal(payload)
+            }}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)' }}>
+              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 00-3.213-9.193 2.056 2.056 0 00-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 00-10.026 0 1.106 1.106 0 00-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12"/></svg>
+              จัดส่งแล้ว
+            </button>
+            {Array.isArray(r.shipments) && r.shipments.length > 0 && (
+              <button onClick={() => { setOpenAction(null); setActionRect(null); setTrackModal(r.id); setTrackError('') }}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)' }}>
+                <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"/></svg>
+                สถานะพัสดุ
+              </button>
+            )}
             <button onClick={() => { setOpenAction(null); setActionRect(null); setModal({ mode: 'edit', data: { ...r, items: null } }); setModalItems(Array.isArray(r.items) ? [...(r.items as Item[])] : []); setItemsPasteText('') }}
               style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)' }}>
               <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/></svg>
@@ -2826,6 +3020,152 @@ ${body}
               <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
               ลบ
             </button>
+          </div>
+        )
+      })()}
+
+      {/* Popup ชวนติดตั้ง extension "Donna Track" (เด้งตอนกดจัดส่งแล้ว ถ้ายังไม่ติดตั้ง) */}
+      {extPrompt && (
+        <div onClick={() => setExtPrompt(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 24 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 24, width: '100%', maxWidth: 420 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>🧩 ยังไม่ได้ติดตั้ง extension &quot;Donna Track&quot;</h3>
+            <p style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 14, lineHeight: 1.6 }}>
+              บันทึกเลขพัสดุได้ตามปกติ แต่เครื่องนี้จะกด <b>เช็คสถานะ Flash อัตโนมัติ</b> ไม่ได้จนกว่าจะติดตั้ง (ทำครั้งเดียวต่อเครื่อง)
+            </p>
+            <ol style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.9, paddingLeft: 20, marginBottom: 6 }}>
+              <li>เปิด Chrome ไปที่ <b style={{ fontFamily: 'monospace' }}>chrome://extensions</b></li>
+              <li>เปิดสวิตช์ <b>Developer mode</b> (มุมขวาบน)</li>
+              <li>กด <b>Load unpacked</b> → เลือกโฟลเดอร์ <b style={{ fontFamily: 'monospace' }}>donnaweb\extension</b>{' '}
+                <button onClick={e => { navigator.clipboard.writeText('C:\\Users\\Com\\donnaweb\\extension'); (e.currentTarget as HTMLButtonElement).textContent = 'คัดลอกแล้ว ✓' }}
+                  style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', color: 'var(--ink-2)' }}>คัดลอก path</button>
+              </li>
+              <li>เสร็จแล้ว<b>รีเฟรชหน้าเว็บนี้</b> 1 ครั้ง</li>
+            </ol>
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+              <button onClick={() => setExtPrompt(null)}
+                style={{ flex: 1, padding: '9px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontSize: 13, color: 'var(--ink-3)' }}>ปิด</button>
+              <button onClick={() => { setShipModal(extPrompt); setExtPrompt(null) }}
+                style={{ flex: 2, padding: '9px', borderRadius: 10, border: 'none', background: 'var(--blue)', cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#fff' }}>ข้ามไป — กรอกเลขพัสดุ</button>
+            </div>
+            <button onClick={() => { localStorage.setItem('donna_track_ext_dismissed', '1'); setShipModal(extPrompt); setExtPrompt(null) }}
+              style={{ width: '100%', marginTop: 10, padding: '6px', borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 12, color: 'var(--ink-3)', textDecoration: 'underline' }}>
+              ไม่ต้องเตือนเครื่องนี้อีก
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Popup จัดส่งแล้ว — กรอกเลขพัสดุ (เพิ่มได้หลายเลข) */}
+      {shipModal && (
+        <div onClick={() => setShipModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 24 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 24, width: '100%', maxWidth: 400 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>จัดส่งแล้ว — กรอกเลขพัสดุ</h3>
+              <button onClick={() => setShipModal(m => m ? { ...m, parcels: [...m.parcels, { no: '', carrier: '', manual: false }] } : m)} title="เพิ่มเลขพัสดุ"
+                style={{ width: 26, height: 26, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 16, color: 'var(--ink-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>+</button>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 14 }}>ระบบเดาเจ้าขนส่งให้ — เดาผิดกดเปลี่ยนที่ dropdown ได้เลย, มีหลายกล่องกด + เพิ่มเลข</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 300, overflowY: 'auto' }}>
+              {(() => {
+                const ord = rows.find(row => row.id === shipModal.id)
+                return shipModal.parcels.map((p, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input value={p.no} autoFocus={i === shipModal.parcels.length - 1}
+                      placeholder="เช่น TH0118ABCDE1F"
+                      onChange={e => setShipModal(m => m ? { ...m, parcels: m.parcels.map((x, j) => j === i ? { ...x, no: e.target.value, carrier: x.manual ? x.carrier : detectCarrier(e.target.value, ord?.courier) } : x) } : m)}
+                      onKeyDown={e => { if (e.key === 'Enter') saveShipments() }}
+                      style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, background: 'var(--bg)', color: 'var(--ink)', outline: 'none' }} />
+                    <select value={p.carrier || ''}
+                      onChange={e => setShipModal(m => m ? { ...m, parcels: m.parcels.map((x, j) => j === i ? { ...x, carrier: e.target.value, manual: true } : x) } : m)}
+                      style={{ width: 110, padding: '7px 4px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 11, background: 'var(--bg)', color: p.carrier ? 'var(--ink)' : 'var(--ink-3)', outline: 'none', cursor: 'pointer' }}>
+                      <option value="">เจ้าขนส่ง?</option>
+                      {CARRIER_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    {shipModal.parcels.length > 1 && (
+                      <button onClick={() => setShipModal(m => m ? { ...m, parcels: m.parcels.filter((_, j) => j !== i) } : m)}
+                        style={{ width: 22, height: 22, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 14, lineHeight: 1 }}>×</button>
+                    )}
+                  </div>
+                ))
+              })()}
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+              <button onClick={() => setShipModal(null)}
+                style={{ flex: 1, padding: '9px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontSize: 13, color: 'var(--ink-3)' }}>ยกเลิก</button>
+              <button onClick={saveShipments} disabled={shipSaving}
+                style={{ flex: 2, padding: '9px', borderRadius: 10, border: 'none', background: 'var(--blue)', cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#fff', opacity: shipSaving ? 0.6 : 1 }}>
+                {shipSaving ? 'กำลังบันทึก…' : 'ยืนยันจัดส่งแล้ว'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Popup สถานะพัสดุ — timeline ส่งถึงไหนแล้ว */}
+      {trackModal && (() => {
+        const r = rows.find(row => row.id === trackModal)
+        if (!r) return null
+        const shipments = Array.isArray(r.shipments) ? r.shipments : []
+        const hasAuto = shipments.some(s => isAutoCarrier(s.carrier))
+        const hasExtCarrier = shipments.some(s => EXT_CARRIERS.includes(s.carrier))
+        return (
+          <div onClick={() => setTrackModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 24 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 24, width: '100%', maxWidth: 440, maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>📦 สถานะพัสดุ</h3>
+                {hasAuto && (
+                  <button onClick={() => checkTracking(r.id, Array.isArray(r.shipments) ? r.shipments : [])} disabled={trackChecking === r.id}
+                    style={{ padding: '5px 12px', borderRadius: 8, border: 'none', background: 'var(--blue)', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#fff', opacity: trackChecking === r.id ? 0.6 : 1 }}>
+                    {trackChecking === r.id ? 'กำลังเช็ค…' : 'เช็คสถานะ'}
+                  </button>
+                )}
+              </div>
+              <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 12 }}>
+                {r.customer_name || r.order_number || ''}
+                {hasExtCarrier && !extReady && ' · เช็คอัตโนมัติต้องติดตั้ง extension "Donna Track" ใน Chrome'}
+              </p>
+              {trackChecking === r.id && shipments.some(s => s.carrier === 'J&T Express') && (
+                <p style={{ fontSize: 12, color: 'var(--blue)', marginBottom: 10 }}>J&T จะเปิดแท็บขึ้นมาให้เลื่อนแถบยืนยัน 1 ครั้ง — เลื่อนเสร็จแท็บจะปิดเองแล้วสถานะขึ้นที่นี่</p>
+              )}
+              {trackError && <p style={{ fontSize: 12, color: 'var(--red)', marginBottom: 10 }}>{trackError}</p>}
+              <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {shipments.map((s, i) => (
+                  <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', fontFamily: 'monospace' }}>{s.no}</span>
+                        <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-2)', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 6px' }}>{s.carrier}</span>
+                      </div>
+                      <a href={carrierTrackUrl(s)} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: 'var(--blue)' }}>เปิดเว็บขนส่ง ↗</a>
+                    </div>
+                    {s.status && (
+                      <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: /เซ็นรับ|สำเร็จ|ถึงมือ|delivered/i.test(s.status) ? 'var(--green)' : 'var(--ink)' }}>{s.status}</div>
+                    )}
+                    {s.checked_at && (
+                      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 2 }}>
+                        เช็คล่าสุด {new Date(s.checked_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit' })} {new Date(s.checked_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    )}
+                    {Array.isArray(s.events) && s.events.length > 0 && (
+                      <div style={{ marginTop: 10, borderTop: '1px solid var(--border)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 180, overflowY: 'auto' }}>
+                        {s.events.map((ev, j) => (
+                          <div key={j} style={{ display: 'flex', gap: 8, fontSize: 11, opacity: j === 0 ? 1 : 0.65 }}>
+                            <span style={{ color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{ev.time}</span>
+                            <span style={{ color: 'var(--ink)' }}>{ev.desc}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {!s.status && !s.events?.length && (
+                      <div style={{ marginTop: 8, fontSize: 11, color: 'var(--ink-3)' }}>ยังไม่เคยเช็คสถานะ{isAutoCarrier(s.carrier) ? ' — กดปุ่ม "เช็คสถานะ" ด้านบน' : ' — เจ้านี้ยังเช็คอัตโนมัติไม่ได้ กดเปิดเว็บขนส่ง'}</div>
+                    )}
+                  </div>
+                ))}
+                {shipments.length === 0 && <p style={{ fontSize: 13, color: 'var(--ink-3)' }}>ยังไม่มีเลขพัสดุ — กดเมนู ··· → จัดส่งแล้ว เพื่อกรอก</p>}
+              </div>
+              <button onClick={() => setTrackModal(null)}
+                style={{ width: '100%', marginTop: 14, padding: '9px', borderRadius: 10, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, color: 'var(--ink-3)' }}>ปิด</button>
+            </div>
           </div>
         )
       })()}
