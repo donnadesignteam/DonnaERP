@@ -67,52 +67,17 @@ const STATUS_COLOR: Record<string, string> = {
   'รอติดตั้ง': '#f97316',
 }
 
+// การ์ดหลัก 3 ใบ: ที่ต้องส่งวันนี้ / รอจัดส่ง / เกินกำหนดส่ง
 const STATS_META = [
   {
-    key: 'total',
-    label: 'ออเดอร์ทั้งหมด',
-    color: '#2563EB',
-    gradLight: 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)',
-    gradDark: 'linear-gradient(135deg, #1e3a5f 0%, #1e40af30 100%)',
-    icon: (
-      <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.101-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z"/>
-      </svg>
-    ),
-  },
-  {
-    key: 'pending',
-    label: 'ออเดอร์ค้างส่ง',
+    key: 'today',
+    label: 'ที่ต้องส่งวันนี้',
     color: '#D97706',
     gradLight: 'linear-gradient(135deg, #FFFBEB 0%, #FDE68A 100%)',
     gradDark: 'linear-gradient(135deg, #3d2a00 0%, #92400e30 100%)',
     icon: (
       <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/>
-      </svg>
-    ),
-  },
-  {
-    key: 'today',
-    label: 'กำหนดส่งวันนี้',
-    color: '#16A34A',
-    gradLight: 'linear-gradient(135deg, #F0FDF4 0%, #BBF7D0 100%)',
-    gradDark: 'linear-gradient(135deg, #052e16 0%, #14532d30 100%)',
-    icon: (
-      <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5m-9-6h.008v.008H12v-.008zM12 15h.008v.008H12V15zm0 2.25h.008v.008H12v-.008zM9.75 15h.008v.008H9.75V15zm0 2.25h.008v.008H9.75v-.008zM7.5 15h.008v.008H7.5V15zm0 2.25h.008v.008H7.5v-.008zm6.75-4.5h.008v.008h-.008v-.008zm0 2.25h.008v.008h-.008V15zm0 2.25h.008v.008h-.008v-.008zm2.25-4.5h.008v.008H16.5v-.008zm0 2.25h.008v.008H16.5V15z"/>
-      </svg>
-    ),
-  },
-  {
-    key: 'overdue',
-    label: 'เกินกำหนดส่ง',
-    color: '#DC2626',
-    gradLight: 'linear-gradient(135deg, #FFF1F2 0%, #FECDD3 100%)',
-    gradDark: 'linear-gradient(135deg, #3b0a0a 0%, #7f1d1d30 100%)',
-    icon: (
-      <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>
       </svg>
     ),
   },
@@ -125,6 +90,18 @@ const STATS_META = [
     icon: (
       <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 00-3.213-9.193 2.056 2.056 0 00-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 00-10.026 0 1.106 1.106 0 00-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12"/>
+      </svg>
+    ),
+  },
+  {
+    key: 'overdue',
+    label: 'เกินกำหนดส่ง',
+    color: '#DC2626',
+    gradLight: 'linear-gradient(135deg, #FFF1F2 0%, #FECDD3 100%)',
+    gradDark: 'linear-gradient(135deg, #3b0a0a 0%, #7f1d1d30 100%)',
+    icon: (
+      <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>
       </svg>
     ),
   },
@@ -191,10 +168,6 @@ export default function DashboardPage() {
   // เปิดหน้าซ้ำ → โชว์ข้อมูลรอบก่อนทันที แล้วดึงของใหม่เบื้องหลัง (stale-while-revalidate)
   const cached = getPageCache<Order[]>('dashboard:order_entries')
   const [all, setAll] = useState<Order[]>(cached ?? [])
-  const [dateFrom, setDateFrom] = useState(cached?.length ? cached[0].created_at.split('T')[0] : '')
-  const [dateTo, setDateTo] = useState(cached?.length ? cached[cached.length - 1].created_at.split('T')[0] : '')
-  const fromRef = useRef<HTMLInputElement>(null)
-  const toRef = useRef<HTMLInputElement>(null)
   const [modal, setModal] = useState<ModalData>(null)
   const [loading, setLoading] = useState(!cached)
   const [isDark, setIsDark] = useState(false)
@@ -209,10 +182,25 @@ export default function DashboardPage() {
 
   const today = new Date().toISOString().split('T')[0]
 
-  function isoToDmy(iso: string) {
-    if (!iso) return ''
-    const [y, m, d] = iso.split('-')
-    return `${d}/${m}/${y}`
+  // นาฬิกาใหญ่มุมขวาบน — เริ่มหลัง mount (กัน hydration mismatch) เดินทุกวินาที
+  const [clock, setClock] = useState<Date | null>(null)
+  useEffect(() => {
+    setClock(new Date())
+    const iv = setInterval(() => setClock(new Date()), 1000)
+    return () => clearInterval(iv)
+  }, [])
+
+  // โหมดเต็มจอ — fullscreen ตัวหน้า dashboard (ไม่เอา sidebar)
+  const pageRef = useRef<HTMLDivElement>(null)
+  const [isFs, setIsFs] = useState(false)
+  useEffect(() => {
+    const onFs = () => setIsFs(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', onFs)
+    return () => document.removeEventListener('fullscreenchange', onFs)
+  }, [])
+  const toggleFs = () => {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+    else pageRef.current?.requestFullscreen().catch(() => {})
   }
 
   useEffect(() => {
@@ -230,21 +218,14 @@ export default function DashboardPage() {
       const rows = (data ?? []) as Order[]
       setPageCache('dashboard:order_entries', rows)
       setAll(rows)
-      if (rows.length > 0) {
-        setDateFrom(rows[0].created_at.split('T')[0])
-        setDateTo(rows[rows.length - 1].created_at.split('T')[0])
-      }
       setLoading(false)
     })()
   }, [])
 
-  const filtered = all.filter(o => {
-    const d = o.created_at.split('T')[0]
-    return (!dateFrom || d >= dateFrom) && (!dateTo || d <= dateTo)
-  })
-
   const DONE_STATUSES = ['งานเสร็จ', 'จัดส่งแล้ว']
-  const pending = filtered.filter(o => !DONE_STATUSES.includes(o.order_status))
+  // ออเดอร์ที่ลงเดือนนี้ (ตาม created_at)
+  const monthKey = today.slice(0, 7)
+  const monthOrders = all.filter(o => o.created_at.startsWith(monthKey))
 
   function effectiveISODate(o: Order): string | null {
     const isOut = OUTSIDE_PLATFORMS.includes(o.platform ?? '') || o.is_installation
@@ -265,7 +246,8 @@ export default function DashboardPage() {
   const platformOptions = PLATFORMS.concat(OUTSIDE_PLATFORMS.filter(p => !PLATFORMS.includes(p)))
   const courierOptions = ['งานติดตั้ง', ...new Set(all.map(r => r.courier).filter(Boolean))] as string[]
 
-  const ordersListBase = [...filtered].reverse()
+  // รายการออเดอร์ใน dashboard = งานที่ยังไม่จบ (จัดส่งแล้ว/ยกเลิก ไปดูที่หน้าออเดอร์แทน)
+  const ordersListBase = [...all].reverse().filter(o => o.order_status !== 'จัดส่งแล้ว' && o.order_status !== 'ยกเลิก')
   let ordersList = ordersListBase as Order[]
   if (deadlineFrom || deadlineTo) {
     ordersList = ordersList.filter(o => {
@@ -283,15 +265,18 @@ export default function DashboardPage() {
   }
   if (daysSort) {
     ordersList = [...ordersList].sort((a, b) => {
+      // งานเสร็จ (is_urgent) ลงไปอยู่ล่างสุดเสมอ
+      const doneA = a.is_urgent ? 1 : 0, doneB = b.is_urgent ? 1 : 0
+      if (doneA !== doneB) return doneA - doneB
       const da = daysRemaining(effectiveISODate(a) ?? '') ?? (daysSort === 'asc' ? Infinity : -Infinity)
       const db = daysRemaining(effectiveISODate(b) ?? '') ?? (daysSort === 'asc' ? Infinity : -Infinity)
       return daysSort === 'asc' ? da - db : db - da
     })
   }
-  const todayDue = filtered.filter(o => effectiveISODate(o) === today)
-  const overdue = filtered.filter(o => { const iso = effectiveISODate(o); return iso && iso < today && !DONE_STATUSES.includes(o.order_status) })
+  const todayDue = all.filter(o => effectiveISODate(o) === today)
+  const overdue = all.filter(o => { const iso = effectiveISODate(o); return iso && iso < today && !DONE_STATUSES.includes(o.order_status) })
   // งานเสร็จ (is_urgent) ที่ยังไม่ได้จัดส่ง → รอติ๊กจัดส่งใน popup
-  const toShip = filtered.filter(o => o.is_urgent && o.order_status !== 'จัดส่งแล้ว')
+  const toShip = all.filter(o => o.is_urgent && o.order_status !== 'จัดส่งแล้ว')
 
   // ติ๊กจัดส่งจาก popup: อัปเดตเหมือนหน้าออเดอร์ (สถานะ+shipped_at+sync work_status+ประวัติ)
   const markShipped = async (id: string) => {
@@ -320,60 +305,63 @@ export default function DashboardPage() {
     setModal(m => m ? { ...m, orders: m.orders.filter(o => o.id !== id) } : m)
   }
 
-  const now = new Date()
-  const last7 = all.filter(o => (now.getTime() - new Date(o.created_at).getTime()) <= 7 * 864e5).length
-  const prev7 = all.filter(o => { const age = (now.getTime() - new Date(o.created_at).getTime()) / 864e5; return age > 7 && age <= 14 }).length
-  const totalTrend = prev7 === 0 ? null : Math.round((last7 - prev7) / prev7 * 100)
-
-  const statCounts = [filtered.length, pending.length, todayDue.length, overdue.length, toShip.length]
-  const statOrders = [filtered, pending, todayDue, overdue, toShip]
-  const statPrint = [true, true, true, true, true]
-  const statTrends: (number | null)[] = [
-    totalTrend,
-    filtered.length > 0 ? Math.round(pending.length / filtered.length * 100) : null,
-    null,
-    pending.length > 0 ? Math.round(overdue.length / pending.length * 100) : null,
-    null,
-  ]
-  const statTrendLabels = ['vs สัปดาห์ที่แล้ว', '% ของทั้งหมด', null, '% ของค้างส่ง', null]
+  const statCounts = [todayDue.length, toShip.length, overdue.length]
+  const statOrders = [todayDue, toShip, overdue]
 
   return (
-    <div>
+    <div ref={pageRef} style={isFs ? { background: 'var(--bg)', height: '100%', overflowY: 'auto', padding: 28 } : undefined}>
 
-      {/* Date filter */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24, padding: '11px 16px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)' }}>
-        <span style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ช่วงวันที่</span>
-        <div style={{ width: 1, height: 16, background: 'var(--border)' }} />
-        <div onClick={() => fromRef.current?.showPicker()}
-          style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '4px 9px', fontSize: 12, color: dateFrom ? 'var(--ink)' : 'var(--ink-4)', minWidth: 90, cursor: 'pointer', userSelect: 'none' }}>
-          {dateFrom ? isoToDmy(dateFrom) : 'DD/MM/YYYY'}
-          <input ref={fromRef} type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-            style={{ position: 'absolute', width: 0, height: 0, opacity: 0, border: 'none', padding: 0 }} />
-        </div>
-        <span style={{ color: 'var(--ink-4)', fontSize: 12 }}>ถึง</span>
-        <div onClick={() => toRef.current?.showPicker()}
-          style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '4px 9px', fontSize: 12, color: dateTo ? 'var(--ink)' : 'var(--ink-4)', minWidth: 90, cursor: 'pointer', userSelect: 'none' }}>
-          {dateTo ? isoToDmy(dateTo) : 'DD/MM/YYYY'}
-          <input ref={toRef} type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-            style={{ position: 'absolute', width: 0, height: 0, opacity: 0, border: 'none', padding: 0 }} />
-        </div>
-        <button onClick={() => { setDateFrom(''); setDateTo('') }}
-          style={{ marginLeft: 4, padding: '4px 11px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontSize: 12, color: 'var(--ink-3)' }}>
-          รีเซ็ต
+      {/* แถวบน: ยอดออเดอร์เดือนนี้ (ซ้าย) + วัน เดือน เวลา ตัวใหญ่ + ปุ่มเต็มจอ (ขวา) */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 28, flexWrap: 'wrap' }}>
+        <button onClick={() => setModal({ title: 'ออเดอร์ทั้งหมดของเดือนนี้', orders: [...monthOrders].reverse(), showPrint: true })}
+          style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: 'var(--shadow)', cursor: 'pointer' }}>
+          <span style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ออเดอร์ทั้งหมดของเดือนนี้</span>
+          <div style={{ width: 1, height: 18, background: 'var(--border)' }} />
+          <span style={{ fontSize: 24, fontWeight: 800, color: 'var(--blue)', lineHeight: 1 }}>{loading ? '—' : monthOrders.length.toLocaleString()}</span>
+          <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>รายการ</span>
         </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          {/* การ์ดนาฬิกา — โทนสว่างมินิมอล เข้าชุดกับกล่องยอดเดือนนี้ */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 14, padding: '12px 20px', minHeight: 62,
+            background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: 'var(--shadow)',
+          }}>
+            {clock && (
+              <>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(196,126,58,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <svg width="19" height="19" fill="none" stroke="var(--blue)" strokeWidth="1.6" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  </svg>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-3)' }}>
+                    {clock.toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                  </div>
+                  <div style={{ fontSize: 30, fontWeight: 800, color: 'var(--ink)', letterSpacing: '0px', lineHeight: 1.15, fontVariantNumeric: 'tabular-nums' }}>
+                    {clock.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+          {/* ปุ่มเต็มจอ (ไอคอนล้วน) */}
+          <button onClick={toggleFs} title={isFs ? 'ออกจากเต็มจอ' : 'ดูแบบเต็มจอ'}
+            style={{ width: 38, height: 38, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)', boxShadow: 'var(--shadow)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-2)', flexShrink: 0 }}>
+            {isFs ? (
+              <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25"/></svg>
+            ) : (
+              <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15"/></svg>
+            )}
+          </button>
+        </div>
       </div>
 
-      {/* Stat cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14, marginBottom: 28 }}>
+      {/* การ์ดหลัก 3 ใบ */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 32 }}>
         {STATS_META.map((s, i) => {
-          const trend = statTrends[i]
-          const trendLabel = statTrendLabels[i]
-          const isPositiveTrend = i === 0 ? (trend !== null && trend >= 0) : false
-          const isBadTrend = i === 3
-
           return (
             <button key={s.key}
-              onClick={() => setModal({ title: s.key === 'toship' ? 'รอจัดส่ง — ติ๊กเพื่อจัดส่ง' : s.label, orders: statOrders[i], showPrint: statPrint[i], showShipToggle: s.key === 'toship' })}
+              onClick={() => setModal({ title: s.key === 'toship' ? 'รอจัดส่ง — ติ๊กเพื่อจัดส่ง' : s.label, orders: statOrders[i], showPrint: true, showShipToggle: s.key === 'toship' })}
               style={{
                 background: isDark ? s.gradDark : s.gradLight,
                 border: `1px solid ${s.color}22`,
@@ -394,127 +382,26 @@ export default function DashboardPage() {
                 ;(e.currentTarget as HTMLElement).style.boxShadow = `0 2px 12px ${s.color}12`
               }}
             >
-              {/* Top row: icon + trend badge */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
+              {/* แถวบน: ไอคอน + ชื่อการ์ด */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
                 <div style={{
-                  width: 38, height: 38, borderRadius: 10,
+                  width: 36, height: 36, borderRadius: 10,
                   background: `${s.color}18`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: s.color,
+                  color: s.color, flexShrink: 0,
                 }}>
                   {s.icon}
                 </div>
-                {trend !== null && trendLabel && (
-                  <span style={{
-                    fontSize: 11, fontWeight: 600,
-                    color: i === 0
-                      ? (trend >= 0 ? '#16A34A' : '#DC2626')
-                      : (isBadTrend ? '#DC2626' : '#71717A'),
-                    background: i === 0
-                      ? (trend >= 0 ? 'rgba(22,163,74,0.1)' : 'rgba(220,38,38,0.1)')
-                      : (isBadTrend ? 'rgba(220,38,38,0.1)' : 'rgba(113,113,122,0.1)'),
-                    padding: '3px 8px', borderRadius: 20,
-                    whiteSpace: 'nowrap',
-                  }}>
-                    {i === 0
-                      ? `${trend >= 0 ? '+' : ''}${trend}% ${trend >= 0 ? '↑' : '↓'}`
-                      : `${trend}%`}
-                  </span>
-                )}
+                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-2)' }}>{s.label}</span>
               </div>
-              {/* Number */}
-              <div style={{ fontSize: 44, fontWeight: 800, color: s.color, letterSpacing: '-2px', lineHeight: 1 }}>
-                {loading ? '—' : statCounts[i]}
-              </div>
-              {/* Label */}
-              <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 8, fontWeight: 500 }}>{s.label}</div>
-              {trendLabel && trend !== null && (
-                <div style={{ fontSize: 10, color: 'var(--ink-4)', marginTop: 4 }}>{trendLabel}</div>
-              )}
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Dept section header */}
-      <div style={{ marginBottom: 14 }}>
-        <h2 style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>สถานะงานแผนก</h2>
-      </div>
-
-      {/* Department cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        {DEPTS.map(dept => {
-          const rows = filtered.filter(o => o.order_status === dept.status)
-          const active = statusFilters.length === 1 && statusFilters[0] === dept.status
-          return (
-            <div key={dept.label}
-              onClick={() => setStatusFilters(active ? [] : [dept.status])}
-              style={{
-              background: 'var(--surface)',
-              border: `1px solid ${active ? dept.color : dept.border}`,
-              borderRadius: 20,
-              boxShadow: active ? `0 6px 24px ${dept.color}28` : `0 4px 20px ${dept.color}0a, 0 1px 4px rgba(0,0,0,0.04)`,
-              overflow: 'hidden',
-              cursor: 'pointer',
-              transition: 'border-color 0.15s, box-shadow 0.15s',
-            }}>
-              {/* Card header */}
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '14px 20px',
-                background: dept.bg,
-                borderBottom: `1px solid ${dept.border}`,
-              }}>
-                <div style={{
-                  width: 32, height: 32, borderRadius: 9,
-                  background: `${dept.color}18`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: dept.color,
-                }}>
-                  {dept.icon}
-                </div>
-                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', flex: 1 }}>{dept.label}</span>
-                <span style={{
-                  fontSize: 12, fontWeight: 700,
-                  color: dept.color,
-                  background: `${dept.color}18`,
-                  borderRadius: 20, padding: '3px 10px',
-                  border: `1px solid ${dept.color}25`,
-                }}>
-                  {rows.length} งาน
+              {/* ตัวเลขใหญ่ */}
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <span style={{ fontSize: 46, fontWeight: 800, color: s.color, letterSpacing: '-2px', lineHeight: 1 }}>
+                  {loading ? '—' : statCounts[i]}
                 </span>
+                <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 500 }}>รายการ</span>
               </div>
-
-              {/* Card body */}
-              <div style={{ padding: '10px 20px 16px' }}>
-                {rows.length === 0 ? (
-                  <p style={{ fontSize: 13, color: 'var(--ink-4)', padding: '12px 0', textAlign: 'center' }}>ไม่มีงานในขณะนี้</p>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    {rows.slice(0, 5).map((o, idx) => {
-                      const days = daysRemaining(effectiveISODate(o) ?? '')
-                      return (
-                        <div key={o.id} style={{
-                          display: 'flex', alignItems: 'center', gap: 10,
-                          padding: '8px 0',
-                          borderBottom: idx < Math.min(rows.length, 5) - 1 ? '1px solid var(--border)' : 'none',
-                        }}>
-                          <span style={{ fontWeight: 600, color: 'var(--blue)', fontSize: 12, minWidth: 80 }}>{o.order_number}</span>
-                          <span style={{ color: 'var(--ink)', fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.customer_name}</span>
-                          <span style={{ fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0,
-                            color: days === null ? 'var(--ink-4)' : days < 0 ? 'var(--red)' : days <= 2 ? '#ff9f0a' : '#34c759' }}>
-                            {days === null ? 'รอกำหนด' : days < 0 ? `เกิน ${Math.abs(days)} วัน` : `${days} วัน`}
-                          </span>
-                        </div>
-                      )
-                    })}
-                    {rows.length > 5 && (
-                      <p style={{ fontSize: 11, color: 'var(--ink-4)', textAlign: 'right', paddingTop: 6 }}>+{rows.length - 5} รายการเพิ่มเติม</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
+            </button>
           )
         })}
       </div>
@@ -692,6 +579,89 @@ export default function DashboardPage() {
             </table>
           )}
         </div>
+      </div>
+
+      {/* Dept section header — ย้ายมาไว้ใต้รายการออเดอร์ */}
+      <div style={{ marginBottom: 14, marginTop: 36 }}>
+        <h2 style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>สถานะงานแผนก</h2>
+      </div>
+
+      {/* Department cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        {DEPTS.map(dept => {
+          const rows = all.filter(o => o.order_status === dept.status)
+          const active = statusFilters.length === 1 && statusFilters[0] === dept.status
+          return (
+            <div key={dept.label}
+              onClick={() => setStatusFilters(active ? [] : [dept.status])}
+              style={{
+              background: 'var(--surface)',
+              border: `1px solid ${active ? dept.color : dept.border}`,
+              borderRadius: 20,
+              boxShadow: active ? `0 6px 24px ${dept.color}28` : `0 4px 20px ${dept.color}0a, 0 1px 4px rgba(0,0,0,0.04)`,
+              overflow: 'hidden',
+              cursor: 'pointer',
+              transition: 'border-color 0.15s, box-shadow 0.15s',
+            }}>
+              {/* Card header */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '14px 20px',
+                background: dept.bg,
+                borderBottom: `1px solid ${dept.border}`,
+              }}>
+                <div style={{
+                  width: 32, height: 32, borderRadius: 9,
+                  background: `${dept.color}18`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: dept.color,
+                }}>
+                  {dept.icon}
+                </div>
+                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', flex: 1 }}>{dept.label}</span>
+                <span style={{
+                  fontSize: 12, fontWeight: 700,
+                  color: dept.color,
+                  background: `${dept.color}18`,
+                  borderRadius: 20, padding: '3px 10px',
+                  border: `1px solid ${dept.color}25`,
+                }}>
+                  {rows.length} งาน
+                </span>
+              </div>
+
+              {/* Card body */}
+              <div style={{ padding: '10px 20px 16px' }}>
+                {rows.length === 0 ? (
+                  <p style={{ fontSize: 13, color: 'var(--ink-4)', padding: '12px 0', textAlign: 'center' }}>ไม่มีงานในขณะนี้</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    {rows.slice(0, 5).map((o, idx) => {
+                      const days = daysRemaining(effectiveISODate(o) ?? '')
+                      return (
+                        <div key={o.id} style={{
+                          display: 'flex', alignItems: 'center', gap: 10,
+                          padding: '8px 0',
+                          borderBottom: idx < Math.min(rows.length, 5) - 1 ? '1px solid var(--border)' : 'none',
+                        }}>
+                          <span style={{ fontWeight: 600, color: 'var(--blue)', fontSize: 12, minWidth: 80 }}>{o.order_number}</span>
+                          <span style={{ color: 'var(--ink)', fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.customer_name}</span>
+                          <span style={{ fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0,
+                            color: days === null ? 'var(--ink-4)' : days < 0 ? 'var(--red)' : days <= 2 ? '#ff9f0a' : '#34c759' }}>
+                            {days === null ? 'รอกำหนด' : days < 0 ? `เกิน ${Math.abs(days)} วัน` : `${days} วัน`}
+                          </span>
+                        </div>
+                      )
+                    })}
+                    {rows.length > 5 && (
+                      <p style={{ fontSize: 11, color: 'var(--ink-4)', textAlign: 'right', paddingTop: 6 }}>+{rows.length - 5} รายการเพิ่มเติม</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })}
       </div>
 
       {/* Modal */}
