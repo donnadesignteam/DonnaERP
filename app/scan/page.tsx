@@ -71,6 +71,9 @@ function ScanContent() {
   const [uploading, setUploading] = useState<string | null>(null)
   const [uploadedCnt, setUploadedCnt] = useState<Record<string, number>>({})
   const [uploadErr, setUploadErr] = useState('')
+  const [preview, setPreview] = useState<{ file: File; tag: string; url: string; label: string } | null>(null) // เช็ครูปก่อนยืนยันอัพโหลด
+  const [photos, setPhotos] = useState<string[]>([])       // รูปที่อัพแล้วของออเดอร์ที่เพิ่งสแกน (ลบได้)
+  const [delBusy, setDelBusy] = useState<string | null>(null)
 
   // login form
   const [q, setQ] = useState('')
@@ -234,7 +237,7 @@ function ScanContent() {
 
   // ค้นออเดอร์: id ก่อน (แม่นสุด) → order_number แบบไม่สนตัวพิมพ์ → contains (เผื่อช่องว่าง/QR เก่า)
   async function findOrder(id: string, ord: string) {
-    const cols = 'id, order_number, customer_name, order_status, courier, shipments'
+    const cols = 'id, order_number, customer_name, order_status, courier, shipments, packing_photos'
     if (id) {
       const { data } = await supabase.from('order_entries').select(cols).eq('id', id).limit(1)
       if (data && data[0]) return data[0]
@@ -257,6 +260,23 @@ function ScanContent() {
     try { scannerRef.current?.resume() } catch {}
   }
 
+  // เลือกรูปแล้วยังไม่อัพ — เปิดหน้าเช็ครูปก่อน กดยืนยันค่อยอัพโหลดจริง
+  function pickPhoto(file: File, tag: string) {
+    const label = (UPLOAD_SLOTS[tech?.stageKey || ''] ?? []).find(s => s.tag === tag)?.label || 'รูปที่เลือก'
+    setPreview({ file, tag, url: URL.createObjectURL(file), label })
+  }
+  function cancelPreview() {
+    if (preview) URL.revokeObjectURL(preview.url)
+    setPreview(null)
+  }
+  async function confirmPreview() {
+    if (!preview) return
+    const p = preview
+    setPreview(null)
+    URL.revokeObjectURL(p.url)
+    await uploadPhoto(p.file, p.tag)
+  }
+
   // อัพโหลดรูปเข้า storage แล้ว append URL เข้า order_entries.packing_photos
   async function uploadPhoto(file: File, tag: string) {
     if (!order?.id) return
@@ -273,10 +293,30 @@ function ScanContent() {
         .update({ packing_photos: [...cur, pub.publicUrl], updated_at: new Date().toISOString() }).eq('id', order.id)
       if (err) throw err
       setUploadedCnt(c => ({ ...c, [tag]: (c[tag] || 0) + 1 }))
+      setPhotos(p => [...p, pub.publicUrl])
     } catch (e: any) {
       setUploadErr(e?.message || String(e))
     }
     setUploading(null)
+  }
+
+  // ลบรูปออกจากโฟลเดอร์ออเดอร์: ลบไฟล์ใน storage + เอา URL ออกจาก packing_photos
+  async function deletePhoto(url: string) {
+    if (!order?.id || !window.confirm('ลบรูปนี้ออกจากออเดอร์?')) return
+    setDelBusy(url); setUploadErr('')
+    try {
+      const path = decodeURIComponent((url.split('/packing-photos/')[1] || '').split('?')[0])
+      if (path) { try { await supabase.storage.from('packing-photos').remove([path]) } catch {} }
+      const { data: row } = await supabase.from('order_entries').select('packing_photos').eq('id', order.id).single()
+      const cur = Array.isArray(row?.packing_photos) ? row.packing_photos : []
+      const { error: err } = await supabase.from('order_entries')
+        .update({ packing_photos: cur.filter((u: string) => u !== url), updated_at: new Date().toISOString() }).eq('id', order.id)
+      if (err) throw err
+      setPhotos(p => p.filter(u => u !== url))
+    } catch (e: any) {
+      setUploadErr(e?.message || String(e))
+    }
+    setDelBusy(null)
   }
 
   // คืนค่า order ที่อัปเดตแล้วเมื่อสำเร็จ (แผนกจัดส่งแล้วใช้ต่อเป็นโหมดสแกนบาร์โค้ด) / null เมื่อไม่สำเร็จ
@@ -284,11 +324,12 @@ function ScanContent() {
     const stage = resolveStage(t.stageKey)
     if (!stage) { setPhase('error'); setMsg('ไม่พบแผนกของผู้ใช้ กรุณาตั้งค่าใหม่'); return null }
     if (!id && !ord) { setPhase('noorder'); setMsg(''); return null }
-    setUploadedCnt({}); setUploadErr('')
+    setUploadedCnt({}); setUploadErr(''); setPhotos([])
     setPhase('working')
     const o = await findOrder(id, ord)
     if (!o) { setOrder({ order_number: ord || `id:${id}` }); setPhase('noorder'); return null }
     setOrder(o)
+    setPhotos(Array.isArray(o.packing_photos) ? o.packing_photos : [])
 
     // ===== งานพิเศษ: แพ็คราง / จัดส่งแล้ว (ไม่ผ่านด่านกันข้ามขั้น) =====
     const special: SpecialKind | undefined = stage.special
@@ -413,9 +454,10 @@ function ScanContent() {
         <div style={card}>
           <Identity tech={tech} stageLabel={stage?.label} onLogout={logout} />
           <Result phase={phase} order={order} msg={msg} stage={stage} />
-          {canUpload && <PhotoUpload slots={slots} uploading={uploading} counts={uploadedCnt} err={uploadErr} onPick={uploadPhoto} />}
+          {canUpload && <PhotoUpload slots={slots} uploading={uploading} counts={uploadedCnt} err={uploadErr} onPick={pickPhoto} photos={photos} delBusy={delBusy} onDelete={deletePhoto} />}
           <a href="/scan" style={{ display: 'inline-block', marginTop: 18, color: stageColor, fontSize: 14, fontWeight: 600 }}>เปิดกล้องสแกนต่อ →</a>
         </div>
+        {preview && <PhotoPreview preview={preview} onCancel={cancelPreview} onConfirm={confirmPreview} />}
       </div>
     )
   }
@@ -506,7 +548,7 @@ function ScanContent() {
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(11,18,32,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, overflowY: 'auto' }}>
             <div style={{ ...card, maxWidth: 380 }}>
               <Result phase={phase} order={order} msg={msg} stage={stage} />
-              {canUpload && <PhotoUpload slots={slots} uploading={uploading} counts={uploadedCnt} err={uploadErr} onPick={uploadPhoto} />}
+              {canUpload && <PhotoUpload slots={slots} uploading={uploading} counts={uploadedCnt} err={uploadErr} onPick={pickPhoto} photos={photos} delBusy={delBusy} onDelete={deletePhoto} />}
               {slots.length > 0 && phase !== 'working' && (
                 <button onClick={resumeScan} disabled={uploading !== null}
                   style={{ width: '100%', marginTop: 16, padding: 13, borderRadius: 12, border: 'none', background: uploading ? '#c7c7c7' : '#2563eb', color: '#fff', fontSize: 15, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer' }}>
@@ -516,18 +558,48 @@ function ScanContent() {
             </div>
           </div>
         )}
+
+        {preview && <PhotoPreview preview={preview} onCancel={cancelPreview} onConfirm={confirmPreview} />}
       </div>
     </div>
   )
 }
 
-// ปุ่มถ่าย/เลือกรูปอัพโหลด — อัพซ้ำได้หลายรูปต่อช่อง
-function PhotoUpload({ slots, uploading, counts, err, onPick }: {
+// หน้าเช็ครูปก่อนยืนยันอัพโหลด — เต็มจอ กดยืนยันค่อยอัพจริง / ไม่ใช่รูปนี้กดเลือกใหม่
+function PhotoPreview({ preview, onCancel, onConfirm }: {
+  preview: { url: string; label: string }
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(11,18,32,0.96)', zIndex: 10000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div style={{ fontSize: 15, fontWeight: 800, color: '#7dd3fc', marginBottom: 4 }}>เช็ครูปก่อนอัพโหลด</div>
+      <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 12 }}>{preview.label} — รูปถูกต้องไหม?</div>
+      <img src={preview.url} alt="" style={{ maxWidth: '100%', maxHeight: '58dvh', borderRadius: 12, boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }} />
+      <div style={{ display: 'flex', gap: 10, marginTop: 18, width: '100%', maxWidth: 400 }}>
+        <button onClick={onCancel}
+          style={{ flex: 1, padding: 13, borderRadius: 12, border: '1px solid rgba(255,255,255,0.35)', background: 'transparent', color: '#cbd5e1', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+          ✕ เลือกใหม่
+        </button>
+        <button onClick={onConfirm}
+          style={{ flex: 2, padding: 13, borderRadius: 12, border: 'none', background: '#16a34a', color: '#fff', fontSize: 15, fontWeight: 800, cursor: 'pointer' }}>
+          ✓ ยืนยันอัพโหลด
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ปุ่มถ่าย/เลือกรูปอัพโหลด — อัพซ้ำได้หลายรูปต่อช่อง + รูปที่อัพแล้วของออเดอร์ (ลบได้)
+function PhotoUpload({ slots, uploading, counts, err, onPick, photos, delBusy, onDelete }: {
   slots: { tag: string; label: string }[]
   uploading: string | null
   counts: Record<string, number>
   err: string
   onPick: (file: File, tag: string) => void
+  photos: string[]
+  delBusy: string | null
+  onDelete: (url: string) => void
 }) {
   return (
     <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #eee', textAlign: 'left' }}>
@@ -549,7 +621,23 @@ function PhotoUpload({ slots, uploading, counts, err, onPick }: {
           )
         })}
       </div>
-      {err && <p style={{ color: '#dc2626', fontSize: 12, marginTop: 8 }}>อัพโหลดไม่สำเร็จ: {err}</p>}
+      {photos.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#475569', marginBottom: 6 }}>รูปในออเดอร์นี้ ({photos.length}) — กด ✕ เพื่อลบ</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+            {photos.map(u => (
+              <div key={u} style={{ position: 'relative' }}>
+                <img src={u} alt="" style={{ width: '100%', height: 90, objectFit: 'cover', borderRadius: 10, display: 'block', opacity: delBusy === u ? 0.4 : 1 }} />
+                <button onClick={() => onDelete(u)} disabled={delBusy !== null}
+                  style={{ position: 'absolute', top: 4, right: 4, width: 24, height: 24, borderRadius: '50%', border: 'none', background: 'rgba(220,38,38,0.92)', color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {delBusy === u ? '…' : '✕'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {err && <p style={{ color: '#dc2626', fontSize: 12, marginTop: 8 }}>ไม่สำเร็จ: {err}</p>}
     </div>
   )
 }
