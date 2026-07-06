@@ -45,6 +45,27 @@ function CustomerFolder() {
   const name = params.get('name') ?? ''
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
+  const [delPhoto, setDelPhoto] = useState<string | null>(null) // URL รูปแพ็คที่กำลังลบ
+
+  // ลบรูปแพ็คออกจากออเดอร์: ลบไฟล์ใน storage + เอา URL ออกจาก packing_photos
+  async function deletePackingPhoto(orderId: string, url: string) {
+    if (!window.confirm('ลบรูปนี้ออกจากออเดอร์?')) return
+    setDelPhoto(url)
+    try {
+      const path = decodeURIComponent((url.split('/packing-photos/')[1] || '').split('?')[0])
+      if (path) { try { await supabase.storage.from('packing-photos').remove([path]) } catch {} }
+      const { data: row } = await supabase.from('order_entries').select('packing_photos').eq('id', orderId).single()
+      const cur = Array.isArray(row?.packing_photos) ? row.packing_photos : []
+      const next = cur.filter((u: string) => u !== url)
+      const { error } = await supabase.from('order_entries')
+        .update({ packing_photos: next, updated_at: new Date().toISOString() }).eq('id', orderId)
+      if (error) throw error
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, packing_photos: (o.packing_photos || []).filter(u => u !== url) } : o))
+    } catch (e: any) {
+      alert(`ลบรูปไม่สำเร็จ: ${e?.message || e}`)
+    }
+    setDelPhoto(null)
+  }
 
   useEffect(() => {
     if (!name) {
@@ -180,10 +201,16 @@ function CustomerFolder() {
                 {o.packing_photos && o.packing_photos.length > 0 ? (
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {o.packing_photos.map((url, k) => (
-                      <a key={k} href={url} target="_blank" rel="noreferrer">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={url} alt="ภาพการแพ็ค" style={{ width: 84, height: 84, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)', display: 'block' }} />
-                      </a>
+                      <div key={k} style={{ position: 'relative' }}>
+                        <a href={url} target="_blank" rel="noreferrer">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={url} alt="ภาพการแพ็ค" style={{ width: 84, height: 84, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)', display: 'block', opacity: delPhoto === url ? 0.4 : 1 }} />
+                        </a>
+                        <button onClick={() => deletePackingPhoto(o.id, url)} disabled={delPhoto !== null} title="ลบรูปนี้"
+                          style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', border: 'none', background: 'rgba(220,38,38,0.92)', color: '#fff', fontSize: 11, fontWeight: 800, cursor: 'pointer', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }}>
+                          {delPhoto === url ? '…' : '✕'}
+                        </button>
+                      </div>
                     ))}
                   </div>
                 ) : (
