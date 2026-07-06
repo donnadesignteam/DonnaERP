@@ -77,6 +77,7 @@ type Entry = {
   rail_packed: boolean
   rail_packed_at: string | null
   done_at: string | null
+  printed_at: string | null
   status_history: StatusEvent[] | null
   shipments: Shipment[] | null
 }
@@ -164,7 +165,7 @@ const carrierTrackUrl = (sh: Shipment) =>
 const daysLabel = (d: number) => d < 0 ? `เกิน ${Math.abs(d)} วัน` : d === 0 ? 'ต้องจัดส่งวันนี้' : `${d} วัน`
 const daysColor = (d: number) => d <= 0 ? 'var(--red)' : d <= 10 ? '#eab308' : '#34c759'
 
-const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping_datetime' | 'shipped_at' | 'rail_packed' | 'rail_packed_at' | 'done_at' | 'status_history' | 'shipments'> => ({
+const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping_datetime' | 'shipped_at' | 'rail_packed' | 'rail_packed_at' | 'done_at' | 'printed_at' | 'status_history' | 'shipments'> => ({
   entry_date: new Date().toISOString().split('T')[0],
   deadline: '',
   status: 'อยู่ในกำหนด',
@@ -1487,6 +1488,14 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const win = window.open('', '_blank', 'width=1200,height=750')
     if (!win) { alert('เบราว์เซอร์บล็อก popup — โปรดอนุญาต popup เพื่อปริ้น'); return }
     win.document.write('<!DOCTYPE html><meta charset="UTF-8"><body style="font-family:sans-serif;padding:24px;color:#666">กำลังเตรียมเอกสาร…</body>')
+
+    // จำเวลาปริ้นล่าสุดต่อใบ → โชว์ข้างปุ่มปริ้นในเมนู ··· (ไม่แตะ updated_at เพราะไม่ใช่การแก้ข้อมูล)
+    const printedNow = new Date().toISOString()
+    const printedIds = toPrint.map(r => r.id)
+    supabase.from('order_entries').update({ printed_at: printedNow }).in('id', printedIds)
+      .then(({ error: err }) => {
+        if (!err) setRows(p => p.map(x => printedIds.includes(x.id) ? { ...x, printed_at: printedNow } : x))
+      })
 
     // ฟอร์ม → สร้าง QR ต่อออเดอร์ (ชี้ไปหน้า /scan บนโดเมนเดียวกับที่เปิดอยู่)
     let qrs: string[] = []
@@ -3002,6 +3011,12 @@ ${body}
               style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)' }}>
               <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z"/></svg>
               ปริ้น
+              {r.printed_at && (
+                <span style={{ marginLeft: 'auto', fontSize: 10, color: '#eab308', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                  {new Date(r.printed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
+                  {new Date(r.printed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
             </button>
             {hasRail(r) && (
               <button onClick={() => { setOpenAction(null); setActionRect(null); openRailCalc(r) }}
