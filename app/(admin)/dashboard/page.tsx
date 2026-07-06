@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
+import { effShipping } from '@/lib/shipping'
 
 type Order = {
   id: string
@@ -27,15 +28,6 @@ const OUTSIDE_PLATFORMS = [
   'เคลม:Shopee','เคลม:Lazada','เคลม:Tiktok','เคลม:Facebook','เคลม:LineOA','เคลม:หน้าร้าน',
   'เคลม:Lineส่วนตัวยุน','เคลม:Lineส่วนตัวเฟิร์น','เคลม:Lineส่วนตัวสู้',
 ]
-
-function shiftShippingDatetime(s: string, days: number): string {
-  if (!s || s === '-') return s
-  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4}),(.+)$/)
-  if (!m) return s
-  const d = new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]))
-  d.setDate(d.getDate() + days)
-  return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()},${m[4]}`
-}
 
 function daysRemaining(dateStr: string): number | null {
   if (!dateStr) return null
@@ -230,9 +222,7 @@ export default function DashboardPage() {
   function effectiveISODate(o: Order): string | null {
     const isOut = OUTSIDE_PLATFORMS.includes(o.platform ?? '') || o.is_installation
     if (isOut) return o.deadline ? o.deadline.split('T')[0] : null
-    const sd = (o.is_dropoff && o.shipping_datetime)
-      ? shiftShippingDatetime(o.shipping_datetime, 2)
-      : o.shipping_datetime
+    const sd = effShipping(o)
     if (!sd) return null
     const m = sd.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
     if (!m) return null
@@ -533,9 +523,7 @@ export default function DashboardPage() {
               <tbody>
                 {ordersList.map(o => {
                   const isOutside = OUTSIDE_PLATFORMS.includes(o.platform ?? '') || o.is_installation
-                  const effective = isOutside
-                    ? o.deadline
-                    : (o.is_dropoff && o.shipping_datetime) ? shiftShippingDatetime(o.shipping_datetime, 2) : o.shipping_datetime
+                  const effective = isOutside ? o.deadline : effShipping(o)
                   const days = effective ? daysRemaining(effective) : null
                   return (
                     <tr key={o.id} style={{ borderBottom: '1px solid var(--border)' }}>

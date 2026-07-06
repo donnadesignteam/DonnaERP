@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { itemBlockLines, heightText } from '@/lib/itemFormat'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
+import { effShipping } from '@/lib/shipping'
 import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
 
@@ -118,15 +119,6 @@ function calcShipping(deadline: string, courier: string): string {
   let time = '13:00:00'
   if (courier.includes('SPX Express') || courier === 'J&T Express' || courier === 'LEX TH') time = '15:00:00'
   return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()},${time}`
-}
-
-function shiftShippingDatetime(s: string, days: number): string {
-  if (!s || s === '-') return s
-  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4}),(.+)$/)
-  if (!m) return s
-  const d = new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]))
-  d.setDate(d.getDate() + days)
-  return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()},${m[4]}`
 }
 
 function daysRemaining(dateStr: string): number | null {
@@ -357,6 +349,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [extPrompt, setExtPrompt] = useState<{ id: string; parcels: { no: string; carrier: string; manual: boolean }[] } | null>(null)  // popup ชวนติดตั้ง extension (เก็บ payload ไว้ไปต่อ shipModal)
   const [printAsk, setPrintAsk] = useState<Entry[] | null>(null) // หลายรายการ → ถามก่อนว่าตาราง/ฟอร์ม
   const [editCell, setEditCell] = useState<{id: string; field: string; val: string} | null>(null)
+  const [shipDtEdit, setShipDtEdit] = useState<{ id: string; date: string; time: string } | null>(null) // จิ้มคอลัมน์ต้องส่งภายในเพื่อแก้วัน/เวลา
   const [printModal, setPrintModal] = useState(false)
   const [printMaxDays, setPrintMaxDays] = useState(3)
   const [quickFilter, setQuickFilter] = useState<'all' | 'platform' | 'outside' | 'install' | 'claim' | 'shipped' | 'cancelled'>('all')
@@ -413,8 +406,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       if (a.is_urgent && b.is_urgent) return 0
       if (a.is_urgent) return 1
       if (b.is_urgent) return -1
-      const aShipping = (a.is_dropoff && a.shipping_datetime) ? shiftShippingDatetime(a.shipping_datetime, 2) : a.shipping_datetime
-      const bShipping = (b.is_dropoff && b.shipping_datetime) ? shiftShippingDatetime(b.shipping_datetime, 2) : b.shipping_datetime
+      const aShipping = effShipping(a)
+      const bShipping = effShipping(b)
       const da = parseD(aShipping), db = parseD(bShipping)
       if (!da && !db) return 0
       if (!da) return 1
@@ -1330,7 +1323,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
         const getMs = (r: Entry) => {
           const isOut = OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation
           if (isOut) return r.deadline ? new Date(r.deadline).getTime() : null
-          const eff = (r.is_dropoff && r.shipping_datetime) ? shiftShippingDatetime(r.shipping_datetime, 2) : r.shipping_datetime
+          const eff = effShipping(r)
           if (!eff || eff === '-') return null
           const m = eff.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
           return m ? new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1])).getTime() : null
@@ -1421,6 +1414,52 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     }
   }
 
+  // บันทึกวัน/เวลาต้องส่งจากการจิ้มแก้ในคอลัมน์ — ค่าที่ผู้ใช้ตั้ง = วันส่งจริงที่โชว์
+  // dropoff โชว์ +2 วันจากค่าดิบ จึงแปลงกลับ -2 ก่อนเก็บ ให้โชว์ตรงกับที่ตั้งไว้
+  const saveShipDt = async (r: Entry, dateStr: string, timeStr: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return
+    const [y, mo, da] = dateStr.split('-').map(Number)
+    const d = new Date(y, mo - 1, da)
+    if (r.is_dropoff) d.setDate(d.getDate() - 2)
+    const [h, mi] = timeStr.split(':')
+    const raw = `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()},${h.padStart(2, '0')}:${mi}:00`
+    const now = new Date().toISOString()
+    const { error: err } = await supabase.from('order_entries').update({ shipping_datetime: raw, updated_at: now }).eq('id', r.id)
+    if (!err) setRows(prev => prev.map(x => x.id === r.id ? { ...x, shipping_datetime: raw, updated_at: now } : x))
+  }
+
+  // คอลัมน์ต้องส่งภายใน: จิ้มแล้วโผล่ [เลือกวัน][เลือกเวลา]✓ แบบเดียวกับนัดหมายในปฏิทินงานติดตั้ง บันทึกทันทีที่เลือก
+  const shipDtCell = (r: Entry, eff: string | null) => {
+    const editing = shipDtEdit?.id === r.id ? shipDtEdit : null
+    const m = (eff || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4}),(\d{1,2}):(\d{2})/)
+    if (editing) {
+      const timeOpts = TIMES.includes(editing.time) ? TIMES : [editing.time, ...TIMES]
+      return (
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <input type="date" autoFocus value={/^\d{4}-\d{2}-\d{2}$/.test(editing.date) ? editing.date : ''}
+            onChange={e => { if (e.target.value) { setShipDtEdit({ ...editing, date: e.target.value }); saveShipDt(r, e.target.value, editing.time) } }}
+            onMouseDown={e => { e.preventDefault(); try { (e.target as HTMLInputElement).showPicker() } catch {} }}
+            style={{ border: '1px solid var(--blue)', borderRadius: 6, padding: '4px 7px', fontSize: 11, outline: 'none' }} />
+          <select value={editing.time}
+            onChange={e => { setShipDtEdit({ ...editing, time: e.target.value }); saveShipDt(r, editing.date, e.target.value) }}
+            style={{ border: '1px solid var(--blue)', borderRadius: 6, padding: '4px 7px', fontSize: 11, outline: 'none' }}>
+            {timeOpts.map(t => <option key={t}>{t}</option>)}
+          </select>
+          <button onClick={() => setShipDtEdit(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 14 }}>✓</button>
+        </div>
+      )
+    }
+    const open = () => setShipDtEdit({
+      id: r.id,
+      date: m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : '',
+      time: m ? `${parseInt(m[4])}:${m[5]}` : '13:00',
+    })
+    if (!m) return (
+      <span onClick={open} title="จิ้มเพื่อตั้งวันส่ง" style={{ color: 'var(--ink-4)', fontWeight: 400, cursor: 'pointer' }}>รอกำหนด</span>
+    )
+    return <span onClick={open} title="จิ้มเพื่อแก้วันเวลาส่ง" style={{ cursor: 'pointer' }}>{eff}</span>
+  }
+
   const saveTextCell = async (id: string, field: string, val: string) => {
     const now = new Date().toISOString()
     const { error: err } = await supabase.from('order_entries').update({ [field]: val || null, updated_at: now }).eq('id', id)
@@ -1460,12 +1499,12 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   function getPrintRows(maxDays: number) {
     return scopedRows.filter(r => {
       if (r.is_urgent) return false
-      const es = (r.is_dropoff && r.shipping_datetime) ? shiftShippingDatetime(r.shipping_datetime, 2) : r.shipping_datetime
+      const es = effShipping(r)
       const d = es ? daysRemaining(es) : null
       return d !== null && d < maxDays
     }).sort((a, b) => {
       const parseD = (r: Entry) => {
-        const es = (r.is_dropoff && r.shipping_datetime) ? shiftShippingDatetime(r.shipping_datetime, 2) : r.shipping_datetime
+        const es = effShipping(r)
         if (!es || es === '-') return null
         const m = es.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
         return m ? new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1])) : null
@@ -1515,7 +1554,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
 </tr></thead>
 <tbody>
 ${toPrint.map((r, i) => {
-  const es = (r.is_dropoff && r.shipping_datetime) ? shiftShippingDatetime(r.shipping_datetime, 2) : r.shipping_datetime
+  const es = effShipping(r)
   const d = es ? daysRemaining(es) : null
   const cls = d !== null ? (d <= 0 ? 'dr' : d <= 10 ? 'do' : 'dg') : ''
   const dtext = d !== null ? daysLabel(d) : '-'
@@ -2421,9 +2460,7 @@ ${body}
             <tbody>
               {displayedAll.map(r => {
                 const isOutsideRow = OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation
-                const allEffective = isOutsideRow
-                  ? r.deadline
-                  : (r.is_dropoff && r.shipping_datetime) ? shiftShippingDatetime(r.shipping_datetime, 2) : r.shipping_datetime
+                const allEffective = isOutsideRow ? r.deadline : effShipping(r)
                 const allDays = allEffective ? daysRemaining(allEffective) : null
                 return (
                   <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : 'transparent' }}>
@@ -2448,7 +2485,7 @@ ${body}
                     <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', fontWeight: 500, color: '#bf5af2' }}>
                       {!isOutsideRow ? (
                         r.order_status === 'จัดส่งแล้ว' ? <span style={{ color: '#22c55e', fontWeight: 700 }}>จัดส่งแล้ว</span>
-                        : allEffective ? allEffective : <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>รอกำหนด</span>
+                        : shipDtCell(r, allEffective)
                       ) : (
                         r.order_status === 'จัดส่งแล้ว' ? <span style={{ color: '#22c55e', fontWeight: 700 }}>จัดส่งแล้ว</span>
                         : r.deadline ? new Date(r.deadline).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>รอกำหนด</span>
@@ -2797,7 +2834,7 @@ ${body}
             </thead>
             <tbody>
               {displayed.map(r => {
-                const effectiveShipping = (r.is_dropoff && r.shipping_datetime) ? shiftShippingDatetime(r.shipping_datetime, 2) : r.shipping_datetime
+                const effectiveShipping = effShipping(r)
                 const days = effectiveShipping ? daysRemaining(effectiveShipping) : null
                 return (
                   <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : 'transparent' }}>
@@ -2822,7 +2859,7 @@ ${body}
                     <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', fontWeight: 500, color: '#bf5af2' }}>
                       {r.order_status === 'จัดส่งแล้ว' ? (
                         <span style={{ color: '#22c55e', fontWeight: 700 }}>จัดส่งแล้ว</span>
-                      ) : effectiveShipping ? effectiveShipping : <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>รอกำหนด</span>}
+                      ) : shipDtCell(r, effectiveShipping)}
                     </td>
                     )}
                     {showCol('order_number') && (
