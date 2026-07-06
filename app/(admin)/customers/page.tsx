@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { itemBlockLines, type RawItem } from '@/lib/itemFormat'
+import { deletePackingFile } from '@/lib/packingPhotos'
 
 type Item = RawItem
 
@@ -47,13 +48,12 @@ function CustomerFolder() {
   const [loading, setLoading] = useState(true)
   const [delPhoto, setDelPhoto] = useState<string | null>(null) // URL รูปแพ็คที่กำลังลบ
 
-  // ลบรูปแพ็คออกจากออเดอร์: ลบไฟล์ใน storage + เอา URL ออกจาก packing_photos
+  // ลบรูปแพ็คออกจากออเดอร์: ลบไฟล์ (R2/Supabase ตามที่มา) + เอา URL ออกจาก packing_photos
   async function deletePackingPhoto(orderId: string, url: string) {
     if (!window.confirm('ลบรูปนี้ออกจากออเดอร์?')) return
     setDelPhoto(url)
     try {
-      const path = decodeURIComponent((url.split('/packing-photos/')[1] || '').split('?')[0])
-      if (path) { try { await supabase.storage.from('packing-photos').remove([path]) } catch {} }
+      await deletePackingFile(url)
       const { data: row } = await supabase.from('order_entries').select('packing_photos').eq('id', orderId).single()
       const cur = Array.isArray(row?.packing_photos) ? row.packing_photos : []
       const next = cur.filter((u: string) => u !== url)

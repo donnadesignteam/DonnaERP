@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { EMPLOYEES, STAGES, stageByKey, canAdvance } from '@/lib/staff'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
+import { uploadPackingFile, deletePackingFile, compressImage } from '@/lib/packingPhotos'
 
 const LS_KEY = 'donna-scan-tech'
 type Tech = { code: string; name: string; stageKey: string }
@@ -260,10 +261,11 @@ function ScanContent() {
     try { scannerRef.current?.resume() } catch {}
   }
 
-  // เลือกรูปแล้วยังไม่อัพ — เปิดหน้าเช็ครูปก่อน กดยืนยันค่อยอัพโหลดจริง
-  function pickPhoto(file: File, tag: string) {
+  // เลือกรูปแล้วยังไม่อัพ — ย่อรูปก่อน (ประหยัดพื้นที่ R2) แล้วเปิดหน้าเช็ครูป กดยืนยันค่อยอัพโหลดจริง
+  async function pickPhoto(file: File, tag: string) {
     const label = (UPLOAD_SLOTS[tech?.stageKey || ''] ?? []).find(s => s.tag === tag)?.label || 'รูปที่เลือก'
-    setPreview({ file, tag, url: URL.createObjectURL(file), label })
+    const small = await compressImage(file)
+    setPreview({ file: small, tag, url: URL.createObjectURL(small), label })
   }
   function cancelPreview() {
     if (preview) URL.revokeObjectURL(preview.url)
@@ -277,36 +279,33 @@ function ScanContent() {
     await uploadPhoto(p.file, p.tag)
   }
 
-  // อัพโหลดรูปเข้า storage แล้ว append URL เข้า order_entries.packing_photos
+  // อัพโหลดรูปเข้า Cloudflare R2 แล้ว append URL เข้า order_entries.packing_photos
   async function uploadPhoto(file: File, tag: string) {
     if (!order?.id) return
     setUploading(tag); setUploadErr('')
     try {
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
-      const path = `${order.id}/${tag}-${Date.now()}.${ext}`
-      const up = await supabase.storage.from('packing-photos').upload(path, file, { contentType: file.type || 'image/jpeg' })
-      if (up.error) throw up.error
-      const { data: pub } = supabase.storage.from('packing-photos').getPublicUrl(path)
+      const key = `${order.id}/${tag}-${Date.now()}.${ext}`
+      const publicUrl = await uploadPackingFile(file, key)
       const { data: row } = await supabase.from('order_entries').select('packing_photos').eq('id', order.id).single()
       const cur = Array.isArray(row?.packing_photos) ? row.packing_photos : []
       const { error: err } = await supabase.from('order_entries')
-        .update({ packing_photos: [...cur, pub.publicUrl], updated_at: new Date().toISOString() }).eq('id', order.id)
+        .update({ packing_photos: [...cur, publicUrl], updated_at: new Date().toISOString() }).eq('id', order.id)
       if (err) throw err
       setUploadedCnt(c => ({ ...c, [tag]: (c[tag] || 0) + 1 }))
-      setPhotos(p => [...p, pub.publicUrl])
+      setPhotos(p => [...p, publicUrl])
     } catch (e: any) {
       setUploadErr(e?.message || String(e))
     }
     setUploading(null)
   }
 
-  // ลบรูปออกจากโฟลเดอร์ออเดอร์: ลบไฟล์ใน storage + เอา URL ออกจาก packing_photos
+  // ลบรูปออกจากโฟลเดอร์ออเดอร์: ลบไฟล์ (R2/Supabase ตามที่มา) + เอา URL ออกจาก packing_photos
   async function deletePhoto(url: string) {
     if (!order?.id || !window.confirm('ลบรูปนี้ออกจากออเดอร์?')) return
     setDelBusy(url); setUploadErr('')
     try {
-      const path = decodeURIComponent((url.split('/packing-photos/')[1] || '').split('?')[0])
-      if (path) { try { await supabase.storage.from('packing-photos').remove([path]) } catch {} }
+      await deletePackingFile(url)
       const { data: row } = await supabase.from('order_entries').select('packing_photos').eq('id', order.id).single()
       const cur = Array.isArray(row?.packing_photos) ? row.packing_photos : []
       const { error: err } = await supabase.from('order_entries')
