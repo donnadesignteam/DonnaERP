@@ -2300,6 +2300,9 @@ ${body}
                   )}
                 </th>
                 )}
+                {quickFilter === 'shipped' && (
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>เลขออเดอร์</th>
+                )}
                 {showCol('customer') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ลูกค้า</th>
                 )}
@@ -2442,6 +2445,9 @@ ${body}
                         : r.deadline ? new Date(r.deadline).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>รอกำหนด</span>
                       )}
                     </td>
+                    )}
+                    {quickFilter === 'shipped' && (
+                    <td style={{ padding: '12px 14px', color: 'var(--ink)', fontWeight: 600, whiteSpace: 'nowrap' }}>{r.order_number || '-'}</td>
                     )}
                     {showCol('customer') && (
                     <td style={{ padding: '12px 14px' }}>

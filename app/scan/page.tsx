@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { EMPLOYEES, STAGES, stageByKey, canAdvance } from '@/lib/staff'
-import { detectCarrier } from '@/lib/carriers'
+import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 
 const LS_KEY = 'donna-scan-tech'
 type Tech = { code: string; name: string; stageKey: string }
@@ -84,8 +84,8 @@ function ScanContent() {
   // โหมดสแกนบาร์โค้ดเลขพัสดุ (ต่อจากสแกนจัดส่งแล้ว) — ใช้ ref คู่ state เพราะ callback ของกล้องเป็น closure เก่า
   const modeRef = useRef<'order' | 'barcode'>('order')
   const shipRef = useRef<{ id: string; orderNumber: string; courier: string; existing: any[] } | null>(null)
-  const shipNosRef = useRef<string[]>([])
-  const [shipNos, setShipNos] = useState<string[]>([])
+  const shipNosRef = useRef<{ no: string; carrier: string }[]>([])
+  const [shipNos, setShipNos] = useState<{ no: string; carrier: string }[]>([])
   const [shipMsg, setShipMsg] = useState('')
   const [shipSaving, setShipSaving] = useState(false)
   const [shipToast, setShipToast] = useState('')
@@ -124,9 +124,9 @@ function ScanContent() {
     // ---- โหมดบาร์โค้ดเลขพัสดุ ----
     if (modeRef.current === 'barcode') {
       const text = decoded.trim().toUpperCase()
-      const known = [...shipNosRef.current, ...(shipRef.current?.existing || []).map((s: any) => s.no)]
+      const known = [...shipNosRef.current.map(x => x.no), ...(shipRef.current?.existing || []).map((s: any) => s.no)]
       if (isTrackingNo(text) && !known.includes(text)) {
-        shipNosRef.current = [...shipNosRef.current, text]
+        shipNosRef.current = [...shipNosRef.current, { no: text, carrier: detectCarrier(text, shipRef.current?.courier) || 'อื่นๆ' }]
         setShipNos(shipNosRef.current)
         setShipMsg('')
         try { navigator.vibrate?.(120) } catch {}
@@ -191,6 +191,12 @@ function ScanContent() {
     }
   }
 
+  // เปลี่ยนเจ้าขนส่งของเลขที่สแกนแล้ว (บางออเดอร์ส่งคนละเจ้า ระบบเดาให้ก่อน แก้ได้ต่อเลข)
+  function setShipCarrier(no: string, carrier: string) {
+    shipNosRef.current = shipNosRef.current.map(x => x.no === no ? { ...x, carrier } : x)
+    setShipNos(shipNosRef.current)
+  }
+
   // จบโหมดบาร์โค้ด: บันทึกเลขที่สแกนได้ (ถ้ามี) แล้วกลับไปสแกน QR ออเดอร์ถัดไป
   async function finishBarcode(save: boolean) {
     const info = shipRef.current
@@ -200,7 +206,7 @@ function ScanContent() {
       const now = new Date().toISOString()
       const list = [
         ...info.existing,
-        ...shipNosRef.current.map(no => ({ no, carrier: detectCarrier(no, info.courier) || 'อื่นๆ', status: '', events: null, checked_at: null })),
+        ...shipNosRef.current.map(x => ({ no: x.no, carrier: x.carrier, status: '', events: null, checked_at: null })),
       ]
       const { error } = await supabase.from('order_entries').update({ shipments: list, updated_at: now }).eq('id', info.id)
       setShipSaving(false)
@@ -471,9 +477,13 @@ function ScanContent() {
             </div>
             {shipNos.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-                {shipNos.map(no => (
-                  <span key={no} style={{ background: '#16a34a', color: '#fff', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700 }}>
-                    ✓ {no} <span style={{ fontWeight: 400, opacity: 0.85 }}>· {detectCarrier(no, shipRef.current?.courier) || 'อื่นๆ'}</span>
+                {shipNos.map(x => (
+                  <span key={x.no} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#16a34a', color: '#fff', borderRadius: 8, padding: '4px 6px 4px 10px', fontSize: 12, fontWeight: 700 }}>
+                    ✓ {x.no}
+                    <select value={x.carrier} onChange={e => setShipCarrier(x.no, e.target.value)}
+                      style={{ border: 'none', borderRadius: 6, background: 'rgba(255,255,255,0.25)', color: '#fff', fontSize: 11, fontWeight: 600, padding: '2px 4px', outline: 'none', cursor: 'pointer' }}>
+                      {CARRIER_OPTIONS.map(c => <option key={c} value={c} style={{ color: '#111' }}>{c}</option>)}
+                    </select>
                   </span>
                 ))}
               </div>
