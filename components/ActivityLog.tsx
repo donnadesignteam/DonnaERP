@@ -49,7 +49,8 @@ const FIELD_TH: Record<string, string> = {
   in_use_rolls: 'ม้วนที่ใช้', remaining_meters: 'เมตรคงเหลือ', stock_count: 'จำนวนสต็อก',
   color_name: 'ลาย/สี', fabric_code: 'รหัสผ้า', fabric_type: 'ชนิดผ้า',
   supplier: 'ผู้จัดจำหน่าย', leave_date: 'วันลา', leave_end_date: 'วันสิ้นสุดลา',
-  leave_type: 'ประเภทลา', order_assigned: 'ผู้รับผิดชอบ',
+  leave_type: 'ประเภทลา', order_assigned: 'ผู้รับผิดชอบ', outsource: 'สั่งนอก',
+  address: 'ที่อยู่', install_status: 'สถานะติดตั้ง',
 }
 
 function fmtVal(v: unknown): string {

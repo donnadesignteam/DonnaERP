@@ -67,6 +67,10 @@ type Entry = {
   province: string
   phone: string
   location_link: string
+  outsource: string
+  outsource_at: string | null
+  address: string
+  install_status: string
   notes: string
   price: number | null
   payment_status: string
@@ -86,11 +90,14 @@ type Entry = {
 const emptyItem = (): Item => ({ type: '', floors: null, rail_head: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', orientation: '', note: '' })
 
 // ความกว้างอาจเป็น "1.69+0.49" (รางต่อโค้ง) ต้องเก็บทั้งสองค่าไว้ให้ช่างเห็น
+// ทศนิยม: ปกติ 2 ตำแหน่ง ถ้าลงมา 3 ตำแหน่งเก็บ 3 ตำแหน่งตามต้นฉบับ
 const widthText = (w: number | string): string => {
   const raw = typeof w === 'string' ? w.trim() : ''
   if (raw.includes('+')) return raw
   const n = Number(w)
-  return n > 0 ? n.toFixed(2) : ''
+  if (!(n > 0)) return ''
+  const dec = (String(w ?? '').trim().split('.')[1] || '').length
+  return n.toFixed(dec >= 3 ? 3 : 2)
 }
 
 const PLATFORMS = ['Tiktok','Tiktok-Chat','Shopee','Shopee-Chat','Lazada','Facebook','LineOA',
@@ -157,7 +164,7 @@ const carrierTrackUrl = (sh: Shipment) =>
 const daysLabel = (d: number) => d < 0 ? `เกิน ${Math.abs(d)} วัน` : d === 0 ? 'ต้องจัดส่งวันนี้' : `${d} วัน`
 const daysColor = (d: number) => d <= 0 ? 'var(--red)' : d <= 10 ? '#eab308' : '#34c759'
 
-const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping_datetime' | 'shipped_at' | 'rail_packed' | 'rail_packed_at' | 'done_at' | 'printed_at' | 'status_history' | 'shipments'> => ({
+const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping_datetime' | 'shipped_at' | 'rail_packed' | 'rail_packed_at' | 'done_at' | 'printed_at' | 'status_history' | 'shipments' | 'outsource_at' | 'address' | 'install_status'> => ({
   entry_date: new Date().toISOString().split('T')[0],
   deadline: '',
   status: 'อยู่ในกำหนด',
@@ -178,6 +185,7 @@ const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping
   province: '',
   phone: '',
   location_link: '',
+  outsource: '',
   notes: '',
   price: null,
   payment_status: 'ยังไม่ชำระ',
@@ -250,7 +258,8 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
     { id: 'admin', label: 'แอดมิน' }, { id: 'tech', label: 'ช่าง' },
     { id: 'status', label: 'สถานะงาน' }, { id: 'dropoff', label: 'Drop-off' },
     { id: 'done', label: 'งานเสร็จ' }, { id: 'shipped', label: 'จัดส่งแล้ว' },
-    { id: 'rail', label: 'สถานะราง' },
+    { id: 'rail', label: 'สถานะราง' }, { id: 'outsource', label: 'สั่งนอก' },
+    { id: 'ship_address', label: 'ที่อยู่จัดส่งแยก' },
     { id: 'notes', label: 'หมายเหตุ' }, { id: 'updated', label: 'เวลาที่แก้ไข' },
   ],
   outside: [
@@ -260,8 +269,10 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
     { id: 'payment', label: 'ชำระ' }, { id: 'paybefore', label: 'ยอดชำระก่อนจัดส่ง' },
     { id: 'assigned', label: 'ลงออเดอร์' }, { id: 'status', label: 'สถานะงาน' },
     { id: 'done', label: 'งานเสร็จ' }, { id: 'shipped', label: 'จัดส่งแล้ว' },
-    { id: 'rail', label: 'สถานะราง' },
-    { id: 'created', label: 'วันที่สร้าง' }, { id: 'notes', label: 'หมายเหตุ' },
+    { id: 'rail', label: 'สถานะราง' }, { id: 'outsource', label: 'สั่งนอก' },
+    { id: 'created', label: 'วันที่สร้าง' },
+    { id: 'address', label: 'ที่อยู่' }, { id: 'phone', label: 'เบอร์โทร' }, { id: 'maps', label: 'Maps' },
+    { id: 'notes', label: 'หมายเหตุ' },
     { id: 'updated', label: 'แก้ไขล่าสุด' },
   ],
   install: [
@@ -271,13 +282,20 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
     { id: 'payment', label: 'ชำระ' }, { id: 'paybefore', label: 'ยอดชำระหลังติดตั้ง' },
     { id: 'assigned', label: 'ลงออเดอร์' }, { id: 'status', label: 'สถานะงาน' },
     { id: 'done', label: 'งานเสร็จ' }, { id: 'installed', label: 'ติดตั้ง' },
-    { id: 'rail', label: 'สถานะราง' },
-    { id: 'created', label: 'วันที่สร้าง' }, { id: 'notes', label: 'หมายเหตุ' },
+    { id: 'rail', label: 'สถานะราง' }, { id: 'outsource', label: 'สั่งนอก' },
+    { id: 'created', label: 'วันที่สร้าง' },
+    { id: 'address', label: 'ที่อยู่' }, { id: 'phone', label: 'เบอร์โทร' }, { id: 'maps', label: 'Maps' },
+    { id: 'notes', label: 'หมายเหตุ' },
     { id: 'updated', label: 'แก้ไขล่าสุด' },
   ],
 }
 
 const isClaimRow = (platform: string | null | undefined) => (platform ?? '').startsWith('เคลม:')
+
+// สถานะติดตั้ง: แถวเก่าที่ติ๊ก checkbox ไว้ (is_dropoff) ให้ถือเป็น "ติดตั้งแล้ว"
+const installStatusOf = (r: Entry) => r.install_status || (r.is_dropoff ? 'ติดตั้งแล้ว' : '')
+const INSTALL_STATUS_OPTIONS = ['ติดตั้งแล้ว', 'ติดตั้ง50%']
+const linkHref = (l: string) => /^https?:\/\//i.test(l) ? l : `https://${l}`
 
 export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' | 'claims' }) {
   const selectAllRef = useRef<HTMLInputElement>(null)
@@ -350,6 +368,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [printAsk, setPrintAsk] = useState<Entry[] | null>(null) // หลายรายการ → ถามก่อนว่าตาราง/ฟอร์ม
   const [editCell, setEditCell] = useState<{id: string; field: string; val: string} | null>(null)
   const [shipDtEdit, setShipDtEdit] = useState<{ id: string; date: string; time: string } | null>(null) // จิ้มคอลัมน์ต้องส่งภายในเพื่อแก้วัน/เวลา
+  const [installDtEdit, setInstallDtEdit] = useState<{ id: string; date: string; time: string } | null>(null) // จิ้มคอลัมน์วันที่ติดตั้งเพื่อแก้วัน/เวลานัด
   const [printModal, setPrintModal] = useState(false)
   const [printMaxDays, setPrintMaxDays] = useState(3)
   const [quickFilter, setQuickFilter] = useState<'all' | 'platform' | 'outside' | 'install' | 'claim' | 'shipped' | 'cancelled'>('all')
@@ -541,6 +560,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       province: d.is_installation ? (d.province || null) : null,
       phone: d.is_installation ? (d.phone || null) : null,
       location_link: d.is_installation ? (d.location_link || null) : null,
+      outsource: d.outsource || null,
       notes: d.notes || null,
       price: d.price ? Number(d.price) : null,
       payment_status: d.payment_status || 'ยังไม่ชำระ',
@@ -1471,6 +1491,42 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     setEditCell(null)
   }
 
+  // สั่งนอก: เก็บข้อความ + จำวันเวลาที่พิมพ์ (outsource_at) ไว้โชว์ใต้ข้อความ
+  const saveOutsourceCell = async (id: string, val: string) => {
+    const now = new Date().toISOString()
+    const updates = { outsource: val || null, outsource_at: val ? now : null, updated_at: now }
+    const { error: err } = await supabase.from('order_entries').update(updates).eq('id', id)
+    if (!err) {
+      const sy = window.scrollY
+      flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, ...updates } as Entry : r)))
+      window.scrollTo(window.scrollX, sy)
+    }
+    setEditCell(null)
+  }
+
+  // คอลัมน์วันที่ติดตั้ง: บันทึกวันนัด (deadline) + เวลานัด (install_time) จากการจิ้มแก้ในตาราง
+  const saveInstallDt = async (id: string, dateStr: string, timeStr: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return
+    const now = new Date().toISOString()
+    const updates = { deadline: dateStr, install_time: timeStr, updated_at: now }
+    const { error: err } = await supabase.from('order_entries').update(updates).eq('id', id)
+    if (!err) setRows(prev => prev.map(r => r.id === id ? { ...r, ...updates } as Entry : r))
+  }
+
+  // dropdown ติดตั้ง: ติดตั้งแล้ว / ติดตั้ง50% — เลือก 50% จะล้างวันนัดเดิมให้ขึ้น "รอนัดหมาย" รอนัดใหม่
+  // is_dropoff คงไว้เป็นธง "ติดตั้งแล้ว" เพื่อให้ filter/จอเดิมทำงานเหมือนเดิม
+  const handleInstallStatus = async (r: Entry, val: string) => {
+    const now = new Date().toISOString()
+    const updates: Record<string, unknown> = { install_status: val || null, is_dropoff: val === 'ติดตั้งแล้ว', updated_at: now }
+    if (val === 'ติดตั้ง50%') updates.deadline = null
+    const { error: err } = await supabase.from('order_entries').update(updates).eq('id', r.id)
+    if (!err) {
+      const sy = window.scrollY
+      flushSync(() => setRows(prev => prev.map(row => row.id === r.id ? { ...row, ...updates } as Entry : row)))
+      window.scrollTo(window.scrollX, sy)
+    }
+  }
+
   const handlePaymentStatus = async (r: Entry, val: string) => {
     const now = new Date().toISOString()
     const updates: Record<string, unknown> = { payment_status: val, updated_at: now }
@@ -1580,9 +1636,11 @@ ${toPrint.map((r, i) => {
   .dg { color: #006000; font-weight: 700; }
   pre.copy { font-family: 'Sarabun', 'Noto Sans Thai', sans-serif; font-size: 16px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; margin: 0; }
   pre.copy .rail { color: #c00; }
-  .order { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; page-break-inside: avoid; padding-bottom: 28px; margin-bottom: 28px; border-bottom: 1px dashed #b0b0b0; }
+  /* ต้องเป็น block — break-inside: avoid ไม่ทำงานบน flex container (Chromium) ทำให้ออเดอร์โดนตัดข้ามหน้า
+     avoid = ออเดอร์ไหนไม่พอที่ท้ายหน้า ยกไปขึ้นหน้าใหม่ทั้งใบ */
+  .order { display: block; break-inside: avoid; page-break-inside: avoid; padding-bottom: 28px; margin-bottom: 28px; border-bottom: 1px dashed #b0b0b0; }
   .order:last-child { padding-bottom: 0; margin-bottom: 0; border-bottom: none; }
-  .qr-box { flex-shrink: 0; text-align: center; }
+  .qr-box { display: inline-block; text-align: center; margin-top: 14px; }
   .qr { width: 120px; height: 120px; display: block; }
   .qr-cap { font-size: 11px; color: #555; margin-top: 4px; }
   /* margin:0 กันเบราว์เซอร์พิมพ์หัว/ท้ายกระดาษ — ไม่ fix ขนาด ใช้กระดาษที่เลือกใน dialog */
@@ -2041,8 +2099,20 @@ ${body}
                 {showCol('rail') && (
                 <th style={{ textAlign: 'center', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>สถานะราง</th>
                 )}
+                {showCol('outsource') && (
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>สั่งนอก</th>
+                )}
                 {showCol('created') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>วันที่สร้าง</th>
+                )}
+                {showCol('address') && (
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ที่อยู่</th>
+                )}
+                {showCol('phone') && (
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>เบอร์โทร</th>
+                )}
+                {showCol('maps') && (
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>Maps</th>
                 )}
                 {showCol('notes') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>หมายเหตุ</th>
@@ -2076,7 +2146,7 @@ ${body}
                     </div>
                   )
                 }
-                const textCell = (field: 'customer_name' | 'notes', placeholder = '—') => {
+                const textCell = (field: 'customer_name' | 'notes' | 'address' | 'phone', placeholder = '—') => {
                   const val = r[field] ?? ''
                   return isEditing(field) ? (
                     <input type="text" autoFocus value={editCell!.val}
@@ -2106,6 +2176,79 @@ ${body}
                     </div>
                   )
                 }
+                // maps: มีลิงก์ → จิ้มเปิดลิงก์เลย มีปุ่ม ✎ ไว้แก้ / ยังว่าง → จิ้มเพื่อกรอกเหมือนหมายเหตุ
+                const mapsCell = () => {
+                  const val = r.location_link ?? ''
+                  return isEditing('location_link') ? (
+                    <input type="text" autoFocus value={editCell!.val}
+                      onChange={e => setEditCell(ec => ec ? { ...ec, val: e.target.value } : null)}
+                      onBlur={() => saveTextCell(r.id, 'location_link', editCell!.val)}
+                      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                      style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: '100%', minWidth: 120, outline: 'none', padding: '2px 0' }} />
+                  ) : val ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                      <a href={linkHref(val)} target="_blank" rel="noreferrer" title={val}
+                        style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>📍 เปิด Maps</a>
+                      <button onClick={() => setEditCell({ id: r.id, field: 'location_link', val })} title="แก้ลิงก์"
+                        style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink-4)', fontSize: 11, padding: 0 }}>✎</button>
+                    </div>
+                  ) : (
+                    <div onClick={() => setEditCell({ id: r.id, field: 'location_link', val: '' })}
+                      style={{ cursor: 'text', color: 'var(--ink-4)', minWidth: 60 }}>—</div>
+                  )
+                }
+                // สั่งนอก: แก้เหมือนหมายเหตุ + โชว์วันเวลาที่พิมพ์ใต้ข้อความ
+                const outsourceCell = () => {
+                  const val = r.outsource ?? ''
+                  return isEditing('outsource') ? (
+                    <input type="text" autoFocus value={editCell!.val}
+                      onChange={e => setEditCell(ec => ec ? { ...ec, val: e.target.value } : null)}
+                      onBlur={() => saveOutsourceCell(r.id, editCell!.val)}
+                      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                      style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: '100%', minWidth: 100, outline: 'none', padding: '2px 0' }} />
+                  ) : (
+                    <div onClick={() => setEditCell({ id: r.id, field: 'outsource', val })} style={{ cursor: 'text', minWidth: 60 }}>
+                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160, color: val ? 'var(--ink)' : 'var(--ink-4)' }}>{val || '—'}</div>
+                      {val && r.outsource_at && (
+                        <div style={{ color: 'var(--ink-4)', fontSize: 10, lineHeight: 1.3 }}>
+                          {new Date(r.outsource_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
+                          {new Date(r.outsource_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      )}
+                    </div>
+                  )
+                }
+                // วันที่ติดตั้ง: โชว์วัน+เวลานัด จิ้มแล้วเลือกวันและเวลาได้ / ยังไม่มีนัด (เช่น ติดตั้ง50%) → "รอนัดหมาย"
+                const installDtCell = () => {
+                  const editing = installDtEdit?.id === r.id ? installDtEdit : null
+                  if (editing) {
+                    const timeOpts = TIMES.includes(editing.time) ? TIMES : [editing.time, ...TIMES]
+                    return (
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <input type="date" autoFocus value={/^\d{4}-\d{2}-\d{2}$/.test(editing.date) ? editing.date : ''}
+                          onChange={e => { if (e.target.value) { setInstallDtEdit({ ...editing, date: e.target.value }); saveInstallDt(r.id, e.target.value, editing.time) } }}
+                          onMouseDown={e => { e.preventDefault(); try { (e.target as HTMLInputElement).showPicker() } catch {} }}
+                          style={{ border: '1px solid var(--blue)', borderRadius: 6, padding: '4px 7px', fontSize: 11, outline: 'none' }} />
+                        <select value={editing.time}
+                          onChange={e => { setInstallDtEdit({ ...editing, time: e.target.value }); saveInstallDt(r.id, editing.date, e.target.value) }}
+                          style={{ border: '1px solid var(--blue)', borderRadius: 6, padding: '4px 7px', fontSize: 11, outline: 'none' }}>
+                          {timeOpts.map(t => <option key={t}>{t}</option>)}
+                        </select>
+                        <button onClick={() => setInstallDtEdit(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 14 }}>✓</button>
+                      </div>
+                    )
+                  }
+                  const open = () => setInstallDtEdit({ id: r.id, date: (r.deadline || '').slice(0, 10), time: r.install_time || '9:00' })
+                  if (!r.deadline) return (
+                    <span onClick={open} title="จิ้มเพื่อนัดวันติดตั้ง" style={{ color: '#f59e0b', fontWeight: 600, cursor: 'pointer' }}>รอนัดหมาย</span>
+                  )
+                  return (
+                    <span onClick={open} title="จิ้มเพื่อแก้วันเวลานัด" style={{ cursor: 'pointer', whiteSpace: 'nowrap', color: '#bf5af2' }}>
+                      {new Date(r.deadline).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' })}{r.install_time ? ` ${r.install_time}` : ''}
+                    </span>
+                  )
+                }
+                const instStatus = installStatusOf(r)
                 const autoDeposit = r.payment_status === 'มัดจำ50%' && r.price ? r.price / 2 : null
                 const outDays = r.deadline ? daysRemaining(r.deadline) : null
                 const isDone = r.order_status === 'เสร็จสิ้น'
@@ -2135,7 +2278,8 @@ ${body}
                     <td style={{ padding: '8px 14px' }}>
                       {isCancelled ? <span style={{ color: 'var(--ink-4)' }}>-</span>
                         : r.order_status === 'จัดส่งแล้ว' ? <span style={{ fontWeight: 700, color: '#22c55e' }}>จัดส่งแล้ว</span>
-                        : (quickFilter === 'install' && r.is_dropoff) ? <span style={{ fontWeight: 700, color: '#22c55e' }}>ติดตั้งแล้ว</span>
+                        : (quickFilter === 'install' && instStatus === 'ติดตั้งแล้ว') ? <span style={{ fontWeight: 700, color: '#22c55e' }}>ติดตั้งแล้ว</span>
+                        : quickFilter === 'install' ? installDtCell()
                         : dateCell('deadline')}
                     </td>
                     )}
@@ -2245,8 +2389,11 @@ ${body}
                     )}
                     {quickFilter === 'install' && showCol('installed') && (
                       <td style={{ padding: '12px 14px', textAlign: 'center' }}>
-                        <input type="checkbox" checked={!!r.is_dropoff} onChange={e => updateField(r.id, 'is_dropoff', e.target.checked)}
-                          style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                        <select value={instStatus} onChange={e => handleInstallStatus(r, e.target.value)}
+                          style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: instStatus === 'ติดตั้งแล้ว' ? '#22c55e' : instStatus === 'ติดตั้ง50%' ? '#f59e0b' : 'var(--ink-4)', padding: 0 }}>
+                          <option value="">—</option>
+                          {INSTALL_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
                       </td>
                     )}
                     {showCol('rail') && (
@@ -2265,8 +2412,20 @@ ${body}
                       ) : <span style={{ color: 'var(--ink-4)' }}>–</span>}
                     </td>
                     )}
+                    {showCol('outsource') && (
+                    <td style={{ padding: '8px 14px', minWidth: 100 }}>{outsourceCell()}</td>
+                    )}
                     {showCol('created') && (
                     <td style={{ padding: '8px 14px' }}>{dateCell('entry_date')}</td>
+                    )}
+                    {showCol('address') && (
+                    <td style={{ padding: '8px 14px', minWidth: 120 }}>{textCell('address', '—')}</td>
+                    )}
+                    {showCol('phone') && (
+                    <td style={{ padding: '8px 14px', minWidth: 90 }}>{textCell('phone', '—')}</td>
+                    )}
+                    {showCol('maps') && (
+                    <td style={{ padding: '8px 14px' }}>{mapsCell()}</td>
                     )}
                     {showCol('notes') && (
                     <td style={{ padding: '8px 14px', minWidth: 120 }}>{textCell('notes', '—')}</td>
@@ -2808,6 +2967,12 @@ ${body}
                 {showCol('rail') && (
                 <th style={{ textAlign: 'center', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>สถานะราง</th>
                 )}
+                {showCol('outsource') && (
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>สั่งนอก</th>
+                )}
+                {showCol('ship_address') && (
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ที่อยู่จัดส่งแยก</th>
+                )}
                 {showCol('notes') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>หมายเหตุ</th>
                 )}
@@ -2990,6 +3155,43 @@ ${body}
                           )}
                         </div>
                       ) : <span style={{ color: 'var(--ink-4)' }}>–</span>}
+                    </td>
+                    )}
+                    {showCol('outsource') && (
+                    <td style={{ padding: '8px 14px', maxWidth: 160 }}>
+                      {editCell?.id === r.id && editCell.field === 'outsource' ? (
+                        <input type="text" autoFocus value={editCell.val}
+                          onChange={e => setEditCell(ec => ec ? { ...ec, val: e.target.value } : null)}
+                          onBlur={() => saveOutsourceCell(r.id, editCell.val)}
+                          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                          style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: '100%', outline: 'none', padding: '2px 0' }} />
+                      ) : (
+                        <div onClick={() => setEditCell({ id: r.id, field: 'outsource', val: r.outsource ?? '' })} style={{ cursor: 'text', minWidth: 60 }}>
+                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: r.outsource ? 'var(--ink)' : 'var(--ink-4)' }}>{r.outsource || '—'}</div>
+                          {r.outsource && r.outsource_at && (
+                            <div style={{ color: 'var(--ink-4)', fontSize: 10, lineHeight: 1.3 }}>
+                              {new Date(r.outsource_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
+                              {new Date(r.outsource_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    )}
+                    {showCol('ship_address') && (
+                    <td style={{ padding: '8px 14px', maxWidth: 180 }}>
+                      {editCell?.id === r.id && editCell.field === 'address' ? (
+                        <input type="text" autoFocus value={editCell.val}
+                          onChange={e => setEditCell(ec => ec ? { ...ec, val: e.target.value } : null)}
+                          onBlur={() => saveTextCell(r.id, 'address', editCell.val)}
+                          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                          style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: '100%', minWidth: 120, outline: 'none', padding: '2px 0' }} />
+                      ) : (
+                        <div onClick={() => setEditCell({ id: r.id, field: 'address', val: r.address ?? '' })}
+                          style={{ cursor: 'text', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: r.address ? 'var(--ink)' : 'var(--ink-4)', minWidth: 60 }}>
+                          {r.address || '—'}
+                        </div>
+                      )}
                     </td>
                     )}
                     {showCol('notes') && (
@@ -3485,6 +3687,7 @@ ${body}
               {sel('แอดมิน', 'admin_name', ADMINS)}
               {sel('ช่างที่รับผิดชอบ', 'technician', TECHS)}
               {!isInstall && sel('บริษัทจัดส่ง', 'courier', COURIERS)}
+              {inp('สั่งนอก', 'outsource')}
             </div>
               )
             })()}

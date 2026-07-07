@@ -19,12 +19,18 @@ export type RawItem = {
   note?: string
 }
 
+// ทศนิยมตามที่ลูกค้าลงมา: ปกติ 2 ตำแหน่ง แต่ถ้าลงมา 3 ตำแหน่ง (เช่น 2.845) เก็บ 3 ตำแหน่งเลย
+const sizeFixed = (v: number | string | undefined, n: number): string => {
+  const dec = (String(v ?? '').trim().split('.')[1] || '').length
+  return n.toFixed(dec >= 3 ? 3 : 2)
+}
+
 // ความกว้างอาจเป็น "1.69+0.49" (รางต่อโค้ง) ต้องเก็บทั้งสองค่าไว้
 export const widthText = (w?: number | string): string => {
   const raw = typeof w === 'string' ? w.trim() : ''
   if (raw.includes('+')) return raw
   const n = Number(w)
-  return n > 0 ? n.toFixed(2) : ''
+  return n > 0 ? sizeFixed(w, n) : ''
 }
 
 // ความสูงอาจเป็น "ซ2.845*ข3.345" (หน้าต่างสูงซ้าย-ขวาไม่เท่า) ต้องเก็บทั้งสองค่าไว้
@@ -32,7 +38,7 @@ export const heightText = (h?: number | string): string => {
   const raw = typeof h === 'string' ? h.trim() : ''
   if (raw && /[^\d.]/.test(raw)) return raw
   const n = Number(h)
-  return n > 0 ? n.toFixed(2) : ''
+  return n > 0 ? sizeFixed(h, n) : ''
 }
 
 // คืนบรรทัดของรายการ 1 ชิ้น (พร้อมธง rail = บรรทัดของราง ไว้ทำสีแดง)
