@@ -46,6 +46,28 @@ export const heightText = (h?: number | string): string => {
   return n > 0 ? sizeFixed(h, n) : ''
 }
 
+// สรุปรายการแบบสั้น 1 บรรทัด/ชิ้น — ใช้ในคอลัมน์ "รายการ" ของตาราง (หมวดออเดอร์ + ปฏิทินงานติดตั้ง)
+export function formatItemLines(items: RawItem[] | null): string[] {
+  if (!items || items.length === 0) return []
+  return items.map(it => {
+    const parts: string[] = []
+    if (it.type) parts.push(it.type)
+    if (it.eyelet_color) parts.push(it.eyelet_color)
+    if (it.floors) parts.push(`${it.floors}ชั้น`)
+    if (it.rail_head) parts.push(it.rail_head)
+    if (it.fabric_type) parts.push(it.fabric_type)
+    if (it.color_code) parts.push(it.color_code)
+    if (it.color_name) parts.push(it.color_name)
+    if (it.color_desc) parts.push(it.color_desc)
+    if (it.orientation) parts.push(it.orientation.startsWith('(') ? it.orientation : `(${it.orientation})`)
+    const wTxt = widthText(it.width), hTxt = heightText(it.height)
+    if (wTxt && hTxt) parts.push(`${wTxt}×${hTxt}`)
+    else if (wTxt) parts.push(wTxt)
+    if (it.quantity) parts.push(`×${it.quantity}${it.unit || ''}`)
+    return parts.join(' ')
+  })
+}
+
 // ตารางกระดุมเทปลอน [ขั้นต่ำของช่วง, จำนวนต่อฝั่ง/ต่อชุด] — ถอดจากเว็บอุปกรณ์ราง (donna-rail calc.js ROLLER_SINGLE/ROLLER_CENTER)
 // แยกกลาง = n+n (รวมหัวรางซ้าย 1 - ขวา 1), สไลด์เดี่ยว = n (รวมหัวราง 1)
 const TAPE_CENTER: [number, number][] = [[0.50, 6], [0.63, 8], [0.91, 10], [1.19, 12], [1.47, 14], [1.75, 16], [2.03, 18], [2.24, 20], [2.52, 22], [2.80, 24], [3.08, 26], [3.33, 28], [3.59, 30], [3.87, 32], [4.15, 34], [4.43, 36], [4.71, 38], [4.99, 40], [5.27, 42], [5.55, 44], [5.83, 46], [6.10, 48], [6.38, 50], [6.65, 52]]

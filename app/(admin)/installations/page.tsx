@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { HOLIDAYS } from '@/lib/holidays'
-import { itemBlockLines, type RawItem } from '@/lib/itemFormat'
+import { formatItemLines, type RawItem } from '@/lib/itemFormat'
 
 type Installation = {
   id: string
@@ -509,19 +509,16 @@ export default function InstallationsPage() {
                       )}
                     </td>
                     <td style={{ padding: '12px 14px' }}>{ins.customer_real_name || ins.customer_id || '-'}</td>
-                    <td style={{ padding: '8px 14px', minWidth: 160, maxWidth: 260 }}>
+                    <td style={{ padding: '6px 14px', minWidth: 160, maxWidth: 200 }}>
                       {ins.source_order_id ? (
                         // มาจากหมวดออเดอร์ → จิ้มเปิด popup แก้รายการ บันทึกกลับไปที่ออเดอร์ต้นทาง
                         <div onClick={() => { setItemsModal({ orderId: ins.source_order_id!, items: [...(orderItems[ins.source_order_id!] ?? [])] }); setItemsPasteText(''); setItemsError('') }}
                           style={{ cursor: 'pointer' }} title="จิ้มเพื่อแก้รายการ">
                           {orderItems[ins.source_order_id]?.length ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                              {orderItems[ins.source_order_id].map((it, j) => (
-                                <div key={j}>
-                                  {itemBlockLines(it).map((ln, k) => (
-                                    <div key={k} style={{ fontSize: 11, lineHeight: 1.4, fontWeight: k === 0 ? 600 : 400, color: ln.rail ? 'var(--red)' : k === 0 ? 'var(--ink)' : 'var(--ink-2)' }}>{ln.t}</div>
-                                  ))}
-                                </div>
+                            // โชว์แบบเดียวกับคอลัมน์รายการในหมวดออเดอร์: บรรทัดสั้น 1 บรรทัด/ชิ้น ตัดท้ายด้วย …
+                            <div>
+                              {formatItemLines(orderItems[ins.source_order_id]).map((line, k) => (
+                                <div key={k} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190, fontSize: 11, lineHeight: '1.6', color: k === 0 ? 'var(--ink)' : 'var(--ink-3)' }}>{line}</div>
                               ))}
                             </div>
                           ) : <span style={{ color: 'var(--ink-4)' }}>+ เพิ่มรายการ</span>}

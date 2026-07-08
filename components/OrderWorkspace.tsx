@@ -5,7 +5,7 @@ import { flushSync } from 'react-dom'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
-import { itemBlockLines, heightText } from '@/lib/itemFormat'
+import { itemBlockLines, heightText, formatItemLines } from '@/lib/itemFormat'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { effShipping } from '@/lib/shipping'
 import * as XLSX from 'xlsx'
@@ -929,26 +929,6 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     }
   }
 
-  function formatItemLines(items: Item[] | null): string[] {
-    if (!items || items.length === 0) return []
-    return items.map(it => {
-      const parts: string[] = []
-      if (it.type) parts.push(it.type)
-      if (it.eyelet_color) parts.push(it.eyelet_color)
-      if (it.floors) parts.push(`${it.floors}ชั้น`)
-      if (it.rail_head) parts.push(it.rail_head)
-      if (it.fabric_type) parts.push(it.fabric_type)
-      if (it.color_code) parts.push(it.color_code)
-      if (it.color_name) parts.push(it.color_name)
-      if (it.color_desc) parts.push(it.color_desc)
-      if (it.orientation) parts.push(it.orientation.startsWith('(') ? it.orientation : `(${it.orientation})`)
-      const wTxt = widthText(it.width), hTxt = heightText(it.height)
-      if (wTxt && hTxt) parts.push(`${wTxt}×${hTxt}`)
-      else if (wTxt) parts.push(`${wTxt}`)
-      if (it.quantity) parts.push(`×${it.quantity}${it.unit}`)
-      return parts.join(' ')
-    })
-  }
 
   function normalizeCourier(s: string): string {
     const t = s.trim()
