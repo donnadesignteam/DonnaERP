@@ -46,6 +46,40 @@ export const heightText = (h?: number | string): string => {
   return n > 0 ? sizeFixed(h, n) : ''
 }
 
+// ตารางกระดุมเทปลอน [ขั้นต่ำของช่วง, จำนวนต่อฝั่ง/ต่อชุด] — ถอดจากเว็บอุปกรณ์ราง (donna-rail calc.js ROLLER_SINGLE/ROLLER_CENTER)
+// แยกกลาง = n+n (รวมหัวรางซ้าย 1 - ขวา 1), สไลด์เดี่ยว = n (รวมหัวราง 1)
+const TAPE_CENTER: [number, number][] = [[0.50, 6], [0.63, 8], [0.91, 10], [1.19, 12], [1.47, 14], [1.75, 16], [2.03, 18], [2.24, 20], [2.52, 22], [2.80, 24], [3.08, 26], [3.33, 28], [3.59, 30], [3.87, 32], [4.15, 34], [4.43, 36], [4.71, 38], [4.99, 40], [5.27, 42], [5.55, 44], [5.83, 46], [6.10, 48], [6.38, 50], [6.65, 52]]
+const TAPE_SINGLE: [number, number][] = [[0.50, 10], [0.55, 12], [0.65, 14], [0.75, 16], [0.95, 18], [1.05, 20], [1.25, 22], [1.35, 24], [1.45, 26], [1.65, 28], [1.75, 30], [1.95, 32], [2.05, 34], [2.15, 36], [2.35, 38], [2.45, 40], [2.65, 42], [2.75, 44], [2.85, 46], [3.05, 48], [3.15, 50], [3.25, 52], [3.45, 54], [3.55, 56], [3.65, 58], [3.85, 60], [3.95, 62], [4.05, 64], [4.15, 66], [4.35, 68], [4.45, 70], [4.55, 72], [4.75, 74], [4.85, 76], [4.95, 78], [5.05, 80], [5.25, 82], [5.35, 84], [5.55, 86], [5.65, 88], [5.75, 90], [6.10, 92], [6.21, 94]]
+
+// XLOOKUP โหมด -1: แถวสุดท้ายที่ค่าในตาราง ≤ ขนาด
+const lookupDown = (rows: [number, number][], key: number): number | null => {
+  let hit: number | null = null
+  for (const r of rows) { if (r[0] <= key + 1e-9) hit = r[1]; else break }
+  return hit
+}
+
+// ม่านลอนเทปที่ไม่ได้ลงจำนวนกระดูม → คำนวณจากความกว้าง+แบ่งผ้าให้เอง เช่น ก1.00 แยกกลาง=(10+10), สไลด์เดี่ยว=(18)
+// เกินช่วงตาราง (แยกกลาง 6.93 / เดี่ยว 6.32) ไม่เดา — เว้นว่างเหมือนเดิม
+export function autoTapeHooks(item: RawItem): string {
+  const type = (item.type ?? '').trim()
+  if (!type.includes('ลอนเทป') || type.startsWith('ราง')) return ''
+  const w = String(item.width ?? '').trim()
+  // รางต่อโค้ง "1.69+0.49" คิดจากผลรวม (แนวเดียวกับเว็บอุปกรณ์ราง)
+  const size = w.includes('+')
+    ? w.split('+').map(Number).filter(n => n > 0).reduce((a, b) => a + b, 0)
+    : Number(w)
+  if (!(size > 0)) return ''
+  const single = /สไลด์|เดี่ยว/.test(`${item.fabric_split || ''} ${item.note || ''}`)
+  if (single) {
+    if (size > 6.32) return ''
+    const n = lookupDown(TAPE_SINGLE, Math.max(0.5, size))
+    return n != null ? `(${n})` : ''
+  }
+  if (size > 6.93) return ''
+  const n = lookupDown(TAPE_CENTER, Math.max(0.5, size))
+  return n != null ? `(${n}+${n})` : ''
+}
+
 // คืนบรรทัดของรายการ 1 ชิ้น (พร้อมธง rail = บรรทัดของราง ไว้ทำสีแดง)
 export function itemBlockLines(item: RawItem): { t: string; rail?: boolean }[] {
   const out: { t: string; rail?: boolean }[] = []
@@ -88,7 +122,7 @@ export function itemBlockLines(item: RawItem): { t: string; rail?: boolean }[] {
   // กระดูม/ตะขอ เช่น "(30+30)" — ใส่ต่อท้ายบรรทัดขนาดให้เหมือนใบออเดอร์ต้นฉบับ
   // เผื่อบางเคสเก็บมาไม่มีวงเล็บ (30+30) ให้เติมวงเล็บให้เอง
   const hooksRaw = (item.hooks ?? '').trim()
-  const hooksStr = hooksRaw && !hooksRaw.startsWith('(') ? `(${hooksRaw})` : hooksRaw
+  const hooksStr = (hooksRaw && !hooksRaw.startsWith('(') ? `(${hooksRaw})` : hooksRaw) || autoTapeHooks(item)
   // หมวดพิเศษต่อท้ายบรรทัดขนาด: แบ่งผ้า / เคมี / โซ่ถ่วง / ฝั่งดึง เช่น "(ดึงขวา)" "(แยกกลาง)"
   const pullRaw = (item.pull_side ?? '').trim()
   const extras = [
