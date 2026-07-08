@@ -417,8 +417,12 @@ export default function StaffDetailPage() {
                     {shownOrders.map((o, i) => (
                       <tr key={i}>
                         <td style={{ ...td, whiteSpace: 'nowrap', color: 'var(--ink-3)', fontSize: 12 }}>{fmtOrderDate(o.date)}</td>
-                        <td style={{ ...td, color: 'var(--blue)', fontWeight: 600, whiteSpace: 'nowrap' }}>{o.order_number || '—'}</td>
-                        <td style={td}>{o.customer_name || '—'}</td>
+                        <td style={{ ...td, color: 'var(--ink)', fontWeight: 600, whiteSpace: 'nowrap' }}>{o.order_number || '—'}</td>
+                        <td style={td}>
+                          {o.customer_name
+                            ? <Link href={`/customers?name=${encodeURIComponent(o.customer_name)}`} title="ดูประวัติลูกค้า" style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>{o.customer_name}</Link>
+                            : '—'}
+                        </td>
                         <td style={{ ...td, whiteSpace: 'nowrap' }}><span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: 'var(--blue-bg)', color: 'var(--blue)' }}>{o.category}</span></td>
                         <td style={{ ...td, whiteSpace: 'nowrap' }}>{o.platform || '—'}</td>
                         <td style={{ ...td, whiteSpace: 'nowrap' }}>{o.status || '—'}</td>
