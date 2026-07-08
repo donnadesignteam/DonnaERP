@@ -16,7 +16,12 @@ export type RawItem = {
   unit?: string
   hooks?: string          // จำนวนกระดูม/ตะขอ เช่น "(30+30)", "(16)"
   orientation?: string    // การวางผ้า เช่น "ขวางผ้า" — โชว์ต่อท้ายบรรทัดสีตามใบออเดอร์ต้นฉบับ
+  fabric_split?: string   // แบ่งผ้า (ม่านผ้าทั่วไป): แยกกลาง / สไลด์เดี่ยว
+  chemical?: string       // เคมี (เฉพาะม่านซ่อนหู): ใส่เคมี / ไม่ใส่เคมี
+  weight_chain?: string   // โซ่ถ่วง: ว่าง = ไม่ได้ระบุ / ใส่โซ่ถ่วง / ไม่รับโซ่ถ่วง
+  pull_side?: string      // ฝั่งดึง (ม่านพับ/มู่ลี่): ดึงซ้าย / ดึงขวา
   note?: string
+  outsource?: string      // สั่งนอกของรายการนี้ — ตอนบันทึกจะรวมไปลงคอลัมน์สั่งนอกของออเดอร์
 }
 
 // ทศนิยมตามที่ลูกค้าลงมา: ปกติ 2 ตำแหน่ง แต่ถ้าลงมา 3 ตำแหน่ง (เช่น 2.845) เก็บ 3 ตำแหน่งเลย
@@ -84,7 +89,15 @@ export function itemBlockLines(item: RawItem): { t: string; rail?: boolean }[] {
   // เผื่อบางเคสเก็บมาไม่มีวงเล็บ (30+30) ให้เติมวงเล็บให้เอง
   const hooksRaw = (item.hooks ?? '').trim()
   const hooksStr = hooksRaw && !hooksRaw.startsWith('(') ? `(${hooksRaw})` : hooksRaw
-  const tail = `${item.quantity} ${item.unit || ''}${item.note ? ` (${item.note})` : ''}${hooksStr ? ` ${hooksStr}` : ''}`
+  // หมวดพิเศษต่อท้ายบรรทัดขนาด: แบ่งผ้า / เคมี / โซ่ถ่วง / ฝั่งดึง เช่น "(ดึงขวา)" "(แยกกลาง)"
+  const pullRaw = (item.pull_side ?? '').trim()
+  const extras = [
+    (item.fabric_split ?? '').trim(),
+    (item.chemical ?? '').trim(),
+    (item.weight_chain ?? '').trim(),
+    pullRaw ? (pullRaw.startsWith('ดึง') ? pullRaw : `ดึง${pullRaw}`) : '',
+  ].filter(Boolean).map(v => `(${v})`).join(' ')
+  const tail = `${item.quantity} ${item.unit || ''}${extras ? ` ${extras}` : ''}${item.note ? ` (${item.note})` : ''}${hooksStr ? ` ${hooksStr}` : ''}`
   out.push({ t: dim ? `${dim} = ${tail}` : `= ${tail}`, rail: isRail })
   return out
 }

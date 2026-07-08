@@ -26,7 +26,12 @@ type Item = {
   unit: string
   hooks: string
   orientation?: string    // การวางผ้า เช่น "ขวางผ้า" — โชว์ต่อท้ายบรรทัดสีตามใบออเดอร์ต้นฉบับ
+  fabric_split?: string   // แบ่งผ้า (ม่านผ้าทั่วไป): แยกกลาง / สไลด์เดี่ยว
+  chemical?: string       // เคมี (เฉพาะม่านซ่อนหู): ใส่เคมี / ไม่ใส่เคมี
+  weight_chain?: string   // โซ่ถ่วง: ว่าง = ไม่ได้ระบุ / ใส่โซ่ถ่วง / ไม่รับโซ่ถ่วง
+  pull_side?: string      // ฝั่งดึง (ม่านพับ/มู่ลี่): ดึงซ้าย / ดึงขวา
   note: string
+  outsource?: string      // สั่งนอกของรายการนี้ — ตอนบันทึกจะรวมทุกรายการไปลงคอลัมน์สั่งนอกของออเดอร์
 }
 
 type StatusEvent = {
@@ -87,7 +92,11 @@ type Entry = {
   shipments: Shipment[] | null
 }
 
-const emptyItem = (): Item => ({ type: '', floors: null, rail_head: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', orientation: '', note: '' })
+const emptyItem = (): Item => ({ type: '', floors: null, rail_head: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', orientation: '', fabric_split: '', chemical: '', weight_chain: '', pull_side: '', note: '', outsource: '' })
+
+// รวมข้อความสั่งนอกจากทุกรายการ → ไว้ลงคอลัมน์สั่งนอกของออเดอร์
+const itemsOutsourceText = (items: Item[]): string =>
+  items.map(it => (it.outsource ?? '').trim()).filter(Boolean).join(', ')
 
 // ความกว้างอาจเป็น "1.69+0.49" (รางต่อโค้ง) ต้องเก็บทั้งสองค่าไว้ให้ช่างเห็น
 // ทศนิยม: ปกติ 2 ตำแหน่ง ถ้าลงมา 3 ตำแหน่งเก็บ 3 ตำแหน่งตามต้นฉบับ
@@ -269,9 +278,9 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
     { id: 'payment', label: 'ชำระ' }, { id: 'paybefore', label: 'ยอดชำระก่อนจัดส่ง' },
     { id: 'assigned', label: 'ลงออเดอร์' }, { id: 'status', label: 'สถานะงาน' },
     { id: 'done', label: 'งานเสร็จ' }, { id: 'shipped', label: 'จัดส่งแล้ว' },
-    { id: 'rail', label: 'สถานะราง' }, { id: 'outsource', label: 'สั่งนอก' },
-    { id: 'created', label: 'วันที่สร้าง' },
-    { id: 'address', label: 'ที่อยู่' }, { id: 'phone', label: 'เบอร์โทร' }, { id: 'maps', label: 'Maps' },
+    { id: 'rail', label: 'สถานะราง' },
+    { id: 'created', label: 'วันที่สร้าง' }, { id: 'outsource', label: 'สั่งนอก' },
+    { id: 'address', label: 'ที่อยู่' }, { id: 'phone', label: 'เบอร์โทร' },
     { id: 'notes', label: 'หมายเหตุ' },
     { id: 'updated', label: 'แก้ไขล่าสุด' },
   ],
@@ -282,8 +291,8 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
     { id: 'payment', label: 'ชำระ' }, { id: 'paybefore', label: 'ยอดชำระหลังติดตั้ง' },
     { id: 'assigned', label: 'ลงออเดอร์' }, { id: 'status', label: 'สถานะงาน' },
     { id: 'done', label: 'งานเสร็จ' }, { id: 'installed', label: 'ติดตั้ง' },
-    { id: 'rail', label: 'สถานะราง' }, { id: 'outsource', label: 'สั่งนอก' },
-    { id: 'created', label: 'วันที่สร้าง' },
+    { id: 'rail', label: 'สถานะราง' },
+    { id: 'created', label: 'วันที่สร้าง' }, { id: 'outsource', label: 'สั่งนอก' },
     { id: 'address', label: 'ที่อยู่' }, { id: 'phone', label: 'เบอร์โทร' }, { id: 'maps', label: 'Maps' },
     { id: 'notes', label: 'หมายเหตุ' },
     { id: 'updated', label: 'แก้ไขล่าสุด' },
@@ -539,6 +548,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const platformVal = d.platform
       ? (isClaimAdd && !d.platform.startsWith('เคลม:') ? `เคลม:${d.platform}` : d.platform)
       : null
+    // สั่งนอกจากรายการสินค้า: มีข้อความ → ทับช่องสั่งนอกของออเดอร์ + ประทับเวลาเมื่อข้อความเปลี่ยน
+    const itemsOut = itemsOutsourceText(modalItems)
+    const prevOutsource = modal.mode === 'edit' ? (rows.find(r => r.id === d.id)?.outsource ?? '') : ''
+    const outsourceVal = itemsOut || d.outsource || null
     const payload = {
       entry_date: d.entry_date || null,
       deadline: d.deadline || null,
@@ -560,7 +573,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       province: d.is_installation ? (d.province || null) : null,
       phone: d.is_installation ? (d.phone || null) : null,
       location_link: d.is_installation ? (d.location_link || null) : null,
-      outsource: d.outsource || null,
+      outsource: outsourceVal,
+      ...(outsourceVal && outsourceVal !== prevOutsource ? { outsource_at: now } : {}),
       notes: d.notes || null,
       price: d.price ? Number(d.price) : null,
       payment_status: d.payment_status || 'ยังไม่ชำระ',
@@ -613,6 +627,12 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       r.items.forEach((item, idx) => {
         if (idx > 0) push('')
         for (const ln of itemBlockLines(item)) push(ln.t, ln.rail)
+        // รายการที่ลงสั่งนอก: ชื่อที่สั่ง + วัน/เดือนที่ลง ต่อท้ายรายการ เช่น "KC 8/7"
+        const out = (item.outsource ?? '').trim()
+        if (out) {
+          const dt = r.outsource_at ? new Date(r.outsource_at) : new Date()
+          push(`${out} ${dt.getDate()}/${dt.getMonth() + 1}`)
+        }
       })
     }
 
@@ -622,6 +642,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       push(`ส่งก่อน ${r.shipping_datetime}`)
     }
     if (r.courier) push(r.courier)
+    if (r.notes) push(`หมายเหตุ: ${r.notes}`)
 
     return lines
   }
@@ -664,7 +685,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       qty: Number(it.quantity) || 1,
       layers: Number(it.floors) === 2 ? 2 : 1,
       color: (it.color_name || '').replace(/^สี/, '') || undefined,
-      split: /สไลด์|เดี่ยว/.test(it.note || '') ? 'สไลด์เดี่ยว' : 'แยกกลาง',
+      split: /สไลด์|เดี่ยว/.test(`${it.fabric_split || ''} ${it.note || ''}`) ? 'สไลด์เดี่ยว' : 'แยกกลาง',
       head: it.rail_head || undefined,
       carrier,
     }))
@@ -1494,7 +1515,14 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   // สั่งนอก: เก็บข้อความ + จำวันเวลาที่พิมพ์ (outsource_at) ไว้โชว์ใต้ข้อความ
   const saveOutsourceCell = async (id: string, val: string) => {
     const now = new Date().toISOString()
-    const updates = { outsource: val || null, outsource_at: val ? now : null, updated_at: now }
+    const updates: Partial<Entry> = { outsource: val || null, outsource_at: val ? now : null, updated_at: now } as Partial<Entry>
+    // ลบข้อความในคอลัมน์ → ล้างช่องสั่งนอกในรายการสินค้าด้วย ไม่งั้นค้างในใบปริ้นและเด้งกลับตอนบันทึกรายการรอบหน้า
+    if (!val) {
+      const items = rows.find(x => x.id === id)?.items
+      if (Array.isArray(items) && items.some(it => (it.outsource ?? '').trim())) {
+        updates.items = items.map(it => ({ ...it, outsource: '' }))
+      }
+    }
     const { error: err } = await supabase.from('order_entries').update(updates).eq('id', id)
     if (!err) {
       const sy = window.scrollY
@@ -2099,11 +2127,11 @@ ${body}
                 {showCol('rail') && (
                 <th style={{ textAlign: 'center', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>สถานะราง</th>
                 )}
-                {showCol('outsource') && (
-                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>สั่งนอก</th>
-                )}
                 {showCol('created') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>วันที่สร้าง</th>
+                )}
+                {showCol('outsource') && (
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>สั่งนอก</th>
                 )}
                 {showCol('address') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ที่อยู่</th>
@@ -2111,7 +2139,7 @@ ${body}
                 {showCol('phone') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>เบอร์โทร</th>
                 )}
-                {showCol('maps') && (
+                {quickFilter === 'install' && showCol('maps') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>Maps</th>
                 )}
                 {showCol('notes') && (
@@ -2412,11 +2440,11 @@ ${body}
                       ) : <span style={{ color: 'var(--ink-4)' }}>–</span>}
                     </td>
                     )}
-                    {showCol('outsource') && (
-                    <td style={{ padding: '8px 14px', minWidth: 100 }}>{outsourceCell()}</td>
-                    )}
                     {showCol('created') && (
                     <td style={{ padding: '8px 14px' }}>{dateCell('entry_date')}</td>
+                    )}
+                    {showCol('outsource') && (
+                    <td style={{ padding: '8px 14px', minWidth: 100 }}>{outsourceCell()}</td>
                     )}
                     {showCol('address') && (
                     <td style={{ padding: '8px 14px', minWidth: 120 }}>{textCell('address', '—')}</td>
@@ -2424,7 +2452,7 @@ ${body}
                     {showCol('phone') && (
                     <td style={{ padding: '8px 14px', minWidth: 90 }}>{textCell('phone', '—')}</td>
                     )}
-                    {showCol('maps') && (
+                    {quickFilter === 'install' && showCol('maps') && (
                     <td style={{ padding: '8px 14px' }}>{mapsCell()}</td>
                     )}
                     {showCol('notes') && (
@@ -3745,7 +3773,7 @@ ${body}
                     ))}
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr 2fr', gap: '6px 8px' }}>
-                    {([['กว้าง (ม.)', 'width', 'text'], ['สูง (ม.)', 'height', 'text'], ['จำนวน', 'quantity', 'number'], ['หน่วย', 'unit', 'text'], ['กระดูม', 'hooks', 'text'], ['ขวางผ้า', 'orientation', 'text'], ['หมายเหตุ', 'note', 'text']] as [string, keyof Item, string][]).map(([lbl, key, type]) => (
+                    {([['กว้าง (ม.)', 'width', 'text'], ['สูง (ม.)', 'height', 'text'], ['จำนวน', 'quantity', 'number'], ['หน่วย', 'unit', 'text'], ['กระดูม', 'hooks', 'text'], ['ขวางผ้า', 'orientation', 'text'], ['แบ่งผ้า', 'fabric_split', 'text'], ['เคมี', 'chemical', 'text'], ['โซ่ถ่วง', 'weight_chain', 'text'], ['ฝั่งดึง', 'pull_side', 'text'], ['สั่งนอก', 'outsource', 'text'], ['หมายเหตุ', 'note', 'text']] as [string, keyof Item, string][]).map(([lbl, key, type]) => (
                       <div key={key}>
                         <label style={{ fontSize: 11, color: 'var(--ink-4)', display: 'block', marginBottom: 2 }}>{lbl}</label>
                         <input type={type} step={type === 'number' ? '0.01' : undefined}
@@ -3920,7 +3948,7 @@ ${body}
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr style={{ background: '#FAFAFA', borderBottom: '1px solid var(--border)' }}>
-                    {['#', 'ประเภท', 'สีตาไก่', 'ชั้น', 'หัวราง/หัวม่าน', 'รหัสสี', 'ชื่อสี', 'กว้าง (ม.)', 'สูง (ม.)', 'จำนวน', 'หน่วย', 'กระดูม', 'ขวางผ้า', 'หมายเหตุ'].map(h => (
+                    {['#', 'ประเภท', 'สีตาไก่', 'ชั้น', 'หัวราง/หัวม่าน', 'รหัสสี', 'ชื่อสี', 'กว้าง (ม.)', 'สูง (ม.)', 'จำนวน', 'หน่วย', 'กระดูม', 'ขวางผ้า', 'แบ่งผ้า', 'เคมี', 'โซ่ถ่วง', 'ฝั่งดึง', 'สั่งนอก', 'หมายเหตุ'].map(h => (
                       <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 500, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                     <th style={{ padding: '8px 10px', position: 'sticky', right: 0, background: '#FAFAFA', zIndex: 1 }} />
@@ -3943,6 +3971,11 @@ ${body}
                         ['unit', 'text', 46],
                         ['hooks', 'text', 60],
                         ['orientation', 'text', 60],
+                        ['fabric_split', 'text', 74],
+                        ['chemical', 'text', 64],
+                        ['weight_chain', 'text', 80],
+                        ['pull_side', 'text', 54],
+                        ['outsource', 'text', 90],
                         ['note', 'text', 90],
                       ] as [keyof Item, string, number][]).map(([key, type, w]) => (
                         <td key={key} style={{ padding: '4px 6px' }}>
@@ -3968,7 +4001,7 @@ ${body}
                   ))}
                   {itemsModal.items.length === 0 && (
                     <tr>
-                      <td colSpan={14} style={{ padding: '20px', textAlign: 'center', color: 'var(--ink-4)', fontSize: 12 }}>
+                      <td colSpan={19} style={{ padding: '20px', textAlign: 'center', color: 'var(--ink-4)', fontSize: 12 }}>
                         ยังไม่มีรายการ — วางข้อความด้านบนแล้วกดแปลง หรือกดเพิ่มแถว
                       </td>
                     </tr>
@@ -3990,9 +4023,17 @@ ${body}
               <button onClick={async () => {
                 const newItems = itemsModal.items.length > 0 ? itemsModal.items : null
                 const now = new Date().toISOString()
-                const { error: err } = await supabase.from('order_entries').update({ items: newItems, updated_at: now }).eq('id', itemsModal.id)
+                // สั่งนอกในรายการ → ลงคอลัมน์สั่งนอกของออเดอร์ + ประทับเวลาเมื่อข้อความเปลี่ยน
+                const itemsOut = itemsOutsourceText(itemsModal.items)
+                const prevOut = rows.find(r => r.id === itemsModal.id)?.outsource ?? ''
+                const updates = {
+                  items: newItems,
+                  updated_at: now,
+                  ...(itemsOut && itemsOut !== prevOut ? { outsource: itemsOut, outsource_at: now } : {}),
+                }
+                const { error: err } = await supabase.from('order_entries').update(updates).eq('id', itemsModal.id)
                 if (!err) {
-                  setRows(prev => prev.map(r => r.id === itemsModal.id ? { ...r, items: newItems, updated_at: now } as Entry : r))
+                  setRows(prev => prev.map(r => r.id === itemsModal.id ? { ...r, ...updates } as Entry : r))
                   setItemsModal(null)
                   setItemsModalError('')
                 }

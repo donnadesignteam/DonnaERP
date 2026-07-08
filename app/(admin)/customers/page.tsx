@@ -11,6 +11,26 @@ type Item = RawItem
 
 type StatusEvent = { status: string; at: string; by: string | null }
 
+// เลขพัสดุ + สถานะล่าสุดที่เช็คไว้ (โครงเดียวกับ OrderWorkspace — เก็บใน order_entries.shipments)
+type Shipment = {
+  no: string
+  carrier: string
+  status: string
+  events: { time: string; desc: string }[] | null
+  checked_at: string | null
+}
+
+const CARRIER_TRACK_URL: Record<string, (no: string) => string> = {
+  'Flash Express': no => `https://www.flashexpress.com/fle/tracking?se=${no}`,
+  'SPX Express': no => `https://spx.co.th/track?${no}`,
+  'ไปรษณีย์ไทย': no => `https://track.thailandpost.co.th/?trackNumber=${no}`,
+  'J&T Express': no => `https://www.jtexpress.co.th/service/track?bills=${no}`,
+  'Kerry Express': no => `https://th.kerryexpress.com/th/track/?track=${no}`,
+  'Ninja Van': no => `https://www.ninjavan.co/th-th/tracking?id=${no}`,
+}
+const carrierTrackUrl = (sh: Shipment) =>
+  CARRIER_TRACK_URL[sh.carrier]?.(sh.no) || `https://www.google.com/search?q=${encodeURIComponent(sh.no + ' เช็คพัสดุ')}`
+
 type Order = {
   id: string
   entry_date: string | null
@@ -28,6 +48,7 @@ type Order = {
   done_at: string | null
   shipped_at: string | null
   packing_photos?: string[] | null   // ภาพตอนแพ็คราง/แพ็คม่าน (อนาคต) — array ของ URL รูป
+  shipments?: Shipment[] | null      // เลขพัสดุ + สถานะที่เช็คล่าสุด
 }
 
 const fmtDate = (d: string | null) =>
@@ -76,7 +97,7 @@ function CustomerFolder() {
       setLoading(true)
       const { data } = await supabase
         .from('order_entries')
-        .select('id, entry_date, created_at, updated_at, order_number, platform, order_status, payment_status, is_installation, price, items, notes, status_history, done_at, shipped_at, packing_photos')
+        .select('id, entry_date, created_at, updated_at, order_number, platform, order_status, payment_status, is_installation, price, items, notes, status_history, done_at, shipped_at, packing_photos, shipments')
         .eq('customer_name', name)
         .order('entry_date', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
@@ -194,6 +215,31 @@ function CustomerFolder() {
                   </div>
                 )}
               </div>
+
+              {/* สถานะพัสดุ — โชว์เฉพาะออเดอร์ที่ใส่เลขพัสดุแล้ว (สถานะ = ที่เช็คล่าสุดจากหน้าออเดอร์) */}
+              {Array.isArray(o.shipments) && o.shipments.length > 0 && (
+                <div style={{ margin: '12px 0 0', padding: '12px 0 0', borderTop: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', marginBottom: 8 }}>สถานะพัสดุ</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {o.shipments.map((s, k) => (
+                      <div key={k} style={{ display: 'flex', alignItems: 'baseline', gap: 10, fontSize: 12, flexWrap: 'wrap' }}>
+                        <span style={{ color: 'var(--ink-3)' }}>📦 {s.carrier || 'ไม่ระบุขนส่ง'}</span>
+                        <a href={carrierTrackUrl(s)} target="_blank" rel="noreferrer" style={{ fontFamily: 'monospace', fontWeight: 600, color: 'var(--blue)', textDecoration: 'none' }}>{s.no} ↗</a>
+                        {s.status ? (
+                          <span style={{ fontWeight: 700, color: /เซ็นรับ|สำเร็จ|ถึงมือ|delivered/i.test(s.status) ? 'var(--green)' : 'var(--ink)' }}>{s.status}</span>
+                        ) : (
+                          <span style={{ color: 'var(--ink-4)' }}>ยังไม่เคยเช็คสถานะ</span>
+                        )}
+                        {s.checked_at && (
+                          <span style={{ fontSize: 10, color: 'var(--ink-4)' }}>
+                            เช็คล่าสุด {fmtDateTime(s.checked_at)}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* ภาพการแพ็ค (ราง/ม่าน) — ช่องไว้ก่อน รองรับเก็บรูปในอนาคต */}
               <div style={{ margin: '12px 0 0', padding: '12px 0 0', borderTop: '1px solid var(--border)' }}>

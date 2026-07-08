@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { HOLIDAYS } from '@/lib/holidays'
+import { itemBlockLines, type RawItem } from '@/lib/itemFormat'
 
 type Installation = {
   id: string
@@ -27,6 +28,7 @@ type Installation = {
   entered_by: string
   created_at: string
   updated_at: string
+  source_order_id?: string | null   // ผูกกับ order_entries ถ้าแถวนี้ sync มาจากหมวดออเดอร์
 }
 
 const PLATFORMS = ['Tiktok','Tiktok-Chat','Shopee','Shopee-Chat','Lazada','Facebook','LineOA',
@@ -54,6 +56,12 @@ const STATUS_COLOR: Record<string, string> = {
   'ติดตั้ง50%': '#bf5af2',
   'รอแก้': 'var(--red)',
 }
+
+const emptyItem = (): RawItem => ({ type: '', floors: null, rail_head: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', orientation: '', fabric_split: '', chemical: '', weight_chain: '', pull_side: '', note: '', outsource: '' })
+
+// รวมข้อความสั่งนอกจากทุกรายการ → ไว้ลงคอลัมน์สั่งนอกของออเดอร์ต้นทาง
+const itemsOutsourceText = (items: RawItem[]): string =>
+  items.map(it => (it.outsource ?? '').trim()).filter(Boolean).join(', ')
 
 const DAYS = ['จ.','อ.','พ.','พฤ.','ศ.','ส.','อา.']
 const TH_MONTHS = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
@@ -146,6 +154,14 @@ export default function InstallationsPage() {
   const [actionMenu, setActionMenu] = useState<{ id: string; top: number; left: number } | null>(null)
   const [editNote, setEditNote] = useState<{ id: string; value: string } | null>(null)
   const [editAppt, setEditAppt] = useState<{ id: string; date: string; time: string } | null>(null)
+  // รายการสินค้าของออเดอร์ต้นทาง (เฉพาะแถวที่ sync มาจากหมวดออเดอร์) — key = source_order_id
+  const [orderItems, setOrderItems] = useState<Record<string, RawItem[]>>({})
+  // popup แก้รายการสินค้า (แบบเดียวกับหมวดออเดอร์) — บันทึกกลับไปที่ order_entries ต้นทาง
+  const [itemsModal, setItemsModal] = useState<{ orderId: string; items: RawItem[] } | null>(null)
+  const [itemsPasteText, setItemsPasteText] = useState('')
+  const [itemsParsing, setItemsParsing] = useState(false)
+  const [itemsError, setItemsError] = useState('')
+  const [editWork, setEditWork] = useState<{ id: string; value: string } | null>(null)  // แก้รายละเอียดงานของแถวที่เพิ่มเอง
 
   const load = async () => {
     const { data, error: err } = await supabase.from('installations').select('*').order('appointment_datetime', { ascending: false })
@@ -162,6 +178,16 @@ export default function InstallationsPage() {
     setPageCache('installations', rows)
     setInstalls(rows)
     setLoading(false)
+    // ดึงรายการสินค้าจากออเดอร์ต้นทางมาโชว์ในคอลัมน์ "รายการ"
+    const orderIds = rows.map(r => r.source_order_id).filter((v): v is string => !!v)
+    if (orderIds.length) {
+      const { data: oes } = await supabase.from('order_entries').select('id, items').in('id', orderIds)
+      const map: Record<string, RawItem[]> = {}
+      for (const oe of (oes ?? []) as { id: string; items: RawItem[] | null }[]) {
+        if (Array.isArray(oe.items) && oe.items.length) map[oe.id] = oe.items
+      }
+      setOrderItems(map)
+    }
   }
 
   useEffect(() => { load() }, [])
@@ -244,6 +270,59 @@ export default function InstallationsPage() {
     setInstalls(prev => prev.map(i => i.id === id ? { ...i, appointment_datetime: dt, updated_at: now } : i))
     const { error: err } = await supabase.from('installations').update({ appointment_datetime: dt, updated_at: now }).eq('id', id)
     if (err) { setError(`บันทึกวันนัดไม่สำเร็จ: ${err.message}`); load() }
+  }
+
+  // แปลงข้อความที่วางเป็นรายการสินค้าด้วย AI (endpoint เดียวกับหมวดออเดอร์)
+  const parseItems = async () => {
+    if (!itemsPasteText.trim()) return
+    setItemsParsing(true)
+    setItemsError('')
+    try {
+      const res = await fetch('/api/parse-items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: itemsPasteText }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'แปลงไม่สำเร็จ')
+      setItemsModal(m => m ? { ...m, items: data.items } : null)
+    } catch (e: unknown) {
+      setItemsError(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด')
+    } finally {
+      setItemsParsing(false)
+    }
+  }
+
+  const saveItems = async () => {
+    if (!itemsModal) return
+    const newItems = itemsModal.items.length > 0 ? itemsModal.items : null
+    const now = new Date().toISOString()
+    // สั่งนอกในรายการ → ลงคอลัมน์สั่งนอกของออเดอร์ต้นทาง + ประทับเวลาเมื่อข้อความเปลี่ยน
+    const itemsOut = itemsOutsourceText(itemsModal.items)
+    let outUpdates = {}
+    if (itemsOut) {
+      const { data: cur } = await supabase.from('order_entries').select('outsource').eq('id', itemsModal.orderId).single()
+      if (itemsOut !== (cur?.outsource ?? '')) outUpdates = { outsource: itemsOut, outsource_at: now }
+    }
+    const { error: err } = await supabase.from('order_entries').update({ items: newItems, updated_at: now, ...outUpdates }).eq('id', itemsModal.orderId)
+    if (err) { setError(`บันทึกรายการไม่สำเร็จ: ${err.message}`); return }
+    setOrderItems(prev => {
+      const next = { ...prev }
+      if (newItems) next[itemsModal.orderId] = newItems
+      else delete next[itemsModal.orderId]
+      return next
+    })
+    setItemsModal(null)
+    setItemsError('')
+  }
+
+  // แถวที่เพิ่มเองไม่มีออเดอร์ต้นทาง → แก้รายละเอียดงานตรงคอลัมน์รายการ
+  const saveWork = async (id: string, value: string) => {
+    setEditWork(null)
+    const now = new Date().toISOString()
+    setInstalls(prev => prev.map(i => i.id === id ? { ...i, work_details: value, updated_at: now } : i))
+    const { error: err } = await supabase.from('installations').update({ work_details: value, updated_at: now }).eq('id', id)
+    if (err) { setError(`บันทึกรายละเอียดงานไม่สำเร็จ: ${err.message}`); load() }
   }
 
   const saveNote = async (id: string, value: string) => {
@@ -385,7 +464,7 @@ export default function InstallationsPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
-                {['Serial','นัดหมาย','ลูกค้า','แพลตฟอร์ม','จังหวัด','เบอร์','สถานะติดตั้ง','หมายเหตุ','แก้ไขล่าสุด',''].map(h => (
+                {['Serial','นัดหมาย','ลูกค้า','รายการ','แพลตฟอร์ม','จังหวัด','เบอร์','สถานะติดตั้ง','หมายเหตุ','แก้ไขล่าสุด',''].map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '12px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -430,6 +509,37 @@ export default function InstallationsPage() {
                       )}
                     </td>
                     <td style={{ padding: '12px 14px' }}>{ins.customer_real_name || ins.customer_id || '-'}</td>
+                    <td style={{ padding: '8px 14px', minWidth: 160, maxWidth: 260 }}>
+                      {ins.source_order_id ? (
+                        // มาจากหมวดออเดอร์ → จิ้มเปิด popup แก้รายการ บันทึกกลับไปที่ออเดอร์ต้นทาง
+                        <div onClick={() => { setItemsModal({ orderId: ins.source_order_id!, items: [...(orderItems[ins.source_order_id!] ?? [])] }); setItemsPasteText(''); setItemsError('') }}
+                          style={{ cursor: 'pointer' }} title="จิ้มเพื่อแก้รายการ">
+                          {orderItems[ins.source_order_id]?.length ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              {orderItems[ins.source_order_id].map((it, j) => (
+                                <div key={j}>
+                                  {itemBlockLines(it).map((ln, k) => (
+                                    <div key={k} style={{ fontSize: 11, lineHeight: 1.4, fontWeight: k === 0 ? 600 : 400, color: ln.rail ? 'var(--red)' : k === 0 ? 'var(--ink)' : 'var(--ink-2)' }}>{ln.t}</div>
+                                  ))}
+                                </div>
+                              ))}
+                            </div>
+                          ) : <span style={{ color: 'var(--ink-4)' }}>+ เพิ่มรายการ</span>}
+                        </div>
+                      ) : editWork?.id === ins.id ? (
+                        <textarea autoFocus value={editWork.value} rows={2}
+                          onChange={e => setEditWork(ew => ew ? { ...ew, value: e.target.value } : null)}
+                          onBlur={() => saveWork(ins.id, editWork.value)}
+                          onKeyDown={e => { if (e.key === 'Escape') setEditWork(null) }}
+                          style={{ border: '1px solid var(--blue)', borderRadius: 6, background: 'transparent', fontSize: 11, width: '100%', outline: 'none', padding: '4px 6px', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                      ) : (
+                        // แถวที่เพิ่มเองในหน้านี้ → จิ้มแก้รายละเอียดงานตรงนี้ได้เลย
+                        <div onClick={() => setEditWork({ id: ins.id, value: ins.work_details ?? '' })}
+                          style={{ cursor: 'text', fontSize: 11, whiteSpace: 'pre-line', color: ins.work_details ? 'var(--ink-3)' : 'var(--ink-4)', minWidth: 60 }}>
+                          {ins.work_details || '—'}
+                        </div>
+                      )}
+                    </td>
                     <td style={{ padding: '12px 14px', color: 'var(--ink-3)' }}>{ins.platform || '-'}</td>
                     <td style={{ padding: '12px 14px', color: 'var(--ink-3)' }}>{ins.province || '-'}</td>
                     <td style={{ padding: '12px 14px', color: 'var(--ink-3)' }}>{ins.phone || '-'}</td>
@@ -497,6 +607,120 @@ export default function InstallationsPage() {
           </>
         )
       })()}
+
+      {/* Items modal — แก้รายการสินค้าของออเดอร์ต้นทาง (หน้าตา/พฤติกรรมเดียวกับหมวดออเดอร์) */}
+      {itemsModal && (
+        <div onClick={() => { setItemsModal(null); setItemsError('') }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: 900, maxHeight: '90vh', overflowY: 'auto', padding: '24px 28px' }}>
+
+            <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', marginBottom: 14 }}>รายการสินค้า</h3>
+
+            {/* AI Paste zone */}
+            <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px', marginBottom: 16 }}>
+              <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 6, fontWeight: 500 }}>วางข้อความรายการสินค้า — AI จะแปลงให้อัตโนมัติ</label>
+              <textarea
+                value={itemsPasteText}
+                onChange={e => { setItemsPasteText(e.target.value); setItemsError('') }}
+                rows={4}
+                placeholder={'ตัวอย่าง:\nม่านจีบ CC-101 ขาวนวล กว้าง 2.5 สูง 2.2 จำนวน 1 ชุด\nม่านโปร่ง BB-202 ครีม 1.8x2.0 2 ชุด'}
+                style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 10px', fontSize: 12, outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit', background: '#fff' }}
+              />
+              {itemsError && (
+                <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 6 }}>{itemsError}</div>
+              )}
+              <button
+                onClick={parseItems}
+                disabled={!itemsPasteText.trim() || itemsParsing}
+                style={{ marginTop: 8, padding: '7px 18px', borderRadius: 7, border: 'none', background: itemsParsing || !itemsPasteText.trim() ? 'var(--border)' : 'var(--blue)', color: itemsParsing || !itemsPasteText.trim() ? 'var(--ink-3)' : '#fff', fontSize: 13, fontWeight: 600, cursor: itemsParsing || !itemsPasteText.trim() ? 'default' : 'pointer' }}>
+                {itemsParsing ? 'กำลังแปลง…' : '✦ แปลงรายการ'}
+              </button>
+            </div>
+
+            {/* Editable table */}
+            <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'auto', marginBottom: 14 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead>
+                  <tr style={{ background: '#FAFAFA', borderBottom: '1px solid var(--border)' }}>
+                    {['#', 'ประเภท', 'สีตาไก่', 'ชั้น', 'หัวราง/หัวม่าน', 'รหัสสี', 'ชื่อสี', 'กว้าง (ม.)', 'สูง (ม.)', 'จำนวน', 'หน่วย', 'กระดูม', 'ขวางผ้า', 'แบ่งผ้า', 'เคมี', 'โซ่ถ่วง', 'ฝั่งดึง', 'สั่งนอก', 'หมายเหตุ'].map(h => (
+                      <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 500, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                    <th style={{ padding: '8px 10px', position: 'sticky', right: 0, background: '#FAFAFA', zIndex: 1 }} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {itemsModal.items.map((item, idx) => (
+                    <tr key={idx} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: '6px 10px', color: 'var(--ink-4)', fontWeight: 500, width: 28 }}>{idx + 1}</td>
+                      {([
+                        ['type', 'text', 100],
+                        ['eyelet_color', 'text', 64],
+                        ['floors', 'number', 44],
+                        ['rail_head', 'text', 64],
+                        ['color_code', 'text', 60],
+                        ['color_name', 'text', 90],
+                        ['width', 'text', 56],
+                        ['height', 'text', 56],
+                        ['quantity', 'number', 50],
+                        ['unit', 'text', 46],
+                        ['hooks', 'text', 60],
+                        ['orientation', 'text', 60],
+                        ['fabric_split', 'text', 74],
+                        ['chemical', 'text', 64],
+                        ['weight_chain', 'text', 80],
+                        ['pull_side', 'text', 54],
+                        ['outsource', 'text', 90],
+                        ['note', 'text', 90],
+                      ] as [keyof RawItem, string, number][]).map(([key, type, w]) => (
+                        <td key={key} style={{ padding: '4px 6px' }}>
+                          <input
+                            type={type}
+                            step={type === 'number' ? '0.01' : undefined}
+                            value={item[key] == null ? '' : String(item[key])}
+                            onChange={e => {
+                              const val = key === 'floors'
+                                ? (e.target.value === '' ? null : Number(e.target.value))
+                                : e.target.value
+                              setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: val } : it) } : null)
+                            }}
+                            style={{ width: w, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }}
+                          />
+                        </td>
+                      ))}
+                      <td style={{ padding: '4px 8px', position: 'sticky', right: 0, background: 'var(--surface)', boxShadow: '-2px 0 4px rgba(0,0,0,0.04)' }}>
+                        <button onClick={() => setItemsModal(m => m ? { ...m, items: m.items.filter((_, i) => i !== idx) } : null)}
+                          style={{ border: 'none', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontSize: 13, padding: '2px 4px', whiteSpace: 'nowrap' }}>ลบ</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {itemsModal.items.length === 0 && (
+                    <tr>
+                      <td colSpan={20} style={{ padding: '20px', textAlign: 'center', color: 'var(--ink-4)', fontSize: 12 }}>
+                        ยังไม่มีรายการ — วางข้อความด้านบนแล้วกดแปลง หรือกดเพิ่มแถว
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <button onClick={() => setItemsModal(m => m ? { ...m, items: [...m.items, emptyItem()] } : null)}
+              style={{ fontSize: 12, padding: '4px 12px', border: '1px solid var(--blue)', borderRadius: 6, color: 'var(--blue)', background: 'var(--blue-bg)', cursor: 'pointer', marginBottom: 16 }}>
+              + เพิ่มแถว
+            </button>
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => { setItemsModal(null); setItemsError('') }}
+                style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>
+                ยกเลิก
+              </button>
+              <button onClick={saveItems}
+                style={{ flex: 2, padding: '10px', borderRadius: 8, border: 'none', background: 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
+                บันทึก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Day modal */}
       {dayModal && (
