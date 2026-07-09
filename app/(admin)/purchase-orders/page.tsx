@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 
@@ -12,6 +13,7 @@ type PO = {
   notes: string
   status: string
   supplier: string
+  source_order_id?: string | null   // ผูกกับ order_entries ถ้าแถวนี้ sync มาจากสั่งนอกในหมวดออเดอร์
   created_at: string
   updated_at: string
 }
@@ -76,6 +78,19 @@ export default function PurchaseOrdersPage() {
 
   const del = async (id: string) => {
     if (!confirm('ลบรายการนี้?')) return
+    // แถวที่ sync มาจากสั่งนอกในหมวดออเดอร์ → ล้างช่องสั่งนอกของออเดอร์ต้นทางด้วย (ทั้งคอลัมน์และในรายการสินค้า)
+    const src = rows.find(r => r.id === id)?.source_order_id
+    if (src) {
+      const { data: oe } = await supabase.from('order_entries').select('items').eq('id', src).single()
+      const items = Array.isArray(oe?.items) ? oe.items : null
+      const clearItems = items && items.some((it: { outsource?: string }) => (it.outsource ?? '').trim())
+        ? items.map((it: { outsource?: string }) => ({ ...it, outsource: '' }))
+        : undefined
+      await supabase.from('order_entries').update({
+        outsource: null, outsource_at: null, updated_at: new Date().toISOString(),
+        ...(clearItems ? { items: clearItems } : {}),
+      }).eq('id', src)
+    }
     await supabase.from('purchase_orders').delete().eq('id', id)
     load()
   }
@@ -176,8 +191,12 @@ export default function PurchaseOrdersPage() {
             <tbody>
               {displayed.map(r => (
                 <tr key={r.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <td style={{ padding: '13px 16px', fontWeight: 500 }}>{r.customer_name || '-'}</td>
-                  <td style={{ padding: '13px 16px', color: 'var(--blue)', fontWeight: 500 }}>{r.order_number || '-'}</td>
+                  <td style={{ padding: '13px 16px' }}>
+                    {r.customer_name
+                      ? <Link href={`/customers?name=${encodeURIComponent(r.customer_name)}`} title="เปิดโฟลเดอร์ออเดอร์" style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>{r.customer_name}</Link>
+                      : '-'}
+                  </td>
+                  <td style={{ padding: '13px 16px', color: 'var(--ink)', fontWeight: 500 }}>{r.order_number || '-'}</td>
                   <td style={{ padding: '13px 16px', color: 'var(--ink-3)', maxWidth: 200 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.items || '-'}</div></td>
                   <td style={{ padding: '13px 16px' }}>{r.supplier || '-'}</td>
                   <td style={{ padding: '13px 16px' }}>

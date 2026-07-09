@@ -102,12 +102,26 @@ const INSTALL_STATUS_COLOR: Record<string, string> = {
   'ติดตั้งเสร็จ': '#34c759', 'ติดตั้ง50%': '#bf5af2', 'รอแก้': 'var(--red)',
 }
 
+// รายการสั่งซื้อของลูกค้าคนนี้ (จากหมวดสั่งซื้อ)
+type CustomerPO = {
+  id: string
+  order_number: string | null
+  items: string | null
+  supplier: string | null
+  status: string
+  notes: string | null
+  created_at: string
+}
+
+const PO_STATUS_COLOR: Record<string, string> = { 'รอของ': '#ff9f0a', 'ของเข้าแล้ว': '#34c759' }
+
 function CustomerFolder() {
   const params = useSearchParams()
   const name = params.get('name') ?? ''
   const [orders, setOrders] = useState<Order[]>([])
   const [claims, setClaims] = useState<CustomerClaim[]>([])
   const [installs, setInstalls] = useState<CustomerInstall[]>([])
+  const [pos, setPos] = useState<CustomerPO[]>([])
   const [loading, setLoading] = useState(true)
   const [delPhoto, setDelPhoto] = useState<string | null>(null) // URL รูปแพ็คที่กำลังลบ
 
@@ -156,6 +170,12 @@ function CustomerFolder() {
         .or(`customer_real_name.eq.${JSON.stringify(name)},customer_id.eq.${JSON.stringify(name)}`)
         .order('appointment_datetime', { ascending: false, nullsFirst: false })
       setInstalls((ins as CustomerInstall[]) ?? [])
+      const { data: po } = await supabase
+        .from('purchase_orders')
+        .select('id, order_number, items, supplier, status, notes, created_at')
+        .eq('customer_name', name)
+        .order('created_at', { ascending: false })
+      setPos((po as CustomerPO[]) ?? [])
       setLoading(false)
     })()
   }, [name])
@@ -192,6 +212,7 @@ function CustomerFolder() {
           ['ยอดรวมทั้งหมด', `${total.toLocaleString('th-TH')} ฿`],
           ['ออเดอร์ล่าสุด', fmtDate(latest)],
           ...(installs.length > 0 ? [['งานติดตั้ง/วัดหน้างาน', `${installs.length}`]] : []),
+          ...(pos.length > 0 ? [['รายการสั่งซื้อ', `${pos.length}`]] : []),
           ...(claims.length > 0 ? [['งานเคลม', `${claims.length}`]] : []),
         ].map(([label, val]) => (
           <div key={label} style={{ ...card, padding: '14px 18px', minWidth: 150 }}>
@@ -371,6 +392,41 @@ function CustomerFolder() {
                     <div style={{ margin: '12px 0 0', padding: '12px 0 0', borderTop: '1px solid var(--border)', fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-line' }}>{ins.work_details}</div>
                   )}
                   {ins.notes && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 10, fontStyle: 'italic' }}>📝 {ins.notes}</div>}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* รายการสั่งซื้อของลูกค้าคนนี้ (จากหมวดสั่งซื้อ) — โชว์เฉพาะเมื่อมี */}
+      {!loading && pos.length > 0 && (
+        <div style={{ marginTop: 28 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>รายการสั่งซื้อ</h2>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--blue)', background: 'rgba(196,126,58,0.10)', border: '1px solid rgba(196,126,58,0.25)', borderRadius: 12, padding: '2px 10px' }}>{pos.length} รายการ</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {pos.map(p => {
+              const sc = PO_STATUS_COLOR[p.status] ?? 'var(--ink-3)'
+              return (
+                <div key={p.id} style={{ ...card, padding: '16px 18px', borderLeft: `4px solid ${sc}` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{p.order_number || 'ไม่มีเลขคำสั่งซื้อ'}</span>
+                        {p.supplier && (
+                          <span style={{ fontSize: 11, color: 'var(--ink-3)', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12, padding: '2px 8px' }}>{p.supplier}</span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4 }}>{fmtDate(p.created_at)}</div>
+                    </div>
+                    <span style={{ background: sc + '22', color: sc, padding: '3px 10px', borderRadius: 980, fontSize: 11, fontWeight: 700 }}>{p.status}</span>
+                  </div>
+                  {p.items && (
+                    <div style={{ margin: '12px 0 0', padding: '12px 0 0', borderTop: '1px solid var(--border)', fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-line' }}>{p.items}</div>
+                  )}
+                  {p.notes && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 10, fontStyle: 'italic' }}>📝 {p.notes}</div>}
                 </div>
               )
             })}

@@ -9,6 +9,7 @@ import { itemBlockLines, heightText, formatItemLines } from '@/lib/itemFormat'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { effShipping } from '@/lib/shipping'
 import { thaiTrackStatus } from '@/lib/trackExtract'
+import { syncOutsourcePO } from '@/lib/outsourceSync'
 import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
 
@@ -587,12 +588,14 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       const res = await supabase.from('order_entries').insert(payload).select().single()
       if (res.error) { setSaving(false); setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
       await syncInstallation(payload, (res.data as Entry).id)
+      if (outsourceVal) await syncOutsourcePO((res.data as Entry).id, payload.customer_name, payload.order_number, outsourceVal, modalItems)
       setSaving(false)
       setRows(prev => [res.data as Entry, ...prev])
     } else {
       const res = await supabase.from('order_entries').update(payload).eq('id', d.id).select().single()
       if (res.error) { setSaving(false); setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
       await syncInstallation(payload, String(d.id))
+      if (outsourceVal || prevOutsource) await syncOutsourcePO(String(d.id), payload.customer_name, payload.order_number, outsourceVal, modalItems)
       setSaving(false)
       setRows(prev => prev.map(r => r.id === d.id ? res.data as Entry : r))
     }
@@ -1506,6 +1509,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     }
     const { error: err } = await supabase.from('order_entries').update(updates).eq('id', id)
     if (!err) {
+      const row = rows.find(x => x.id === id)
+      await syncOutsourcePO(id, row?.customer_name, row?.order_number, val, row?.items)
       const sy = window.scrollY
       flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, ...updates } as Entry : r)))
       window.scrollTo(window.scrollX, sy)
@@ -4014,6 +4019,11 @@ ${body}
                 }
                 const { error: err } = await supabase.from('order_entries').update(updates).eq('id', itemsModal.id)
                 if (!err) {
+                  // สั่งนอกเปลี่ยน → sync ไปหมวดสั่งซื้อด้วย
+                  if (itemsOut && itemsOut !== prevOut) {
+                    const row = rows.find(r => r.id === itemsModal.id)
+                    await syncOutsourcePO(itemsModal.id, row?.customer_name, row?.order_number, itemsOut, itemsModal.items)
+                  }
                   setRows(prev => prev.map(r => r.id === itemsModal.id ? { ...r, ...updates } as Entry : r))
                   setItemsModal(null)
                   setItemsModalError('')
