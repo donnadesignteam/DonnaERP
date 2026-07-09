@@ -400,7 +400,7 @@ export default function InstallationsPage() {
         <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={() => setBonusModal(true)}
             style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border-2)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-            💰 ยอดติดตั้ง
+            ยอดติดตั้ง
           </button>
           <button onClick={() => window.print()}
             style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border-2)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
@@ -811,7 +811,7 @@ export default function InstallationsPage() {
           <div onClick={() => setBonusModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 860, maxHeight: '88vh', overflowY: 'auto' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 10 }}>
-                <h2 style={{ fontSize: 17, fontWeight: 700 }}>💰 ยอดติดตั้ง</h2>
+                <h2 style={{ fontSize: 17, fontWeight: 700 }}>ยอดติดตั้ง</h2>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                   <select value={bonusMonth} onChange={e => setBonusMonth(e.target.value)}
                     style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '6px 12px', fontSize: 13, outline: 'none' }}>
