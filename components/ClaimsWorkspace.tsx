@@ -37,11 +37,13 @@ type Claim = {
   is_urgent: boolean
   notes: string | null
   raw_text: string | null
+  admin_name: string | null   // แอดมินที่รับผิดชอบเคสนี้ — โชว์ใน dashboard พนักงานรายคนด้วย
   created_at?: string
   updated_at?: string
 }
 
 const CHANNELS = ['Shopee', 'Lazada', 'Tiktok', 'Facebook', 'LineOA', 'หน้าร้าน']
+const ADMINS = ['กาย', 'แพท', 'หนูนา', 'ยุน', 'ส้ม']   // ให้ตรงกับ ADMINS ในหมวดออเดอร์ (OrderWorkspace)
 const CLAIM_TYPES = ['ของขาด/ไม่ครบ', 'ส่งผิด/ขนาดไม่ตรง', 'เสียหายจากขนส่ง', 'ชำรุด/ตำหนิ', 'ลูกค้าแจ้งผิด(แก้ไข)', 'เปลี่ยนสินค้า', 'ส่งคืนไม่แจ้ง']
 const FAULTS = ['ร้าน', 'ลูกค้า', 'ขนส่ง']
 const RESOLUTIONS = ['ส่งใหม่/ส่งเพิ่ม', 'แก้ไข/ผลิตใหม่', 'คืนเงินเต็ม', 'คืนเงินบางส่วน', 'คืนค่าส่ง', 'เก็บค่าแก้+ส่ง', 'เปลี่ยนสินค้า']
@@ -66,7 +68,7 @@ function emptyClaim(): Claim {
     original_order_number: '', claim_type: '', fault: '', cause: '', resolution: '', items: null,
     ship_name: '', ship_address: '', ship_phone: '', return_tracking: '', outbound_tracking: '',
     courier: '', refund_amount: null, money_direction: '', payment_target: '', money_status: '',
-    status: 'รอของคืน', is_urgent: false, notes: '', raw_text: '',
+    status: 'รอของคืน', is_urgent: false, notes: '', raw_text: '', admin_name: '',
   }
 }
 
@@ -169,6 +171,7 @@ export default function ClaimsWorkspace() {
       refund_amount: d.refund_amount != null && String(d.refund_amount) !== '' ? Number(d.refund_amount) : null,
       money_direction: d.money_direction || null, payment_target: d.payment_target || null, money_status: d.money_status || null,
       status: d.status || 'รอของคืน', is_urgent: !!d.is_urgent, notes: d.notes || null, raw_text: d.raw_text || null,
+      admin_name: d.admin_name || null,
       updated_at: new Date().toISOString(),
     }
     if (modal.mode === 'add') {
@@ -382,7 +385,7 @@ export default function ClaimsWorkspace() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
-                  {['วันที่', 'แพลตฟอร์ม', 'ลูกค้า', 'ประเภท', 'รายการ', 'ยอดชำระ', 'สถานะ', 'หมายเหตุ', 'แก้ไขล่าสุด', ''].map((h, i) => (
+                  {['วันที่', 'แพลตฟอร์ม', 'ลูกค้า', 'ประเภท', 'รายการ', 'ยอดชำระ', 'สถานะ', 'แอดมิน', 'หมายเหตุ', 'แก้ไขล่าสุด', ''].map((h, i) => (
                     <th key={i} style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -441,6 +444,9 @@ export default function ClaimsWorkspace() {
                         style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 600, cursor: 'pointer', outline: 'none', padding: 0, color: STATUS_COLOR(r.status) }}>
                         {WORKFLOW.map(w => <option key={w.key} value={w.key}>{w.key}</option>)}
                       </select>
+                    </td>
+                    <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
+                      {selectInline(r, 'admin_name', ADMINS)}
                     </td>
                     <td style={{ padding: '8px 14px', minWidth: 120 }}>{textCell(r, 'notes')}</td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', color: 'var(--ink-4)', fontSize: 11 }}>
@@ -598,6 +604,7 @@ export default function ClaimsWorkspace() {
               {field('พร้อมเพย์ / บัญชี', 'payment_target')}
               {field('สถานะเงิน', 'money_status', { options: MONEY_STATUS })}
               {field('สถานะเคลม', 'status', { options: WORKFLOW.map(w => w.key) })}
+              {field('แอดมินที่รับผิดชอบ', 'admin_name', { options: ADMINS })}
               {field('หมายเหตุ', 'notes', { full: true })}
             </div>
 

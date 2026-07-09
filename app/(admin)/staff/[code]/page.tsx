@@ -173,14 +173,17 @@ export default function StaffDetailPage() {
         bonus,
       }
 
-      // เฟส 2 (ยิงพร้อมกัน): ออเดอร์ของเลขที่สแกน + เคลมที่ผูกกับออเดอร์แอดมิน
+      // เฟส 2 (ยิงพร้อมกัน): ออเดอร์ของเลขที่สแกน + เคลมที่ผูกกับออเดอร์แอดมิน + เคลมที่แอดมินคนนี้รับผิดชอบ (คอลัมน์แอดมินในหน้างานเคลม)
       const orderNums = orders.map((o) => o.order_number).filter(Boolean) as string[]
-      const [scOeR, clR] = await Promise.all([
+      const [scOeR, clR, clAdminR] = await Promise.all([
         scNums.length
           ? supabase.from('order_entries').select('order_number, customer_name, order_status').in('order_number', scNums)
           : Promise.resolve({ data: [] as { order_number: string; customer_name: string | null; order_status: string | null }[] }),
         orderNums.length
-          ? supabase.from('claims').select('original_order_number, customer_username, claim_type, status').in('original_order_number', orderNums)
+          ? supabase.from('claims').select('id, original_order_number, customer_username, claim_type, status').in('original_order_number', orderNums)
+          : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+        nickname
+          ? supabase.from('claims').select('id, original_order_number, customer_username, claim_type, status').eq('admin_name', nickname)
           : Promise.resolve({ data: [] as Record<string, unknown>[] }),
       ])
 
@@ -197,8 +200,13 @@ export default function StaffDetailPage() {
         }
       }).sort((a, b) => String(b.last).localeCompare(String(a.last)))
 
+      // รวมเคลม 2 ทาง (ผูกกับออเดอร์ + ระบุแอดมินตรงๆ) ตัดตัวซ้ำด้วย id
+      const claimMap = new Map<string, Record<string, unknown>>()
+      for (const c of [...(clR.data || []), ...(clAdminR.data || [])] as Record<string, unknown>[]) {
+        if (c?.id) claimMap.set(String(c.id), c)
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const claims: Claim[] = (clR.data || []).map((c: any) => ({ order_number: c.original_order_number, customer: c.customer_username, type: c.claim_type, status: c.status }))
+      const claims: Claim[] = [...claimMap.values()].map((c: any) => ({ order_number: c.original_order_number, customer: c.customer_username, type: c.claim_type, status: c.status }))
 
       setWork({ scans, orders, claims, orderSummary })
     } catch (e) {
