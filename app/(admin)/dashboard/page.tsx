@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { effShipping } from '@/lib/shipping'
@@ -132,7 +133,11 @@ function OrderTable({ orders, today, onShip }: { orders: Order[]; today: string;
           return (
             <tr key={o.id} style={{ borderBottom: '1px solid var(--border)' }}>
               <td style={{ padding: '10px 14px', color: 'var(--blue)', fontWeight: 500 }}>{o.order_number}</td>
-              <td style={{ padding: '10px 14px', color: 'var(--ink)' }}>{o.customer_name}</td>
+              <td style={{ padding: '10px 14px' }}>
+                {o.customer_name
+                  ? <Link href={`/customers?name=${encodeURIComponent(o.customer_name)}`} title="เปิดโฟลเดอร์ออเดอร์" style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>{o.customer_name}</Link>
+                  : '-'}
+              </td>
               <td style={{ padding: '10px 14px' }}>
                 <span style={{ background: (STATUS_COLOR[o.order_status] ?? '#8E8E93') + '18', color: STATUS_COLOR[o.order_status] ?? '#8E8E93', padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 500 }}>
                   {o.order_status}
@@ -547,7 +552,11 @@ export default function DashboardPage() {
                           effective ?? <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>รอกำหนด</span>
                         )}
                       </td>
-                      <td style={{ padding: '12px 14px' }}>{o.customer_name || '-'}</td>
+                      <td style={{ padding: '12px 14px' }}>
+                        {o.customer_name
+                          ? <Link href={`/customers?name=${encodeURIComponent(o.customer_name)}`} title="เปิดโฟลเดอร์ออเดอร์" style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>{o.customer_name}</Link>
+                          : '-'}
+                      </td>
                       <td style={{ padding: '12px 14px', color: 'var(--ink-3)' }}>{o.platform || '-'}</td>
                       <td style={{ padding: '12px 14px', color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
                         {o.is_installation ? <span style={{ color: '#f97316', fontWeight: 600 }}>งานติดตั้ง</span> : o.courier || <span style={{ color: 'var(--ink-4)' }}>-</span>}
@@ -633,7 +642,11 @@ export default function DashboardPage() {
                           borderBottom: idx < Math.min(rows.length, 5) - 1 ? '1px solid var(--border)' : 'none',
                         }}>
                           <span style={{ fontWeight: 600, color: 'var(--blue)', fontSize: 12, minWidth: 80 }}>{o.order_number}</span>
-                          <span style={{ color: 'var(--ink)', fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.customer_name}</span>
+                          <span style={{ fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {o.customer_name
+                              ? <Link href={`/customers?name=${encodeURIComponent(o.customer_name)}`} title="เปิดโฟลเดอร์ออเดอร์" onClick={e => e.stopPropagation()} style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>{o.customer_name}</Link>
+                              : <span style={{ color: 'var(--ink)' }}>-</span>}
+                          </span>
                           <span style={{ fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0,
                             color: days === null ? 'var(--ink-4)' : days < 0 ? 'var(--red)' : days <= 2 ? '#ff9f0a' : '#34c759' }}>
                             {days === null ? 'รอกำหนด' : days < 0 ? `เกิน ${Math.abs(days)} วัน` : `${days} วัน`}

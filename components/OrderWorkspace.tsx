@@ -8,6 +8,7 @@ import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { itemBlockLines, heightText, formatItemLines } from '@/lib/itemFormat'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { effShipping } from '@/lib/shipping'
+import { thaiTrackStatus } from '@/lib/trackExtract'
 import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
 
@@ -2389,7 +2390,7 @@ ${body}
                           {Array.isArray(r.shipments) && r.shipments.length > 0 && (
                             <button onClick={() => { setTrackModal(r.id); setTrackError('') }} title="ดูสถานะพัสดุ"
                               style={{ border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 6, padding: '1px 6px', fontSize: 10, cursor: 'pointer', color: 'var(--ink-2)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              📦 {r.shipments[0].status || `${r.shipments.length} เลขพัสดุ`}
+                              📦 {thaiTrackStatus(r.shipments[0].status) || `${r.shipments.length} เลขพัสดุ`}
                             </button>
                           )}
                         </div>
@@ -2717,7 +2718,7 @@ ${body}
                           {Array.isArray(r.shipments) && r.shipments.length > 0 && (
                             <button onClick={() => { setTrackModal(r.id); setTrackError('') }} title="ดูสถานะพัสดุ"
                               style={{ border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 6, padding: '1px 6px', fontSize: 10, cursor: 'pointer', color: 'var(--ink-2)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              📦 {r.shipments[0].status || `${r.shipments.length} เลขพัสดุ`}
+                              📦 {thaiTrackStatus(r.shipments[0].status) || `${r.shipments.length} เลขพัสดุ`}
                             </button>
                           )}
                         </div>
@@ -3143,7 +3144,7 @@ ${body}
                         {Array.isArray(r.shipments) && r.shipments.length > 0 && (
                           <button onClick={() => { setTrackModal(r.id); setTrackError('') }} title="ดูสถานะพัสดุ"
                             style={{ border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 6, padding: '1px 6px', fontSize: 10, cursor: 'pointer', color: 'var(--ink-2)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            📦 {r.shipments[0].status || `${r.shipments.length} เลขพัสดุ`}
+                            📦 {thaiTrackStatus(r.shipments[0].status) || `${r.shipments.length} เลขพัสดุ`}
                           </button>
                         )}
                       </div>
@@ -3420,7 +3421,7 @@ ${body}
                       <a href={carrierTrackUrl(s)} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: 'var(--blue)' }}>เปิดเว็บขนส่ง ↗</a>
                     </div>
                     {s.status && (
-                      <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: /เซ็นรับ|สำเร็จ|ถึงมือ|delivered/i.test(s.status) ? 'var(--green)' : 'var(--ink)' }}>{s.status}</div>
+                      <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: /เซ็นรับ|สำเร็จ|ถึงมือ|delivered/i.test(s.status) ? 'var(--green)' : 'var(--ink)' }}>{thaiTrackStatus(s.status)}</div>
                     )}
                     {s.checked_at && (
                       <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 2 }}>

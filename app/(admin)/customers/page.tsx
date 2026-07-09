@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { itemBlockLines, type RawItem } from '@/lib/itemFormat'
 import { deletePackingFile } from '@/lib/packingPhotos'
+import { thaiTrackStatus } from '@/lib/trackExtract'
 
 type Item = RawItem
 
@@ -226,7 +227,7 @@ function CustomerFolder() {
                         <span style={{ color: 'var(--ink-3)' }}>📦 {s.carrier || 'ไม่ระบุขนส่ง'}</span>
                         <a href={carrierTrackUrl(s)} target="_blank" rel="noreferrer" style={{ fontFamily: 'monospace', fontWeight: 600, color: 'var(--blue)', textDecoration: 'none' }}>{s.no} ↗</a>
                         {s.status ? (
-                          <span style={{ fontWeight: 700, color: /เซ็นรับ|สำเร็จ|ถึงมือ|delivered/i.test(s.status) ? 'var(--green)' : 'var(--ink)' }}>{s.status}</span>
+                          <span style={{ fontWeight: 700, color: /เซ็นรับ|สำเร็จ|ถึงมือ|delivered/i.test(s.status) ? 'var(--green)' : 'var(--ink)' }}>{thaiTrackStatus(s.status)}</span>
                         ) : (
                           <span style={{ color: 'var(--ink-4)' }}>ยังไม่เคยเช็คสถานะ</span>
                         )}

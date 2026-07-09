@@ -45,6 +45,28 @@ export function extractEvents(obj: unknown): TrackEvent[] | null {
   return events.map(({ time, desc }) => ({ time, desc }))
 }
 
+// แปลสถานะพัสดุภาษาอังกฤษจากเว็บขนส่ง → ไทย (ถ้าเป็นไทยอยู่แล้ว/แปลไม่ออก คืนค่าเดิม)
+const STATUS_TH: [RegExp, string][] = [
+  [/delivered|delivery\s*(success|complete)/i, 'จัดส่งสำเร็จ'],
+  [/out\s*for\s*delivery|on\s*delivery/i, 'กำลังนำส่ง'],
+  [/in\s*[_-]?\s*transit|transport|on\s*the\s*way/i, 'อยู่ระหว่างขนส่ง'],
+  [/picked\s*[_-]?\s*up|pick\s*[_-]?\s*up\s*(success|complete)?$/i, 'รับพัสดุแล้ว'],
+  [/arriv/i, 'ถึงศูนย์คัดแยก'],
+  [/departed|departure/i, 'ออกจากศูนย์คัดแยก'],
+  [/return/i, 'ตีกลับ'],
+  [/fail|unsuccessful|exception|problem/i, 'นำส่งไม่สำเร็จ'],
+  [/cancel/i, 'ยกเลิก'],
+  [/on\s*hold|held/i, 'พักการนำส่ง'],
+  [/pending|info\s*received|waiting|created/i, 'รอเข้ารับพัสดุ'],
+]
+
+export function thaiTrackStatus(status: string | null | undefined): string {
+  const s = (status ?? '').trim()
+  if (!s || /[ก-๙]/.test(s)) return s   // ว่าง/มีภาษาไทยแล้ว → ใช้เดิม
+  for (const [re, th] of STATUS_TH) if (re.test(s)) return th
+  return s
+}
+
 export function extractStateText(obj: unknown): string {
   let found = ''
   const visit = (node: unknown, depth: number) => {
