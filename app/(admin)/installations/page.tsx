@@ -829,10 +829,7 @@ export default function InstallationsPage() {
                   <button onClick={() => setBonusModal(false)} style={{ border: 'none', background: 'rgba(0,0,0,0.10)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>✕</button>
                 </div>
               </div>
-              <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 16, lineHeight: 1.6 }}>
-                นับเฉพาะงานสถานะ <b style={{ color: '#34c759' }}>ติดตั้งเสร็จ</b> ในเดือนนั้น · กำไรเฉลี่ย 20% ของยอด · โบนัสรวม 1% ของยอด แบ่งตามจำนวนช่าง
-              </p>
-              <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 12, marginBottom: 20, marginTop: 14, flexWrap: 'wrap' }}>
                 {card('งานติดตั้งเสร็จ', `${done.length} งาน`, 'var(--ink)')}
                 {card('รวมยอดติดตั้งสำเร็จ', fmtB(total), 'var(--blue)')}
                 {card('ทุน 80%', fmtB(cost), 'var(--ink-2)')}
