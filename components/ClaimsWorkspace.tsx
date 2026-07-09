@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 
@@ -394,7 +395,11 @@ export default function ClaimsWorkspace() {
                     </td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', color: 'var(--ink)' }}>{r.channel || '-'}</td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
-                      <div style={{ color: 'var(--ink)' }}>{r.customer_username || '-'}</div>
+                      <div>
+                        {r.customer_username
+                          ? <Link href={`/customers?name=${encodeURIComponent(r.customer_username)}`} title="เปิดโฟลเดอร์ออเดอร์" style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>{r.customer_username}</Link>
+                          : '-'}
+                      </div>
                       {r.original_order_number && <div style={{ color: 'var(--ink-4)', fontSize: 11 }}>#{r.original_order_number}</div>}
                     </td>
                     <td style={{ padding: '8px 14px' }}>
