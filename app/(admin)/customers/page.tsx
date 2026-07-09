@@ -63,10 +63,32 @@ const fmtDateTime = (d: string | null) =>
 // format รายการใช้ formatter กลาง (lib/itemFormat) ให้ตรงกับใบคัดลอก/ปริ้นเสมอ
 const itemLines = itemBlockLines
 
+// งานเคลมของลูกค้าคนนี้ (จากหน้างานเคลม — จับคู่ด้วยชื่อ/username เดียวกัน)
+type CustomerClaim = {
+  id: string
+  claim_date: string | null
+  channel: string | null
+  original_order_number: string | null
+  claim_type: string | null
+  fault: string | null
+  cause: string | null
+  resolution: string | null
+  refund_amount: number | null
+  money_direction: string | null
+  status: string
+  notes: string | null
+}
+
+const CLAIM_STATUS_COLOR: Record<string, string> = {
+  'รอของคืน': '#ff9f0a', 'ตัดผ้าแล้ว': '#30d158', 'เย็บแล้ว': '#5e9eff',
+  'รีดแล้ว': '#bf5af2', 'แพ็คแล้ว': '#f43f5e', 'ส่งแล้ว': '#34c759',
+}
+
 function CustomerFolder() {
   const params = useSearchParams()
   const name = params.get('name') ?? ''
   const [orders, setOrders] = useState<Order[]>([])
+  const [claims, setClaims] = useState<CustomerClaim[]>([])
   const [loading, setLoading] = useState(true)
   const [delPhoto, setDelPhoto] = useState<string | null>(null) // URL รูปแพ็คที่กำลังลบ
 
@@ -103,6 +125,12 @@ function CustomerFolder() {
         .order('entry_date', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
       setOrders((data as Order[]) ?? [])
+      const { data: cls } = await supabase
+        .from('claims')
+        .select('id, claim_date, channel, original_order_number, claim_type, fault, cause, resolution, refund_amount, money_direction, status, notes')
+        .eq('customer_username', name)
+        .order('claim_date', { ascending: false, nullsFirst: false })
+      setClaims((cls as CustomerClaim[]) ?? [])
       setLoading(false)
     })()
   }, [name])
@@ -138,10 +166,11 @@ function CustomerFolder() {
           ['จำนวนออเดอร์', `${orders.length}`],
           ['ยอดรวมทั้งหมด', `${total.toLocaleString('th-TH')} ฿`],
           ['ออเดอร์ล่าสุด', fmtDate(latest)],
+          ...(claims.length > 0 ? [['งานเคลม', `${claims.length}`]] : []),
         ].map(([label, val]) => (
           <div key={label} style={{ ...card, padding: '14px 18px', minWidth: 150 }}>
             <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 4 }}>{label}</div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--blue)' }}>{val}</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: label === 'งานเคลม' ? 'var(--red)' : 'var(--blue)' }}>{val}</div>
           </div>
         ))}
       </div>
@@ -273,6 +302,52 @@ function CustomerFolder() {
             </div>
             )
           })}
+        </div>
+      )}
+
+      {/* งานเคลมของลูกค้าคนนี้ — โชว์เฉพาะเมื่อมี */}
+      {!loading && claims.length > 0 && (
+        <div style={{ marginTop: 28 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>งานเคลม</h2>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)', background: '#ff375f15', border: '1px solid #ff375f33', borderRadius: 12, padding: '2px 10px' }}>{claims.length} รายการ</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {claims.map(c => {
+              const sc = CLAIM_STATUS_COLOR[c.status] ?? 'var(--ink-3)'
+              return (
+                <div key={c.id} style={{ ...card, padding: '16px 18px', borderLeft: `4px solid ${sc}` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{c.claim_type || 'งานเคลม'}</span>
+                        {c.channel && (
+                          <span style={{ fontSize: 11, color: 'var(--ink-3)', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12, padding: '2px 8px' }}>{c.channel}</span>
+                        )}
+                        {c.original_order_number && <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>#{c.original_order_number}</span>}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4 }}>{fmtDate(c.claim_date)}{c.fault ? ` · ความผิด: ${c.fault}` : ''}</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <span style={{ background: sc + '22', color: sc, padding: '3px 10px', borderRadius: 980, fontSize: 11, fontWeight: 700 }}>{c.status}</span>
+                      {c.refund_amount != null && c.money_direction && (
+                        <div style={{ fontSize: 13, fontWeight: 700, marginTop: 6, color: c.money_direction === 'เก็บลูกค้า' ? '#34c759' : 'var(--red)' }}>
+                          {c.money_direction === 'เก็บลูกค้า' ? '+' : '−'}{Number(c.refund_amount).toLocaleString('th-TH')} ฿ ({c.money_direction})
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {(c.cause || c.resolution) && (
+                    <div style={{ margin: '12px 0 0', padding: '12px 0 0', borderTop: '1px solid var(--border)', fontSize: 13, lineHeight: 1.6 }}>
+                      {c.cause && <div><span style={{ color: 'var(--ink-4)' }}>สาเหตุ:</span> {c.cause}</div>}
+                      {c.resolution && <div><span style={{ color: 'var(--ink-4)' }}>การแก้ไข:</span> {c.resolution}</div>}
+                    </div>
+                  )}
+                  {c.notes && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 10, fontStyle: 'italic' }}>📝 {c.notes}</div>}
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
     </div>
