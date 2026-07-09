@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { HOLIDAYS } from '@/lib/holidays'
@@ -508,7 +509,11 @@ export default function InstallationsPage() {
                         </span>
                       )}
                     </td>
-                    <td style={{ padding: '12px 14px' }}>{ins.customer_real_name || ins.customer_id || '-'}</td>
+                    <td style={{ padding: '12px 14px' }}>
+                      {(ins.customer_real_name || ins.customer_id)
+                        ? <Link href={`/customers?name=${encodeURIComponent(ins.customer_real_name || ins.customer_id!)}`} title="เปิดโฟลเดอร์ออเดอร์" style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>{ins.customer_real_name || ins.customer_id}</Link>
+                        : '-'}
+                    </td>
                     <td style={{ padding: '6px 14px', minWidth: 160, maxWidth: 200 }}>
                       {ins.source_order_id ? (
                         // มาจากหมวดออเดอร์ → จิ้มเปิด popup แก้รายการ บันทึกกลับไปที่ออเดอร์ต้นทาง
