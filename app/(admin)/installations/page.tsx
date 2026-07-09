@@ -743,9 +743,20 @@ export default function InstallationsPage() {
       {dayModal && (
         <div onClick={() => setDayModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 560, maxHeight: '80vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <h2 style={{ fontSize: 17, fontWeight: 700 }}>วันที่ {dayModal.day} {TH_MONTHS[month]} {year + 543}</h2>
-              <button onClick={() => setDayModal(null)} style={{ border: 'none', background: 'rgba(0,0,0,0.10)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>✕</button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => {
+                  const d = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayModal.day).padStart(2, '0')}`
+                  setDayModal(null)
+                  openAdd()
+                  setApptDate(d)
+                }}
+                  style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                  + เพิ่มรายการวันนี้
+                </button>
+                <button onClick={() => setDayModal(null)} style={{ border: 'none', background: 'rgba(0,0,0,0.10)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>✕</button>
+              </div>
             </div>
             {(() => {
               const h = HOLIDAYS[`${year}-${String(month + 1).padStart(2, '0')}-${String(dayModal.day).padStart(2, '0')}`]
