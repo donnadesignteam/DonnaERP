@@ -84,11 +84,30 @@ const CLAIM_STATUS_COLOR: Record<string, string> = {
   'รีดแล้ว': '#bf5af2', 'แพ็คแล้ว': '#f43f5e', 'ส่งแล้ว': '#34c759',
 }
 
+// งานติดตั้ง/วัดหน้างานของลูกค้าคนนี้ (จากหมวดปฏิทินงานติดตั้ง)
+type CustomerInstall = {
+  id: string
+  serial_no: string
+  appointment_datetime: string | null
+  work_type: string | null
+  province: string | null
+  work_details: string | null
+  installation_status: string | null
+  price: number | null
+  notes: string | null
+}
+
+const INSTALL_STATUS_COLOR: Record<string, string> = {
+  'วัดหน้างาน': '#5ac8fa', 'วัดหน้างานแล้ว': '#30b0c7', 'ติดตั้ง': '#ff9f0a',
+  'ติดตั้งเสร็จ': '#34c759', 'ติดตั้ง50%': '#bf5af2', 'รอแก้': 'var(--red)',
+}
+
 function CustomerFolder() {
   const params = useSearchParams()
   const name = params.get('name') ?? ''
   const [orders, setOrders] = useState<Order[]>([])
   const [claims, setClaims] = useState<CustomerClaim[]>([])
+  const [installs, setInstalls] = useState<CustomerInstall[]>([])
   const [loading, setLoading] = useState(true)
   const [delPhoto, setDelPhoto] = useState<string | null>(null) // URL รูปแพ็คที่กำลังลบ
 
@@ -131,6 +150,12 @@ function CustomerFolder() {
         .eq('customer_username', name)
         .order('claim_date', { ascending: false, nullsFirst: false })
       setClaims((cls as CustomerClaim[]) ?? [])
+      const { data: ins } = await supabase
+        .from('installations')
+        .select('id, serial_no, appointment_datetime, work_type, province, work_details, installation_status, price, notes')
+        .or(`customer_real_name.eq.${JSON.stringify(name)},customer_id.eq.${JSON.stringify(name)}`)
+        .order('appointment_datetime', { ascending: false, nullsFirst: false })
+      setInstalls((ins as CustomerInstall[]) ?? [])
       setLoading(false)
     })()
   }, [name])
@@ -166,6 +191,7 @@ function CustomerFolder() {
           ['จำนวนออเดอร์', `${orders.length}`],
           ['ยอดรวมทั้งหมด', `${total.toLocaleString('th-TH')} ฿`],
           ['ออเดอร์ล่าสุด', fmtDate(latest)],
+          ...(installs.length > 0 ? [['งานติดตั้ง/วัดหน้างาน', `${installs.length}`]] : []),
           ...(claims.length > 0 ? [['งานเคลม', `${claims.length}`]] : []),
         ].map(([label, val]) => (
           <div key={label} style={{ ...card, padding: '14px 18px', minWidth: 150 }}>
@@ -302,6 +328,53 @@ function CustomerFolder() {
             </div>
             )
           })}
+        </div>
+      )}
+
+      {/* งานติดตั้ง/วัดหน้างานของลูกค้าคนนี้ (จากหมวดปฏิทินงานติดตั้ง) — โชว์เฉพาะเมื่อมี */}
+      {!loading && installs.length > 0 && (
+        <div style={{ marginTop: 28 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>งานติดตั้ง / วัดหน้างาน</h2>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#ff9f0a', background: '#ff9f0a15', border: '1px solid #ff9f0a33', borderRadius: 12, padding: '2px 10px' }}>{installs.length} รายการ</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {installs.map(ins => {
+              const sc = INSTALL_STATUS_COLOR[ins.installation_status ?? ''] ?? 'var(--ink-3)'
+              return (
+                <div key={ins.id} style={{ ...card, padding: '16px 18px', borderLeft: `4px solid ${sc}` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-4)' }}>#{ins.serial_no}</span>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{ins.work_type || 'งานติดตั้ง'}</span>
+                        {ins.province && (
+                          <span style={{ fontSize: 11, color: 'var(--ink-3)', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12, padding: '2px 8px' }}>{ins.province}</span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4 }}>
+                        {ins.appointment_datetime
+                          ? <>นัด {fmtDate(ins.appointment_datetime)} {new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.</>
+                          : 'ยังไม่นัดวัน'}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      {ins.installation_status && (
+                        <span style={{ background: sc + '22', color: sc, padding: '3px 10px', borderRadius: 980, fontSize: 11, fontWeight: 700 }}>{ins.installation_status}</span>
+                      )}
+                      {ins.price != null && ins.price > 0 && (
+                        <div style={{ fontSize: 13, fontWeight: 700, marginTop: 6, color: 'var(--ink)' }}>{ins.price.toLocaleString('th-TH')} ฿</div>
+                      )}
+                    </div>
+                  </div>
+                  {ins.work_details && (
+                    <div style={{ margin: '12px 0 0', padding: '12px 0 0', borderTop: '1px solid var(--border)', fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-line' }}>{ins.work_details}</div>
+                  )}
+                  {ins.notes && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 10, fontStyle: 'italic' }}>📝 {ins.notes}</div>}
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 
