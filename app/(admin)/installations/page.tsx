@@ -163,6 +163,17 @@ export default function InstallationsPage() {
   const [itemsParsing, setItemsParsing] = useState(false)
   const [itemsError, setItemsError] = useState('')
   const [editWork, setEditWork] = useState<{ id: string; value: string } | null>(null)  // แก้รายละเอียดงานของแถวที่เพิ่มเอง
+  // หน้ายอดติดตั้ง — สรุปยอด+โบนัสช่างรายเดือน (สูตรเดียวกับชีท "ยอดติดตั้ง")
+  const [bonusModal, setBonusModal] = useState(false)
+  const [bonusMonth, setBonusMonth] = useState(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  })
+  const [techCount, setTechCount] = useState(3)
+  useEffect(() => {
+    const saved = parseInt(localStorage.getItem('install_tech_count') ?? '', 10)
+    if (saved > 0) setTechCount(saved)
+  }, [])
 
   const load = async () => {
     const { data, error: err } = await supabase.from('installations').select('*').order('appointment_datetime', { ascending: false })
@@ -387,6 +398,10 @@ export default function InstallationsPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px' }}>งานติดตั้ง</h1>
         <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={() => setBonusModal(true)}
+            style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border-2)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+            💰 ยอดติดตั้ง
+          </button>
           <button onClick={() => window.print()}
             style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border-2)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
             🖨️ ปริ้นปฏิทิน
@@ -765,6 +780,112 @@ export default function InstallationsPage() {
           </div>
         </div>
       )}
+
+      {/* ยอดติดตั้ง — สรุปยอดติดตั้งสำเร็จ+โบนัสช่างรายเดือน (สูตรตามชีท: ทุน 80% / กำไร 20% / โบนัสรวม 1% ของยอด / หารตามจำนวนช่าง) */}
+      {bonusModal && (() => {
+        const [by, bm] = bonusMonth.split('-').map(Number)
+        const inMonth = installs.filter(ins => {
+          if (!ins.appointment_datetime) return false
+          const d = new Date(ins.appointment_datetime)
+          return d.getFullYear() === by && d.getMonth() === bm - 1
+        })
+        const done = inMonth.filter(ins => ins.installation_status === 'ติดตั้งเสร็จ')
+        const noPrice = done.filter(ins => !(ins.price > 0))
+        const total = done.reduce((s, ins) => s + (ins.price > 0 ? ins.price : 0), 0)
+        const cost = total * 0.8
+        const profit = total * 0.2
+        const bonusTotal = total * 0.01
+        const bonusEach = techCount > 0 ? Math.round(bonusTotal / techCount) : 0
+        const fmtB = (n: number) => '฿' + n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        const monthOptions = Array.from(new Set(installs.filter(i => i.appointment_datetime).map(ins => {
+          const d = new Date(ins.appointment_datetime)
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+        }).concat([bonusMonth]))).sort().reverse()
+        const card = (label: string, value: string, color: string) => (
+          <div key={label} style={{ flex: 1, minWidth: 140, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px' }}>
+            <div style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 500, marginBottom: 6, whiteSpace: 'nowrap' }}>{label}</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color, whiteSpace: 'nowrap' }}>{value}</div>
+          </div>
+        )
+        return (
+          <div onClick={() => setBonusModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 860, maxHeight: '88vh', overflowY: 'auto' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 10 }}>
+                <h2 style={{ fontSize: 17, fontWeight: 700 }}>💰 ยอดติดตั้ง</h2>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <select value={bonusMonth} onChange={e => setBonusMonth(e.target.value)}
+                    style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '6px 12px', fontSize: 13, outline: 'none' }}>
+                    {monthOptions.map(m => (
+                      <option key={m} value={m}>{TH_MONTHS[Number(m.split('-')[1]) - 1]} {Number(m.split('-')[0]) + 543}</option>
+                    ))}
+                  </select>
+                  <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    จำนวนช่าง
+                    <input type="number" min={1} value={techCount}
+                      onChange={e => { const n = Math.max(1, Number(e.target.value) || 1); setTechCount(n); localStorage.setItem('install_tech_count', String(n)) }}
+                      style={{ width: 52, border: '1px solid var(--border)', borderRadius: 8, padding: '6px 8px', fontSize: 13, outline: 'none', textAlign: 'center' }} />
+                    คน
+                  </label>
+                  <button onClick={() => setBonusModal(false)} style={{ border: 'none', background: 'rgba(0,0,0,0.10)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>✕</button>
+                </div>
+              </div>
+              <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 16, lineHeight: 1.6 }}>
+                นับเฉพาะงานสถานะ <b style={{ color: '#34c759' }}>ติดตั้งเสร็จ</b> ในเดือนนั้น · กำไรเฉลี่ย 20% ของยอด · โบนัสรวม 1% ของยอด แบ่งตามจำนวนช่าง
+              </p>
+              <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+                {card('งานติดตั้งเสร็จ', `${done.length} งาน`, 'var(--ink)')}
+                {card('รวมยอดติดตั้งสำเร็จ', fmtB(total), 'var(--blue)')}
+                {card('ทุน 80%', fmtB(cost), 'var(--ink-2)')}
+                {card('กำไร 20%', fmtB(profit), '#34c759')}
+                {card('โบนัสรวม 1%', fmtB(bonusTotal), '#ff9f0a')}
+                {card(`โบนัสต่อคน (${techCount} คน)`, '฿' + bonusEach.toLocaleString('th-TH'), 'var(--red)')}
+              </div>
+              {noPrice.length > 0 && (
+                <div style={{ background: '#fff9e6', border: '1px solid #f0d98c', borderRadius: 10, padding: '10px 14px', marginBottom: 16, color: '#b45309', fontSize: 12, fontWeight: 600 }}>
+                  ⚠️ งานติดตั้งเสร็จ {noPrice.length} งานยังไม่ลงราคา — ยอดรวมยังไม่นับงานพวกนี้ ({noPrice.map(i => i.serial_no).join(', ')})
+                </div>
+              )}
+              {done.length === 0 ? (
+                <p style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 24, fontSize: 13 }}>ยังไม่มีงานติดตั้งเสร็จในเดือนนี้</p>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
+                      {['Serial', 'ลูกค้า', 'วันติดตั้ง', 'แพลตฟอร์ม', 'สถานะชำระ', 'ราคา'].map(h => (
+                        <th key={h} style={{ textAlign: h === 'ราคา' ? 'right' : 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {done.map(ins => (
+                      <tr key={ins.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '10px 14px', fontWeight: 700, color: 'var(--blue)' }}>{ins.serial_no}</td>
+                        <td style={{ padding: '10px 14px' }}>
+                          {(ins.customer_real_name || ins.customer_id)
+                            ? <Link href={`/customers?name=${encodeURIComponent(ins.customer_real_name || ins.customer_id)}`} title="เปิดโฟลเดอร์ออเดอร์" style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>{ins.customer_real_name || ins.customer_id}</Link>
+                            : '-'}
+                        </td>
+                        <td style={{ padding: '10px 14px', color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
+                          {ins.appointment_datetime ? new Date(ins.appointment_datetime).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '-'}
+                        </td>
+                        <td style={{ padding: '10px 14px', color: 'var(--ink-3)' }}>{ins.platform || '-'}</td>
+                        <td style={{ padding: '10px 14px', color: ins.payment_status === 'ชำระครบ' ? '#34c759' : 'var(--ink-3)', fontWeight: ins.payment_status === 'ชำระครบ' ? 600 : 400 }}>{ins.payment_status || '-'}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: ins.price > 0 ? 'var(--ink)' : '#b45309', whiteSpace: 'nowrap' }}>
+                          {ins.price > 0 ? fmtB(ins.price) : 'ยังไม่ลงราคา'}
+                        </td>
+                      </tr>
+                    ))}
+                    <tr>
+                      <td colSpan={5} style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700 }}>รวม</td>
+                      <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 800, color: 'var(--blue)', whiteSpace: 'nowrap' }}>{fmtB(total)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Add/Edit modal */}
       {modal && (
