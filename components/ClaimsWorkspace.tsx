@@ -39,6 +39,8 @@ type Claim = {
   notes: string | null
   raw_text: string | null
   admin_name: string | null   // แอดมินที่รับผิดชอบเคสนี้ — โชว์ใน dashboard พนักงานรายคนด้วย
+  closed_by: string | null    // ใครปิดงานเคสนี้ (เลือกชื่อ = ปิดงานแล้ว)
+  closed_at: string | null
   created_at?: string
   updated_at?: string
 }
@@ -69,7 +71,7 @@ function emptyClaim(): Claim {
     original_order_number: '', claim_type: '', fault: '', cause: '', resolution: '', items: null,
     ship_name: '', ship_address: '', ship_phone: '', return_tracking: '', outbound_tracking: '',
     courier: '', refund_amount: null, money_direction: '', payment_target: '', money_status: '',
-    status: 'รอของคืน', is_urgent: false, notes: '', raw_text: '', admin_name: '',
+    status: 'รอของคืน', is_urgent: false, notes: '', raw_text: '', admin_name: '', closed_by: null, closed_at: null,
   }
 }
 
@@ -237,6 +239,16 @@ export default function ClaimsWorkspace() {
       </div>
     )
   }
+  // ปิดงาน: ติ๊ก = ปิดงาน+ประทับเวลา (เก็บชื่อแอดมินที่รับผิดชอบเป็นคนปิด), ติ๊กออก = เปิดงานกลับ
+  const toggleClosed = async (r: Claim, checked: boolean) => {
+    const now = new Date().toISOString()
+    const updates = checked
+      ? { closed_by: r.admin_name || 'ไม่ระบุ', closed_at: now, updated_at: now }
+      : { closed_by: null, closed_at: null, updated_at: now }
+    setRows(prev => prev.map(x => x.id === r.id ? ({ ...x, ...updates } as Claim) : x))
+    await supabase.from('claims').update(updates).eq('id', r.id)
+  }
+
   const selectInline = (r: Claim, field: keyof Claim, options: string[]) => (
     <select value={String(r[field] ?? '')} onChange={e => saveCell(r.id, field, e.target.value)}
       style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', padding: 0, color: r[field] ? 'var(--ink)' : 'var(--ink-4)', maxWidth: 140 }}>
@@ -388,7 +400,7 @@ export default function ClaimsWorkspace() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
-                  {['วันที่', 'แพลตฟอร์ม', 'ลูกค้า', 'ประเภท', 'รายการ', 'ยอดชำระ', 'สถานะ', 'แอดมิน', 'หมายเหตุ', 'แก้ไขล่าสุด', ''].map((h, i) => (
+                  {['วันที่', 'แพลตฟอร์ม', 'ลูกค้า', 'ประเภท', 'รายการ', 'ยอดชำระ', 'สถานะ', 'แอดมิน', 'ปิดงาน', 'หมายเหตุ', 'แก้ไขล่าสุด', ''].map((h, i) => (
                     <th key={i} style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -450,6 +462,16 @@ export default function ClaimsWorkspace() {
                     </td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
                       {selectInline(r, 'admin_name', ADMINS)}
+                    </td>
+                    <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
+                      <input type="checkbox" checked={!!r.closed_at} onChange={e => toggleClosed(r, e.target.checked)}
+                        title={r.closed_at ? 'ปิดงานแล้ว' : 'ติ๊กเพื่อปิดงาน'}
+                        style={{ cursor: 'pointer', width: 16, height: 16, accentColor: '#34c759' }} />
+                      {r.closed_at && (
+                        <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>
+                          {new Date(r.closed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: '8px 14px', minWidth: 120 }}>{textCell(r, 'notes')}</td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', color: 'var(--ink-4)', fontSize: 11 }}>
