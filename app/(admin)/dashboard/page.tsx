@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { effShipping } from '@/lib/shipping'
 
@@ -211,8 +212,8 @@ export default function DashboardPage() {
 
   useEffect(() => {
     ;(async () => {
-      const { data } = await supabase.from('order_entries').select('id,order_number,customer_name,order_status,deadline,created_at,platform,courier,is_installation,is_urgent,is_dropoff,shipping_datetime,notes,updated_at').order('created_at', { ascending: true })
-      const rows = (data ?? []) as Order[]
+      const { data: rows } = await fetchAllRows<Order>(() =>
+        supabase.from('order_entries').select('id,order_number,customer_name,order_status,deadline,created_at,platform,courier,is_installation,is_urgent,is_dropoff,shipping_datetime,notes,updated_at').order('created_at', { ascending: true }).order('id', { ascending: true }))
       setPageCache('dashboard:order_entries', rows)
       setAll(rows)
       setLoading(false)

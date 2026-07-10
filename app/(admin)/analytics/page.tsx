@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
+import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 
+type StatusEvent = { status: string; at: string; by?: string | null }
 type OrderRow = {
   id: string
   order_number: string
@@ -14,6 +16,7 @@ type OrderRow = {
   price: number | null
   platform: string | null
   is_installation: boolean
+  status_history: StatusEvent[] | null
 }
 type ScanRow = { order_number: string; status: string; tech_name: string | null; scanned_at: string }
 type ClaimRow = { id: string; created_at: string; status: string | null; fault: string | null; refund_amount: number | null; claim_type: string | null }
@@ -128,25 +131,15 @@ export default function AnalyticsPage() {
 
   useEffect(() => {
     ;(async () => {
-      // ดึงเป็นหน้าละ 1000 จนหมด — Supabase ตัดที่ 1000 แถวต่อ query
-      const fetchAll = async (table: string, cols: string, orderCol: string) => {
-        const rows: unknown[] = []
-        for (let from = 0; ; from += 1000) {
-          const { data: page } = await supabase.from(table).select(cols).order(orderCol, { ascending: true }).range(from, from + 999)
-          rows.push(...(page ?? []))
-          if (!page || page.length < 1000) break
-        }
-        return rows
-      }
       const [o, s, c] = await Promise.all([
-        fetchAll('order_entries', 'id,order_number,order_status,created_at,shipped_at,deadline,price,platform,is_installation', 'created_at'),
-        fetchAll('production_scans', 'order_number,status,tech_name,scanned_at', 'scanned_at'),
-        fetchAll('claims', 'id,created_at,status,fault,refund_amount,claim_type', 'created_at'),
+        fetchAllRows<OrderRow>(() => supabase.from('order_entries').select('id,order_number,order_status,created_at,shipped_at,deadline,price,platform,is_installation,status_history').order('created_at', { ascending: true }).order('id', { ascending: true })),
+        fetchAllRows<ScanRow>(() => supabase.from('production_scans').select('order_number,status,tech_name,scanned_at').order('scanned_at', { ascending: true })),
+        fetchAllRows<ClaimRow>(() => supabase.from('claims').select('id,created_at,status,fault,refund_amount,claim_type').order('created_at', { ascending: true }).order('id', { ascending: true })),
       ])
       const next: AllData = {
-        orders: o as OrderRow[],
-        scans: s as ScanRow[],
-        claims: c as ClaimRow[],
+        orders: o.data,
+        scans: s.data,
+        claims: c.data,
       }
       setPageCache('analytics:data', next)
       setData(next)
@@ -169,29 +162,46 @@ export default function AnalyticsPage() {
     const orders = data.orders.filter(o => inRange(o.created_at))
     const claims = data.claims.filter(c => inRange(c.created_at))
 
-    // --- เวลาแต่ละแผนก: จับคู่สแกนตามลำดับขั้นในออเดอร์เดียวกัน ---
+    // --- เวลาแต่ละแผนก: รวม 2 แหล่ง — สแกนผลิต + ประวัติเปลี่ยนสถานะในเว็บ (status_history)
+    // เก็บเวลาแรกสุดของแต่ละขั้นต่อออเดอร์ แล้วดูส่วนต่างขั้นก่อนหน้า → ขั้นนี้
     const orderByNumber = new Map<string, OrderRow>()
     data.orders.forEach(o => { if (o.order_number) orderByNumber.set(o.order_number, o) })
+    const STAGE_SET = new Set(STAGES.map(st => st.status))
 
-    const scansByOrder = new Map<string, Map<string, string>>() // order → status → เวลาสแกนครั้งแรก
+    const stageTimes = new Map<string, { created: string | null; times: Map<string, string> }>()
+    const entryFor = (key: string, created: string | null) => {
+      let e = stageTimes.get(key)
+      if (!e) { e = { created, times: new Map() }; stageTimes.set(key, e) }
+      if (!e.created && created) e.created = created
+      return e
+    }
+    const setEarliest = (times: Map<string, string>, status: string, at: string) => {
+      const prev = times.get(status)
+      if (!prev || at < prev) times.set(status, at)
+    }
+
     for (const s of data.scans) {
-      if (!s.order_number || !s.scanned_at) continue
-      let m = scansByOrder.get(s.order_number)
-      if (!m) { m = new Map(); scansByOrder.set(s.order_number, m) }
-      const prev = m.get(s.status)
-      if (!prev || s.scanned_at < prev) m.set(s.status, s.scanned_at)
+      if (!s.order_number || !s.scanned_at || !STAGE_SET.has(s.status)) continue
+      const e = entryFor(s.order_number, orderByNumber.get(s.order_number)?.created_at ?? null)
+      setEarliest(e.times, s.status, s.scanned_at)
+    }
+    for (const o of data.orders) {
+      if (!Array.isArray(o.status_history)) continue
+      const events = o.status_history.filter(h => h?.status && h?.at && STAGE_SET.has(h.status))
+      if (!events.length) continue
+      const e = entryFor(o.order_number || o.id, o.created_at)
+      events.forEach(h => setEarliest(e.times, h.status, h.at))
     }
 
     const stageDurations: Record<string, number[]> = {}
     STAGES.forEach(st => { stageDurations[st.status] = [] })
     const totalProd: number[] = [] // ตัดเสร็จ → แพ็คเสร็จ
 
-    for (const [orderNo, m] of scansByOrder) {
+    for (const [, { created, times }] of stageTimes) {
       // เวลาเริ่มของขั้นแรก = วันที่ลงออเดอร์
-      const ord = orderByNumber.get(orderNo)
-      let prevT: string | null = ord?.created_at ?? null
+      let prevT: string | null = created
       for (const st of STAGES) {
-        const t = m.get(st.status)
+        const t = times.get(st.status)
         if (t) {
           if (prevT && inRange(t)) {
             const d = new Date(t).getTime() - new Date(prevT).getTime()
@@ -200,7 +210,7 @@ export default function AnalyticsPage() {
           prevT = t
         }
       }
-      const cut = m.get('ตัดผ้าแล้ว'), pack = m.get('แพ็คแล้ว')
+      const cut = times.get('ตัดผ้าแล้ว'), pack = times.get('แพ็คแล้ว')
       if (cut && pack && inRange(pack)) {
         const d = new Date(pack).getTime() - new Date(cut).getTime()
         if (d > 0 && d <= MAX_STAGE_MS) totalProd.push(d)
@@ -329,7 +339,7 @@ export default function AnalyticsPage() {
 
       {/* เวลาเฉลี่ยแต่ละแผนก + กราฟรายเดือน */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 14, marginBottom: 22 }}>
-        <Card title="เวลาที่ใช้แต่ละแผนก" sub="นับจากขั้นก่อนหน้าเสร็จ → สแกนขั้นนี้เสร็จ (ขั้นตัดนับจากวันลงออเดอร์)">
+        <Card title="เวลาที่ใช้แต่ละแผนก" sub="นับจากขั้นก่อนหน้าเสร็จ → ขั้นนี้เสร็จ (จากสแกนผลิต + เปลี่ยนสถานะในเว็บ, ขั้นตัดนับจากวันลงออเดอร์)">
           {stats.stageMed.map(st => (
             <HBar key={st.status} label={st.label} value={st.med ?? 0} max={maxStage} color={st.color}
               valueText={fmtDur(st.med)} subText={`${st.n} งาน`} />

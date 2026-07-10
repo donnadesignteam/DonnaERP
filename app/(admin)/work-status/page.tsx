@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 
 // สีแยกตามขั้นผลิต — ให้ตรงกับหน้าออเดอร์ (PROD_STATUS_COLOR ใน OrderWorkspace)
@@ -30,8 +31,8 @@ export default function WorkStatusPage() {
   useEffect(() => {
     ;(async () => {
       const [{ data: ws }, { data: ord }] = await Promise.all([
-        supabase.from('work_status').select('*'),
-        supabase.from('orders').select('order_number, customer_name, status, deadline').neq('status', 'สำเร็จ'),
+        fetchAllRows<any>(() => supabase.from('work_status').select('*').order('id', { ascending: true })),
+        fetchAllRows<any>(() => supabase.from('orders').select('order_number, customer_name, status, deadline').neq('status', 'สำเร็จ').order('order_number', { ascending: true })),
       ])
       setPageCache('work-status', { ws: ws ?? [], ord: ord ?? [] })
       setWorkStatus(ws ?? [])

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 
 type PO = {
@@ -43,9 +44,10 @@ export default function PurchaseOrdersPage() {
   const [search, setSearch] = useState('')
 
   const load = async () => {
-    const { data, error: err } = await supabase.from('purchase_orders').select('*').order('created_at', { ascending: false })
+    const { data, error: err } = await fetchAllRows<PO>(() =>
+      supabase.from('purchase_orders').select('*').order('created_at', { ascending: false }).order('id', { ascending: true }))
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
-    const pos = (data ?? []) as PO[]
+    const pos = data
     setPageCache('purchase_orders', pos)
     setRows(pos)
     setLoading(false)

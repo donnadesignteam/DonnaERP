@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { HOLIDAYS } from '@/lib/holidays'
 import { formatItemLines, type RawItem } from '@/lib/itemFormat'
@@ -177,9 +178,10 @@ export default function InstallationsPage() {
   }, [])
 
   const load = async () => {
-    const { data, error: err } = await supabase.from('installations').select('*').order('appointment_datetime', { ascending: false })
+    const { data, error: err } = await fetchAllRows<Installation>(() =>
+      supabase.from('installations').select('*').order('appointment_datetime', { ascending: false }).order('id', { ascending: true }))
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
-    let rows = (data ?? []) as Installation[]
+    let rows = data
     // งานวัดหน้างานที่เลยวันนัดไปแล้ว → เลื่อนสถานะเป็น "วัดหน้างานแล้ว" อัตโนมัติ
     const now = Date.now()
     const overdue = rows.filter(r => r.installation_status === 'วัดหน้างาน' && r.appointment_datetime && new Date(r.appointment_datetime).getTime() < now)

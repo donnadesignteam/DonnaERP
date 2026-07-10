@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { itemBlockLines, heightText, formatItemLines } from '@/lib/itemFormat'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
@@ -447,9 +448,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   }
 
   const load = async () => {
-    const { data, error: err } = await supabase.from('order_entries').select('*').order('entry_date', { ascending: false, nullsFirst: false }).order('id', { ascending: true })
+    const { data, error: err } = await fetchAllRows<Entry>(() =>
+      supabase.from('order_entries').select('*').order('entry_date', { ascending: false, nullsFirst: false }).order('id', { ascending: true }))
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
-    const entries = (data ?? []) as Entry[]
+    const entries = data
     const order = computeSortOrder(entries, daysSort)
     setPageCache('order_entries', { rows: entries, sortOrder: order })
     setRows(entries)

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 
 type Item = {
@@ -104,11 +105,13 @@ export default function ClaimsWorkspace() {
   const [itemsParseErr, setItemsParseErr] = useState('')
 
   const load = async () => {
-    const { data, error: err } = await supabase.from('claims').select('*')
-      .order('claim_date', { ascending: false, nullsFirst: false })
-      .order('created_at', { ascending: false })
+    const { data, error: err } = await fetchAllRows<Claim>(() =>
+      supabase.from('claims').select('*')
+        .order('claim_date', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: true }))
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message} — รัน scripts/create_claims_table.sql ใน Supabase ก่อนนะคะ`)
-    const claims = (data ?? []) as Claim[]
+    const claims = data
     setPageCache('claims', claims)
     setRows(claims)
     setLoading(false)

@@ -38,10 +38,12 @@ function loadTech(): Tech | null {
 }
 
 // ดึงเลขออเดอร์จาก QR (รองรับทั้ง URL .../scan?o=XXX และข้อความเลขเปล่า)
+// ถ้าเป็น URL แต่ไม่มี ?o= → คืนค่าว่าง (ห้ามคืนทั้ง URL มาใช้เป็นเลขออเดอร์ — เคยทำให้ order_number ในฐานข้อมูลเป็น URL)
 function extractOrder(text: string): string {
-  try { const u = new URL(text); const o = u.searchParams.get('o'); if (o) return o } catch {}
-  const m = String(text).match(/[?&]o=([^&\s]+)/); if (m) return decodeURIComponent(m[1])
-  return String(text).trim()
+  const t = String(text).trim()
+  const m = t.match(/[?&]o=([^&\s]+)/); if (m) return decodeURIComponent(m[1])
+  if (/^https?:\/\//i.test(t)) return ''
+  return t
 }
 
 // ดึง id ของแถวจาก QR (QR ใหม่ฝัง ?id=NNN — แม่นยำกว่า order_number)
@@ -49,6 +51,22 @@ function extractId(text: string): string {
   try { const u = new URL(text); const id = u.searchParams.get('id'); if (id) return id } catch {}
   const m = String(text).match(/[?&]id=([^&\s]+)/); if (m) return decodeURIComponent(m[1])
   return ''
+}
+
+// บันทึกประวัติสถานะลง order_entries.status_history แบบ best-effort (พังก็ไม่กระทบสถานะหลัก)
+// เก็บ "ใครสแกน" ไว้ใน by ด้วย — หน้าวิเคราะห์ข้อมูลใช้เวลาพวกนี้คำนวณเวลาแต่ละแผนก
+async function logHistory(orderId: string, status: string, now: string, by: string | null) {
+  try {
+    const { data: r } = await supabase.from('order_entries').select('status_history').eq('id', orderId).single()
+    const prev = Array.isArray(r?.status_history) ? r.status_history : []
+    if (prev.length && prev[prev.length - 1]?.status === status) return
+    await supabase.from('order_entries').update({ status_history: [...prev, { status, at: now, by }] }).eq('id', orderId)
+  } catch {}
+}
+
+// เลขออเดอร์ที่จะบันทึกลง production_scans — ห้ามเป็นค่าว่าง ใช้ id อ้างอิงแทนถ้าออเดอร์ไม่มีเลข
+function scanOrderNo(o: any, ord: string): string {
+  return o.order_number || ord || `id:${o.id}`
 }
 
 const wrap: React.CSSProperties = { minHeight: '100dvh', background: '#0b1220', color: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 0, fontFamily: 'Sarabun, -apple-system, "Segoe UI", sans-serif', textAlign: 'center' }
@@ -336,7 +354,7 @@ function ScanContent() {
       const now = new Date().toISOString()
       const { error } = await supabase.from('order_entries').update({ rail_packed: true, rail_packed_at: now, updated_at: now }).eq('id', o.id)
       if (error) { setPhase('error'); setMsg(error.message); return null }
-      try { await supabase.from('production_scans').insert({ order_number: o.order_number || ord, stage: stage.label, status: stage.status, tech_code: t.code, tech_name: t.name, scanned_at: now }) } catch {}
+      try { await supabase.from('production_scans').insert({ order_number: scanOrderNo(o, ord), stage: stage.label, status: stage.status, tech_code: t.code, tech_name: t.name, scanned_at: now }) } catch {}
       setPhase('done'); return o
     }
     if (special === 'shipped') {
@@ -350,7 +368,8 @@ function ScanContent() {
           if (matches && matches.length > 0) await supabase.from('work_status').update({ status: 'จัดส่งแล้ว', status_updated_at: now }).in('id', matches.map((m: any) => m.id))
         }
       } catch {}
-      try { await supabase.from('production_scans').insert({ order_number: o.order_number || ord, stage: stage.label, status: stage.status, tech_code: t.code, tech_name: t.name, scanned_at: now }) } catch {}
+      try { await supabase.from('production_scans').insert({ order_number: scanOrderNo(o, ord), stage: stage.label, status: stage.status, tech_code: t.code, tech_name: t.name, scanned_at: now }) } catch {}
+      await logHistory(o.id, 'จัดส่งแล้ว', now, t.name)
       const updated = { ...o, order_status: 'จัดส่งแล้ว' }
       setOrder(updated); setPhase('done'); return updated
     }
@@ -370,7 +389,8 @@ function ScanContent() {
         if (matches && matches.length > 0) await supabase.from('work_status').update({ status: stage.status, status_updated_at: now }).in('id', matches.map((m: any) => m.id))
       }
     } catch {}
-    try { await supabase.from('production_scans').insert({ order_number: o.order_number || ord, stage: stage.label, status: stage.status, tech_code: t.code, tech_name: t.name, scanned_at: now }) } catch {}
+    try { await supabase.from('production_scans').insert({ order_number: scanOrderNo(o, ord), stage: stage.label, status: stage.status, tech_code: t.code, tech_name: t.name, scanned_at: now }) } catch {}
+    await logHistory(o.id, stage.status, now, t.name)
 
     const done = { ...o, order_status: stage.status }
     setOrder(done)
