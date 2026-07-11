@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { EMPLOYEES, STAGES, stageByKey, canAdvance } from '@/lib/staff'
+import { EMPLOYEES, STAGES, stageByKey } from '@/lib/staff'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { uploadPackingFile, deletePackingFile, compressImage } from '@/lib/packingPhotos'
 
@@ -51,22 +51,6 @@ function extractId(text: string): string {
   try { const u = new URL(text); const id = u.searchParams.get('id'); if (id) return id } catch {}
   const m = String(text).match(/[?&]id=([^&\s]+)/); if (m) return decodeURIComponent(m[1])
   return ''
-}
-
-// บันทึกประวัติสถานะลง order_entries.status_history แบบ best-effort (พังก็ไม่กระทบสถานะหลัก)
-// เก็บ "ใครสแกน" ไว้ใน by ด้วย — หน้าวิเคราะห์ข้อมูลใช้เวลาพวกนี้คำนวณเวลาแต่ละแผนก
-async function logHistory(orderId: string, status: string, now: string, by: string | null) {
-  try {
-    const { data: r } = await supabase.from('order_entries').select('status_history').eq('id', orderId).single()
-    const prev = Array.isArray(r?.status_history) ? r.status_history : []
-    if (prev.length && prev[prev.length - 1]?.status === status) return
-    await supabase.from('order_entries').update({ status_history: [...prev, { status, at: now, by }] }).eq('id', orderId)
-  } catch {}
-}
-
-// เลขออเดอร์ที่จะบันทึกลง production_scans — ห้ามเป็นค่าว่าง ใช้ id อ้างอิงแทนถ้าออเดอร์ไม่มีเลข
-function scanOrderNo(o: any, ord: string): string {
-  return o.order_number || ord || `id:${o.id}`
 }
 
 const wrap: React.CSSProperties = { minHeight: '100dvh', background: '#0b1220', color: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 0, fontFamily: 'Sarabun, -apple-system, "Segoe UI", sans-serif', textAlign: 'center' }
@@ -337,6 +321,8 @@ function ScanContent() {
   }
 
   // คืนค่า order ที่อัปเดตแล้วเมื่อสำเร็จ (แผนกจัดส่งแล้วใช้ต่อเป็นโหมดสแกนบาร์โค้ด) / null เมื่อไม่สำเร็จ
+  // การบันทึกทั้งหมด (สถานะ + กันข้ามขั้น + sync กระดานงาน + log สแกน + ประวัติ) ทำใน RPC ตัวเดียว
+  // แบบ all-or-nothing (sql/scan_advance_rpc.sql) — สำเร็จคือครบทุกตาราง พังคือไม่บันทึกอะไรเลย
   async function runScan(t: Tech, id: string, ord: string): Promise<any> {
     const stage = resolveStage(t.stageKey)
     if (!stage) { setPhase('error'); setMsg('ไม่พบแผนกของผู้ใช้ กรุณาตั้งค่าใหม่'); return null }
@@ -348,51 +334,25 @@ function ScanContent() {
     setOrder(o)
     setPhotos(Array.isArray(o.packing_photos) ? o.packing_photos : [])
 
-    // ===== งานพิเศษ: แพ็คราง / จัดส่งแล้ว (ไม่ผ่านด่านกันข้ามขั้น) =====
-    const special: SpecialKind | undefined = stage.special
-    if (special === 'rail') {
-      const now = new Date().toISOString()
-      const { error } = await supabase.from('order_entries').update({ rail_packed: true, rail_packed_at: now, updated_at: now }).eq('id', o.id)
-      if (error) { setPhase('error'); setMsg(error.message); return null }
-      try { await supabase.from('production_scans').insert({ order_number: scanOrderNo(o, ord), stage: stage.label, status: stage.status, tech_code: t.code, tech_name: t.name, scanned_at: now }) } catch {}
-      setPhase('done'); return o
-    }
-    if (special === 'shipped') {
-      const now = new Date().toISOString()
-      const { error } = await supabase.from('order_entries').update({ order_status: 'จัดส่งแล้ว', shipped_at: now, is_urgent: true, updated_at: now }).eq('id', o.id)
-      if (error) { setPhase('error'); setMsg(error.message); return null }
-      try {
-        const term = o.order_number || o.customer_name
-        if (term) {
-          const { data: matches } = await supabase.from('work_status').select('id').or(`order_number.ilike.%${term}%,order_number.ilike.%${o.customer_name}%`)
-          if (matches && matches.length > 0) await supabase.from('work_status').update({ status: 'จัดส่งแล้ว', status_updated_at: now }).in('id', matches.map((m: any) => m.id))
-        }
-      } catch {}
-      try { await supabase.from('production_scans').insert({ order_number: scanOrderNo(o, ord), stage: stage.label, status: stage.status, tech_code: t.code, tech_name: t.name, scanned_at: now }) } catch {}
-      await logHistory(o.id, 'จัดส่งแล้ว', now, t.name)
-      const updated = { ...o, order_status: 'จัดส่งแล้ว' }
-      setOrder(updated); setPhase('done'); return updated
-    }
-
-    if (!canAdvance(o.order_status, stage.status)) {
-      setPhase('already'); setMsg(`สถานะปัจจุบัน: ${o.order_status || 'รอดำเนินการ'}`); return null
-    }
-
-    const now = new Date().toISOString()
-    const { error } = await supabase.from('order_entries').update({ order_status: stage.status, updated_at: now }).eq('id', o.id)
+    const { data, error } = await supabase.rpc('scan_advance', {
+      p_order_id: o.id,
+      p_stage_key: t.stageKey,
+      p_tech_code: t.code,
+      p_tech_name: t.name,
+      p_scanned_term: ord || '',
+    })
     if (error) { setPhase('error'); setMsg(error.message); return null }
-
-    try {
-      const term = o.order_number || o.customer_name
-      if (term) {
-        const { data: matches } = await supabase.from('work_status').select('id').or(`order_number.ilike.%${term}%,order_number.ilike.%${o.customer_name}%`)
-        if (matches && matches.length > 0) await supabase.from('work_status').update({ status: stage.status, status_updated_at: now }).in('id', matches.map((m: any) => m.id))
+    if (!data?.ok) {
+      if (data?.result === 'already') {
+        setPhase('already'); setMsg(`สถานะปัจจุบัน: ${data.current_status || 'รอดำเนินการ'}`); return null
       }
-    } catch {}
-    try { await supabase.from('production_scans').insert({ order_number: scanOrderNo(o, ord), stage: stage.label, status: stage.status, tech_code: t.code, tech_name: t.name, scanned_at: now }) } catch {}
-    await logHistory(o.id, stage.status, now, t.name)
+      if (data?.result === 'not_found') { setPhase('noorder'); return null }
+      setPhase('error'); setMsg(String(data?.result || 'อัปเดตไม่สำเร็จ')); return null
+    }
 
-    const done = { ...o, order_status: stage.status }
+    // แพ็คราง = ติ๊ก flag อย่างเดียว ไม่เปลี่ยนสถานะหลักของออเดอร์
+    const special: SpecialKind | undefined = stage.special
+    const done = special === 'rail' ? o : { ...o, order_status: data.status }
     setOrder(done)
     setPhase('done')
     return done
