@@ -255,6 +255,7 @@ const ORDER_ASSIGNED = ['รออัพเดท', 'แจ้งลงหน้
 const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
   all: [
     { id: 'days', label: 'วันที่เหลือ' }, { id: 'deadline', label: 'ต้องส่งภายใน' },
+    { id: 'print', label: 'ปริ้น' },
     { id: 'customer', label: 'ลูกค้า' }, { id: 'platform', label: 'แพลตฟอร์ม' },
     { id: 'courier', label: 'บริษัทจัดส่ง' }, { id: 'status', label: 'สถานะงาน' },
     { id: 'done', label: 'งานเสร็จ' }, { id: 'shipped', label: 'จัดส่งแล้ว' },
@@ -263,6 +264,7 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
   ],
   platform: [
     { id: 'days', label: 'วันที่เหลือ' }, { id: 'shipping', label: 'ต้องส่งภายใน' },
+    { id: 'print', label: 'ปริ้น' },
     { id: 'order_number', label: 'เลขคำสั่งซื้อ' }, { id: 'customer', label: 'ลูกค้า' },
     { id: 'price', label: 'ราคาสุทธิ' }, { id: 'items', label: 'รายการ' },
     { id: 'platform', label: 'แพลตฟอร์ม' }, { id: 'courier', label: 'บริษัทส่ง' },
@@ -276,6 +278,7 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
   ],
   outside: [
     { id: 'days', label: 'วันที่เหลือ' }, { id: 'deadline', label: 'ต้องส่งภายใน' },
+    { id: 'print', label: 'ปริ้น' },
     { id: 'customer', label: 'ลูกค้า' }, { id: 'platform', label: 'แพลตฟอร์ม' },
     { id: 'items', label: 'รายการ' }, { id: 'total', label: 'ยอดทั้งหมด' },
     { id: 'payment', label: 'ชำระ' }, { id: 'paybefore', label: 'ยอดชำระก่อนจัดส่ง' },
@@ -289,6 +292,7 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
   ],
   install: [
     { id: 'days', label: 'วันที่เหลือ' }, { id: 'deadline', label: 'วันที่ติดตั้ง' },
+    { id: 'print', label: 'ปริ้น' },
     { id: 'customer', label: 'ลูกค้า' }, { id: 'platform', label: 'แพลตฟอร์ม' },
     { id: 'items', label: 'รายการ' }, { id: 'total', label: 'ยอดทั้งหมด' },
     { id: 'payment', label: 'ชำระ' }, { id: 'paybefore', label: 'ยอดชำระหลังติดตั้ง' },
@@ -750,6 +754,30 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       window.scrollTo(window.scrollX, sy)
     }
   }
+
+  // ติ๊กช่องปริ้นเอง: ติ๊ก = บันทึกเวลาปริ้นตอนนี้, เอาติ๊กออก = ล้างค่า (ไม่แตะ updated_at เพราะไม่ใช่การแก้ข้อมูลออเดอร์)
+  const togglePrinted = async (id: string, printed: boolean) => {
+    const val = printed ? new Date().toISOString() : null
+    const { error: err } = await supabase.from('order_entries').update({ printed_at: val }).eq('id', id)
+    if (!err) setRows(prev => prev.map(r => r.id === id ? { ...r, printed_at: val } : r))
+  }
+
+  // ช่องคอลัมน์ "ปริ้น": ติ๊กถูก = ปริ้นแล้ว + โชว์วันเวลาที่ปริ้น (auto ติ๊กเมื่อกดปริ้นในเมนู ···)
+  const printCell = (r: Entry) => (
+    <td style={{ padding: '8px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+      <input type="checkbox" checked={!!r.printed_at} onChange={e => togglePrinted(r.id, e.target.checked)}
+        style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
+      {r.printed_at && (
+        <div style={{ fontSize: 10, color: '#eab308', fontWeight: 600, marginTop: 2 }}>
+          {new Date(r.printed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
+          {new Date(r.printed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+        </div>
+      )}
+    </td>
+  )
+  const printHeader = () => (
+    <th style={{ textAlign: 'center', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ปริ้น</th>
+  )
 
   const toggleDone = async (id: string, checked: boolean) => {
     const row = rows.find(r => r.id === id)
@@ -2049,6 +2077,7 @@ ${body}
                   </button>
                 </th>
                 )}
+                {showCol('print') && printHeader()}
                 {showCol('customer') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ลูกค้า</th>
                 )}
@@ -2299,6 +2328,7 @@ ${body}
                         : dateCell('deadline')}
                     </td>
                     )}
+                    {showCol('print') && printCell(r)}
                     {showCol('customer') && (
                     <td style={{ padding: '8px 14px', minWidth: 100 }}>
                       {r.customer_name
@@ -2523,6 +2553,7 @@ ${body}
                   )}
                 </th>
                 )}
+                {showCol('print') && printHeader()}
                 {quickFilter === 'shipped' && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>เลขออเดอร์</th>
                 )}
@@ -2667,6 +2698,7 @@ ${body}
                       )}
                     </td>
                     )}
+                    {showCol('print') && printCell(r)}
                     {quickFilter === 'shipped' && (
                     <td style={{ padding: '12px 14px', color: 'var(--ink)', fontWeight: 600, whiteSpace: 'nowrap' }}>{r.order_number || '-'}</td>
                     )}
@@ -2847,6 +2879,7 @@ ${body}
                   )}
                 </th>
                 )}
+                {showCol('print') && printHeader()}
                 {showCol('order_number') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>เลขคำสั่งซื้อ</th>
                 )}
@@ -3043,6 +3076,7 @@ ${body}
                       ) : shipDtCell(r, effectiveShipping)}
                     </td>
                     )}
+                    {showCol('print') && printCell(r)}
                     {showCol('order_number') && (
                     <td style={{ padding: '12px 14px', color: 'var(--ink)', fontWeight: 600 }}>{r.order_number || '-'}</td>
                     )}
