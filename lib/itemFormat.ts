@@ -24,6 +24,18 @@ export type RawItem = {
   outsource?: string      // สั่งนอกของรายการนี้ — ตอนบันทึกจะรวมไปลงคอลัมน์สั่งนอกของออเดอร์
 }
 
+// เติมฟิลด์เสริมที่ AI ตัดทิ้งตอนค่าว่างกลับให้ครบ (ประหยัด output token แต่ผลลัพธ์เหมือนเดิม)
+// เช็ก == null เท่านั้น: ถ้า AI ยังส่ง "" มาก็ไม่ทับ → ได้ค่าเดียวกันไม่ว่า AI จะตัดหรือส่งว่าง
+// ฟิลด์หลัก (type/width/height/quantity/unit) AI ใส่เสมอ ไม่แตะ
+const ITEM_EMPTY_FIELDS = ['rail_head', 'eyelet_color', 'fabric_type', 'color_code', 'color_name',
+  'color_desc', 'hooks', 'orientation', 'fabric_split', 'chemical', 'weight_chain', 'pull_side', 'note'] as const
+export function fillItemDefaults(it: RawItem): RawItem {
+  const out: RawItem = { ...it }
+  if (out.floors == null) out.floors = null
+  for (const k of ITEM_EMPTY_FIELDS) if (out[k] == null) out[k] = ''
+  return out
+}
+
 // ทศนิยมตามที่ลูกค้าลงมา: ปกติ 2 ตำแหน่ง แต่ถ้าลงมา 3 ตำแหน่ง (เช่น 2.845) เก็บ 3 ตำแหน่งเลย
 const sizeFixed = (v: number | string | undefined, n: number): string => {
   const dec = (String(v ?? '').trim().split('.')[1] || '').length

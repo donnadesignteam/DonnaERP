@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { fabricTypeFromCode } from '@/lib/fabrics'
+import { fillItemDefaults, type RawItem } from '@/lib/itemFormat'
 
 type ContentBlock = { type: string; text?: string }
 type AnthropicResponse = { content: ContentBlock[] }
@@ -63,6 +64,7 @@ schema แต่ละ item:
 9. บรรทัดที่ขึ้นต้นด้วย · เป็นข้อมูลสี/แบรนด์หรือขนาดของรายการก่อนหน้า ตีความรวมกับบรรทัดนั้น
 10. note ใส่ได้เฉพาะ: ตำแหน่ง (ซ้าย, ขวา, บน, ล่าง) หรือเงื่อนไขสั้นๆ อื่นๆ (พร้อมส่ง, มีตำหนิ, ตัดครึ่งพร้อมตัวต่อ) ที่ไม่เข้าหมวด fabric_split/chemical/weight_chain/pull_side เท่านั้น ห้ามใส่ข้อมูลสี/ขนาด/แบรนด์
 11. หัวรางที่พบบ่อย: กระดูม, ไม้อ่อน, วงแหวน, ตะขอ, ซิลเวอร์ — ถ้าบรรทัดหลังรางขึ้นต้นด้วยชื่อหัวราง ให้ถือว่าเป็นข้อมูลของรางนั้น ไม่ใช่ item ใหม่ ให้เก็บเป็น rail_head และนำขนาด/จำนวนจากบรรทัดนั้นมาใส่ใน item รางด้วย
+12. ลด output: ฟิลด์ต่อไปนี้ถ้าค่าว่าง/null ให้ตัดทิ้ง ไม่ต้องใส่ใน JSON (ระบบเติมให้เอง) — floors, rail_head, eyelet_color, fabric_type, color_code, color_name, color_desc, hooks, orientation, fabric_split, chemical, weight_chain, pull_side, note — ใส่เฉพาะฟิลด์ที่มีค่าจริง · แต่ type, width, height, quantity, unit ต้องใส่ครบทุกรายการเสมอ
 
 รายการ:
 ${text}`
@@ -96,11 +98,12 @@ ${text}`
 
   try {
     const items = JSON.parse(jsonMatch[0])
-    // เติม/แก้ fabric_type จากแคตตาล็อกรหัสผ้า (เฉพาะรายการผ้า ไม่ใช่ราง)
+    // เติมฟิลด์เสริมที่ AI ตัดทิ้งกลับให้ครบ แล้วเติม/แก้ fabric_type จากแคตตาล็อกรหัสผ้า (เฉพาะรายการผ้า ไม่ใช่ราง)
     const normalized = Array.isArray(items)
-      ? items.map((it: { type?: string; color_code?: string; fabric_type?: string }) => {
-          if (typeof it?.type === 'string' && it.type.startsWith('ราง')) return it
-          const ft = fabricTypeFromCode(it?.color_code)
+      ? items.map((raw: RawItem) => {
+          const it = fillItemDefaults(raw)
+          if (typeof it.type === 'string' && it.type.startsWith('ราง')) return it
+          const ft = fabricTypeFromCode(it.color_code)
           return ft ? { ...it, fabric_type: ft } : it
         })
       : items

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { fabricTypeFromCode } from '@/lib/fabrics'
+import { fillItemDefaults, type RawItem } from '@/lib/itemFormat'
 
 type ContentBlock = { type: string; text?: string }
 type AnthropicResponse = { content: ContentBlock[]; stop_reason?: string }
@@ -70,6 +71,7 @@ schema ของแต่ละ item:
 - ผ้าม่านลอนเทป: ใช้เทป ไม่มีตะขอให้เลือก ไม่ต้องใส่ชนิดตะขอใน rail_head
 - (สั่งตัด) และ 📍 นำหน้า ให้ตัดออก
 - ถ้าข้อมูลไหนไม่มีในข้อความ ใส่ null (หรือ "" ใน item, [] สำหรับ items) ห้ามแต่งเติม
+- ลด output ของ item: ฟิลด์ต่อไปนี้ถ้าค่าว่าง/null ให้ตัดทิ้ง ไม่ต้องใส่ใน JSON (ระบบเติมให้เอง) — floors, rail_head, eyelet_color, fabric_type, color_code, color_name, color_desc, hooks, orientation, fabric_split, chemical, weight_chain, pull_side, note — ใส่เฉพาะฟิลด์ที่มีค่าจริง · แต่ type, width, height, quantity, unit ต้องใส่ครบทุก item เสมอ (ฟิลด์ระดับออเดอร์ยังใส่ null ตามเดิม)
 
 ข้อความ:
 ${text}`
@@ -110,9 +112,10 @@ ${text}`
     // เติม/แก้ fabric_type ให้ถูกต้องจากแคตตาล็อกรหัสผ้า (แม่นกว่าให้ AI เดา)
     // เฉพาะรายการผ้า (ไม่ใช่ราง) ที่มีรหัสสีตรงกับแคตตาล็อก
     if (Array.isArray(order.items)) {
-      order.items = order.items.map((it: { type?: string; color_code?: string; fabric_type?: string }) => {
-        if (typeof it?.type === 'string' && it.type.startsWith('ราง')) return it
-        const ft = fabricTypeFromCode(it?.color_code)
+      order.items = order.items.map((raw: RawItem) => {
+        const it = fillItemDefaults(raw)
+        if (typeof it.type === 'string' && it.type.startsWith('ราง')) return it
+        const ft = fabricTypeFromCode(it.color_code)
         return ft ? { ...it, fabric_type: ft } : it
       })
     }
