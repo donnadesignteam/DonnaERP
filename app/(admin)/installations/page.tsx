@@ -18,6 +18,7 @@ type Installation = {
   customer_id: string
   customer_real_name: string
   province: string
+  install_zone: string
   phone: string
   work_details: string
   location_link: string
@@ -41,6 +42,7 @@ const PLATFORMS = ['Tiktok','Tiktok-Chat','Shopee','Shopee-Chat','Lazada','Faceb
 const TIMES = ['8:00','9:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00']
 const ENTERED_BY = ['เก๋','หนูนา','สู้','ยุน']
 const WORK_TYPES = ['งานติดตั้ง','งานวัดหน้างาน','งานแก้']
+const ZONES = ['เชียงราย','เชียงใหม่','กทม']
 const INST_STATUS = ['วัดหน้างาน','วัดหน้างานแล้ว','ติดตั้ง','ติดตั้งเสร็จ','ติดตั้ง50%','รอแก้']
 
 // สถานะตั้งต้นตามลักษณะงาน (ช่องสถานะถูกเอาออกจากฟอร์ม จึงกำหนดอัตโนมัติ)
@@ -130,7 +132,7 @@ function Calendar({ year, month, installs, onDayClick }: {
 
 const emptyForm = (): Omit<Installation, 'id' | 'created_at' | 'updated_at' | 'serial_no'> => ({
   appointment_datetime: '', work_type: 'งานวัดหน้างาน', platform: '', customer_id: '',
-  customer_real_name: '', province: '', phone: '', work_details: '', location_link: '',
+  customer_real_name: '', province: '', install_zone: '', phone: '', work_details: '', location_link: '',
   price: 0, notes: '', payment_status: 'รอมัดจำ', appointment_status: 'นัดหมายแล้ว',
   production_status: 'กำลังผลิต', send_to_technician: 'หน้าร้าน',
   installation_status: 'วัดหน้างาน', entered_by: '',
@@ -149,6 +151,7 @@ export default function InstallationsPage() {
   const [apptDate, setApptDate] = useState('')
   const [apptTime, setApptTime] = useState('9:00')
   const [listFilter, setListFilter] = useState<'all' | string>('all')
+  const [zoneFilter, setZoneFilter] = useState<string | null>(null)  // filter ปฏิทินตามโซนติดตั้ง
   const [search, setSearch] = useState('')
   const [error, setError] = useState('')
   const [pasteText, setPasteText] = useState('')
@@ -361,6 +364,13 @@ export default function InstallationsPage() {
     if (err) { setError(`อัพเดทสถานะไม่สำเร็จ: ${err.message}`); load() }
   }
 
+  const updateZone = async (id: string, zone: string) => {
+    const now = new Date().toISOString()
+    setInstalls(prev => prev.map(i => i.id === id ? { ...i, install_zone: zone, updated_at: now } : i))
+    const { error: err } = await supabase.from('installations').update({ install_zone: zone, updated_at: now }).eq('id', id)
+    if (err) { setError(`อัพเดทโซนไม่สำเร็จ: ${err.message}`); load() }
+  }
+
   const del = async (id: string) => {
     if (!confirm('ลบรายการนี้?')) return
     await supabase.from('installations').delete().eq('id', id)
@@ -376,12 +386,13 @@ export default function InstallationsPage() {
   })
   const q = search.trim().toLowerCase()
   const displayed = !q ? byMonth : byMonth.filter(ins =>
-    [ins.serial_no, ins.customer_real_name, ins.customer_id, ins.platform, ins.province, ins.phone, ins.installation_status, ins.notes]
+    [ins.serial_no, ins.customer_real_name, ins.customer_id, ins.platform, ins.province, ins.install_zone, ins.phone, ins.installation_status, ins.notes]
       .some(v => (v ?? '').toLowerCase().includes(q))
   )
 
-  // ปฏิทินไม่แสดงงานที่ติดตั้งเสร็จแล้ว
-  const calendarInstalls = installs.filter(ins => ins.installation_status !== 'ติดตั้งเสร็จ')
+  // ปฏิทินไม่แสดงงานที่ติดตั้งเสร็จแล้ว + filter ตามโซนที่เลือก
+  const calendarInstalls = installs.filter(ins =>
+    ins.installation_status !== 'ติดตั้งเสร็จ' && (!zoneFilter || ins.install_zone === zoneFilter))
 
   const sel = (label: string, key: string, options: string[]) => (
     <div style={{ marginBottom: 12 }}>
@@ -438,6 +449,15 @@ export default function InstallationsPage() {
           </h2>
           <button className="no-print" onClick={nextMonth} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 14, background: '#fff' }}>›</button>
         </div>
+        {/* filter โซนติดตั้ง — กดเลือกดูเฉพาะงานในโซนนั้นบนปฏิทิน */}
+        <div className="no-print" style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+          {([['ทั้งหมด', null], ...ZONES.map(z => [z, z] as [string, string])] as [string, string | null][]).map(([label, val]) => (
+            <button key={label} onClick={() => setZoneFilter(val)}
+              style={{ padding: '5px 14px', borderRadius: 980, border: zoneFilter === val ? 'none' : '1px solid var(--border)', background: zoneFilter === val ? 'var(--blue)' : '#fff', color: zoneFilter === val ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: zoneFilter === val ? 600 : 400, cursor: 'pointer' }}>
+              {label}
+            </button>
+          ))}
+        </div>
         <Calendar year={year} month={month} installs={calendarInstalls} onDayClick={day => {
           const items = calendarInstalls.filter(ins => {
             const d = new Date(ins.appointment_datetime)
@@ -489,7 +509,7 @@ export default function InstallationsPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
-                {['Serial','นัดหมาย','ลูกค้า','รายการ','แพลตฟอร์ม','จังหวัด','เบอร์','สถานะติดตั้ง','หมายเหตุ','แก้ไขล่าสุด',''].map(h => (
+                {['Serial','นัดหมาย','ลูกค้า','รายการ','แพลตฟอร์ม','จังหวัด','โซน','เบอร์','สถานะติดตั้ง','หมายเหตุ','แก้ไขล่าสุด',''].map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '12px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -568,6 +588,13 @@ export default function InstallationsPage() {
                     </td>
                     <td style={{ padding: '12px 14px', color: 'var(--ink-3)' }}>{ins.platform || '-'}</td>
                     <td style={{ padding: '12px 14px', color: 'var(--ink-3)' }}>{ins.province || '-'}</td>
+                    <td style={{ padding: '12px 14px' }}>
+                      <select value={ins.install_zone || ''} onChange={e => updateZone(ins.id, e.target.value)}
+                        style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px', fontSize: 11, color: ins.install_zone ? 'var(--ink)' : 'var(--ink-4)', background: '#fff', outline: 'none', cursor: 'pointer' }}>
+                        <option value="">—</option>
+                        {ZONES.map(z => <option key={z} value={z}>{z}</option>)}
+                      </select>
+                    </td>
                     <td style={{ padding: '12px 14px', color: 'var(--ink-3)' }}>{ins.phone || '-'}</td>
                     <td style={{ padding: '12px 14px' }}>
                       <select value={ins.installation_status} onChange={e => updateStatus(ins.id, e.target.value)}
@@ -954,6 +981,7 @@ export default function InstallationsPage() {
               {inp('ชื่อ ID', 'customer_id')}
               {inp('ชื่อจริงลูกค้า', 'customer_real_name')}
               {inp('จังหวัด', 'province')}
+              {sel('โซนติดตั้ง', 'install_zone', ZONES)}
               {inp('เบอร์โทร', 'phone')}
               {sel('การนัดหมาย', 'appointment_status', ['รอนัดหมาย','นัดหมายแล้ว','จัดส่งตามที่อยู่'])}
             </div>
