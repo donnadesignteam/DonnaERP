@@ -1,6 +1,7 @@
 'use client'
 
 import Sidebar from './Sidebar'
+import HistoryBar from './HistoryBar'
 
 export default function SidebarLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -15,6 +16,7 @@ export default function SidebarLayout({ children }: { children: React.ReactNode 
           {children}
         </div>
       </main>
+      <HistoryBar />
     </div>
   )
 }

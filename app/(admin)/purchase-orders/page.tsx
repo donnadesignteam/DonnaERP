@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
+import { recordAction } from '@/lib/history'
+import { tUpdate, prevOf } from '@/lib/trackedDb'
 
 type PO = {
   id: string
@@ -61,13 +63,23 @@ export default function PurchaseOrdersPage() {
     setError('')
     const { customer_name, order_number, items, notes, status, supplier } = modal.data
     const payload = { customer_name, order_number, items, notes, status, supplier, updated_at: new Date().toISOString() }
+    const name = (customer_name || supplier || order_number || '').toString()
     let err
     if (modal.mode === 'add') {
-      const res = await supabase.from('purchase_orders').insert(payload)
+      const res = await supabase.from('purchase_orders').insert(payload).select().single()
       err = res.error
+      if (!err && res.data) {
+        const saved = res.data
+        recordAction({
+          label: `เพิ่มรายการสั่งซื้อ ${name}`,
+          undo: async () => { await supabase.from('purchase_orders').delete().eq('id', saved.id); await load() },
+          redo: async () => { await supabase.from('purchase_orders').insert(saved); await load() },
+        })
+      }
     } else {
-      const res = await supabase.from('purchase_orders').update(payload).eq('id', modal.data.id)
-      err = res.error
+      const old = rows.find(r => r.id === modal.data.id)
+      try { await tUpdate('purchase_orders', modal.data.id as string, payload, prevOf(old ?? {}, payload), `แก้รายการสั่งซื้อ ${name}`, load) }
+      catch (e: any) { err = { message: e?.message || String(e) } }
     }
     setSaving(false)
     if (err) {
@@ -80,11 +92,14 @@ export default function PurchaseOrdersPage() {
 
   const del = async (id: string) => {
     if (!confirm('ลบรายการนี้?')) return
+    const po = rows.find(r => r.id === id)
     // แถวที่ sync มาจากสั่งนอกในหมวดออเดอร์ → ล้างช่องสั่งนอกของออเดอร์ต้นทางด้วย (ทั้งคอลัมน์และในรายการสินค้า)
-    const src = rows.find(r => r.id === id)?.source_order_id
+    const src = po?.source_order_id
+    let srcPrev: Record<string, any> | null = null   // เก็บค่าสั่งนอกเดิมของออเดอร์ต้นทางไว้ย้อนกลับ
     if (src) {
-      const { data: oe } = await supabase.from('order_entries').select('items').eq('id', src).single()
+      const { data: oe } = await supabase.from('order_entries').select('items, outsource, outsource_at').eq('id', src).single()
       const items = Array.isArray(oe?.items) ? oe.items : null
+      srcPrev = { outsource: oe?.outsource ?? null, outsource_at: oe?.outsource_at ?? null, items }
       const clearItems = items && items.some((it: { outsource?: string }) => (it.outsource ?? '').trim())
         ? items.map((it: { outsource?: string }) => ({ ...it, outsource: '' }))
         : undefined
@@ -94,11 +109,25 @@ export default function PurchaseOrdersPage() {
       }).eq('id', src)
     }
     await supabase.from('purchase_orders').delete().eq('id', id)
+    if (po) recordAction({
+      label: `ลบรายการสั่งซื้อ ${po.customer_name || po.supplier || ''}`,
+      undo: async () => {
+        await supabase.from('purchase_orders').insert(po)
+        if (src && srcPrev) await supabase.from('order_entries').update({ outsource: srcPrev.outsource, outsource_at: srcPrev.outsource_at, items: srcPrev.items, updated_at: new Date().toISOString() }).eq('id', src)
+        await load()
+      },
+      redo: async () => {
+        if (src) await supabase.from('order_entries').update({ outsource: null, outsource_at: null, updated_at: new Date().toISOString() }).eq('id', src)
+        await supabase.from('purchase_orders').delete().eq('id', id)
+        await load()
+      },
+    })
     load()
   }
 
   const updateStatus = async (id: string, status: string) => {
-    await supabase.from('purchase_orders').update({ status, updated_at: new Date().toISOString() }).eq('id', id)
+    const old = rows.find(r => r.id === id)
+    await tUpdate('purchase_orders', id, { status, updated_at: new Date().toISOString() }, { status: old?.status ?? null }, `แก้สถานะสั่งซื้อ ${old?.customer_name || old?.supplier || ''}`, load)
     load()
   }
 

@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { effShipping } from '@/lib/shipping'
+import { syncWorkStatus } from '@/lib/workStatusSync'
 
 type Order = {
   id: string
@@ -168,6 +169,7 @@ export default function DashboardPage() {
   const [all, setAll] = useState<Order[]>(cached ?? [])
   const [modal, setModal] = useState<ModalData>(null)
   const [loading, setLoading] = useState(!cached)
+  const [error, setError] = useState('')
   const [isDark, setIsDark] = useState(false)
   const [orderSearch, setOrderSearch] = useState('')
   const [daysSort, setDaysSort] = useState<'asc'|'desc'|null>('asc')
@@ -210,15 +212,17 @@ export default function DashboardPage() {
     return () => obs.disconnect()
   }, [])
 
-  useEffect(() => {
-    ;(async () => {
-      const { data: rows } = await fetchAllRows<Order>(() =>
-        supabase.from('order_entries').select('id,order_number,customer_name,order_status,deadline,created_at,platform,courier,is_installation,is_urgent,is_dropoff,shipping_datetime,notes,updated_at').order('created_at', { ascending: true }).order('id', { ascending: true }))
-      setPageCache('dashboard:order_entries', rows)
-      setAll(rows)
-      setLoading(false)
-    })()
-  }, [])
+  const load = async () => {
+    setError('')
+    const { data: rows, error: err } = await fetchAllRows<Order>(() =>
+      supabase.from('order_entries').select('id,order_number,customer_name,order_status,deadline,created_at,platform,courier,is_installation,is_urgent,is_dropoff,shipping_datetime,notes,updated_at').order('created_at', { ascending: true }).order('id', { ascending: true }))
+    if (err) { setError(err.message || 'โหลดข้อมูลไม่สำเร็จ'); setLoading(false); return }
+    setPageCache('dashboard:order_entries', rows)
+    setAll(rows)
+    setLoading(false)
+  }
+
+  useEffect(() => { load() }, [])
 
   const DONE_STATUSES = ['งานเสร็จ', 'จัดส่งแล้ว']
   // ออเดอร์ที่ลงเดือนนี้ (ตาม created_at)
@@ -282,11 +286,7 @@ export default function DashboardPage() {
     const { error } = await supabase.from('order_entries').update(updates).eq('id', id)
     if (error) return
     try {
-      const term = row?.order_number || row?.customer_name
-      if (term) {
-        const { data: matches } = await supabase.from('work_status').select('id').or(`order_number.ilike.%${term}%,order_number.ilike.%${row?.customer_name}%`)
-        if (matches && matches.length > 0) await supabase.from('work_status').update({ status: 'จัดส่งแล้ว', status_updated_at: now }).in('id', matches.map(m => m.id))
-      }
+      await syncWorkStatus(row?.order_number, row?.customer_name, 'จัดส่งแล้ว', now)
       const { data: r2 } = await supabase.from('order_entries').select('status_history').eq('id', id).single()
       const prev = Array.isArray(r2?.status_history) ? r2.status_history : []
       if (!prev.length || prev[prev.length - 1]?.status !== 'จัดส่งแล้ว') {
@@ -421,7 +421,14 @@ export default function DashboardPage() {
         {openColFilter && <div style={{ position: 'fixed', inset: 0, zIndex: 99 }} onClick={() => setOpenColFilter(null)} />}
 
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', overflowX: 'auto' }}>
-          {loading ? (
+          {error ? (
+            <div style={{ padding: 40, textAlign: 'center' }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--red)', marginBottom: 4 }}>โหลดข้อมูลไม่สำเร็จ</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 16 }}>{error}</div>
+              <button onClick={() => { setLoading(true); load() }}
+                style={{ border: 'none', background: 'var(--blue)', color: '#fff', borderRadius: 10, padding: '8px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>ลองใหม่</button>
+            </div>
+          ) : loading ? (
             <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>กำลังโหลด…</div>
           ) : ordersList.length === 0 ? (
             <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)', fontSize: 14 }}>ไม่มีออเดอร์</div>

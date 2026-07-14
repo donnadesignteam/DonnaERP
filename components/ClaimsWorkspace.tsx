@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
+import { recordAction } from '@/lib/history'
+import { tUpdate, prevOf } from '@/lib/trackedDb'
 
 type Item = {
   type: string; floors: number | null; rail_head: string; fabric_type: string
@@ -179,29 +181,52 @@ export default function ClaimsWorkspace() {
       admin_name: d.admin_name || null,
       updated_at: new Date().toISOString(),
     }
+    const name = (d.customer_username || d.original_order_number || '').toString()
     if (modal.mode === 'add') {
       const res = await supabase.from('claims').insert(payload).select().single()
       setSaving(false)
       if (res.error) { setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
-      setRows(prev => [res.data as Claim, ...prev])
+      const saved = res.data as Claim
+      setRows(prev => [saved, ...prev])
+      recordAction({
+        label: `เพิ่มเคลม ${name}`,
+        undo: async () => { await supabase.from('claims').delete().eq('id', saved.id); await load() },
+        redo: async () => { await supabase.from('claims').insert(saved); await load() },
+      })
     } else {
+      const old = rows.find(r => r.id === d.id)
       const res = await supabase.from('claims').update(payload).eq('id', d.id).select().single()
       setSaving(false)
       if (res.error) { setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
       setRows(prev => prev.map(r => r.id === d.id ? res.data as Claim : r))
+      const prev = prevOf(old ?? {}, payload)
+      recordAction({
+        label: `แก้เคลม ${name}`,
+        undo: async () => { await supabase.from('claims').update(prev).eq('id', d.id); await load() },
+        redo: async () => { await supabase.from('claims').update(payload).eq('id', d.id); await load() },
+      })
     }
     setModal(null)
   }
 
   const updateStatus = async (id: string, status: string) => {
+    const old = rows.find(r => r.id === id)
     setRows(prev => prev.map(r => r.id === id ? { ...r, status } : r))
-    await supabase.from('claims').update({ status, updated_at: new Date().toISOString() }).eq('id', id)
+    await tUpdate('claims', id, { status, updated_at: new Date().toISOString() }, { status: old?.status ?? null }, `แก้สถานะเคลม ${old?.customer_username || ''}`, load)
   }
 
   const del = async (id: string) => {
     if (!confirm('ลบเคสเคลมนี้?')) return
+    const row = rows.find(r => r.id === id)
     const { error: err } = await supabase.from('claims').delete().eq('id', id)
-    if (!err) setRows(prev => prev.filter(r => r.id !== id))
+    if (!err) {
+      setRows(prev => prev.filter(r => r.id !== id))
+      if (row) recordAction({
+        label: `ลบเคลม ${row.customer_username || row.original_order_number || ''}`,
+        undo: async () => { await supabase.from('claims').insert(row); await load() },
+        redo: async () => { await supabase.from('claims').delete().eq('id', id); await load() },
+      })
+    }
   }
 
   const counts: Record<string, number> = { all: rows.length }
@@ -221,8 +246,9 @@ export default function ClaimsWorkspace() {
     setEditCell(null)
     const value: string | number | null = val.trim() === '' ? null : (numeric ? Number(val) : val)
     const now = new Date().toISOString()
+    const old = rows.find(r => r.id === id)
     setRows(prev => prev.map(r => r.id === id ? ({ ...r, [field]: value, updated_at: now } as Claim) : r))
-    await supabase.from('claims').update({ [field]: value, updated_at: now }).eq('id', id)
+    await tUpdate('claims', id, { [field]: value, updated_at: now }, { [field]: old ? (old as any)[field] ?? null : null }, `แก้เคลม ${old?.customer_username || ''}`, load)
   }
   const textCell = (r: Claim, field: keyof Claim, opts?: { numeric?: boolean; placeholder?: string; align?: 'left' | 'right' }) => {
     const val = r[field] == null ? '' : String(r[field])

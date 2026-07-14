@@ -11,6 +11,9 @@ import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { effShipping } from '@/lib/shipping'
 import { thaiTrackStatus } from '@/lib/trackExtract'
 import { syncOutsourcePO } from '@/lib/outsourceSync'
+import { syncWorkStatus as syncWorkStatusExact } from '@/lib/workStatusSync'
+import { recordAction } from '@/lib/history'
+import { prevOf } from '@/lib/trackedDb'
 import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
 
@@ -590,20 +593,40 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       order_assigned: d.order_assigned || 'รออัพเดท',
       updated_at: now,
     }
+    const oname = (payload.order_number || payload.customer_name || '').toString()
     if (modal.mode === 'add') {
       const res = await supabase.from('order_entries').insert(payload).select().single()
       if (res.error) { setSaving(false); setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
-      await syncInstallation(payload, (res.data as Entry).id)
-      if (outsourceVal) await syncOutsourcePO((res.data as Entry).id, payload.customer_name, payload.order_number, outsourceVal, modalItems)
+      const saved = res.data as Entry
+      await syncInstallation(payload, saved.id)
+      if (outsourceVal) await syncOutsourcePO(saved.id, payload.customer_name, payload.order_number, outsourceVal, modalItems)
       setSaving(false)
-      setRows(prev => [res.data as Entry, ...prev])
+      setRows(prev => [saved, ...prev])
+      recordAction({
+        label: `เพิ่มออเดอร์ ${oname}`,
+        // ย้อน = ลบออเดอร์ + งานติดตั้ง/สั่งซื้อที่ผูกกัน (source_order_id)
+        undo: async () => {
+          await supabase.from('installations').delete().eq('source_order_id', saved.id)
+          await supabase.from('purchase_orders').delete().eq('source_order_id', saved.id)
+          await supabase.from('order_entries').delete().eq('id', saved.id)
+          await load()
+        },
+        redo: async () => {
+          await supabase.from('order_entries').insert(saved)
+          await syncInstallation(payload, saved.id)
+          if (outsourceVal) await syncOutsourcePO(saved.id, payload.customer_name, payload.order_number, outsourceVal, modalItems)
+          await load()
+        },
+      })
     } else {
+      const orig = rows.find(r => r.id === d.id)
       const res = await supabase.from('order_entries').update(payload).eq('id', d.id).select().single()
       if (res.error) { setSaving(false); setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
       await syncInstallation(payload, String(d.id))
       if (outsourceVal || prevOutsource) await syncOutsourcePO(String(d.id), payload.customer_name, payload.order_number, outsourceVal, modalItems)
       setSaving(false)
       setRows(prev => prev.map(r => r.id === d.id ? res.data as Entry : r))
+      if (orig) trackOrderField(String(d.id), payload, prevOf(orig, payload), `แก้ออเดอร์ ${oname}`)
     }
     setModal(null)
     setAddType(null)
@@ -611,10 +634,16 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
 
   const del = async (id: string) => {
     if (!confirm('ลบรายการนี้?')) return
+    const row = rows.find(r => r.id === id)
     const { error: err } = await supabase.from('order_entries').delete().eq('id', id)
     if (!err) {
       setSelectedIds(prev => { const s = new Set(prev); s.delete(id); return s })
       setRows(prev => prev.filter(r => r.id !== id))
+      if (row) recordAction({
+        label: `ลบออเดอร์ ${row.order_number || row.customer_name || ''}`,
+        undo: async () => { await supabase.from('order_entries').insert(row); await load() },
+        redo: async () => { await supabase.from('order_entries').delete().eq('id', id); await load() },
+      })
     }
   }
 
@@ -707,24 +736,22 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const bulkDelete = async () => {
     if (!confirm(`ลบ ${selectedIds.size} รายการที่เลือก?`)) return
     const ids = Array.from(selectedIds)
+    const deleted = rows.filter(r => ids.includes(r.id))   // เก็บแถวที่ลบไว้ย้อนกลับ
     const { error: err } = await supabase.from('order_entries').delete().in('id', ids)
     if (!err) {
       setSelectedIds(new Set())
       setRows(prev => prev.filter(r => !ids.includes(r.id)))
+      if (deleted.length) recordAction({
+        label: `ลบออเดอร์ ${deleted.length} รายการ`,
+        undo: async () => { await supabase.from('order_entries').insert(deleted); await load() },
+        redo: async () => { await supabase.from('order_entries').delete().in('id', ids); await load() },
+      })
     }
   }
 
   const syncWorkStatus = async (orderNumber: string, customerName: string, status: string, now: string) => {
     if (status === 'รอดำเนินการ') return
-    const term = orderNumber || customerName
-    if (!term) return
-    const { data: matches } = await supabase.from('work_status').select('id, order_number')
-      .or(`order_number.ilike.%${term}%,order_number.ilike.%${customerName}%`)
-    if (matches && matches.length > 0) {
-      await supabase.from('work_status')
-        .update({ status, status_updated_at: now })
-        .in('id', matches.map(m => m.id))
-    }
+    await syncWorkStatusExact(orderNumber, customerName, status, now)
   }
 
   // บันทึกประวัติสถานะ (สถานะ + เวลา + ใครทำ) แบบ best-effort
@@ -738,21 +765,58 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     if (!error) setRows(p => p.map(r => r.id === id ? { ...r, status_history: next } as Entry : r))
   }
 
-  const updateField = async (id: string, field: string, value: string | boolean) => {
+  // แก้ค่าจริง (DB + sync กระดานงาน + log ประวัติ + state) — ไม่บันทึกกองประวัติ ใช้ซ้ำได้ทั้ง undo/redo
+  const applyField = async (id: string, field: string, value: string | boolean): Promise<boolean> => {
     const now = new Date().toISOString()
     const { error: err } = await supabase.from('order_entries').update({ [field]: value, updated_at: now }).eq('id', id)
-    if (!err) {
-      if (field === 'order_status' && typeof value === 'string') {
-        const row = rows.find(r => r.id === id)
-        if (row) {
-          await syncWorkStatus(row.order_number, row.customer_name, value, now)
-          await logStatus(id, value, now, row.status_history)
-        }
+    if (err) return false
+    if (field === 'order_status' && typeof value === 'string') {
+      const row = rows.find(r => r.id === id)
+      if (row) {
+        await syncWorkStatus(row.order_number, row.customer_name, value, now)
+        await logStatus(id, value, now, row.status_history)
       }
-      const sy = window.scrollY
-      flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value, updated_at: now } as Entry : r)))
-      window.scrollTo(window.scrollX, sy)
     }
+    const sy = window.scrollY
+    flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value, updated_at: now } as Entry : r)))
+    window.scrollTo(window.scrollX, sy)
+    return true
+  }
+
+  const updateField = async (id: string, field: string, value: string | boolean) => {
+    const row = rows.find(r => r.id === id)
+    const old = row ? (row as any)[field] ?? null : null
+    const ok = await applyField(id, field, value)
+    if (!ok) return
+    const what = field === 'order_status' ? 'สถานะ' : 'ข้อมูล'
+    recordAction({
+      label: `แก้${what} ${row?.order_number || row?.customer_name || ''}`,
+      undo: async () => { await applyField(id, field, old); await load() },
+      redo: async () => { await applyField(id, field, value); await load() },
+    })
+  }
+
+  // บันทึกการแก้ช่องออเดอร์ (แบบ raw update) เข้ากองประวัติ — ใช้กับช่องที่ไม่มี side-effect พิเศษ
+  const trackOrderField = (id: string, patch: Record<string, any>, prev: Record<string, any>, label: string) => {
+    recordAction({
+      label,
+      undo: async () => { await supabase.from('order_entries').update(prev).eq('id', id); await load() },
+      redo: async () => { await supabase.from('order_entries').update(patch).eq('id', id); await load() },
+    })
+  }
+
+  // คอลัมน์สถานะ: dropdown เลือกสถานะ (เปลี่ยนสถานะย้อนได้ด้วยปุ่มเลิกทำ ↶ รวมของทั้งเว็บ)
+  const statusCell = (r: Entry) => {
+    const flow = r.is_installation ? INSTALL_STATUSES : PROD_STATUSES
+    return (
+      <td style={{ padding: '8px 14px' }}>
+        <select value={r.order_status || ''} onChange={e => updateField(r.id, 'order_status', e.target.value)}
+          style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PROD_STATUS_COLOR[r.order_status] ?? 'var(--ink-4)', padding: 0 }}>
+          <option value="">—</option>
+          {flow.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </td>
+    )
   }
 
   // ติ๊กช่องปริ้นเอง: ติ๊ก = บันทึกเวลาปริ้นตอนนี้, เอาติ๊กออก = ล้างค่า (ไม่แตะ updated_at เพราะไม่ใช่การแก้ข้อมูลออเดอร์)
@@ -1517,11 +1581,14 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
 
   const saveTextCell = async (id: string, field: string, val: string) => {
     const now = new Date().toISOString()
+    const row = rows.find(r => r.id === id)
+    const oldVal = row ? (row as any)[field] ?? null : null
     const { error: err } = await supabase.from('order_entries').update({ [field]: val || null, updated_at: now }).eq('id', id)
     if (!err) {
       const sy = window.scrollY
       flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: val || null, updated_at: now } as Entry : r)))
       window.scrollTo(window.scrollX, sy)
+      if ((oldVal ?? '') !== (val || '')) trackOrderField(id, { [field]: val || null, updated_at: now }, { [field]: oldVal, updated_at: row?.updated_at ?? null }, `แก้ข้อมูล ${row?.order_number || row?.customer_name || ''}`)
     }
     setEditCell(null)
   }
@@ -1552,9 +1619,13 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const saveInstallDt = async (id: string, dateStr: string, timeStr: string) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return
     const now = new Date().toISOString()
+    const row = rows.find(r => r.id === id)
     const updates = { deadline: dateStr, install_time: timeStr, updated_at: now }
     const { error: err } = await supabase.from('order_entries').update(updates).eq('id', id)
-    if (!err) setRows(prev => prev.map(r => r.id === id ? { ...r, ...updates } as Entry : r))
+    if (!err) {
+      setRows(prev => prev.map(r => r.id === id ? { ...r, ...updates } as Entry : r))
+      if (row) trackOrderField(id, updates, prevOf(row, updates), `แก้วันติดตั้ง ${row.order_number || row.customer_name || ''}`)
+    }
   }
 
   // dropdown ติดตั้ง: ติดตั้งแล้ว / ติดตั้ง50% — เลือก 50% จะล้างวันนัดเดิมให้ขึ้น "รอนัดหมาย" รอนัดใหม่
@@ -1568,6 +1639,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       const sy = window.scrollY
       flushSync(() => setRows(prev => prev.map(row => row.id === r.id ? { ...row, ...updates } as Entry : row)))
       window.scrollTo(window.scrollX, sy)
+      trackOrderField(r.id, updates, prevOf(r, updates), `แก้สถานะติดตั้ง ${r.order_number || r.customer_name || ''}`)
     }
   }
 
@@ -1581,17 +1653,21 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       const sy = window.scrollY
       flushSync(() => setRows(prev => prev.map(row => row.id === r.id ? { ...row, ...updates, updated_at: now } as Entry : row)))
       window.scrollTo(window.scrollX, sy)
+      trackOrderField(r.id, updates, prevOf(r, updates), `แก้การชำระ ${r.order_number || r.customer_name || ''}`)
     }
   }
 
   const saveNumericCell = async (id: string, field: string, val: string) => {
     const num = val === '' ? null : parseFloat(val)
     const now = new Date().toISOString()
+    const row = rows.find(r => r.id === id)
+    const oldVal = row ? (row as any)[field] ?? null : null
     const { error: err } = await supabase.from('order_entries').update({ [field]: num, updated_at: now }).eq('id', id)
     if (!err) {
       const sy = window.scrollY
       flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: num, updated_at: now } as Entry : r)))
       window.scrollTo(window.scrollX, sy)
+      if (oldVal !== num) trackOrderField(id, { [field]: num, updated_at: now }, { [field]: oldVal, updated_at: row?.updated_at ?? null }, `แก้ข้อมูล ${row?.order_number || row?.customer_name || ''}`)
     }
     setEditCell(null)
   }
@@ -2390,15 +2466,7 @@ ${body}
                       </select>
                     </td>
                     )}
-                    {showCol('status') && (
-                    <td style={{ padding: '8px 14px' }}>
-                      <select value={r.order_status || ''} onChange={e => updateField(r.id, 'order_status', e.target.value)}
-                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PROD_STATUS_COLOR[r.order_status] ?? 'var(--ink-4)', padding: 0 }}>
-                        <option value="">—</option>
-                        {(r.is_installation ? INSTALL_STATUSES : PROD_STATUSES).map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    </td>
-                    )}
+                    {showCol('status') && statusCell(r)}
                     {showCol('done') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
@@ -2717,15 +2785,7 @@ ${body}
                       {r.is_installation ? <span style={{ color: '#f97316', fontWeight: 600 }}>งานติดตั้ง</span> : r.courier || <span style={{ color: 'var(--ink-4)' }}>-</span>}
                     </td>
                     )}
-                    {showCol('status') && (
-                    <td style={{ padding: '8px 14px' }}>
-                      <select value={r.order_status || ''} onChange={e => updateField(r.id, 'order_status', e.target.value)}
-                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PROD_STATUS_COLOR[r.order_status] ?? 'var(--ink-4)', padding: 0 }}>
-                        <option value="">—</option>
-                        {PROD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    </td>
-                    )}
+                    {showCol('status') && statusCell(r)}
                     {showCol('done') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
@@ -3142,15 +3202,7 @@ ${body}
                       </select>
                     </td>
                     )}
-                    {showCol('status') && (
-                    <td style={{ padding: '8px 14px' }}>
-                      <select value={r.order_status || ''} onChange={e => updateField(r.id, 'order_status', e.target.value)}
-                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PROD_STATUS_COLOR[r.order_status] ?? 'var(--ink-4)', padding: 0, maxWidth: 100 }}>
-                        <option value="">—</option>
-                        {PROD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    </td>
-                    )}
+                    {showCol('status') && statusCell(r)}
                     {showCol('dropoff') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center' }}>
                       <input type="checkbox" checked={!!r.is_dropoff} onChange={e => updateField(r.id, 'is_dropoff', e.target.checked)}

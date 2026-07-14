@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
+import { fetchAllRows } from '@/lib/fetchAll'
+import { tInsert, tUpdate, tDelete, prevOf } from '@/lib/trackedDb'
 import { FABRIC_LOOKUP } from '@/lib/fabrics'
 
 
@@ -100,7 +102,8 @@ export default function StockPage() {
   const tableCardRef = useRef<HTMLDivElement>(null)
 
   const load = async () => {
-    const { data, error: err } = await supabase.from('stock').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('fabric_code')
+    const { data, error: err } = await fetchAllRows<StockItem>(() =>
+      supabase.from('stock').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('fabric_code').order('id', { ascending: true }))
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
     const rows = (data ?? []) as StockItem[]
     setPageCache('stock', rows)
@@ -146,18 +149,17 @@ export default function StockPage() {
       status: getStatus(Number(roll_count ?? 0)),
       updated_at: new Date().toISOString(),
     }
-    let err
-    if (modal.mode === 'add') {
-      const res = await supabase.from('stock').insert(payload).select()
-      err = res.error
-      // เพิ่มแถวใหม่เข้า state ทันที ไม่ต้องโหลดใหม่
-      if (!err && res.data) setItems(prev => [...prev, ...(res.data as StockItem[])])
-    } else {
-      const res = await supabase.from('stock').update(payload).eq('id', modal.data.id)
-      err = res.error
-      // อัพเดตแถวใน state ทันที ไม่ต้องโหลดใหม่
-      if (!err) setItems(prev => prev.map(i => i.id === modal.data.id ? { ...i, ...payload } as StockItem : i))
-    }
+    const name = (payload.color_name || payload.fabric_code || '').toString().trim()
+    let err: { message: string } | null = null
+    try {
+      if (modal.mode === 'add') {
+        const saved = await tInsert('stock', payload, `เพิ่มสต็อก ${name}`, load)
+        setItems(prev => [...prev, saved as StockItem])
+      } else {
+        await tUpdate('stock', modal.data.id as string, payload, prevOf(modal.data, payload), `แก้สต็อก ${name}`, load)
+        setItems(prev => prev.map(i => i.id === modal.data.id ? { ...i, ...payload } as StockItem : i))
+      }
+    } catch (e: any) { err = { message: e?.message || String(e) } }
     setSaving(false)
     if (err) {
       setError(`บันทึกไม่สำเร็จ: ${err.message}`)
@@ -172,17 +174,22 @@ export default function StockPage() {
       ? (inlineEdit.val.trim() || null)
       : (inlineEdit.val === '' ? null : Number(inlineEdit.val))
     const { id, field } = inlineEdit
-    const { error: err } = await supabase.from('stock').update({ [field]: val }).eq('id', id)
-    if (err) setError(`บันทึกไม่สำเร็จ: ${err.message}`)
-    else setItems(prev => prev.map(i => i.id === id ? { ...i, [field]: val } : i))
+    const old = items.find(i => i.id === id)
+    try {
+      await tUpdate('stock', id, { [field]: val }, { [field]: old ? (old as any)[field] ?? null : null }, `แก้สต็อก ${old?.color_name || old?.fabric_code || ''}`, load)
+      setItems(prev => prev.map(i => i.id === id ? { ...i, [field]: val } : i))
+    } catch (err: any) { setError(`บันทึกไม่สำเร็จ: ${err?.message || err}`) }
     setInlineEdit(null)
   }
 
   const del = async (id: string) => {
     if (!confirm('ลบรายการนี้?')) return
-    const { error: err } = await supabase.from('stock').delete().eq('id', id)
-    if (err) setError(`ลบไม่สำเร็จ: ${err.message}`)
-    else setItems(prev => prev.filter(i => i.id !== id))
+    const row = items.find(i => i.id === id)
+    if (!row) return
+    try {
+      await tDelete('stock', row, `ลบสต็อก ${row.color_name || row.fabric_code || ''}`, load)
+      setItems(prev => prev.filter(i => i.id !== id))
+    } catch (err: any) { setError(`ลบไม่สำเร็จ: ${err?.message || err}`) }
   }
 
   // ติ๊ก/ยกเลิก "รอของเข้า"

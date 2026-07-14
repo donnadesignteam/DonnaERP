@@ -20,6 +20,8 @@ const statusColor: Record<string, string> = {
 }
 
 const stages = ['รอดำเนินการ', 'ตัดผ้าแล้ว', 'เย็บแล้ว', 'รีดแล้ว', 'แพ็คแล้ว', 'สำเร็จ']
+// สถานะที่ยังอยู่ในสายผลิต (โชว์บนบอร์ด) — ตัดพวกที่ออกจากผลิตแล้ว (รอจัดส่ง/รอติดตั้ง/จัดส่งแล้ว/ยกเลิก)
+const IN_PRODUCTION = ['รอดำเนินการ', 'ตัดผ้าแล้ว', 'เย็บแล้ว', 'รีดแล้ว', 'แพ็คแล้ว']
 
 export default function WorkStatusPage() {
   // เปิดหน้าซ้ำ → โชว์ข้อมูลรอบก่อนทันที แล้วดึงของใหม่เบื้องหลัง (stale-while-revalidate)
@@ -27,22 +29,30 @@ export default function WorkStatusPage() {
   const [orders, setOrders] = useState<any[]>(cached?.ord ?? [])
   const [workStatus, setWorkStatus] = useState<any[]>(cached?.ws ?? [])
   const [loading, setLoading] = useState(!cached)
+  const [error, setError] = useState('')
 
-  useEffect(() => {
-    ;(async () => {
-      const [{ data: ws }, { data: ord }] = await Promise.all([
-        fetchAllRows<any>(() => supabase.from('work_status').select('*').order('id', { ascending: true })),
-        fetchAllRows<any>(() => supabase.from('orders').select('order_number, customer_name, status, deadline').neq('status', 'สำเร็จ').order('order_number', { ascending: true })),
-      ])
-      setPageCache('work-status', { ws: ws ?? [], ord: ord ?? [] })
-      setWorkStatus(ws ?? [])
-      setOrders(ord ?? [])
+  const load = async () => {
+    setError('')
+    const [wsRes, ordRes] = await Promise.all([
+      fetchAllRows<any>(() => supabase.from('work_status').select('*').order('id', { ascending: true })),
+      fetchAllRows<any>(() => supabase.from('order_entries').select('order_number, customer_name, order_status, deadline').in('order_status', IN_PRODUCTION).order('order_number', { ascending: true }).order('id', { ascending: true })),
+    ])
+    if (wsRes.error || ordRes.error) {
+      setError(wsRes.error?.message || ordRes.error?.message || 'โหลดข้อมูลไม่สำเร็จ')
       setLoading(false)
-    })()
-  }, [])
+      return
+    }
+    const ws = wsRes.data, ord = ordRes.data
+    setPageCache('work-status', { ws, ord })
+    setWorkStatus(ws)
+    setOrders(ord)
+    setLoading(false)
+  }
+
+  useEffect(() => { load() }, [])
 
   const grouped = stages.reduce<Record<string, any[]>>((acc, s) => {
-    acc[s] = orders.filter(o => o.status === s)
+    acc[s] = orders.filter(o => o.order_status === s)
     return acc
   }, {})
 
@@ -51,7 +61,14 @@ export default function WorkStatusPage() {
       <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', marginBottom: 4, letterSpacing: '-0.5px' }}>สถานะงาน</h1>
       <p style={{ color: 'var(--ink-3)', marginBottom: 32, fontSize: 14 }}>ติดตามความคืบหน้าของงานแต่ละขั้นตอน</p>
 
-      {loading ? (
+      {error ? (
+        <div style={{ padding: 40, textAlign: 'center', background: 'var(--surface)', border: '1.5px solid var(--red)', borderRadius: 12 }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--red)', marginBottom: 4 }}>โหลดข้อมูลไม่สำเร็จ</div>
+          <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 16 }}>{error}</div>
+          <button onClick={() => { setLoading(true); load() }}
+            style={{ border: 'none', background: 'var(--blue)', color: '#fff', borderRadius: 10, padding: '8px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>ลองใหม่</button>
+        </div>
+      ) : loading ? (
         <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>กำลังโหลด…</div>
       ) : (
         <>

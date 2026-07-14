@@ -8,6 +8,8 @@ import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { HOLIDAYS } from '@/lib/holidays'
 import { formatItemLines, type RawItem } from '@/lib/itemFormat'
 import { syncOutsourcePO } from '@/lib/outsourceSync'
+import { recordAction } from '@/lib/history'
+import { prevOf } from '@/lib/trackedDb'
 
 type Installation = {
   id: string
@@ -254,6 +256,15 @@ export default function InstallationsPage() {
     }
   }
 
+  // บันทึกการแก้ช่องเดียวของงานติดตั้งเข้ากองประวัติ (undo/redo → reload)
+  const trackInst = (id: string, patch: Record<string, any>, prev: Record<string, any>, label: string) => {
+    recordAction({
+      label,
+      undo: async () => { await supabase.from('installations').update(prev).eq('id', id); await load() },
+      redo: async () => { await supabase.from('installations').update(patch).eq('id', id); await load() },
+    })
+  }
+
   const save = async () => {
     if (!modal) return
     setSaving(true)
@@ -264,13 +275,23 @@ export default function InstallationsPage() {
       ? (STATUS_BY_TYPE[d.work_type ?? ''] ?? d.installation_status)
       : d.installation_status
     const payload = { ...d, appointment_datetime: dt, installation_status: instStatus, serial_no: modal.mode === 'add' ? nextSerial() : d.serial_no, updated_at: new Date().toISOString() }
+    const name = (d.customer_real_name || d.serial_no || '').toString()
     let err
     if (modal.mode === 'add') {
-      const res = await supabase.from('installations').insert(payload)
+      const res = await supabase.from('installations').insert(payload).select().single()
       err = res.error
+      if (!err && res.data) {
+        const saved = res.data
+        recordAction({
+          label: `เพิ่มงานติดตั้ง ${name}`,
+          undo: async () => { await supabase.from('installations').delete().eq('id', saved.id); await load() },
+          redo: async () => { await supabase.from('installations').insert(saved); await load() },
+        })
+      }
     } else {
       const res = await supabase.from('installations').update(payload).eq('id', d.id)
       err = res.error
+      if (!err) { const orig = installs.find(i => i.id === d.id); trackInst(d.id as string, payload, prevOf(orig ?? {}, payload), `แก้งานติดตั้ง ${name}`) }
     }
     setSaving(false)
     if (err) {
@@ -285,9 +306,11 @@ export default function InstallationsPage() {
     if (!date) return
     const dt = `${date}T${time.padStart(5, '0')}:00+07:00`
     const now = new Date().toISOString()
+    const old = installs.find(i => i.id === id)
     setInstalls(prev => prev.map(i => i.id === id ? { ...i, appointment_datetime: dt, updated_at: now } : i))
     const { error: err } = await supabase.from('installations').update({ appointment_datetime: dt, updated_at: now }).eq('id', id)
     if (err) { setError(`บันทึกวันนัดไม่สำเร็จ: ${err.message}`); load() }
+    else trackInst(id, { appointment_datetime: dt, updated_at: now }, { appointment_datetime: old?.appointment_datetime ?? null, updated_at: old?.updated_at ?? null }, `แก้วันนัดติดตั้ง ${old?.customer_real_name || ''}`)
   }
 
   // แปลงข้อความที่วางเป็นรายการสินค้าด้วย AI (endpoint เดียวกับหมวดออเดอร์)
@@ -344,36 +367,50 @@ export default function InstallationsPage() {
   const saveWork = async (id: string, value: string) => {
     setEditWork(null)
     const now = new Date().toISOString()
+    const old = installs.find(i => i.id === id)
     setInstalls(prev => prev.map(i => i.id === id ? { ...i, work_details: value, updated_at: now } : i))
     const { error: err } = await supabase.from('installations').update({ work_details: value, updated_at: now }).eq('id', id)
     if (err) { setError(`บันทึกรายละเอียดงานไม่สำเร็จ: ${err.message}`); load() }
+    else trackInst(id, { work_details: value, updated_at: now }, { work_details: old?.work_details ?? null, updated_at: old?.updated_at ?? null }, `แก้รายละเอียดงานติดตั้ง ${old?.customer_real_name || ''}`)
   }
 
   const saveNote = async (id: string, value: string) => {
     setEditNote(null)
     const now = new Date().toISOString()
+    const old = installs.find(i => i.id === id)
     setInstalls(prev => prev.map(i => i.id === id ? { ...i, notes: value, updated_at: now } : i))
     const { error: err } = await supabase.from('installations').update({ notes: value, updated_at: now }).eq('id', id)
     if (err) { setError(`บันทึกหมายเหตุไม่สำเร็จ: ${err.message}`); load() }
+    else trackInst(id, { notes: value, updated_at: now }, { notes: old?.notes ?? null, updated_at: old?.updated_at ?? null }, `แก้หมายเหตุติดตั้ง ${old?.customer_real_name || ''}`)
   }
 
   const updateStatus = async (id: string, status: string) => {
     const now = new Date().toISOString()
+    const old = installs.find(i => i.id === id)
     setInstalls(prev => prev.map(i => i.id === id ? { ...i, installation_status: status, updated_at: now } : i))
     const { error: err } = await supabase.from('installations').update({ installation_status: status, updated_at: now }).eq('id', id)
     if (err) { setError(`อัพเดทสถานะไม่สำเร็จ: ${err.message}`); load() }
+    else trackInst(id, { installation_status: status, updated_at: now }, { installation_status: old?.installation_status ?? null, updated_at: old?.updated_at ?? null }, `แก้สถานะติดตั้ง ${old?.customer_real_name || ''}`)
   }
 
   const updateZone = async (id: string, zone: string) => {
     const now = new Date().toISOString()
+    const old = installs.find(i => i.id === id)
     setInstalls(prev => prev.map(i => i.id === id ? { ...i, install_zone: zone, updated_at: now } : i))
     const { error: err } = await supabase.from('installations').update({ install_zone: zone, updated_at: now }).eq('id', id)
     if (err) { setError(`อัพเดทโซนไม่สำเร็จ: ${err.message}`); load() }
+    else trackInst(id, { install_zone: zone, updated_at: now }, { install_zone: old?.install_zone ?? null, updated_at: old?.updated_at ?? null }, `แก้โซนติดตั้ง ${old?.customer_real_name || ''}`)
   }
 
   const del = async (id: string) => {
     if (!confirm('ลบรายการนี้?')) return
+    const row = installs.find(i => i.id === id)
     await supabase.from('installations').delete().eq('id', id)
+    if (row) recordAction({
+      label: `ลบงานติดตั้ง ${row.customer_real_name || row.serial_no || ''}`,
+      undo: async () => { await supabase.from('installations').insert(row); await load() },
+      redo: async () => { await supabase.from('installations').delete().eq('id', id); await load() },
+    })
     load()
   }
 

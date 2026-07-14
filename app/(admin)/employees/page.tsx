@@ -3,8 +3,12 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
+import { fetchAllRows } from '@/lib/fetchAll'
 import { HOLIDAYS } from '@/lib/holidays'
 import { EMPLOYEES } from '@/lib/staff'
+import { fetchEmployeeOptions } from '@/lib/staffDb'
+import { recordAction } from '@/lib/history'
+import { tUpdate } from '@/lib/trackedDb'
 
 type Leave = {
   id: string
@@ -88,6 +92,7 @@ export default function EmployeesPage() {
   const cached = getPageCache<Leave[]>('leave_requests')
   const [leaves, setLeaves] = useState<Leave[]>(cached ?? [])
   const [loading, setLoading] = useState(!cached)
+  const [error, setError] = useState('')
   const [year, setYear] = useState(new Date().getFullYear())
   const [month, setMonth] = useState(new Date().getMonth())
   const [modal, setModal] = useState(false)
@@ -95,12 +100,17 @@ export default function EmployeesPage() {
   const [saving, setSaving] = useState(false)
   const [conflict, setConflict] = useState('')
   const [suggestions, setSuggestions] = useState<typeof EMPLOYEES>([])
+  // รายชื่อพนักงานดึงจากตาราง staff (active) — อัปเดตเองเมื่อมีคนเข้า/ออก, fallback รายชื่อในโค้ดถ้าดึงไม่ได้
+  const [employees, setEmployees] = useState<typeof EMPLOYEES>(EMPLOYEES)
   const [certFile, setCertFile] = useState<File | null>(null)
   const [certBusy, setCertBusy] = useState<string | null>(null)  // id แถวที่กำลังอัปโหลดใบรับรองทีหลัง
   const [dayModal, setDayModal] = useState<{ ymd: string; day: number; leaves: Leave[] } | null>(null)
 
   const load = async () => {
-    const { data } = await supabase.from('leave_requests').select('*').order('leave_date', { ascending: false })
+    setError('')
+    const { data, error: err } = await fetchAllRows<Leave>(() =>
+      supabase.from('leave_requests').select('*').order('leave_date', { ascending: false }).order('id', { ascending: true }))
+    if (err) { setError(err.message || 'โหลดข้อมูลไม่สำเร็จ'); setLoading(false); return }
     const rows = (data ?? []) as Leave[]
     setPageCache('leave_requests', rows)
     setLeaves(rows)
@@ -108,13 +118,14 @@ export default function EmployeesPage() {
   }
 
   useEffect(() => { load() }, [])
+  useEffect(() => { fetchEmployeeOptions().then(list => { if (list.length) setEmployees(list) }).catch(() => {}) }, [])
 
   const setF = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
 
   const onNicknameChange = (val: string) => {
     setF('nickname', val)
     if (val.length < 1) { setSuggestions([]); return }
-    const matches = EMPLOYEES.filter(e =>
+    const matches = employees.filter(e =>
       e.nickname.includes(val) || e.realName.includes(val) || e.code.includes(val)
     ).slice(0, 6)
     setSuggestions(matches)
@@ -129,7 +140,8 @@ export default function EmployeesPage() {
   const checkConflict = async (start: string, end: string, dept: string) => {
     if (!start || !dept) return
     const e = end || start
-    const { data } = await supabase.from('leave_requests').select('employee_nickname, leave_date, leave_end_date').eq('department', dept)
+    const { data } = await fetchAllRows<{ employee_nickname: string; leave_date: string; leave_end_date: string | null }>(() =>
+      supabase.from('leave_requests').select('employee_nickname, leave_date, leave_end_date').eq('department', dept).order('id', { ascending: true }))
     const overlap = (data ?? []).filter((d: any) => {
       const ds = d.leave_date
       const de = d.leave_end_date || d.leave_date
@@ -186,7 +198,7 @@ export default function EmployeesPage() {
     setSaving(true)
     // แนบใบรับรองแพทย์ถ้ามี (ไม่บังคับ — ไม่แนบก็บันทึกได้)
     const certUrl = certFile ? await uploadCert(certFile, form.employee_code) : null
-    await supabase.from('leave_requests').insert({
+    const payload = {
       employee_code: form.employee_code,
       employee_name: form.employee_name,
       employee_nickname: form.nickname,
@@ -200,9 +212,19 @@ export default function EmployeesPage() {
       supervisor_approval: 'รออนุมัติ',
       hr_approval: 'รออนุมัติ',
       medical_cert_url: certUrl,
-    })
+    }
+    const days = rangeDays(form.leave_date, form.leave_end_date || form.leave_date)
+    const { data: inserted } = await supabase.from('leave_requests').insert(payload).select().single()
     // อัปเดตสิทธิลาในหน้าพนักงาน (staff) ให้ตรงกัน
-    await applyLeaveToStaff(form.employee_code, form.leave_type, rangeDays(form.leave_date, form.leave_end_date || form.leave_date), 1)
+    await applyLeaveToStaff(form.employee_code, form.leave_type, days, 1)
+    if (inserted) {
+      const code = form.employee_code, type = form.leave_type, nick = form.nickname
+      recordAction({
+        label: `เพิ่มใบลา ${nick}`,
+        undo: async () => { await supabase.from('leave_requests').delete().eq('id', inserted.id); await applyLeaveToStaff(code, type, days, -1); await load() },
+        redo: async () => { await supabase.from('leave_requests').insert(inserted); await applyLeaveToStaff(code, type, days, 1); await load() },
+      })
+    }
     setSaving(false)
     setModal(false)
     setForm({ nickname: '', employee_code: '', employee_name: '', department: '', leave_date: '', leave_end_date: '', leave_time: '08:00', leave_type: '', reason: '' })
@@ -224,12 +246,21 @@ export default function EmployeesPage() {
     const l = leaves.find((x) => x.id === id)
     await supabase.from('leave_requests').delete().eq('id', id)
     // ย้อนสิทธิลาในตาราง staff กลับ
-    if (l) await applyLeaveToStaff(l.employee_code, l.leave_type, rangeDays(l.leave_date, l.leave_end_date || l.leave_date), -1)
+    if (l) {
+      const days = rangeDays(l.leave_date, l.leave_end_date || l.leave_date)
+      await applyLeaveToStaff(l.employee_code, l.leave_type, days, -1)
+      recordAction({
+        label: `ลบใบลา ${l.employee_nickname || ''}`,
+        undo: async () => { await supabase.from('leave_requests').insert(l); await applyLeaveToStaff(l.employee_code, l.leave_type, days, 1); await load() },
+        redo: async () => { await supabase.from('leave_requests').delete().eq('id', id); await applyLeaveToStaff(l.employee_code, l.leave_type, days, -1); await load() },
+      })
+    }
     load()
   }
 
   const updateLeave = async (id: string, field: string, val: string) => {
-    await supabase.from('leave_requests').update({ [field]: val }).eq('id', id)
+    const old = leaves.find((x) => x.id === id)
+    await tUpdate('leave_requests', id, { [field]: val }, { [field]: old ? (old as any)[field] ?? null : null }, `แก้ใบลา ${old?.employee_nickname || ''}`, load)
     load()
   }
 
@@ -323,7 +354,14 @@ export default function EmployeesPage() {
       {/* Leave list */}
       <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)', marginBottom: 14 }}>รายการลา</h2>
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', overflowX: 'auto' }}>
-        {loading ? (
+        {error ? (
+          <div style={{ padding: 40, textAlign: 'center' }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--red)', marginBottom: 4 }}>โหลดข้อมูลไม่สำเร็จ</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 16 }}>{error}</div>
+            <button onClick={() => { setLoading(true); load() }}
+              style={{ border: 'none', background: 'var(--blue)', color: '#fff', borderRadius: 10, padding: '8px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>ลองใหม่</button>
+          </div>
+        ) : loading ? (
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>กำลังโหลด…</div>
         ) : leaves.length === 0 ? (
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>ไม่มีรายการลา</div>

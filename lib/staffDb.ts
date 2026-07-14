@@ -38,6 +38,21 @@ export async function fetchStaffList(): Promise<Staff[]> {
   return (data || []).map(rowToStaff)
 }
 
+// รูปแบบเดียวกับ EMPLOYEES (lib/staff.ts) เพื่อใช้แทนในช่องเลือกพนักงาน/เดาชื่อ
+// — ดึงจากตาราง staff (active) ให้รายชื่ออัปเดตเองเมื่อมีคนเข้า/ออก ไม่ต้องแก้โค้ด
+export type EmployeeOption = { code: string; realName: string; nickname: string; role: string; dept: string }
+
+export async function fetchEmployeeOptions(): Promise<EmployeeOption[]> {
+  const list = await fetchStaffList()
+  return list.map(s => ({
+    code: s.code,
+    realName: s.name || '',
+    nickname: s.nickname || '',
+    role: s.position || '',
+    dept: s.division || '',
+  }))
+}
+
 export async function fetchStaffOne(code: string): Promise<Staff | null> {
   const { data, error } = await supabase.from('staff').select('*').eq('code', code.toUpperCase()).maybeSingle()
   if (error) throw error

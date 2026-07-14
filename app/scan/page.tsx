@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { EMPLOYEES, STAGES, stageByKey } from '@/lib/staff'
+import { fetchEmployeeOptions } from '@/lib/staffDb'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { uploadPackingFile, deletePackingFile, compressImage } from '@/lib/packingPhotos'
 
@@ -17,7 +18,7 @@ const SPECIAL_STAGES: { key: string; label: string; status: string; special: Spe
   { key: 'shipped', label: 'จัดส่งแล้ว', status: 'จัดส่งแล้ว', special: 'shipped' },
 ]
 const resolveStage = (key: string): any => stageByKey(key) || SPECIAL_STAGES.find(s => s.key === key)
-type Phase = 'scanning' | 'working' | 'done' | 'already' | 'noorder' | 'error' | 'barcode'
+type Phase = 'scanning' | 'working' | 'done' | 'already' | 'noorder' | 'error' | 'barcode' | 'undone'
 
 // กรอบสแกน: QR = สี่เหลี่ยมจัตุรัส / บาร์โค้ด 1D บนใบปะหน้า = แนวนอนกว้าง
 const QR_BOX = { width: 250, height: 250 }
@@ -82,8 +83,12 @@ function ScanContent() {
   const [q, setQ] = useState('')
   const [pickCode, setPickCode] = useState('')
   const [pickStage, setPickStage] = useState('')
+  // รายชื่อพนักงานดึงจากตาราง staff (active) — อัปเดตเองเมื่อมีคนเข้า/ออก, fallback รายชื่อในโค้ด
+  const [employees, setEmployees] = useState<typeof EMPLOYEES>(EMPLOYEES)
+  const [undoing, setUndoing] = useState(false)
 
   const scannerRef = useRef<any>(null)
+  const resumeTimerRef = useRef<any>(null)  // timer auto-กลับไปสแกนต่อ (undo ต้องยกเลิกก่อน ไม่งั้นเด้งทับหน้า "ยกเลิกแล้ว")
   const busyRef = useRef(false)
   const startedRef = useRef(false)
 
@@ -97,6 +102,7 @@ function ScanContent() {
   const [shipToast, setShipToast] = useState('')
 
   useEffect(() => { setTech(loadTech()); setReady(true) }, [])
+  useEffect(() => { fetchEmployeeOptions().then(list => { if (list.length) setEmployees(list) }).catch(() => {}) }, [])
 
   // พื้นหลังหน้า /scan เป็นสีเข้ม (กัน iOS bounce โชว์ขอบขาว) + กัน overscroll — คืนค่าเดิมตอนออกจากหน้า
   useEffect(() => {
@@ -157,8 +163,9 @@ function ScanContent() {
       return
     }
     // แผนกที่อัพโหลดรูปได้ → ค้างหน้าผลไว้ให้อัพรูปก่อน กด "สแกนต่อ" เอง
+    // แผนกที่ไม่มีรูป → ค้างหน้าผล 4 วิ (ให้ทันเช็ก+กดยกเลิกถ้าสแกนผิด) แล้วกลับไปสแกนต่ออัตโนมัติ
     if ((UPLOAD_SLOTS[tech.stageKey] ?? []).length === 0) {
-      setTimeout(() => { try { html5.resume() } catch {}; busyRef.current = false; setPhase('scanning') }, 2600)
+      resumeTimerRef.current = setTimeout(() => { try { html5.resume() } catch {}; busyRef.current = false; setPhase('scanning') }, 4000)
     }
   }
 
@@ -358,8 +365,27 @@ function ScanContent() {
     return done
   }
 
+  // ยกเลิกการสแกนล่าสุด (สแกนผิด) — เรียก RPC scan_undo (all-or-nothing) ถอยสถานะ+ลบ log
+  async function undoScan() {
+    if (!order?.id || undoing) return
+    if (resumeTimerRef.current) { clearTimeout(resumeTimerRef.current); resumeTimerRef.current = null }  // กันเด้งกลับไปสแกนทับหน้า "ยกเลิกแล้ว"
+    setUndoing(true)
+    try {
+      const { data, error } = await supabase.rpc('scan_undo', {
+        p_order_id: order.id,
+        p_scanned_term: order.order_number || '',
+      })
+      if (error) { setMsg(error.message); setPhase('error') }
+      else if (!data?.ok) { setMsg(data?.result === 'no_scan' ? 'ไม่พบรายการสแกนให้ยกเลิก' : String(data?.result || 'ยกเลิกไม่สำเร็จ')); setPhase('error') }
+      else { setOrder((o: any) => o ? { ...o, order_status: data.status } : o); setPhase('undone') }
+    } catch (e: any) {
+      setMsg(e?.message || String(e)); setPhase('error')
+    }
+    setUndoing(false)
+  }
+
   function saveLogin() {
-    const emp = EMPLOYEES.find(e => e.code === pickCode)
+    const emp = employees.find(e => e.code === pickCode)
     if (!emp || !pickStage) return
     localStorage.setItem(LS_KEY, JSON.stringify({ code: emp.code, name: `${emp.nickname} (${emp.code})`, stageKey: pickStage }))
     setTech(loadTech())
@@ -376,8 +402,8 @@ function ScanContent() {
 
   // ---------- ตั้งค่าครั้งแรก ----------
   if (!tech) {
-    const matches = q.trim() ? EMPLOYEES.filter(e => e.nickname.includes(q) || e.realName.includes(q) || e.code.toLowerCase().includes(q.toLowerCase())).slice(0, 8) : []
-    const picked = EMPLOYEES.find(e => e.code === pickCode)
+    const matches = q.trim() ? employees.filter(e => e.nickname.includes(q) || e.realName.includes(q) || e.code.toLowerCase().includes(q.toLowerCase())).slice(0, 8) : []
+    const picked = employees.find(e => e.code === pickCode)
     return (
       <div style={centerWrap}>
         <div style={card}>
@@ -432,7 +458,7 @@ function ScanContent() {
       <div style={centerWrap}>
         <div style={card}>
           <Identity tech={tech} stageLabel={stage?.label} onLogout={logout} />
-          <Result phase={phase} order={order} msg={msg} stage={stage} />
+          <Result phase={phase} order={order} msg={msg} stage={stage} onUndo={undoScan} undoing={undoing} />
           {canUpload && <PhotoUpload slots={slots} uploading={uploading} counts={uploadedCnt} err={uploadErr} onPick={pickPhoto} photos={photos} delBusy={delBusy} onDelete={deletePhoto} />}
           <a href="/scan" style={{ display: 'inline-block', marginTop: 18, color: stageColor, fontSize: 14, fontWeight: 600 }}>เปิดกล้องสแกนต่อ →</a>
         </div>
@@ -526,9 +552,9 @@ function ScanContent() {
         {showOverlay && (
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(11,18,32,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, overflowY: 'auto' }}>
             <div style={{ ...card, maxWidth: 380 }}>
-              <Result phase={phase} order={order} msg={msg} stage={stage} />
+              <Result phase={phase} order={order} msg={msg} stage={stage} onUndo={undoScan} undoing={undoing} />
               {canUpload && <PhotoUpload slots={slots} uploading={uploading} counts={uploadedCnt} err={uploadErr} onPick={pickPhoto} photos={photos} delBusy={delBusy} onDelete={deletePhoto} />}
-              {slots.length > 0 && phase !== 'working' && (
+              {(slots.length > 0 || phase === 'undone') && phase !== 'working' && (
                 <button onClick={resumeScan} disabled={uploading !== null}
                   style={{ width: '100%', marginTop: 16, padding: 13, borderRadius: 12, border: 'none', background: uploading ? '#c7c7c7' : '#2563eb', color: '#fff', fontSize: 15, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer' }}>
                   สแกนต่อ →
@@ -630,7 +656,7 @@ function Identity({ tech, stageLabel, onLogout }: { tech: Tech; stageLabel?: str
   )
 }
 
-function Result({ phase, order, msg, stage }: { phase: Phase; order: any; msg: string; stage: any }) {
+function Result({ phase, order, msg, stage, onUndo, undoing }: { phase: Phase; order: any; msg: string; stage: any; onUndo?: () => void; undoing?: boolean }) {
   if (phase === 'working') return <div style={{ fontSize: 16, padding: '24px 0' }}>⏳ กำลังอัปเดต…</div>
   if (phase === 'done') return (
     <>
@@ -638,6 +664,20 @@ function Result({ phase, order, msg, stage }: { phase: Phase; order: any; msg: s
       <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6, color: '#16a34a' }}>{stage?.status}</h1>
       <p style={{ fontSize: 15 }}>ออเดอร์ <b>{order?.order_number}</b></p>
       <p style={{ fontSize: 14, color: '#666' }}>{order?.customer_name}</p>
+      {onUndo && (
+        <button onClick={onUndo} disabled={undoing}
+          style={{ marginTop: 16, border: '1px solid #dc2626', background: undoing ? '#fca5a5' : '#fff', color: '#dc2626', borderRadius: 10, padding: '9px 18px', fontSize: 14, fontWeight: 700, cursor: undoing ? 'default' : 'pointer' }}>
+          {undoing ? 'กำลังยกเลิก…' : '↩ สแกนผิด? กดยกเลิก'}
+        </button>
+      )}
+    </>
+  )
+  if (phase === 'undone') return (
+    <>
+      <div style={{ fontSize: 54, marginBottom: 8 }}>↩️</div>
+      <h1 style={{ fontSize: 20, fontWeight: 800, marginBottom: 6, color: '#dc2626' }}>ยกเลิกการสแกนแล้ว</h1>
+      <p style={{ fontSize: 15 }}>ออเดอร์ <b>{order?.order_number}</b></p>
+      <p style={{ fontSize: 14, color: '#666' }}>สถานะกลับเป็น: <b>{order?.order_status || 'รอดำเนินการ'}</b></p>
     </>
   )
   if (phase === 'already') return (
