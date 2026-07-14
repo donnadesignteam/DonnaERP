@@ -667,7 +667,7 @@ function Result({ phase, order, msg, stage, onUndo, undoing }: { phase: Phase; o
       {onUndo && (
         <button onClick={onUndo} disabled={undoing}
           style={{ marginTop: 16, border: '1px solid #dc2626', background: undoing ? '#fca5a5' : '#fff', color: '#dc2626', borderRadius: 10, padding: '9px 18px', fontSize: 14, fontWeight: 700, cursor: undoing ? 'default' : 'pointer' }}>
-          {undoing ? 'กำลังยกเลิก…' : '↩ สแกนผิด? กดยกเลิก'}
+          {undoing ? 'กำลังยกเลิก…' : 'ยกเลิก'}
         </button>
       )}
     </>
