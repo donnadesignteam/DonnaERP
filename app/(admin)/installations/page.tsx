@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { HOLIDAYS } from '@/lib/holidays'
-import { formatItemLines, type RawItem } from '@/lib/itemFormat'
+import { formatItemLines, autoTapeHooks, type RawItem } from '@/lib/itemFormat'
 import { syncOutsourcePO } from '@/lib/outsourceSync'
 import { recordAction } from '@/lib/history'
 import { prevOf } from '@/lib/trackedDb'
@@ -65,6 +65,10 @@ const STATUS_COLOR: Record<string, string> = {
 }
 
 const emptyItem = (): RawItem => ({ type: '', floors: null, rail_head: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', orientation: '', fabric_split: '', chemical: '', weight_chain: '', pull_side: '', note: '', outsource: '' })
+
+// เติมกระดูมม่านลอนเทปที่ยังว่างให้อัตโนมัติ — ใช้ตอนเปิดโมดัล (ออเดอร์เก่าที่บันทึกกระดูมว่างไว้ก็โชว์ให้)
+const withAutoHooks = (items: RawItem[]): RawItem[] =>
+  items.map(it => (it.hooks ?? '').trim() ? it : { ...it, hooks: autoTapeHooks(it) })
 
 // รวมข้อความสั่งนอกจากทุกรายการ → ไว้ลงคอลัมน์สั่งนอกของออเดอร์ต้นทาง
 const itemsOutsourceText = (items: RawItem[]): string =>
@@ -336,7 +340,8 @@ export default function InstallationsPage() {
 
   const saveItems = async () => {
     if (!itemsModal) return
-    const newItems = itemsModal.items.length > 0 ? itemsModal.items : null
+    // เก็บกระดูมที่คำนวณได้ (ม่านลอนเทป) ลงฐานด้วย ให้ตรงกับที่โชว์ในตาราง
+    const newItems = itemsModal.items.length > 0 ? withAutoHooks(itemsModal.items) : null
     const now = new Date().toISOString()
     // สั่งนอกในรายการ → ลงคอลัมน์สั่งนอกของออเดอร์ต้นทาง + ประทับเวลาเมื่อข้อความเปลี่ยน
     const itemsOut = itemsOutsourceText(itemsModal.items)
@@ -598,7 +603,7 @@ export default function InstallationsPage() {
                     <td style={{ padding: '6px 14px', minWidth: 160, maxWidth: 200 }}>
                       {ins.source_order_id ? (
                         // มาจากหมวดออเดอร์ → จิ้มเปิด popup แก้รายการ บันทึกกลับไปที่ออเดอร์ต้นทาง
-                        <div onClick={() => { setItemsModal({ orderId: ins.source_order_id!, items: [...(orderItems[ins.source_order_id!] ?? [])] }); setItemsPasteText(''); setItemsError('') }}
+                        <div onClick={() => { setItemsModal({ orderId: ins.source_order_id!, items: withAutoHooks(orderItems[ins.source_order_id!] ?? []) }); setItemsPasteText(''); setItemsError('') }}
                           style={{ cursor: 'pointer' }} title="จิ้มเพื่อแก้รายการ">
                           {orderItems[ins.source_order_id]?.length ? (
                             // โชว์แบบเดียวกับคอลัมน์รายการในหมวดออเดอร์: บรรทัดสั้น 1 บรรทัด/ชิ้น ตัดท้ายด้วย …
@@ -765,7 +770,9 @@ export default function InstallationsPage() {
                           <input
                             type={type}
                             step={type === 'number' ? '0.01' : undefined}
-                            value={item[key] == null ? '' : String(item[key])}
+                            value={key === 'hooks' && !(item.hooks ?? '').toString().trim()
+                              ? autoTapeHooks(item)                                  /* ว่าง → โชว์กระดูมที่คำนวณจากม่านลอนเทป (พิมพ์ทับได้) */
+                              : (item[key] == null ? '' : String(item[key]))}
                             onChange={e => {
                               const val = key === 'floors'
                                 ? (e.target.value === '' ? null : Number(e.target.value))

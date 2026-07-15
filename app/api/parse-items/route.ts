@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { fabricTypeFromCode } from '@/lib/fabrics'
-import { fillItemDefaults, type RawItem } from '@/lib/itemFormat'
+import { fillItemDefaults, autoTapeHooks, type RawItem } from '@/lib/itemFormat'
 
 type ContentBlock = { type: string; text?: string }
 type AnthropicResponse = { content: ContentBlock[] }
@@ -102,6 +102,8 @@ ${text}`
     const normalized = Array.isArray(items)
       ? items.map((raw: RawItem) => {
           const it = fillItemDefaults(raw)
+          // ม่านลอนเทป/รางม่านลอนเทป ที่ไม่ได้ลงจำนวนกระดูม → คำนวณจากความกว้างให้เลย (โชว์ในตารางแปลง)
+          if (!it.hooks) { const h = autoTapeHooks(it); if (h) it.hooks = h }
           if (typeof it.type === 'string' && it.type.startsWith('ราง')) return it
           const ft = fabricTypeFromCode(it.color_code)
           return ft ? { ...it, fabric_type: ft } : it

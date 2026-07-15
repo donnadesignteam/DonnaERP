@@ -264,6 +264,7 @@ function ScanContent() {
 
   // กลับไปสแกนต่อ (ปุ่มกดเองของแผนกที่อัพโหลดรูปได้)
   function resumeScan() {
+    if (resumeTimerRef.current) { clearTimeout(resumeTimerRef.current); resumeTimerRef.current = null }
     setUploadedCnt({}); setUploadErr('')
     setPhase('scanning')
     busyRef.current = false
@@ -391,11 +392,14 @@ function ScanContent() {
     setTech(loadTech())
   }
 
+  // กด "เปลี่ยน" — จำชื่อพนักงานที่ตั้งไว้ ให้เลือกแผนกใหม่ได้เลย (ไม่ต้องกรอกชื่อซ้ำ)
+  // อยากเปลี่ยนชื่อด้วยก็กด × ที่ชิปชื่อในหน้าตั้งค่าได้
   function logout() {
     const s = scannerRef.current
     if (s) { try { s.stop().catch(() => {}) } catch {} }
-    localStorage.removeItem(LS_KEY); setTech(null); startedRef.current = false; setCamState('idle')
-    setQ(''); setPickCode(''); setPickStage('')
+    const cur = loadTech()
+    setTech(null); startedRef.current = false; setCamState('idle'); setQ('')
+    setPickCode(cur?.code ?? ''); setPickStage('')
   }
 
   if (!ready) return <div style={centerWrap}><div style={{ opacity: 0.6 }}>กำลังโหลด…</div></div>
@@ -407,8 +411,8 @@ function ScanContent() {
     return (
       <div style={centerWrap}>
         <div style={card}>
-          <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>ตั้งค่าเครื่องสแกน</h1>
-          <p style={{ fontSize: 14, color: '#666', marginBottom: 20 }}>ทำครั้งเดียวต่อมือถือ — เลือกชื่อและแผนกของคุณ</p>
+          <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>{picked ? 'เปลี่ยนแผนก' : 'ตั้งค่าเครื่องสแกน'}</h1>
+          <p style={{ fontSize: 14, color: '#666', marginBottom: 20 }}>{picked ? 'เลือกแผนกใหม่ได้เลย — อยากเปลี่ยนชื่อกด × ที่ชื่อ' : 'ทำครั้งเดียวต่อมือถือ — เลือกชื่อและแผนกของคุณ'}</p>
           <label style={{ display: 'block', fontSize: 13, fontWeight: 600, textAlign: 'left', marginBottom: 6 }}>1. ชื่อพนักงาน</label>
           {picked ? (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #2563eb', background: '#eff6ff', borderRadius: 10, padding: '10px 14px', marginBottom: 18 }}>
@@ -554,7 +558,7 @@ function ScanContent() {
             <div style={{ ...card, maxWidth: 380 }}>
               <Result phase={phase} order={order} msg={msg} stage={stage} onUndo={undoScan} undoing={undoing} />
               {canUpload && <PhotoUpload slots={slots} uploading={uploading} counts={uploadedCnt} err={uploadErr} onPick={pickPhoto} photos={photos} delBusy={delBusy} onDelete={deletePhoto} />}
-              {(slots.length > 0 || phase === 'undone') && phase !== 'working' && (
+              {['done', 'already', 'undone', 'error'].includes(phase) && (
                 <button onClick={resumeScan} disabled={uploading !== null}
                   style={{ width: '100%', marginTop: 16, padding: 13, borderRadius: 12, border: 'none', background: uploading ? '#c7c7c7' : '#2563eb', color: '#fff', fontSize: 15, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer' }}>
                   สแกนต่อ →

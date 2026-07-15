@@ -24,11 +24,13 @@ export type RawItem = {
   outsource?: string      // สั่งนอกของรายการนี้ — ตอนบันทึกจะรวมไปลงคอลัมน์สั่งนอกของออเดอร์
 }
 
-// เติมฟิลด์เสริมที่ AI ตัดทิ้งตอนค่าว่างกลับให้ครบ (ประหยัด output token แต่ผลลัพธ์เหมือนเดิม)
+// เติมฟิลด์ที่ AI ตัดทิ้งตอนค่าว่างกลับให้ครบ (ประหยัด output token แต่ผลลัพธ์เหมือนเดิม)
 // เช็ก == null เท่านั้น: ถ้า AI ยังส่ง "" มาก็ไม่ทับ → ได้ค่าเดียวกันไม่ว่า AI จะตัดหรือส่งว่าง
-// ฟิลด์หลัก (type/width/height/quantity/unit) AI ใส่เสมอ ไม่แตะ
-const ITEM_EMPTY_FIELDS = ['rail_head', 'eyelet_color', 'fabric_type', 'color_code', 'color_name',
-  'color_desc', 'hooks', 'orientation', 'fabric_split', 'chemical', 'weight_chain', 'pull_side', 'note'] as const
+// รวมฟิลด์หลัก (type/width/height/quantity/unit) ด้วย — AI ตัดทิ้งได้จริงถ้าต้นฉบับไม่ระบุ
+// (เช่นรางไม่ลงความสูง) ถ้าไม่เติม ช่องในตาราง/ใบออเดอร์จะขึ้น undefined
+const ITEM_EMPTY_FIELDS = ['type', 'rail_head', 'eyelet_color', 'fabric_type', 'color_code', 'color_name',
+  'color_desc', 'width', 'height', 'quantity', 'unit', 'hooks', 'orientation', 'fabric_split',
+  'chemical', 'weight_chain', 'pull_side', 'note', 'outsource'] as const
 export function fillItemDefaults(it: RawItem): RawItem {
   const out: RawItem = { ...it }
   if (out.floors == null) out.floors = null
@@ -92,23 +94,40 @@ const lookupDown = (rows: [number, number][], key: number): number | null => {
   return hit
 }
 
-// ม่านลอนเทปที่ไม่ได้ลงจำนวนกระดูม → คำนวณจากความกว้าง+แบ่งผ้าให้เอง เช่น ก1.00 แยกกลาง=(10+10), สไลด์เดี่ยว=(18)
-// เกินช่วงตาราง (แยกกลาง 6.93 / เดี่ยว 6.32) ไม่เดา — เว้นว่างเหมือนเดิม
+// ม่านลอนเทปที่ไม่ได้ลงจำนวนกระดูม → คำนวณจากความกว้าง+แบ่งผ้าให้เอง (สอบทานกับข้อมูลจริง ~60 รายการ)
+// กติกาจากร้าน:
+//   - แยกกลาง = เอา 2 ผืนรวมกันแล้วหากระดูม → ผ้าลงกว้างต่อผืน (ครึ่งเดียว) ต้อง ×2 ก่อน แล้วโชว์ (n+n)
+//     เช่น ผ้าก1.50 → รวม 3.00 → (24+24) · แต่ "ราง..." กว้างเต็มอยู่แล้ว ไม่ต้อง ×2
+//   - สไลด์เดี่ยว = ใช้กว้างรวมตรงๆ → (n) เช่น ก1.50 → (26)
+//   - ไม่ได้ระบุแบ่งผ้า (และไม่รู้จำนวนผืน) → ไม่ขึ้นกระดูม
+//   - "เทปลอน" (คนละคำกับ "ลอนเทป") ไม่เข้าเงื่อนไข → ไม่ขึ้น (ถูกแล้วตามที่ร้านใช้)
+// เกินช่วงตาราง (แยกกลาง 6.93 / เดี่ยว 6.32) ไม่เดา — เว้นว่าง
 export function autoTapeHooks(item: RawItem): string {
   const type = (item.type ?? '').trim()
-  if (!type.includes('ลอนเทป') || type.startsWith('ราง')) return ''
+  if (!type.includes('ลอนเทป')) return ''
   const w = String(item.width ?? '').trim()
   // รางต่อโค้ง "1.69+0.49" คิดจากผลรวม (แนวเดียวกับเว็บอุปกรณ์ราง)
-  const size = w.includes('+')
+  const base = w.includes('+')
     ? w.split('+').map(Number).filter(n => n > 0).reduce((a, b) => a + b, 0)
     : Number(w)
-  if (!(size > 0)) return ''
-  const single = /สไลด์|เดี่ยว/.test(`${item.fabric_split || ''} ${item.note || ''}`)
-  if (single) {
-    if (size > 6.32) return ''
-    const n = lookupDown(TAPE_SINGLE, Math.max(0.5, size))
+  if (!(base > 0)) return ''
+  // แบ่งผ้า: ดูจากที่ระบุก่อน ถ้าไม่มีก็เดาจากจำนวนผืน (2 ผืนประกบ = แยกกลาง, 1 ผืน = สไลด์เดี่ยว)
+  const splitTxt = `${item.fabric_split || ''} ${item.note || ''}`
+  const qty = Number(item.quantity)
+  const isPanel = (item.unit || '').includes('ผืน')
+  let mode: 'single' | 'center' | null = null
+  if (/สไลด์|เดี่ยว/.test(splitTxt)) mode = 'single'
+  else if (/แยกกลาง|แยก/.test(splitTxt)) mode = 'center'
+  else if (isPanel && qty >= 2 && qty % 2 === 0) mode = 'center'
+  else if (isPanel && qty === 1) mode = 'single'
+  if (!mode) return ''   // ไม่รู้แบ่งผ้า → ไม่ขึ้น (ตามกติการ้าน)
+  if (mode === 'single') {
+    if (base > 6.32) return ''
+    const n = lookupDown(TAPE_SINGLE, Math.max(0.5, base))
     return n != null ? `(${n})` : ''
   }
+  // แยกกลาง: ผ้ารวม 2 ผืน (base×2), แต่ราง = กว้างเต็มอยู่แล้ว
+  const size = type.startsWith('ราง') ? base : base * 2
   if (size > 6.93) return ''
   const n = lookupDown(TAPE_CENTER, Math.max(0.5, size))
   return n != null ? `(${n}+${n})` : ''
