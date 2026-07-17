@@ -8,6 +8,7 @@ import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { itemBlockLines, heightText, formatItemLines } from '@/lib/itemFormat'
 import { railLink } from '@/lib/rail'
+import { OUTSIDE_PLATFORMS, PROD_STATUSES, INSTALL_STATUSES, PROD_STATUS_COLOR, matchQuickTab, effectiveDueDate, type QuickTab } from '@/lib/orderTabs'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { effShipping } from '@/lib/shipping'
 import { thaiTrackStatus } from '@/lib/trackExtract'
@@ -214,31 +215,9 @@ const STATUS_COLOR: Record<string, string> = {
   'งานเสร็จแล้ว': 'var(--blue)',
 }
 
-const PROD_STATUSES = ['รอดำเนินการ', 'ตัดผ้าแล้ว', 'เย็บแล้ว', 'รีดแล้ว', 'แพ็คแล้ว', 'รอจัดส่ง', 'จัดส่งแล้ว']
-const INSTALL_STATUSES = ['รอดำเนินการ', 'ตัดผ้าแล้ว', 'เย็บแล้ว', 'รีดแล้ว', 'แพ็คแล้ว', 'รอติดตั้ง']
-// สีแยกตามขั้นผลิต: รอ=เหลือง → ตัด=ฟ้า → เย็บ=ม่วง → รีด=ชมพู → แพ็ค=เขียวอมฟ้า (คำเก่า "กำลังX" สีเดียวกับ "Xแล้ว")
-const PROD_STATUS_COLOR: Record<string, string> = {
-  'รอดำเนินการ': '#f59e0b',
-  'ตัดผ้าแล้ว': '#0ea5e9',
-  'เย็บแล้ว': '#8b5cf6',
-  'รีดแล้ว': '#ec4899',
-  'แพ็คแล้ว': '#14b8a6',
-  'กำลังตัด': '#0ea5e9',
-  'กำลังเย็บ': '#8b5cf6',
-  'กำลังรีด': '#ec4899',
-  'กำลังแพ็ค': '#14b8a6',
-  'งานเสร็จ': '#22c55e',
-  'รอจัดส่ง': '#6366f1',
-  'จัดส่งแล้ว': '#22c55e',
-  'รอติดตั้ง': '#f97316',
-}
+// PROD_STATUSES / INSTALL_STATUSES / PROD_STATUS_COLOR / OUTSIDE_PLATFORMS / matchQuickTab
+// ย้ายไป lib/orderTabs.ts แล้ว — ใช้ร่วมกับหน้ามือถือ (/m/orders) จะได้ไม่กรองข้อมูลเพี้ยนจากกัน
 
-const OUTSIDE_PLATFORMS = [
-  'Facebook','LineOA','Tiktok-Chat','Shopee-Chat','หน้าร้าน',
-  'Lineส่วนตัวยุน','Lineส่วนตัวเฟิร์น','Lineส่วนตัวสู้',
-  'เคลม:Shopee','เคลม:Lazada','เคลม:Tiktok','เคลม:Facebook','เคลม:LineOA','เคลม:หน้าร้าน',
-  'เคลม:Lineส่วนตัวยุน','เคลม:Lineส่วนตัวเฟิร์น','เคลม:Lineส่วนตัวสู้',
-]
 const OUTSIDE_STATUSES = ['รอดำเนินการ', 'เสร็จสิ้น', 'รอยอดปลายทาง', 'ยกเลิก']
 const OUTSIDE_STATUS_COLOR: Record<string, string> = {
   'รอดำเนินการ': '#f59e0b',
@@ -1354,19 +1333,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       if (shippingDateTo && d > new Date(shippingDateTo + 'T23:59:59')) return false
       return true
     })()
-    const p = r.platform ?? ''
-    const isClaim = p.startsWith('เคลม:')
-    // จัดส่งแล้ว/ยกเลิก → ย้ายไปอยู่หมวดของตัวเองหมวดเดียว หายจากหมวดอื่นทั้งหมด
-    const isShipped = r.order_status === 'จัดส่งแล้ว'
-    const isCancelled = r.order_status === 'ยกเลิก'
-    const matchQuick = quickFilter === 'shipped' ? isShipped
-      : quickFilter === 'cancelled' ? isCancelled
-      : quickFilter === 'claim' ? isClaim
-      : (isShipped || isCancelled) ? false
-      : quickFilter === 'all' ? true
-      : quickFilter === 'platform' ? (!isClaim && (p === 'Shopee' || p === 'Tiktok' || p === 'Lazada'))
-      : quickFilter === 'outside' ? (!isClaim && OUTSIDE_PLATFORMS.includes(p) && !r.is_installation)
-      : r.is_installation === true
+    // จัดส่งแล้ว/ยกเลิก → ย้ายไปอยู่หมวดของตัวเองหมวดเดียว หายจากหมวดอื่นทั้งหมด (ตรรกะอยู่ใน lib/orderTabs.ts)
+    const matchQuick = matchQuickTab(r, quickFilter as QuickTab)
     const matchIncomplete = !incompleteFilter || (!r.items || r.items.length === 0 || !r.deadline || r.price == null || !r.customer_name || (OUTSIDE_PLATFORMS.includes(r.platform ?? '') && (!r.order_assigned || r.order_assigned === 'รออัพเดท')) || ((OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation) && (!r.payment_status || r.payment_status === 'ยังไม่ชำระ')))
     return matchSearch && matchStatus && matchPlatform && matchCourier && matchAdmin && matchTech && matchUrgent && matchInstall && matchShipping && matchQuick && matchIncomplete
   })
@@ -2733,7 +2701,7 @@ ${body}
             <tbody>
               {displayedAll.map(r => {
                 const isOutsideRow = OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation
-                const allEffective = isOutsideRow ? r.deadline : effShipping(r)
+                const allEffective = effectiveDueDate(r)   // งานนอก/ติดตั้ง=deadline · แพลตฟอร์ม=effShipping (lib/orderTabs.ts)
                 const allDays = allEffective ? daysRemaining(allEffective) : null
                 return (
                   <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : 'transparent' }}>
