@@ -3,16 +3,12 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
+import { RAIL_PATH } from '@/lib/rail'
 
 // หน้ารวมเครื่องมือของแอป "Donna Design" (start_url ของ PWA ชี้มาที่นี่)
 // เปิดแอปครั้งแรกของรอบ → เด้งเข้าเครื่องมือที่ใช้ล่าสุดให้เลย · กดปุ่มกลับ hub / ปุ่ม back → เห็นหน้านี้ตามปกติ
 const LAST_APP_KEY = 'donna_last_app'      // localStorage — จำข้ามการปิดแอป
 const LAUNCHED_KEY = 'donna_hub_launched'  // sessionStorage — เด้งอัตโนมัติแค่ครั้งเดียวต่อการเปิดแอป (กันวนลูปตอนกด back)
-
-const railUrl = () => {
-  const isLocal = /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname)
-  return isLocal ? 'http://localhost:5200' : (process.env.NEXT_PUBLIC_RAIL_URL || 'https://donna-rail.vercel.app')
-}
 
 type Tool = {
   id: string
@@ -46,7 +42,9 @@ const TOOLS: Tool[] = [
     desc: 'คำนวณอะไหล่ราง',
     color: '#3E8E5A',
     icon: <svg width="30" height="30" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 7h18M3 12h18M3 17h18M7 4v3m5-3v3m5-3v3"/></svg>,
-    go: () => window.open(railUrl(), '_blank'),
+    // RAIL_PATH ไม่ใช่ '/rail' เฉยๆ — ต้องมี /index.html ปิดท้ายให้ base เป็น '/rail/'
+    // ไม่งั้นไฟล์ในหน้าราง (calc.js, parts/…) ที่อ้างแบบสัมพัทธ์จะไปหาที่ root แล้ว 404
+    go: router => router.push(RAIL_PATH),
   },
 ]
 
@@ -61,8 +59,7 @@ export default function HubPage() {
     const last = localStorage.getItem(LAST_APP_KEY)
     if (!launched && last) {
       const tool = TOOLS.find(t => t.id === last)
-      // อุปกรณ์รางเปิดแท็บใหม่ ไม่เหมาะเด้งอัตโนมัติตอนเปิดแอป → โชว์ hub แทน
-      if (tool && tool.id !== 'rail') { tool.go(router); return }
+      if (tool) { tool.go(router); return }
     }
     // จำเป็นต้อง setState ใน effect: sessionStorage/localStorage อ่านได้เฉพาะบนเบราว์เซอร์
     // ถ้าอ่านตอน render แรกเลย ผลจะไม่ตรงกับที่ server เรนเดอร์มา → hydration mismatch
@@ -101,7 +98,7 @@ export default function HubPage() {
               <span style={{ display: 'block', fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>{tool.desc}</span>
             </span>
             <svg width="18" height="18" fill="none" stroke="var(--ink-4)" strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
-              <path strokeLinecap="round" strokeLinejoin="round" d={tool.id === 'rail' ? 'M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25' : 'M8.25 4.5l7.5 7.5-7.5 7.5'} />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
             </svg>
           </button>
         ))}

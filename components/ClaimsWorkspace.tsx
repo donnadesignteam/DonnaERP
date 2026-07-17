@@ -8,6 +8,7 @@ import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { recordAction } from '@/lib/history'
 import { tUpdate, prevOf } from '@/lib/trackedDb'
 import { itemBlockLines } from '@/lib/itemFormat'
+import { railLink } from '@/lib/rail'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { fetchEmployeeOptions } from '@/lib/staffDb'
 
@@ -390,8 +391,6 @@ ${body}
   const railItemsOf = (r: Claim) => (Array.isArray(r.items) ? r.items : []).filter(it => typeof it.type === 'string' && it.type.startsWith('ราง'))
   const hasRail = (r: Claim) => railItemsOf(r).length > 0
   const openRailCalc = (r: Claim) => {
-    const isLocal = typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname)
-    const RAIL_URL = isLocal ? 'http://localhost:5200' : (process.env.NEXT_PUBLIC_RAIL_URL || 'https://donna-rail.vercel.app')
     const typeMap: Record<string, string> = { 'รางม่านจีบ': 'รางจีบ', 'รางม่านลอนเทป': 'รางลอนเทป', 'รางม่านตาไก่': 'รางตาไก่' }
     const courier = (r.courier || '').toLowerCase()
     const carrier = /spx|shopee/.test(courier) ? 'Spx'
@@ -410,7 +409,7 @@ ${body}
     }))
     // ไม่ส่ง id/scanBase — donna-rail จะได้ไม่ทำ QR (หน้า /scan อ่านจาก order_entries เคสเคลมสแกนไม่เจอ)
     const payload = { cust: r.customer_username || '', order: r.original_order_number || '', platform: r.channel || '', note: r.notes || '', items }
-    window.open(`${RAIL_URL}/?prefill=${encodeURIComponent(JSON.stringify(payload))}`, '_blank')
+    window.open(railLink({ prefill: JSON.stringify(payload) }), '_blank')
   }
 
   // บันทึกเลขพัสดุจาก popup "จัดส่งแล้ว" → ติ๊กจัดส่งแล้ว + ตั้งสถานะเป็น "ส่งแล้ว"

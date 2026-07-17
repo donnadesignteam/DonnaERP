@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { itemBlockLines, heightText, formatItemLines } from '@/lib/itemFormat'
+import { railLink } from '@/lib/rail'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { effShipping } from '@/lib/shipping'
 import { thaiTrackStatus } from '@/lib/trackExtract'
@@ -709,8 +710,6 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const railItemsOf = (r: Entry) => (Array.isArray(r.items) ? r.items : []).filter(it => typeof it.type === 'string' && it.type.startsWith('ราง'))
   const hasRail = (r: Entry) => railItemsOf(r).length > 0
   const openRailCalc = (r: Entry) => {
-    const isLocal = typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname)
-    const RAIL_URL = isLocal ? 'http://localhost:5200' : (process.env.NEXT_PUBLIC_RAIL_URL || 'https://donna-rail.vercel.app')
     const typeMap: Record<string, string> = { 'รางม่านจีบ': 'รางจีบ', 'รางม่านลอนเทป': 'รางลอนเทป', 'รางม่านตาไก่': 'รางตาไก่' }
     const courier = (r.courier || '').toLowerCase()
     const carrier = r.is_installation ? 'ติดตั้ง'
@@ -730,7 +729,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     }))
     const scanBase = typeof window !== 'undefined' ? window.location.origin : ''
     const payload = { cust: r.customer_name || '', order: r.order_number || '', platform: r.platform || '', note: r.notes || '', id: r.id, scanBase, items }
-    window.open(`${RAIL_URL}/?prefill=${encodeURIComponent(JSON.stringify(payload))}`, '_blank')
+    window.open(railLink({ prefill: JSON.stringify(payload) }), '_blank')
   }
 
   const bulkDelete = async () => {
