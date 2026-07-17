@@ -1,12 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { recordAction } from '@/lib/history'
 import { tUpdate, prevOf } from '@/lib/trackedDb'
+import { itemBlockLines } from '@/lib/itemFormat'
+import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
+import { fetchEmployeeOptions } from '@/lib/staffDb'
 
 type Item = {
   type: string; floors: number | null; rail_head: string; fabric_type: string
@@ -14,6 +17,8 @@ type Item = {
   width: number | string; height: number | string; quantity: number | string
   unit: string; hooks: string; note: string
 }
+
+type Shipment = { no: string; carrier: string }
 
 type Claim = {
   id: string
@@ -33,9 +38,15 @@ type Claim = {
   outbound_tracking: string | null
   courier: string | null
   refund_amount: number | null
+  ship_back_cost: number | null     // ค่าส่งกลับ
+  ship_return_cost: number | null   // ค่าส่งคืน
+  estimated_price: number | null    // ราคาประเมิน
   money_direction: string | null
   payment_target: string | null
   money_status: string | null
+  shipments: Shipment[] | null      // เลขพัสดุที่ส่งออก (ติ๊กจัดส่งแล้ว → กรอกใน popup)
+  shipped_at: string | null
+  printed_at: string | null
   status: string
   is_urgent: boolean
   notes: string | null
@@ -48,7 +59,10 @@ type Claim = {
 }
 
 const CHANNELS = ['Shopee', 'Lazada', 'Tiktok', 'Facebook', 'LineOA', 'หน้าร้าน']
-const ADMINS = ['กาย', 'แพท', 'หนูนา', 'ยุน', 'ส้ม']   // ให้ตรงกับ ADMINS ในหมวดออเดอร์ (OrderWorkspace)
+// ชื่อสำรองระหว่างรอโหลดรายชื่อพนักงาน / ถ้าดึงจากตาราง staff ไม่สำเร็จ (ให้ตรงกับ ADMINS ในหมวดออเดอร์)
+const ADMINS_FALLBACK = ['กาย', 'แพท', 'หนูนา', 'ยุน', 'ส้ม']
+// แอดมินที่ทำงานเคลมประจำ — ปักไว้ 3 อันบนสุดของช่องแอดมิน จะได้ไม่ต้องเลื่อนหาในรายชื่อทั้งร้าน
+const ADMINS_PINNED = ['หนูนา', 'กาย', 'แพท']
 const CLAIM_TYPES = ['ของขาด/ไม่ครบ', 'ส่งผิด/ขนาดไม่ตรง', 'เสียหายจากขนส่ง', 'ชำรุด/ตำหนิ', 'ลูกค้าแจ้งผิด(แก้ไข)', 'เปลี่ยนสินค้า', 'ส่งคืนไม่แจ้ง']
 const FAULTS = ['ร้าน', 'ลูกค้า', 'ขนส่ง']
 const RESOLUTIONS = ['ส่งใหม่/ส่งเพิ่ม', 'แก้ไข/ผลิตใหม่', 'คืนเงินเต็ม', 'คืนเงินบางส่วน', 'คืนค่าส่ง', 'เก็บค่าแก้+ส่ง', 'เปลี่ยนสินค้า']
@@ -72,7 +86,9 @@ function emptyClaim(): Claim {
     id: '', claim_date: new Date().toISOString().slice(0, 10), channel: '', customer_username: '',
     original_order_number: '', claim_type: '', fault: '', cause: '', resolution: '', items: null,
     ship_name: '', ship_address: '', ship_phone: '', return_tracking: '', outbound_tracking: '',
-    courier: '', refund_amount: null, money_direction: '', payment_target: '', money_status: '',
+    courier: '', refund_amount: null, ship_back_cost: null, ship_return_cost: null, estimated_price: null,
+    money_direction: '', payment_target: '', money_status: '',
+    shipments: null, shipped_at: null, printed_at: null,
     status: 'รอของคืน', is_urgent: false, notes: '', raw_text: '', admin_name: '', closed_by: null, closed_at: null,
   }
 }
@@ -107,6 +123,10 @@ export default function ClaimsWorkspace() {
   const [itemsPaste, setItemsPaste] = useState('')
   const [itemsParsing, setItemsParsing] = useState(false)
   const [itemsParseErr, setItemsParseErr] = useState('')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [printAsk, setPrintAsk] = useState<Claim[] | null>(null)   // ปริ้นหลายใบ → ถามก่อนว่าตาราง/ฟอร์ม
+  const [shipModal, setShipModal] = useState<{ id: string; parcels: { no: string; carrier: string; manual: boolean }[] } | null>(null)
+  const [staffNames, setStaffNames] = useState<string[]>(ADMINS_FALLBACK)
 
   const load = async () => {
     const { data, error: err } = await fetchAllRows<Claim>(() =>
@@ -121,6 +141,25 @@ export default function ClaimsWorkspace() {
     setLoading(false)
   }
   useEffect(() => { load() }, [])
+
+  // ช่องแอดมิน: ดึงชื่อพนักงานที่ยังทำงานอยู่ทุกคนจากตาราง staff — มีคนเข้า/ออกก็อัปเดตเองไม่ต้องแก้โค้ด
+  useEffect(() => {
+    fetchEmployeeOptions()
+      .then(list => {
+        const names = list.map(e => e.nickname || e.realName).filter(Boolean)
+        if (names.length) setStaffNames(names)
+      })
+      .catch(() => {})   // ดึงไม่ได้ → คงชื่อสำรองไว้ ยังเลือกได้เหมือนเดิม
+  }, [])
+
+  // รายชื่อในช่องแอดมิน = 3 แอดมินเคลมบนสุด แล้วตามด้วยพนักงานที่เหลือทั้งร้าน
+  // + ชื่อที่เคยบันทึกไว้ในเคสเก่าที่ไม่มีในลิสต์แล้ว (ถ้าไม่ใส่ไว้ dropdown จะโชว์ว่างเหมือนข้อมูลหาย)
+  const adminOptions = useMemo(() => {
+    const used = rows.map(r => r.admin_name).filter((n): n is string => !!n)
+    const all = Array.from(new Set([...staffNames, ...used]))
+    const pinned = ADMINS_PINNED.filter(n => all.includes(n))   // ปักเฉพาะคนที่ยังอยู่ในลิสต์จริง (ลาออกแล้วไม่ต้องขึ้น)
+    return [...pinned, ...all.filter(n => !pinned.includes(n))]
+  }, [staffNames, rows])
 
   const set = (k: keyof Claim, v: string | boolean | number | null) =>
     setModal(m => m ? { ...m, data: { ...m.data, [k]: v } } : null)
@@ -165,6 +204,8 @@ export default function ClaimsWorkspace() {
     setParsing(false)
   }
 
+  const num = (v: number | null) => v != null && String(v) !== '' ? Number(v) : null
+
   const save = async () => {
     if (!modal) return
     setSaving(true); setError('')
@@ -176,6 +217,7 @@ export default function ClaimsWorkspace() {
       ship_name: d.ship_name || null, ship_address: d.ship_address || null, ship_phone: d.ship_phone || null,
       return_tracking: d.return_tracking || null, outbound_tracking: d.outbound_tracking || null, courier: d.courier || null,
       refund_amount: d.refund_amount != null && String(d.refund_amount) !== '' ? Number(d.refund_amount) : null,
+      ship_back_cost: num(d.ship_back_cost), ship_return_cost: num(d.ship_return_cost), estimated_price: num(d.estimated_price),
       money_direction: d.money_direction || null, payment_target: d.payment_target || null, money_status: d.money_status || null,
       status: d.status || 'รอของคืน', is_urgent: !!d.is_urgent, notes: d.notes || null, raw_text: d.raw_text || null,
       admin_name: d.admin_name || null,
@@ -227,6 +269,180 @@ export default function ClaimsWorkspace() {
         redo: async () => { await supabase.from('claims').delete().eq('id', id); await load() },
       })
     }
+  }
+
+  // ── ใบเคลมสำหรับปริ้น (โครงเดียวกับใบออเดอร์ในหมวดออเดอร์ — บรรทัดของราง = สีแดง) ──
+  function formatClaimLines(r: Claim): { t: string; rail?: boolean }[] {
+    const lines: { t: string; rail?: boolean }[] = []
+    const push = (t: string, rail = false) => lines.push({ t, rail })
+
+    if (r.claim_date) push(new Date(r.claim_date).toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' }))
+    const head = [r.channel, r.customer_username].filter(Boolean).join(': ')
+    if (head) push(head)
+    if (r.original_order_number) push(`ออเดอร์เดิม ${r.original_order_number}`)
+
+    push('')
+    const claimHead = [r.claim_type, r.fault ? `ผิดที่${r.fault}` : ''].filter(Boolean).join(' · ')
+    if (claimHead) push(`เคลม: ${claimHead}`)
+    if (r.cause) push(r.cause)
+    if (r.resolution) push(`วิธีจัดการ: ${r.resolution}`)
+
+    if (r.items && r.items.length > 0) {
+      r.items.forEach(item => {
+        push('')
+        for (const ln of itemBlockLines(item)) push(ln.t, ln.rail)
+      })
+    }
+
+    push('')
+    const recv = [r.ship_name, r.ship_phone].filter(Boolean).join('  ')
+    if (recv) push(`ผู้รับ: ${recv}`)
+    if (r.ship_address) push(`ที่อยู่: ${r.ship_address}`)
+    if (r.courier) push(r.courier)
+    if (r.notes) push(`หมายเหตุ: ${r.notes}`)
+
+    return lines
+  }
+
+  function formatClaimHtml(r: Claim): string {
+    const esc = (v: string) => v.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!))
+    return formatClaimLines(r).map(l => l.rail ? `<span class="rail">${esc(l.t)}</span>` : esc(l.t)).join('\n')
+  }
+
+  // ปริ้น: หน้าต่างใหม่ + ปุ่มปริ้นในหน้านั้น (แก้ข้อความในใบก่อนปริ้นได้)
+  // ไม่มี QR เหมือนใบออเดอร์ — หน้า /scan อ่านจากตาราง order_entries เคสเคลมสแกนไม่เจอ
+  function openPrintWindow(toPrint: Claim[], title: string, mode: 'auto' | 'table' | 'form' = 'auto') {
+    const escHtml = (v: unknown) => String(v ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!))
+    const asForm = mode === 'form' || (mode === 'auto' && toPrint.length === 1)
+
+    const win = window.open('', '_blank', 'width=1200,height=750')
+    if (!win) { alert('เบราว์เซอร์บล็อก popup — โปรดอนุญาต popup เพื่อปริ้น'); return }
+
+    // จำเวลาปริ้นล่าสุดต่อใบ → โชว์ข้างปุ่มปริ้นในเมนู ··· (ไม่แตะ updated_at เพราะไม่ใช่การแก้ข้อมูล)
+    const printedNow = new Date().toISOString()
+    const printedIds = toPrint.map(r => r.id)
+    supabase.from('claims').update({ printed_at: printedNow }).in('id', printedIds)
+      .then(({ error: err }) => {
+        if (!err) setRows(p => p.map(x => printedIds.includes(x.id) ? { ...x, printed_at: printedNow } : x))
+      })
+
+    const body = asForm
+      ? toPrint.map(r => `<div class="order"><pre class="copy">${formatClaimHtml(r)}</pre></div>`).join('')
+      : `<h2>${escHtml(title)} (${toPrint.length} รายการ)</h2>
+<table>
+<thead><tr>
+  <th>#</th><th>วันที่</th><th>แพลตฟอร์ม</th><th>ลูกค้า</th><th>ออเดอร์เดิม</th><th>ประเภทเคลม</th><th>สาเหตุ</th><th>ชื่อผู้รับ</th><th>ที่อยู่จัดส่ง</th><th>ขนส่ง</th><th>สถานะ</th>
+</tr></thead>
+<tbody>
+${toPrint.map((r, i) => `<tr><td>${i + 1}</td><td>${r.claim_date ? escHtml(new Date(r.claim_date).toLocaleDateString('th-TH-u-ca-gregory', { day: '2-digit', month: '2-digit', year: '2-digit' })) : '-'}</td><td>${escHtml(r.channel || '-')}</td><td>${escHtml(r.customer_username || '-')}</td><td>${escHtml(r.original_order_number || '-')}</td><td>${escHtml(r.claim_type || '-')}</td><td>${escHtml(r.cause || '-')}</td><td>${escHtml(r.ship_name || '-')}</td><td>${escHtml(r.ship_address || '-')}</td><td>${escHtml(r.courier || '-')}</td><td>${escHtml(r.status || '-')}</td></tr>`).join('\n')}
+</tbody>
+</table>`
+
+    const html = `<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>ปริ้นใบเคลม</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Sarabun', 'Noto Sans Thai', sans-serif; font-size: 12px; color: #000; margin: 0; padding: 16px; }
+  h2 { font-size: 14px; margin-bottom: 10px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #aaa; padding: 5px 8px; text-align: left; vertical-align: top; }
+  th { background: #f0f0f0; font-weight: 700; white-space: nowrap; }
+  pre.copy { font-family: 'Sarabun', 'Noto Sans Thai', sans-serif; font-size: 16px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; margin: 0; }
+  pre.copy .rail { color: #c00; }
+  /* ต้องเป็น block — break-inside: avoid ไม่ทำงานบน flex container (Chromium) ทำให้ใบโดนตัดข้ามหน้า */
+  .order { display: block; break-inside: avoid; page-break-inside: avoid; padding-bottom: 28px; margin-bottom: 28px; border-bottom: 1px dashed #b0b0b0; }
+  .order:last-child { padding-bottom: 0; margin-bottom: 0; border-bottom: none; }
+  @page { margin: 0; }
+  @media print { body { padding: 14mm; } .toolbar { display: none !important; } pre.copy { outline: none !important; background: transparent !important; } }
+  pre.copy[contenteditable]:hover { outline: 1.5px dashed #c0c0c0; outline-offset: 4px; }
+  pre.copy[contenteditable]:focus { outline: 1.5px solid #2563eb; outline-offset: 4px; background: #fafcff; }
+  .toolbar { position: fixed; top: 10px; right: 10px; background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 8px 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.18); display: flex; gap: 10px; align-items: center; z-index: 99; }
+  .toolbar .hint { font-size: 12px; color: #888; }
+  .toolbar button.go { padding: 8px 20px; border-radius: 8px; border: none; background: #1a1a1a; color: #fff; cursor: pointer; font-size: 14px; font-weight: 700; font-family: inherit; }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <span class="hint">แตะข้อความเพื่อแก้ไขได้ก่อนปริ้น</span>
+  <button class="go">🖨 ปริ้น</button>
+</div>
+${body}
+<script>
+  document.querySelectorAll('pre.copy').forEach(function (p) { p.setAttribute('contenteditable', 'true'); p.setAttribute('spellcheck', 'false'); });
+  document.querySelector('.toolbar .go').onclick = function () { window.print(); };
+</script>
+</body>
+</html>`
+    win.document.open(); win.document.write(html); win.document.close(); win.focus()
+  }
+
+  const printTitle = (list: Claim[]) => `ใบเคลม ${list.length} รายการ — ${new Date().toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' })}`
+  const requestPrint = (list: Claim[]) => {
+    if (list.length === 0) return
+    if (list.length === 1) { openPrintWindow(list, printTitle(list)); return }
+    setPrintAsk(list)
+  }
+
+  // ===== เชื่อมกับเว็บคำนวณอุปกรณ์ราง (donna-rail) — เหมือนหมวดออเดอร์ =====
+  const railItemsOf = (r: Claim) => (Array.isArray(r.items) ? r.items : []).filter(it => typeof it.type === 'string' && it.type.startsWith('ราง'))
+  const hasRail = (r: Claim) => railItemsOf(r).length > 0
+  const openRailCalc = (r: Claim) => {
+    const isLocal = typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname)
+    const RAIL_URL = isLocal ? 'http://localhost:5200' : (process.env.NEXT_PUBLIC_RAIL_URL || 'https://donna-rail.vercel.app')
+    const typeMap: Record<string, string> = { 'รางม่านจีบ': 'รางจีบ', 'รางม่านลอนเทป': 'รางลอนเทป', 'รางม่านตาไก่': 'รางตาไก่' }
+    const courier = (r.courier || '').toLowerCase()
+    const carrier = /spx|shopee/.test(courier) ? 'Spx'
+      : /flash/.test(courier) ? 'Flash'
+      : /j&t|jt/.test(courier) ? 'J&T'
+      : 'อื่นๆ'
+    const items = railItemsOf(r).map(it => ({
+      type: typeMap[it.type] || 'รางจีบ',
+      size: typeof it.width === 'string' && it.width.includes('+') ? it.width.trim() : (Number(it.width) || 0),
+      qty: Number(it.quantity) || 1,
+      layers: Number(it.floors) === 2 ? 2 : 1,
+      color: (it.color_name || '').replace(/^สี/, '') || undefined,
+      split: /สไลด์|เดี่ยว/.test(it.note || '') ? 'สไลด์เดี่ยว' : 'แยกกลาง',
+      head: it.rail_head || undefined,
+      carrier,
+    }))
+    // ไม่ส่ง id/scanBase — donna-rail จะได้ไม่ทำ QR (หน้า /scan อ่านจาก order_entries เคสเคลมสแกนไม่เจอ)
+    const payload = { cust: r.customer_username || '', order: r.original_order_number || '', platform: r.channel || '', note: r.notes || '', items }
+    window.open(`${RAIL_URL}/?prefill=${encodeURIComponent(JSON.stringify(payload))}`, '_blank')
+  }
+
+  // บันทึกเลขพัสดุจาก popup "จัดส่งแล้ว" → ติ๊กจัดส่งแล้ว + ตั้งสถานะเป็น "ส่งแล้ว"
+  const saveShipments = async () => {
+    if (!shipModal) return
+    const row = rows.find(r => r.id === shipModal.id)
+    const parcels: Shipment[] = shipModal.parcels.map(p => ({ no: p.no.trim(), carrier: p.carrier })).filter(p => p.no)
+    const now = new Date().toISOString()
+    const updates = {
+      shipments: parcels.length ? parcels : null,
+      outbound_tracking: parcels.map(p => p.no).join(', ') || null,   // คงช่องเดิมไว้ให้ตรงกัน
+      status: 'ส่งแล้ว',
+      shipped_at: row?.shipped_at || now,
+      updated_at: now,
+    }
+    setRows(p => p.map(r => r.id === shipModal.id ? { ...r, ...updates } as Claim : r))
+    setShipModal(null)
+    const { error: err } = await supabase.from('claims').update(updates).eq('id', shipModal.id)
+    if (err) { setError(`บันทึกเลขพัสดุไม่สำเร็จ: ${err.message}`); await load() }
+  }
+
+  // ติ๊กออกจากคอลัมน์จัดส่ง = ยังไม่ส่ง (ล้างวันที่ส่ง คงเลขพัสดุไว้ให้แก้ต่อได้)
+  const unship = async (r: Claim) => {
+    const now = new Date().toISOString()
+    const updates = { shipped_at: null, status: 'แพ็คแล้ว', updated_at: now }
+    setRows(p => p.map(x => x.id === r.id ? { ...x, ...updates } as Claim : x))
+    await supabase.from('claims').update(updates).eq('id', r.id)
+  }
+
+  const openShipModal = (r: Claim) => {
+    const existing = Array.isArray(r.shipments) ? r.shipments.map(s => ({ no: s.no, carrier: s.carrier, manual: true })) : []
+    setShipModal({ id: r.id, parcels: [...existing, { no: '', carrier: '', manual: false }] })
   }
 
   const counts: Record<string, number> = { all: rows.length }
@@ -383,10 +599,16 @@ export default function ClaimsWorkspace() {
           <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px' }}>งานเคลม</h1>
           <p style={{ fontSize: 14, color: 'var(--ink-3)', marginTop: 4 }}>{rows.length} เคส</p>
         </div>
-        <button onClick={openAdd}
-          style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(196,126,58,0.3)' }}>
-          + เพิ่มเคลม
-        </button>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button onClick={() => requestPrint(selectedIds.size > 0 ? displayed.filter(r => selectedIds.has(r.id)) : displayed)}
+            style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+            🖨️ ปริ้น{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+          </button>
+          <button onClick={openAdd}
+            style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(196,126,58,0.3)' }}>
+            + เพิ่มเคลม
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -426,14 +648,25 @@ export default function ClaimsWorkspace() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
-                  {['วันที่', 'แพลตฟอร์ม', 'ลูกค้า', 'ประเภท', 'รายการ', 'ยอดชำระ', 'สถานะ', 'แอดมิน', 'ปิดงาน', 'หมายเหตุ', 'แก้ไขล่าสุด', ''].map((h, i) => (
-                    <th key={i} style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
+                  <th style={{ padding: '10px 8px 10px 14px', width: 32 }}>
+                    <input type="checkbox" title="เลือกทั้งหมด"
+                      checked={displayed.length > 0 && displayed.every(r => selectedIds.has(r.id))}
+                      onChange={e => setSelectedIds(e.target.checked ? new Set(displayed.map(r => r.id)) : new Set())}
+                      style={{ cursor: 'pointer', width: 15, height: 15 }} />
+                  </th>
+                  {['วันที่', 'แพลตฟอร์ม', 'ลูกค้า', 'ประเภท', 'รายการ', 'ยอดชำระ', 'สถานะ', 'แอดมิน', 'ปิดงาน', 'ชื่อผู้รับ', 'ที่อยู่จัดส่ง', 'จัดส่ง', 'ค่าส่งกลับ', 'ค่าส่งคืน', 'ราคาประเมิน', 'หมายเหตุ', 'แก้ไขล่าสุด', ''].map((h, i) => (
+                    <th key={i} style={{ textAlign: ['ค่าส่งกลับ', 'ค่าส่งคืน', 'ราคาประเมิน'].includes(h) ? 'right' : 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {displayed.map(r => (
-                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', verticalAlign: 'top' }}>
+                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', verticalAlign: 'top', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : undefined }}>
+                    <td style={{ padding: '8px 8px 8px 14px' }}>
+                      <input type="checkbox" checked={selectedIds.has(r.id)}
+                        onChange={e => setSelectedIds(prev => { const s = new Set(prev); if (e.target.checked) s.add(r.id); else s.delete(r.id); return s })}
+                        style={{ cursor: 'pointer', width: 15, height: 15 }} />
+                    </td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', color: 'var(--ink-3)' }}>
                       {r.claim_date ? new Date(r.claim_date).toLocaleDateString('th-TH-u-ca-gregory', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '-'}
                     </td>
@@ -487,7 +720,7 @@ export default function ClaimsWorkspace() {
                       </select>
                     </td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
-                      {selectInline(r, 'admin_name', ADMINS)}
+                      {selectInline(r, 'admin_name', adminOptions)}
                     </td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
                       <input type="checkbox" checked={!!r.closed_at} onChange={e => toggleClosed(r, e.target.checked)}
@@ -499,6 +732,20 @@ export default function ClaimsWorkspace() {
                         </div>
                       )}
                     </td>
+                    <td style={{ padding: '8px 14px', minWidth: 110 }}>
+                      <div>{textCell(r, 'ship_name')}</div>
+                      <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>{textCell(r, 'ship_phone', { placeholder: '+ เบอร์โทร' })}</div>
+                    </td>
+                    <td style={{ padding: '8px 14px', minWidth: 180, maxWidth: 260, whiteSpace: 'normal' }}>{textCell(r, 'ship_address')}</td>
+                    <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
+                      <input type="checkbox" checked={!!r.shipped_at}
+                        onChange={e => e.target.checked ? openShipModal(r) : unship(r)}
+                        title={r.shipped_at ? 'ส่งแล้ว — ติ๊กออกเพื่อยกเลิก' : 'ติ๊กเพื่อกรอกเลขพัสดุ'}
+                        style={{ cursor: 'pointer', width: 16, height: 16, accentColor: '#34c759' }} />
+                    </td>
+                    <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', minWidth: 80 }}>{textCell(r, 'ship_back_cost', { numeric: true, align: 'right' })}</td>
+                    <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', minWidth: 80 }}>{textCell(r, 'ship_return_cost', { numeric: true, align: 'right' })}</td>
+                    <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', minWidth: 90 }}>{textCell(r, 'estimated_price', { numeric: true, align: 'right' })}</td>
                     <td style={{ padding: '8px 14px', minWidth: 120 }}>{textCell(r, 'notes')}</td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', color: 'var(--ink-4)', fontSize: 11 }}>
                       {r.updated_at ? (
@@ -529,7 +776,31 @@ export default function ClaimsWorkspace() {
         return (
           <>
             <div onClick={() => { setOpenAction(null); setActionRect(null) }} style={{ position: 'fixed', inset: 0, zIndex: 9998 }} />
-            <div style={{ position: 'fixed', top: actionRect.bottom + 2, right: window.innerWidth - actionRect.right, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 9999, minWidth: 120, padding: '4px 0' }}>
+            <div style={{ position: 'fixed', top: actionRect.bottom + 2, right: window.innerWidth - actionRect.right, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 9999, minWidth: 130, padding: '4px 0' }}>
+              <button onClick={() => { setOpenAction(null); setActionRect(null); requestPrint(selectedIds.size > 1 ? displayed.filter(x => selectedIds.has(x.id)) : [r]) }}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)' }}>
+                <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z"/></svg>
+                ปริ้น
+                {r.printed_at && (
+                  <span style={{ marginLeft: 'auto', fontSize: 10, color: '#eab308', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                    {new Date(r.printed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
+                    {new Date(r.printed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+              </button>
+              {hasRail(r) && (
+                <button onClick={() => { setOpenAction(null); setActionRect(null); openRailCalc(r) }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)' }}>
+                  <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 7h18M3 12h18M3 17h18M7 4v3m5-3v3m5-3v3"/></svg>
+                  ปริ้นอุปกรณ์ราง
+                </button>
+              )}
+              <button onClick={() => { setOpenAction(null); setActionRect(null); openShipModal(r) }}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)' }}>
+                <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 00-3.213-9.193 2.056 2.056 0 00-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 00-10.026 0 1.106 1.106 0 00-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12"/></svg>
+                จัดส่งแล้ว
+              </button>
+              <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
               <button onClick={() => { setOpenAction(null); setActionRect(null); openEdit(r) }}
                 style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)' }}>
                 <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/></svg>
@@ -545,6 +816,65 @@ export default function ClaimsWorkspace() {
           </>
         )
       })()}
+
+      {/* ปริ้นหลายใบ → ถามก่อนว่าตารางสรุปหรือฟอร์มรายใบ (เหมือนหมวดออเดอร์) */}
+      {printAsk && (
+        <div onClick={() => setPrintAsk(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 24 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 24, width: '100%', maxWidth: 380 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>ปริ้น {printAsk.length} รายการ</h3>
+            <p style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 16 }}>เลือกรูปแบบเอกสาร</p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => { const l = printAsk; setPrintAsk(null); openPrintWindow(l, printTitle(l), 'table') }}
+                style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+                ตารางสรุป
+              </button>
+              <button onClick={() => { const l = printAsk; setPrintAsk(null); openPrintWindow(l, printTitle(l), 'form') }}
+                style={{ flex: 1, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#fff' }}>
+                ฟอร์มรายใบ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Popup จัดส่งแล้ว — กรอกเลขพัสดุ (เพิ่มได้หลายเลข) เหมือนหมวดออเดอร์ */}
+      {shipModal && (
+        <div onClick={() => setShipModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 24 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 24, width: '100%', maxWidth: 400 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>จัดส่งแล้ว — กรอกเลขพัสดุ</h3>
+              <button onClick={() => setShipModal(m => m ? { ...m, parcels: [...m.parcels, { no: '', carrier: '', manual: false }] } : m)} title="เพิ่มเลขพัสดุ"
+                style={{ width: 26, height: 26, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 16, color: 'var(--ink-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>+</button>
+            </div>
+            {(() => {
+              const claim = rows.find(row => row.id === shipModal.id)
+              return shipModal.parcels.map((p, i) => (
+                <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                  <input value={p.no} autoFocus={i === shipModal.parcels.length - 1} placeholder="เลขพัสดุ"
+                    onChange={e => setShipModal(m => m ? { ...m, parcels: m.parcels.map((x, j) => j === i ? { ...x, no: e.target.value, carrier: x.manual ? x.carrier : detectCarrier(e.target.value, claim?.courier) } : x) } : m)}
+                    style={{ flex: 1, border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', fontSize: 13, outline: 'none', fontFamily: 'monospace', boxSizing: 'border-box' }} />
+                  <select value={p.carrier}
+                    onChange={e => setShipModal(m => m ? { ...m, parcels: m.parcels.map((x, j) => j === i ? { ...x, carrier: e.target.value, manual: true } : x) } : m)}
+                    style={{ width: 120, border: '1px solid var(--border)', borderRadius: 8, padding: '8px 6px', fontSize: 12, outline: 'none', cursor: 'pointer' }}>
+                    <option value="">— ขนส่ง —</option>
+                    {CARRIER_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  {shipModal.parcels.length > 1 && (
+                    <button onClick={() => setShipModal(m => m ? { ...m, parcels: m.parcels.filter((_, j) => j !== i) } : m)}
+                      style={{ border: 'none', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontSize: 13, padding: '0 2px' }}>✕</button>
+                  )}
+                </div>
+              ))
+            })()}
+            <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+              <button onClick={() => setShipModal(null)}
+                style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+              <button onClick={saveShipments}
+                style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>บันทึก — จัดส่งแล้ว</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Items modal (กดที่ช่องรายการในตาราง) — ฟอร์มเดียวกับหมวดออเดอร์ */}
       {itemsModal && (
@@ -652,10 +982,13 @@ export default function ClaimsWorkspace() {
               {field('พัสดุร้านส่งออก', 'outbound_tracking')}
               {field('ยอดเงิน', 'refund_amount', { type: 'number' })}
               {field('ทิศทางเงิน', 'money_direction', { options: MONEY_DIR })}
+              {field('ค่าส่งกลับ', 'ship_back_cost', { type: 'number' })}
+              {field('ค่าส่งคืน', 'ship_return_cost', { type: 'number' })}
+              {field('ราคาประเมิน', 'estimated_price', { type: 'number' })}
               {field('พร้อมเพย์ / บัญชี', 'payment_target')}
               {field('สถานะเงิน', 'money_status', { options: MONEY_STATUS })}
               {field('สถานะเคลม', 'status', { options: WORKFLOW.map(w => w.key) })}
-              {field('แอดมินที่รับผิดชอบ', 'admin_name', { options: ADMINS })}
+              {field('แอดมินที่รับผิดชอบ', 'admin_name', { options: adminOptions })}
               {field('หมายเหตุ', 'notes', { full: true })}
             </div>
 
