@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache } from '@/lib/pageCache'
@@ -136,11 +137,18 @@ export default function MobileOrders() {
             const itemLines = formatItemLines(r.items)
             const shippedDone = r.order_status === 'จัดส่งแล้ว'
             const done = !!r.is_urgent   // is_urgent = ธง "งานเสร็จ" ในระบบนี้ (ชื่อคอลัมน์เก่า)
+            // แตะการ์ด → โฟลเดอร์ออเดอร์ของลูกค้าคนนั้น (ไม่มีชื่อลูกค้า = เปิดไม่ได้ เพราะโฟลเดอร์จับคู่ด้วยชื่อ)
+            const folderHref = r.customer_name ? `/m/customers?name=${encodeURIComponent(r.customer_name)}` : null
+            const CardTag = (folderHref ? Link : 'div') as React.ElementType
             return (
-              <div key={r.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 13px', boxShadow: 'var(--shadow)' }}>
+              <CardTag key={r.id} {...(folderHref ? { href: folderHref } : {})}
+                style={{ display: 'block', textDecoration: 'none', color: 'inherit', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 13px', boxShadow: 'var(--shadow)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
-                  <span style={{ fontSize: 15.5, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {r.customer_name || '—'}
+                  <span style={{ display: 'flex', alignItems: 'baseline', gap: 5, minWidth: 0 }}>
+                    <span style={{ fontSize: 15.5, fontWeight: 700, color: folderHref ? 'var(--blue)' : 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {r.customer_name || '—'}
+                    </span>
+                    {folderHref && <span style={{ fontSize: 11, color: 'var(--ink-4)', flexShrink: 0 }}>›</span>}
                   </span>
                   {shippedDone ? (
                     <span style={{ fontSize: 12.5, fontWeight: 700, color: '#22c55e', flexShrink: 0 }}>งานเสร็จแล้ว</span>
@@ -188,7 +196,7 @@ export default function MobileOrders() {
                     </span>
                   )}
                 </div>
-              </div>
+              </CardTag>
             )
           })}
           <div style={{ textAlign: 'center', fontSize: 12, color: 'var(--ink-4)', padding: '6px 0 2px' }}>

@@ -16,3 +16,16 @@ export function detectCarrier(no: string, courierHint?: string | null): string {
 }
 
 export const CARRIER_OPTIONS = ['Flash Express', 'SPX Express', 'J&T Express', 'LEX TH', 'ไปรษณีย์ไทย', 'Kerry Express', 'Ninja Van', 'อื่นๆ']
+
+// ลิงก์หน้าเช็คสถานะพัสดุของแต่ละเจ้า — ใช้ร่วมกัน (หน้าออเดอร์ / โฟลเดอร์ลูกค้า / หน้ามือถือ)
+const CARRIER_TRACK_URL: Record<string, (no: string) => string> = {
+  'Flash Express': no => `https://www.flashexpress.com/fle/tracking?se=${no}`,
+  'SPX Express': no => `https://spx.co.th/track?${no}`,
+  'ไปรษณีย์ไทย': no => `https://track.thailandpost.co.th/?trackNumber=${no}`,
+  'J&T Express': no => `https://www.jtexpress.co.th/service/track?bills=${no}`,
+  'Kerry Express': no => `https://th.kerryexpress.com/th/track/?track=${no}`,
+  'Ninja Van': no => `https://www.ninjavan.co/th-th/tracking?id=${no}`,
+}
+
+export const carrierTrackUrl = (sh: { no: string; carrier: string }) =>
+  CARRIER_TRACK_URL[sh.carrier]?.(sh.no) || `https://www.google.com/search?q=${encodeURIComponent(sh.no + ' เช็คพัสดุ')}`
