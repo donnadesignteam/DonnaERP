@@ -16,8 +16,8 @@ export const viewport: Viewport = {
 export default function MobileLayout({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ minHeight: '100dvh', background: 'var(--bg)' }}>
-      {/* เว้นที่ล่างให้แถบเมนู ไม่ให้ทับเนื้อหาแถวสุดท้าย */}
-      <div style={{ paddingBottom: 'calc(68px + env(safe-area-inset-bottom))' }}>
+      {/* เว้นที่ล่างให้แถบเมนู ไม่ให้ทับเนื้อหาแถวสุดท้าย — ต้องตามความสูงจริงของ MobileNav ถ้าแก้ขนาดปุ่มต้องแก้ตรงนี้ด้วย */}
+      <div style={{ paddingBottom: 'calc(78px + env(safe-area-inset-bottom))' }}>
         {children}
       </div>
       <MobileNav />

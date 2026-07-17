@@ -44,11 +44,11 @@ export default function MobileNav() {
         return (
           <Link key={item.href} href={item.href} style={{
             flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            gap: 3, padding: '9px 2px 8px', textDecoration: 'none',
+            gap: 4, padding: '12px 2px 11px', textDecoration: 'none',
             color: active ? 'var(--blue)' : 'var(--ink-4)',
           }}>
-            <svg width="21" height="21" fill="none" stroke="currentColor" strokeWidth={active ? 2 : 1.6} viewBox="0 0 24 24">{item.icon}</svg>
-            <span style={{ fontSize: 10.5, fontWeight: active ? 700 : 500, whiteSpace: 'nowrap' }}>{item.label}</span>
+            <svg width="26" height="26" fill="none" stroke="currentColor" strokeWidth={active ? 2 : 1.6} viewBox="0 0 24 24">{item.icon}</svg>
+            <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, whiteSpace: 'nowrap' }}>{item.label}</span>
           </Link>
         )
       })}
