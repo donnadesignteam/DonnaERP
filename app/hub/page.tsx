@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Image from 'next/image'
 import { RAIL_PATH } from '@/lib/rail'
 
@@ -48,8 +48,10 @@ const TOOLS: Tool[] = [
   },
 ]
 
-export default function HubPage() {
+function HubContent() {
   const router = useRouter()
+  const params = useSearchParams()
+  const pickMode = params.get('pick') === '1'
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
@@ -57,15 +59,20 @@ export default function HubPage() {
     const launched = sessionStorage.getItem(LAUNCHED_KEY)
     sessionStorage.setItem(LAUNCHED_KEY, '1')
     const last = localStorage.getItem(LAST_APP_KEY)
-    if (!launched && last) {
+    // ‼️ ?pick=1 (มาจากปุ่ม "เครื่องมือ") = ตั้งใจมาเลือกเอง ห้ามเด้งไปไหนเด็ดขาด
+    //    เดิมใช้แค่ sessionStorage เดาว่า "เข้า /hub ครั้งแรก = เพิ่งเปิดแอป" ซึ่งผิด —
+    //    ถ้าแอปเปิดเข้า ERP ตรงๆ (แอปที่ติดตั้งไว้จำ start_url เก่า) การกดปุ่มเครื่องมือจะกลายเป็น
+    //    การเข้า /hub ครั้งแรกของ session → โดนเด้งไปเครื่องมือล่าสุดแทนที่จะได้เห็น hub
+    if (!pickMode && !launched && last) {
       const tool = TOOLS.find(t => t.id === last)
-      if (tool) { tool.go(router); return }
+      // ราง = เครื่องมือที่ "ใช้แล้วจบ" + หน้ารางไม่มีปุ่มกลับ (เป็นเว็บคนละโปรเจกต์) → เด้งไปแล้วออกไม่ได้
+      if (tool && tool.id !== 'rail') { tool.go(router); return }
     }
     // จำเป็นต้อง setState ใน effect: sessionStorage/localStorage อ่านได้เฉพาะบนเบราว์เซอร์
     // ถ้าอ่านตอน render แรกเลย ผลจะไม่ตรงกับที่ server เรนเดอร์มา → hydration mismatch
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setReady(true)
-  }, [router])
+  }, [router, pickMode])
 
   const pick = (tool: Tool) => {
     localStorage.setItem(LAST_APP_KEY, tool.id)
@@ -104,5 +111,14 @@ export default function HubPage() {
         ))}
       </div>
     </div>
+  )
+}
+
+export default function HubPage() {
+  // useSearchParams ต้องอยู่ใน Suspense (ข้อบังคับของ Next)
+  return (
+    <Suspense fallback={<div style={{ minHeight: '100dvh', background: 'var(--bg)' }} />}>
+      <HubContent />
+    </Suspense>
   )
 }

@@ -21,7 +21,8 @@ export default function HubButton({ dark = false }: { dark?: boolean }) {
   if (!standalone) return null
 
   return (
-    <Link href="/hub" aria-label="กลับหน้ารวมเครื่องมือ"
+    // ?pick=1 = บอก hub ว่ากดปุ่มมาเอง อย่าเด้งไปเครื่องมือล่าสุด
+    <Link href="/hub?pick=1" aria-label="กลับหน้ารวมเครื่องมือ"
       style={{
         // มุมขวาล่าง — มุมซ้ายล่างมีปุ่มเลิกทำ/ทำซ้ำ (HistoryBar) อยู่แล้ว
         position: 'fixed', right: 'max(12px, env(safe-area-inset-right))',
