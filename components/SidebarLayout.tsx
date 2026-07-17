@@ -2,6 +2,7 @@
 
 import Sidebar from './Sidebar'
 import HistoryBar from './HistoryBar'
+import HubButton from './HubButton'
 
 export default function SidebarLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -17,6 +18,7 @@ export default function SidebarLayout({ children }: { children: React.ReactNode 
         </div>
       </main>
       <HistoryBar />
+      <HubButton />
     </div>
   )
 }

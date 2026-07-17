@@ -2,14 +2,15 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Donna Admin',
+  title: 'Donna Design',
   description: 'Donna Design Management System',
-  // apple-touch-icon ผ่าน metadata (ไม่ฮาร์ดโค้ดใน <head>) → หน้า /scan override เหลือไอคอน QR อันเดียวได้
+  // apple-touch-icon ผ่าน metadata (ไม่ฮาร์ดโค้ดใน <head>)
   icons: { apple: '/donna-logo.jpg' },
+  // ‼️ iOS ไม่อ่านชื่อ/ไอคอนจาก manifest — ชื่อแอปบน iPhone มาจาก title ตรงนี้เท่านั้น (ต้องตรงกับ manifest)
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Donna',
+    title: 'Donna Design',
   },
 }
 

@@ -7,6 +7,7 @@ import { EMPLOYEES, STAGES, stageByKey } from '@/lib/staff'
 import { fetchEmployeeOptions } from '@/lib/staffDb'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { uploadPackingFile, deletePackingFile, compressImage } from '@/lib/packingPhotos'
+import HubButton from '@/components/HubButton'
 
 const LS_KEY = 'donna-scan-tech'
 type Tech = { code: string; name: string; stageKey: string }
@@ -711,8 +712,11 @@ function Result({ phase, order, msg, stage, onUndo, undoing }: { phase: Phase; o
 
 export default function ScanPage() {
   return (
-    <Suspense fallback={<div style={centerWrap}><div style={{ opacity: 0.6 }}>กำลังโหลด…</div></div>}>
-      <ScanContent />
-    </Suspense>
+    <>
+      <Suspense fallback={<div style={centerWrap}><div style={{ opacity: 0.6 }}>กำลังโหลด…</div></div>}>
+        <ScanContent />
+      </Suspense>
+      <HubButton dark />
+    </>
   )
 }
