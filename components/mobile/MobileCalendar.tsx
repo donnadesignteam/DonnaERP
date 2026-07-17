@@ -62,9 +62,8 @@ export default function MobileCalendar() {
   return (
     <div>
       <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'var(--bg)', paddingTop: 'env(safe-area-inset-top)', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ padding: '12px 14px 8px', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+        <div style={{ padding: '12px 14px 8px' }}>
           <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)' }}>ปฏิทินร้าน</h1>
-          <span style={{ fontSize: 12, color: 'var(--ink-4)' }}>ดูอย่างเดียว · แก้ที่คอม</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px 10px', gap: 8 }}>
           <button onClick={prevMonth} aria-label="เดือนก่อน" style={navBtn}>‹</button>
