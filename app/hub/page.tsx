@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Image from 'next/image'
 import { RAIL_PATH } from '@/lib/rail'
+import { CALC_PATH } from '@/lib/calc'
 
 // หน้ารวมเครื่องมือของแอป "Donna Design" (start_url ของ PWA ชี้มาที่นี่)
 // เปิดแอปครั้งแรกของรอบ → เด้งเข้าเครื่องมือที่ใช้ล่าสุดให้เลย · กดปุ่มกลับ hub / ปุ่ม back → เห็นหน้านี้ตามปกติ
@@ -48,6 +49,15 @@ const TOOLS: Tool[] = [
     // ไม่งั้นไฟล์ในหน้าราง (calc.js, parts/…) ที่อ้างแบบสัมพัทธ์จะไปหาที่ root แล้ว 404
     go: router => router.push(RAIL_PATH),
   },
+  {
+    id: 'calc',
+    title: 'คำนวณราคาม่าน',
+    desc: 'ประเมินราคาม่าน · มู่ลี่',
+    color: '#7C3AED',
+    icon: <svg width="30" height="30" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path strokeLinecap="round" d="M8 7h8M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01"/></svg>,
+    // เว็บบน GitHub Pages — ดูคอมเมนต์ใน lib/calc.ts ว่าทำไมต้องเป็น /calc/Index.html
+    go: router => router.push(CALC_PATH),
+  },
 ]
 
 function HubContent() {
@@ -68,8 +78,8 @@ function HubContent() {
     //    การเข้า /hub ครั้งแรกของ session → โดนเด้งไปเครื่องมือล่าสุดแทนที่จะได้เห็น hub
     if (!pickMode && !launched && last) {
       const tool = TOOLS.find(t => t.id === last)
-      // ราง = เครื่องมือที่ "ใช้แล้วจบ" (เว็บคนละโปรเจกต์) → ไม่เด้งเข้าให้ ต้องกดเอง
-      if (tool && tool.id !== 'rail') { tool.go(router); return }
+      // ราง/คำนวณราคา = เว็บคนละโปรเจกต์ ไม่มีปุ่มกลับ hub → ไม่เด้งเข้าให้อัตโนมัติ ต้องกดเอง
+      if (tool && tool.id !== 'rail' && tool.id !== 'calc') { tool.go(router); return }
     }
     // จำเป็นต้อง setState ใน effect: sessionStorage/localStorage อ่านได้เฉพาะบนเบราว์เซอร์
     // ถ้าอ่านตอน render แรกเลย ผลจะไม่ตรงกับที่ server เรนเดอร์มา → hydration mismatch
