@@ -106,11 +106,8 @@ export default function MobileOrders() {
 
   return (
     <div>
-      {/* หัวเรื่อง + ค้นหา + แท็บ ติดบนสุดตอนเลื่อน */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'var(--bg)', paddingTop: 'env(safe-area-inset-top)', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ padding: '12px 14px 8px' }}>
-          <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)' }}>ออเดอร์</h1>
-        </div>
+      {/* ค้นหา + แท็บ ติดบนสุดตอนเลื่อน — ไม่มีชื่อหน้า (ผู้ใช้สั่งเอาออก แถบเมนูล่างบอกอยู่แล้วว่าอยู่หน้าไหน) */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'var(--bg)', paddingTop: 'calc(env(safe-area-inset-top) + 10px)', borderBottom: '1px solid var(--border)' }}>
         <div style={{ padding: '0 14px 8px' }}>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ชื่อลูกค้า / เลขออเดอร์ / เบอร์" style={searchInput} />
         </div>

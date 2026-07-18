@@ -76,10 +76,8 @@ export default function MobileCalendar() {
 
   return (
     <div>
-      <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'var(--bg)', paddingTop: 'env(safe-area-inset-top)', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ padding: '12px 14px 8px' }}>
-          <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)' }}>ปฏิทินร้าน</h1>
-        </div>
+      {/* ไม่มีชื่อหน้า — ผู้ใช้สั่งเอาออกทุกหน้า (แถบเมนูล่างบอกอยู่แล้ว) */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'var(--bg)', paddingTop: 'calc(env(safe-area-inset-top) + 10px)', borderBottom: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px 8px', gap: 8 }}>
           <button onClick={prevMonth} aria-label="เดือนก่อน" style={monthNavBtn}>‹</button>
           <div style={{ flex: 1, textAlign: 'center', minWidth: 0 }}>

@@ -100,10 +100,8 @@ export default function MobileClaims() {
 
   return (
     <div>
-      <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'var(--bg)', paddingTop: 'env(safe-area-inset-top)', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ padding: '12px 14px 8px' }}>
-          <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)' }}>งานเคลม</h1>
-        </div>
+      {/* ไม่มีชื่อหน้า — ผู้ใช้สั่งเอาออกทุกหน้า (แถบเมนูล่างบอกอยู่แล้ว) */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'var(--bg)', paddingTop: 'calc(env(safe-area-inset-top) + 10px)', borderBottom: '1px solid var(--border)' }}>
         <div style={{ padding: '0 14px 8px' }}>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ลูกค้า / เลขออเดอร์ / สาเหตุ" style={searchInput} />
         </div>
