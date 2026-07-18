@@ -78,8 +78,9 @@ function HubContent() {
     //    การเข้า /hub ครั้งแรกของ session → โดนเด้งไปเครื่องมือล่าสุดแทนที่จะได้เห็น hub
     if (!pickMode && !launched && last) {
       const tool = TOOLS.find(t => t.id === last)
-      // ราง/คำนวณราคา = เว็บคนละโปรเจกต์ ไม่มีปุ่มกลับ hub → ไม่เด้งเข้าให้อัตโนมัติ ต้องกดเอง
-      if (tool && tool.id !== 'rail' && tool.id !== 'calc') { tool.go(router); return }
+      // ราง = เครื่องมือที่ "ใช้แล้วจบ" → ไม่เด้งเข้าให้อัตโนมัติ ต้องกดเอง
+      // (หน้าคำนวณราคามีปุ่ม "เครื่องมือ" กลับ hub แล้ว เลยเด้งเข้าได้ตามปกติ)
+      if (tool && tool.id !== 'rail') { tool.go(router); return }
     }
     // จำเป็นต้อง setState ใน effect: sessionStorage/localStorage อ่านได้เฉพาะบนเบราว์เซอร์
     // ถ้าอ่านตอน render แรกเลย ผลจะไม่ตรงกับที่ server เรนเดอร์มา → hydration mismatch
