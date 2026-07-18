@@ -230,7 +230,9 @@ export default function MobileInstallations() {
             return (
               <button key={i} onClick={() => setDaySheet(ymd)}
                 style={{
-                  minHeight: 72, display: 'flex', flexDirection: 'column', gap: 2,
+                  // ‼️ ทุกช่องต้องเท่ากันเป๊ะ — height ตายตัว + minWidth 0 + overflow hidden
+                  //    (grid 1fr อย่างเดียวไม่พอ: ช่องที่มีชื่อลูกค้ายาวจะดัน min-content ทำให้คอลัมน์กว้างไม่เท่ากัน)
+                  height: 76, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 2,
                   background: holiday ? 'var(--cal-holiday)' : isSunday ? 'var(--cal-sunday)' : 'var(--surface)',
                   border: isToday ? '2px solid var(--blue)' : '1px solid var(--border)',
                   borderRadius: 8, padding: '4px 4px 3px', cursor: 'pointer', textAlign: 'left', font: 'inherit',

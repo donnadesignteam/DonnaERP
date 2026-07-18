@@ -122,7 +122,8 @@ export default function MobileCalendar() {
             return (
               <button key={i} onClick={() => setDaySheet(ymd)}
                 style={{
-                  minHeight: 72, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 2,
+                  // ‼️ ทุกช่องเท่ากันเป๊ะ (ดูคอมเมนต์เดียวกันใน MobileInstallations)
+                  height: 76, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 2,
                   background: holiday ? 'var(--cal-holiday)' : isSunday ? 'var(--cal-sunday)' : 'var(--surface)',
                   border: isToday ? '2px solid var(--blue)' : '1px solid var(--border)',
                   borderRadius: 8, padding: '4px 4px 3px', cursor: 'pointer', textAlign: 'left', font: 'inherit',
