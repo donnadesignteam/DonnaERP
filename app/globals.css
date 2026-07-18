@@ -26,6 +26,9 @@
   --cal-holiday: #FFF9E6;
   --cal-holiday-ink: #B45309;
   --cal-sunday:  rgba(0,0,0,0.035);
+  /* ช่วงห้ามลา (Red Zone) — ทั้งช่องเป็นสีแดงอ่อน ไม่ใช่แค่ขีดบน */
+  --cal-redzone: #FDE8E8;
+  --cal-redzone-border: #F0B4B4;
 }
 
 html.dark {
@@ -44,6 +47,8 @@ html.dark {
   --cal-holiday: #2A1F0C;
   --cal-holiday-ink: #E0A94A;
   --cal-sunday:  rgba(255,255,255,0.045);
+  --cal-redzone: #3A1418;
+  --cal-redzone-border: #6B2229;
 }
 
 body {

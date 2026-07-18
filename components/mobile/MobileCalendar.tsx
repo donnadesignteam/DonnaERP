@@ -124,14 +124,13 @@ export default function MobileCalendar() {
                 style={{
                   // ‼️ ทุกช่องเท่ากันเป๊ะ (ดูคอมเมนต์เดียวกันใน MobileInstallations)
                   height: 76, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 2,
-                  background: holiday ? 'var(--cal-holiday)' : isSunday ? 'var(--cal-sunday)' : 'var(--surface)',
-                  border: isToday ? '2px solid var(--blue)' : '1px solid var(--border)',
+                  // Red Zone = ช่วงห้ามลา → แดงทั้งช่อง (user สั่งเปลี่ยนจากขีดแดงบนหัวช่อง) มาก่อนวันหยุด/วันอาทิตย์
+                  background: redzone ? 'var(--cal-redzone)' : holiday ? 'var(--cal-holiday)' : isSunday ? 'var(--cal-sunday)' : 'var(--surface)',
+                  border: isToday ? '2px solid var(--blue)' : redzone ? '1px solid var(--cal-redzone-border)' : '1px solid var(--border)',
                   borderRadius: 8, padding: '4px 4px 3px', cursor: 'pointer', textAlign: 'left', font: 'inherit',
                   WebkitTapHighlightColor: 'transparent',
-                  // Red Zone = ช่วงห้ามลา ทำขีดแดงบนหัวช่อง
-                  boxShadow: redzone ? 'inset 0 3px 0 0 rgba(220,38,38,0.55)' : undefined,
                 }}>
-                <span style={{ fontSize: 12.5, fontWeight: isToday ? 800 : 500, color: isToday ? 'var(--blue)' : holiday ? 'var(--cal-holiday-ink)' : 'var(--ink-2)', paddingTop: redzone ? 2 : 0 }}>
+                <span style={{ fontSize: 12.5, fontWeight: isToday ? 800 : 500, color: isToday ? 'var(--blue)' : redzone ? 'var(--red)' : holiday ? 'var(--cal-holiday-ink)' : 'var(--ink-2)' }}>
                   {day}
                 </span>
                 {/* ‼️ ขั้นต่ำ 10.5px — ของเดิม 8.5px อ่านไม่ออกจริงบนมือถือ */}
@@ -157,7 +156,7 @@ export default function MobileCalendar() {
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, padding: '14px 6px 4px', fontSize: 11.5, color: 'var(--ink-3)' }}>
           <span><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: 'var(--cal-holiday)', border: '1px solid var(--border-2)', marginRight: 4 }} />วันหยุดร้าน</span>
-          <span><span style={{ display: 'inline-block', width: 9, height: 3, background: 'rgba(220,38,38,0.55)', marginRight: 4, verticalAlign: 'middle' }} />ช่วงห้ามลา</span>
+          <span><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: 'var(--cal-redzone)', border: '1px solid var(--cal-redzone-border)', marginRight: 4 }} />ช่วงห้ามลา</span>
           <span>📣 แคมเปญ</span>
           {/* สีชิปคนลาในช่องวันเคยไม่มีคำอธิบายเลย */}
           {Object.entries(LEAVE_STATUS_COLOR).map(([label, c]) => (
