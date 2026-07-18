@@ -1,14 +1,14 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
-import Link from 'next/link'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { formatItemLines, type RawItem } from '@/lib/itemFormat'
 import { thaiTrackStatus } from '@/lib/trackExtract'
 import { carrierTrackUrl } from '@/lib/carriers'
 import { PROD_STATUS_COLOR } from '@/lib/orderTabs'
 import { INSTALL_STATUS_COLOR } from '@/lib/shopCalendar'
+import { usePullToRefresh, useSheetBack, PullIndicator, CardSkeleton, clamp } from './mobileUi'
 
 // โฟลเดอร์ออเดอร์ของลูกค้า เวอร์ชันมือถือ — ดูอย่างเดียว
 // เดสก์ท็อป = app/(admin)/customers (มีลบรูปแพ็คได้ด้วย) · ที่นี่ดึงข้อมูลชุดเดียวกันเป๊ะ
@@ -34,61 +34,88 @@ const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString('th-TH'
 
 export default function MobileCustomer() {
   const params = useSearchParams()
+  const router = useRouter()
   const name = params.get('name') ?? ''
   const [orders, setOrders] = useState<Order[]>([])
   const [claims, setClaims] = useState<Claim[]>([])
   const [installs, setInstalls] = useState<Install[]>([])
   const [pos, setPos] = useState<PO[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')          // เดิมทิ้ง error ทั้ง 4 query → เน็ตหลุดขึ้น "ไม่พบประวัติ" หลอกผู้ใช้ว่าลูกค้าไม่มีข้อมูล
+  const [photo, setPhoto] = useState<string | null>(null)
 
-  useEffect(() => {
-    // ไม่มีชื่อใน URL = ไม่มีอะไรให้โหลด ปิดสถานะกำลังโหลดทันที
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+  const load = async () => {
     if (!name) { setLoading(false); return }
-    ;(async () => {
-      setLoading(true)
-      // query ชุดเดียวกับหน้าเดสก์ท็อป (app/(admin)/customers) — จับคู่ด้วยชื่อลูกค้าเหมือนกัน
-      const { data } = await supabase.from('order_entries')
+    // query ชุดเดียวกับหน้าเดสก์ท็อป (app/(admin)/customers) — จับคู่ด้วยชื่อลูกค้าเหมือนกัน
+    const [o, c, i, p] = await Promise.all([
+      supabase.from('order_entries')
         .select('id, entry_date, order_number, platform, order_status, payment_status, price, items, notes, packing_photos, shipments')
         .eq('customer_name', name)
         .order('entry_date', { ascending: false, nullsFirst: false })
-        .order('created_at', { ascending: false })
-      setOrders((data as Order[]) ?? [])
-      const { data: cls } = await supabase.from('claims')
+        .order('created_at', { ascending: false }),
+      supabase.from('claims')
         .select('id, claim_date, claim_type, cause, refund_amount, money_direction, status')
-        .eq('customer_username', name).order('claim_date', { ascending: false, nullsFirst: false })
-      setClaims((cls as Claim[]) ?? [])
-      const { data: ins } = await supabase.from('installations')
+        .eq('customer_username', name).order('claim_date', { ascending: false, nullsFirst: false }),
+      supabase.from('installations')
         .select('id, serial_no, appointment_datetime, work_type, work_details, installation_status, price')
         .or(`customer_real_name.eq.${JSON.stringify(name)},customer_id.eq.${JSON.stringify(name)}`)
-        .order('appointment_datetime', { ascending: false, nullsFirst: false })
-      setInstalls((ins as Install[]) ?? [])
-      const { data: po } = await supabase.from('purchase_orders')
+        .order('appointment_datetime', { ascending: false, nullsFirst: false }),
+      supabase.from('purchase_orders')
         .select('id, order_number, supplier, status, created_at')
-        .eq('customer_name', name).order('created_at', { ascending: false })
-      setPos((po as PO[]) ?? [])
-      setLoading(false)
-    })()
-  }, [name])
+        .eq('customer_name', name).order('created_at', { ascending: false }),
+    ])
+    const err = o.error ?? c.error ?? i.error ?? p.error
+    setError(err ? `โหลดข้อมูลไม่ได้: ${err.message}` : '')
+    setOrders((o.data as Order[]) ?? [])
+    setClaims((c.data as Claim[]) ?? [])
+    setInstalls((i.data as Install[]) ?? [])
+    setPos((p.data as PO[]) ?? [])
+    setLoading(false)
+  }
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { setLoading(true); load() }, [name])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  const { pull, refreshing, refresh } = usePullToRefresh(load)
+  useSheetBack(!!photo, () => setPhoto(null))
 
   const total = orders.reduce((s, o) => s + (o.price ?? 0), 0)
 
   return (
     <div>
       <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'var(--bg)', paddingTop: 'env(safe-area-inset-top)', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ padding: '10px 14px 4px' }}>
-          <Link href="/m/orders" style={{ fontSize: 13, color: 'var(--ink-3)', textDecoration: 'none' }}>← กลับไปออเดอร์</Link>
+        <div style={{ padding: '8px 14px 4px' }}>
+          {/* router.back() ไม่ใช่ลิงก์ตายไป /m/orders — เข้ามาจากการ์ดเคลมด้วย ต้องกลับที่เดิม */}
+          <button onClick={() => router.back()}
+            style={{ minHeight: 36, display: 'inline-flex', alignItems: 'center', border: 'none', background: 'transparent', color: 'var(--ink-3)', fontSize: 13.5, cursor: 'pointer', padding: '0 4px 0 0', WebkitTapHighlightColor: 'transparent' }}>
+            ← กลับ
+          </button>
         </div>
         <div style={{ padding: '2px 14px 10px', display: 'flex', alignItems: 'center', gap: 9 }}>
           <span style={{ fontSize: 22 }}>📁</span>
-          <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <h1 style={{ flex: 1, fontSize: 18, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {name || 'ไม่ระบุชื่อลูกค้า'}
           </h1>
+          <button onClick={refresh} disabled={refreshing} aria-label="อัปเดตข้อมูล"
+            style={{ width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--ink-3)', cursor: 'pointer', flexShrink: 0, opacity: refreshing ? 0.5 : 1 }}>
+            <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" style={{ animation: refreshing ? 'm-spin 0.7s linear infinite' : undefined }}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992V4.356m-4.992 4.992l3.181-3.183a8.25 8.25 0 00-13.803 3.7M4.031 9.865v4.992m0 0h4.992m-4.992 0l3.181 3.183a8.25 8.25 0 0013.803-3.7" />
+            </svg>
+          </button>
         </div>
       </div>
 
+      <PullIndicator pull={pull} refreshing={refreshing} />
+
+      {error && (
+        <div style={{ margin: '12px 14px', background: 'var(--red-bg)', border: '1px solid var(--red)', borderRadius: 10, padding: '10px 12px', color: 'var(--red)', fontSize: 13, display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+          <span>{error}</span>
+          <button onClick={refresh} style={{ border: 'none', background: 'transparent', color: 'var(--red)', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>ลองใหม่</button>
+        </div>
+      )}
+
       {loading ? (
-        <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>กำลังโหลด…</div>
+        <CardSkeleton n={3} />
       ) : (
         <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* สรุป */}
@@ -100,14 +127,15 @@ export default function MobileCustomer() {
               ...(pos.length ? [['สั่งซื้อ', `${pos.length}`, 'var(--blue)']] : []),
               ...(claims.length ? [['งานเคลม', `${claims.length}`, 'var(--red)']] : []),
             ] as [string, string, string][]).map(([label, val, color]) => (
-              <div key={label} style={{ flex: '1 1 auto', minWidth: 88, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 12px' }}>
+              <div key={label} style={{ flex: '1 1 auto', minWidth: 88, maxWidth: '100%', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 12px', overflow: 'hidden' }}>
                 <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>{label}</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color }}>{val}</div>
+                {/* ยอดหลักล้านเคยล้นกล่อง — ตัดด้วย ellipsis */}
+                <div style={{ fontSize: 16, fontWeight: 700, color, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{val}</div>
               </div>
             ))}
           </div>
 
-          {orders.length === 0 && claims.length === 0 && installs.length === 0 ? (
+          {!error && orders.length === 0 && claims.length === 0 && installs.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)', fontSize: 14 }}>
               <div style={{ fontSize: 32, marginBottom: 10 }}>📭</div>
               ไม่พบประวัติของลูกค้านี้
@@ -139,13 +167,13 @@ export default function MobileCustomer() {
                           ))}
                         </div>
                       )}
-                      {o.notes && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.45 }}>หมายเหตุ: {o.notes}</div>}
+                      {o.notes && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.45, ...clamp(4) }}>หมายเหตุ: {o.notes}</div>}
 
                       {Array.isArray(o.shipments) && o.shipments.length > 0 && (
                         <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 5 }}>
                           {o.shipments.map((s, i) => (
                             <a key={i} href={carrierTrackUrl(s)} target="_blank" rel="noreferrer"
-                              style={{ display: 'flex', justifyContent: 'space-between', gap: 8, textDecoration: 'none', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 9px', background: 'var(--bg)' }}>
+                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, minHeight: 40, textDecoration: 'none', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 11px', background: 'var(--bg)', WebkitTapHighlightColor: 'transparent' }}>
                               <span style={{ fontSize: 11.5, fontFamily: 'monospace', color: 'var(--blue)' }}>{s.no}</span>
                               <span style={{ fontSize: 11, color: /เซ็นรับ|สำเร็จ|ถึงมือ|delivered/i.test(s.status || '') ? 'var(--green)' : 'var(--ink-3)', flexShrink: 0 }}>
                                 {s.status ? thaiTrackStatus(s.status) : s.carrier}
@@ -157,12 +185,15 @@ export default function MobileCustomer() {
 
                       {Array.isArray(o.packing_photos) && o.packing_photos.length > 0 && (
                         <div style={{ display: 'flex', gap: 6, marginTop: 8, overflowX: 'auto' }}>
+                          {/* กดดูรูปเต็มในหน้าเดิม — เดิมเปิดแท็บใหม่ ซึ่งบนแอป PWA = เด้งออกจากแอปไปเลย */}
                           {o.packing_photos.map(url => (
-                            <a key={url} href={url} target="_blank" rel="noreferrer" style={{ flexShrink: 0 }}>
+                            <button key={url} onClick={() => setPhoto(url)} aria-label="ดูรูปแพ็คเต็ม"
+                              style={{ flexShrink: 0, padding: 0, border: 'none', background: 'transparent', cursor: 'pointer', lineHeight: 0, WebkitTapHighlightColor: 'transparent' }}>
                               {/* รูปมาจาก R2/Supabase หลายโดเมน — ใช้ img ตรงๆ เหมือนหน้าเดสก์ท็อป ไม่ผ่าน next/image */}
                               {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={url} alt="รูปแพ็ค" style={{ width: 58, height: 58, objectFit: 'cover', borderRadius: 7, border: '1px solid var(--border)' }} />
-                            </a>
+                              <img src={url} alt="รูปแพ็ค" loading="lazy" decoding="async"
+                                style={{ width: 62, height: 62, objectFit: 'cover', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)' }} />
+                            </button>
                           ))}
                         </div>
                       )}
@@ -248,6 +279,17 @@ export default function MobileCustomer() {
               </div>
             </section>
           )}
+        </div>
+      )}
+
+      {/* ดูรูปแพ็คเต็มจอ — ปุ่ม back ของ Android ปิดได้ (useSheetBack) */}
+      {photo && (
+        <div onClick={() => setPhoto(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={photo} alt="รูปแพ็ค" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 10 }} />
+          <button onClick={() => setPhoto(null)} aria-label="ปิด"
+            style={{ position: 'absolute', top: 'calc(env(safe-area-inset-top) + 12px)', right: 14, width: 40, height: 40, borderRadius: 999, border: 'none', background: 'rgba(255,255,255,0.16)', color: '#fff', fontSize: 20, cursor: 'pointer' }}>×</button>
         </div>
       )}
     </div>

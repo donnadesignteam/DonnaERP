@@ -55,6 +55,7 @@ function HubContent() {
   const params = useSearchParams()
   const pickMode = params.get('pick') === '1'
   const [ready, setReady] = useState(false)
+  const [lastId, setLastId] = useState<string | null>(null)   // ติดป้าย "ใช้ล่าสุด" ให้รู้ว่าเปิดแอปเฉยๆ จะเด้งไปไหน
 
   useEffect(() => {
     // เปิดแอปรอบใหม่ + เคยเลือกเครื่องมือไว้ → เข้าเครื่องมือนั้นเลย ไม่ต้องกดซ้ำทุกครั้ง
@@ -67,12 +68,13 @@ function HubContent() {
     //    การเข้า /hub ครั้งแรกของ session → โดนเด้งไปเครื่องมือล่าสุดแทนที่จะได้เห็น hub
     if (!pickMode && !launched && last) {
       const tool = TOOLS.find(t => t.id === last)
-      // ราง = เครื่องมือที่ "ใช้แล้วจบ" + หน้ารางไม่มีปุ่มกลับ (เป็นเว็บคนละโปรเจกต์) → เด้งไปแล้วออกไม่ได้
+      // ราง = เครื่องมือที่ "ใช้แล้วจบ" (เว็บคนละโปรเจกต์) → ไม่เด้งเข้าให้ ต้องกดเอง
       if (tool && tool.id !== 'rail') { tool.go(router); return }
     }
     // จำเป็นต้อง setState ใน effect: sessionStorage/localStorage อ่านได้เฉพาะบนเบราว์เซอร์
     // ถ้าอ่านตอน render แรกเลย ผลจะไม่ตรงกับที่ server เรนเดอร์มา → hydration mismatch
     // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLastId(last)
     setReady(true)
   }, [router, pickMode])
 
@@ -81,11 +83,11 @@ function HubContent() {
     tool.go(router)
   }
 
-  // กันจอกระพริบ: ระหว่างเช็คว่าจะเด้งไปเครื่องมือล่าสุดไหม ยังไม่ต้องวาดอะไร
-  if (!ready) return <div style={{ minHeight: '100dvh', background: 'var(--bg)' }} />
+  // ระหว่างเช็คว่าจะเด้งไปเครื่องมือล่าสุดไหม — เดิมเป็น div เปล่า ผู้ใช้เห็นจอขาวทุกครั้งที่เปิดแอป
+  if (!ready) return <HubSplash />
 
   return (
-    <div style={{ minHeight: '100dvh', background: 'var(--bg)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 20px', gap: 28 }}>
+    <div style={{ minHeight: '100dvh', background: 'var(--bg)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 'calc(32px + env(safe-area-inset-top)) 20px calc(32px + env(safe-area-inset-bottom))', gap: 28 }}>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
         <Image src="/donna-logo.jpg" alt="Donna Design" width={84} height={84} priority
           style={{ borderRadius: 20, boxShadow: 'var(--shadow-md)' }} />
@@ -97,13 +99,18 @@ function HubContent() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxWidth: 380 }}>
         {TOOLS.map(tool => (
-          <button key={tool.id} onClick={() => pick(tool)}
-            style={{ display: 'flex', alignItems: 'center', gap: 16, width: '100%', textAlign: 'left', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: '18px 18px', cursor: 'pointer', boxShadow: 'var(--shadow)', color: 'var(--ink)', font: 'inherit' }}>
+          <button key={tool.id} onClick={() => pick(tool)} className="m-card-tap"
+            style={{ display: 'flex', alignItems: 'center', gap: 16, width: '100%', textAlign: 'left', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: '18px 18px', cursor: 'pointer', boxShadow: 'var(--shadow)', color: 'var(--ink)', font: 'inherit', WebkitTapHighlightColor: 'transparent' }}>
             <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 54, height: 54, borderRadius: 14, background: tool.color + '1a', color: tool.color, flexShrink: 0 }}>
               {tool.icon}
             </span>
             <span style={{ flex: 1, minWidth: 0 }}>
-              <span style={{ display: 'block', fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>{tool.title}</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>{tool.title}</span>
+                {tool.id === lastId && (
+                  <span style={{ fontSize: 10.5, fontWeight: 700, color: tool.color, background: tool.color + '1a', borderRadius: 999, padding: '2px 7px' }}>ใช้ล่าสุด</span>
+                )}
+              </span>
               <span style={{ display: 'block', fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>{tool.desc}</span>
             </span>
             <svg width="18" height="18" fill="none" stroke="var(--ink-4)" strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
@@ -116,10 +123,20 @@ function HubContent() {
   )
 }
 
+// จอเปิดแอป — โลโก้ + ตัวหมุน แทนจอขาวเปล่า (เห็นทุกครั้งที่เปิดแอป ก่อนรู้ว่าจะเด้งไปเครื่องมือไหน)
+function HubSplash() {
+  return (
+    <div style={{ minHeight: '100dvh', background: 'var(--bg)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18 }}>
+      <Image src="/donna-logo.jpg" alt="Donna Design" width={72} height={72} priority style={{ borderRadius: 18, boxShadow: 'var(--shadow-md)' }} />
+      <span style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid var(--border-2)', borderTopColor: 'var(--blue)', animation: 'm-spin 0.7s linear infinite' }} />
+    </div>
+  )
+}
+
 export default function HubPage() {
   // useSearchParams ต้องอยู่ใน Suspense (ข้อบังคับของ Next)
   return (
-    <Suspense fallback={<div style={{ minHeight: '100dvh', background: 'var(--bg)' }} />}>
+    <Suspense fallback={<HubSplash />}>
       <HubContent />
     </Suspense>
   )

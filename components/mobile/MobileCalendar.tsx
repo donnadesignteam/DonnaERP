@@ -3,9 +3,10 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
-import { getPageCache } from '@/lib/pageCache'
+import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { HOLIDAYS } from '@/lib/holidays'
 import { RED_ZONES, CAMPAIGNS, LEAVE_STATUS_COLOR, DAYS_TH, TH_MONTHS, ymdOf, monthCells } from '@/lib/shopCalendar'
+import { useStickyState, usePullToRefresh, useSheetBack, PullIndicator, UpdatedRow, monthNavBtn, clamp } from './mobileUi'
 
 // ปฏิทินร้านบนมือถือ — ดูอย่างเดียว (เดสก์ท็อป = app/(admin)/employees ที่มีฟอร์มขอลาด้วย)
 type Leave = {
@@ -34,24 +35,38 @@ export default function MobileCalendar() {
   const [leaves, setLeaves] = useState<Leave[]>(cached ?? [])
   const [loading, setLoading] = useState(!cached)
   const [error, setError] = useState('')
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null)
   const today = new Date()
-  const [year, setYear] = useState(today.getFullYear())
-  const [month, setMonth] = useState(today.getMonth())
+  const [year, setYear] = useStickyState('cal:year', today.getFullYear())
+  const [month, setMonth] = useStickyState('cal:month', today.getMonth())
   const [daySheet, setDaySheet] = useState<string | null>(null)   // ymd ของวันที่กดดู
 
   const load = async () => {
     const { data, error: err } = await fetchAllRows<Leave>(() =>
       supabase.from('leave_requests').select('*').order('id', { ascending: true }))
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
-    else setError('')
+    else {
+      setError('')
+      setPageCache('leave_requests', data)
+      setUpdatedAt(Date.now())
+    }
     setLeaves(data)
     setLoading(false)
   }
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load() }, [])
 
+  const { pull, refreshing, refresh } = usePullToRefresh(load)
+  useSheetBack(!!daySheet, () => setDaySheet(null))
+
   const cells = useMemo(() => monthCells(year, month), [year, month])
   const leavesOn = (ymd: string) => leaves.filter(l => coversDay(l, ymd))
+  const isThisMonth = year === today.getFullYear() && month === today.getMonth()
+  // จำนวนใบลาทั้งเดือน (หน้าติดตั้งมี "N งาน" อยู่แล้ว หน้านี้เคยไม่มี)
+  const monthLeaveCount = useMemo(
+    () => cells.reduce<number>((n, d) => n + (d ? leavesOn(ymdOf(year, month, d)).length : 0), 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cells, leaves, year, month])
 
   const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y - 1) } else setMonth(m => m - 1) }
   const nextMonth = () => { if (month === 11) { setMonth(0); setYear(y => y + 1) } else setMonth(m => m + 1) }
@@ -65,14 +80,25 @@ export default function MobileCalendar() {
         <div style={{ padding: '12px 14px 8px' }}>
           <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)' }}>ปฏิทินร้าน</h1>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px 10px', gap: 8 }}>
-          <button onClick={prevMonth} aria-label="เดือนก่อน" style={navBtn}>‹</button>
-          <button onClick={goToday} style={{ flex: 1, border: 'none', background: 'transparent', fontSize: 15.5, fontWeight: 700, color: 'var(--ink)', cursor: 'pointer', padding: '4px 0' }}>
-            {TH_MONTHS[month]} {year + 543}
-          </button>
-          <button onClick={nextMonth} aria-label="เดือนถัดไป" style={navBtn}>›</button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px 8px', gap: 8 }}>
+          <button onClick={prevMonth} aria-label="เดือนก่อน" style={monthNavBtn}>‹</button>
+          <div style={{ flex: 1, textAlign: 'center', minWidth: 0 }}>
+            <div style={{ fontSize: 15.5, fontWeight: 700, color: 'var(--ink)' }}>
+              {TH_MONTHS[month]} {year + 543}
+              <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-4)', marginLeft: 7 }}>ลา {monthLeaveCount} ครั้ง</span>
+            </div>
+            {!isThisMonth && (
+              <button onClick={goToday} style={{ marginTop: 2, border: 'none', background: 'transparent', color: 'var(--blue)', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: '2px 8px' }}>
+                ← กลับไปเดือนนี้
+              </button>
+            )}
+          </div>
+          <button onClick={nextMonth} aria-label="เดือนถัดไป" style={monthNavBtn}>›</button>
         </div>
+        <UpdatedRow at={updatedAt} refreshing={refreshing} onRefresh={refresh} />
       </div>
+
+      <PullIndicator pull={pull} refreshing={refreshing} />
 
       {error && (
         <div style={{ margin: '12px 14px', background: 'var(--red-bg)', border: '1px solid var(--red)', borderRadius: 10, padding: '10px 12px', color: 'var(--red)', fontSize: 13, display: 'flex', justifyContent: 'space-between', gap: 10 }}>
@@ -98,27 +124,29 @@ export default function MobileCalendar() {
             return (
               <button key={i} onClick={() => setDaySheet(ymd)}
                 style={{
-                  minHeight: 62, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 2,
-                  background: holiday ? '#fff9e6' : isSunday ? 'rgba(0,0,0,0.035)' : 'var(--surface)',
+                  minHeight: 72, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 2,
+                  background: holiday ? 'var(--cal-holiday)' : isSunday ? 'var(--cal-sunday)' : 'var(--surface)',
                   border: isToday ? '2px solid var(--blue)' : '1px solid var(--border)',
                   borderRadius: 8, padding: '4px 4px 3px', cursor: 'pointer', textAlign: 'left', font: 'inherit',
+                  WebkitTapHighlightColor: 'transparent',
                   // Red Zone = ช่วงห้ามลา ทำขีดแดงบนหัวช่อง
                   boxShadow: redzone ? 'inset 0 3px 0 0 rgba(220,38,38,0.55)' : undefined,
                 }}>
-                <span style={{ fontSize: 12, fontWeight: isToday ? 800 : 500, color: isToday ? 'var(--blue)' : holiday ? '#b45309' : 'var(--ink-2)', paddingTop: redzone ? 2 : 0 }}>
+                <span style={{ fontSize: 12.5, fontWeight: isToday ? 800 : 500, color: isToday ? 'var(--blue)' : holiday ? 'var(--cal-holiday-ink)' : 'var(--ink-2)', paddingTop: redzone ? 2 : 0 }}>
                   {day}
                 </span>
-                {campaign && <span style={{ fontSize: 8.5, color: '#c2510a', fontWeight: 700, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📣{campaign}</span>}
-                {holiday && !campaign && <span style={{ fontSize: 8.5, color: '#b45309', fontWeight: 600, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{holiday}</span>}
+                {/* ‼️ ขั้นต่ำ 10.5px — ของเดิม 8.5px อ่านไม่ออกจริงบนมือถือ */}
+                {campaign && <span style={{ fontSize: 10, color: '#c2510a', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📣{campaign}</span>}
+                {holiday && !campaign && <span style={{ fontSize: 10, color: 'var(--cal-holiday-ink)', fontWeight: 600, lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{holiday}</span>}
                 {dayLeaves.length > 0 && (
                   <span style={{ display: 'flex', gap: 2, flexWrap: 'wrap', marginTop: 'auto' }}>
                     {dayLeaves.slice(0, 2).map(l => (
-                      <span key={l.id} style={{ fontSize: 8.5, fontWeight: 700, borderRadius: 3, padding: '1px 3px', lineHeight: 1.3, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      <span key={l.id} style={{ fontSize: 10.5, fontWeight: 700, borderRadius: 3, padding: '1px 3px', lineHeight: 1.3, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                         background: (LEAVE_STATUS_COLOR[l.leave_status] ?? '#a1a1aa') + '26', color: LEAVE_STATUS_COLOR[l.leave_status] ?? '#71717a' }}>
                         {l.employee_nickname}
                       </span>
                     ))}
-                    {dayLeaves.length > 2 && <span style={{ fontSize: 8.5, color: 'var(--ink-4)' }}>+{dayLeaves.length - 2}</span>}
+                    {dayLeaves.length > 2 && <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)' }}>+{dayLeaves.length - 2}</span>}
                   </span>
                 )}
               </button>
@@ -128,10 +156,14 @@ export default function MobileCalendar() {
 
         {loading && <div style={{ padding: 20, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>กำลังโหลดใบลา…</div>}
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, padding: '14px 6px 4px', fontSize: 11, color: 'var(--ink-3)' }}>
-          <span><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: '#fff9e6', border: '1px solid #f0d98c', marginRight: 4 }} />วันหยุดร้าน</span>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, padding: '14px 6px 4px', fontSize: 11.5, color: 'var(--ink-3)' }}>
+          <span><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: 'var(--cal-holiday)', border: '1px solid var(--border-2)', marginRight: 4 }} />วันหยุดร้าน</span>
           <span><span style={{ display: 'inline-block', width: 9, height: 3, background: 'rgba(220,38,38,0.55)', marginRight: 4, verticalAlign: 'middle' }} />ช่วงห้ามลา</span>
           <span>📣 แคมเปญ</span>
+          {/* สีชิปคนลาในช่องวันเคยไม่มีคำอธิบายเลย */}
+          {Object.entries(LEAVE_STATUS_COLOR).map(([label, c]) => (
+            <span key={label}><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: '50%', background: c, marginRight: 4 }} />{label}</span>
+          ))}
         </div>
       </div>
 
@@ -146,9 +178,9 @@ export default function MobileCalendar() {
               {parseInt(daySheet.slice(8), 10)} {TH_MONTHS[parseInt(daySheet.slice(5, 7), 10) - 1]} {parseInt(daySheet.slice(0, 4), 10) + 543}
             </h3>
 
-            {HOLIDAYS[daySheet] && <div style={{ ...badge, background: '#fff9e6', border: '1px solid #f0d98c', color: '#b45309' }}>🏖️ วันหยุดร้าน · {HOLIDAYS[daySheet]}</div>}
-            {CAMPAIGNS[daySheet] && <div style={{ ...badge, background: '#fff3e6', border: '1px solid #f0c89c', color: '#c2510a' }}>📣 แคมเปญ · {CAMPAIGNS[daySheet]}</div>}
-            {RED_ZONES.has(daySheet) && <div style={{ ...badge, background: '#fff0f0', border: '1px solid #f5b5b5', color: 'var(--red)' }}>🔴 ช่วงห้ามลา (Red Zone)</div>}
+            {HOLIDAYS[daySheet] && <div style={{ ...badge, background: 'var(--cal-holiday)', border: '1px solid var(--border-2)', color: 'var(--cal-holiday-ink)' }}>🏖️ วันหยุดร้าน · {HOLIDAYS[daySheet]}</div>}
+            {CAMPAIGNS[daySheet] && <div style={{ ...badge, background: 'var(--blue-bg)', border: '1px solid var(--border-2)', color: '#c2510a' }}>📣 แคมเปญ · {CAMPAIGNS[daySheet]}</div>}
+            {RED_ZONES.has(daySheet) && <div style={{ ...badge, background: 'var(--red-bg)', border: '1px solid var(--red)', color: 'var(--red)' }}>🔴 ช่วงห้ามลา (Red Zone)</div>}
 
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', margin: '14px 0 8px' }}>
               คนลา {sheetLeaves.length > 0 ? `(${sheetLeaves.length})` : ''}
@@ -171,7 +203,7 @@ export default function MobileCalendar() {
                         {l.leave_date.slice(0, 10)} → {l.leave_end_date.slice(0, 10)}
                       </div>
                     )}
-                    {l.reason && <div style={{ fontSize: 12, color: 'var(--ink-2)', marginTop: 5, lineHeight: 1.45 }}>{l.reason}</div>}
+                    {l.reason && <div style={{ fontSize: 12, color: 'var(--ink-2)', marginTop: 5, lineHeight: 1.45, ...clamp(3) }}>{l.reason}</div>}
                   </div>
                 ))}
               </div>
@@ -185,8 +217,4 @@ export default function MobileCalendar() {
   )
 }
 
-const navBtn: React.CSSProperties = {
-  width: 38, height: 38, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)',
-  fontSize: 20, color: 'var(--ink-2)', cursor: 'pointer', lineHeight: 1, flexShrink: 0,
-}
 const badge: React.CSSProperties = { borderRadius: 10, padding: '9px 12px', marginBottom: 8, fontSize: 12.5, fontWeight: 600 }

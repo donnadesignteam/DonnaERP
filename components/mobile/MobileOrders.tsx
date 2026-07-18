@@ -1,13 +1,14 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
-import { getPageCache } from '@/lib/pageCache'
+import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { formatItemLines, type RawItem } from '@/lib/itemFormat'
 import { effShipping } from '@/lib/shipping'
 import { ORDER_TABS, matchQuickTab, PROD_STATUS_COLOR, effectiveDueDate, daysRemaining, daysLabel, daysColor, type QuickTab } from '@/lib/orderTabs'
+import { useStickyState, useScrollRestore, usePullToRefresh, PullIndicator, UpdatedRow, CardSkeleton, pillBtn, searchInput, clamp } from './mobileUi'
 
 // หน้าออเดอร์บนมือถือ — ดูอย่างเดียว แก้ไม่ได้ (ตามที่ผู้ใช้สั่ง)
 // ‼️ เป็นคนละไฟล์กับหน้าเดสก์ท็อป (OrderWorkspace) โดยตั้งใจ — ของเดิมเป็นตาราง+จิ้มแก้ในช่อง ยัดลงมือถือไม่ไหว
@@ -39,21 +40,37 @@ export default function MobileOrders() {
   const [rows, setRows] = useState<Entry[]>(cached?.rows ?? [])
   const [loading, setLoading] = useState(!cached)
   const [error, setError] = useState('')
-  const [tab, setTab] = useState<QuickTab>('all')
-  const [search, setSearch] = useState('')
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null)
+  // แท็บ/คำค้น จำไว้ข้ามการเปลี่ยนหน้า — กดการ์ดเข้าโฟลเดอร์ลูกค้าแล้วกด back ต้องกลับมาที่เดิม
+  const [tab, setTab] = useStickyState<QuickTab>('orders:tab', 'all')
+  const [search, setSearch] = useStickyState('orders:q', '')
+  const tabStrip = useRef<HTMLDivElement>(null)
 
   const load = async () => {
     const { data, error: err } = await fetchAllRows<Entry>(() =>
       supabase.from('order_entries').select('*')
         .order('entry_date', { ascending: false, nullsFirst: false }).order('id', { ascending: true }))
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
-    else setError('')
+    else {
+      setError('')
+      // เก็บลง cache กลางด้วย (เดิมอ่านอย่างเดียว) → สลับหน้าไปมาไม่ต้องรอโหลดใหม่ทุกครั้ง
+      setPageCache('order_entries', { ...(getPageCache<{ rows: Entry[] }>('order_entries') ?? {}), rows: data })
+      setUpdatedAt(Date.now())
+    }
     setRows(data)
     setLoading(false)
   }
   // โหลดข้อมูลตอนเปิดหน้า (แนวเดียวกับหน้าอื่นทั้งเว็บ) — setState เกิดหลัง await ไม่ได้ทำให้ render ซ้อน
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load() }, [])
+
+  const { pull, refreshing, refresh } = usePullToRefresh(load)
+  useScrollRestore('orders', !loading)
+
+  // แท็บที่เลือกอยู่ต้องเลื่อนมาให้เห็น (มี 9 แท็บ ส่วนใหญ่ซ่อนอยู่นอกจอ)
+  useEffect(() => {
+    tabStrip.current?.querySelector('[data-active="1"]')?.scrollIntoView({ block: 'nearest', inline: 'center' })
+  }, [tab])
 
   const counts = useMemo(() => {
     const c: Record<string, number> = {}
@@ -95,24 +112,27 @@ export default function MobileOrders() {
           <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)' }}>ออเดอร์</h1>
         </div>
         <div style={{ padding: '0 14px 8px' }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ชื่อลูกค้า / เลขออเดอร์ / เบอร์"
-            style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 12px', fontSize: 15, outline: 'none', background: 'var(--surface)', color: 'var(--ink)', boxSizing: 'border-box' }} />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ชื่อลูกค้า / เลขออเดอร์ / เบอร์" style={searchInput} />
         </div>
-        <div style={{ display: 'flex', gap: 7, overflowX: 'auto', padding: '0 14px 10px', WebkitOverflowScrolling: 'touch' }}>
-          {ORDER_TABS.map(t => {
-            const active = tab === t.id
-            return (
-              <button key={t.id} onClick={() => setTab(t.id)}
-                style={{ flexShrink: 0, padding: '6px 13px', borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 13,
-                  border: active ? 'none' : '1px solid var(--border)', background: active ? 'var(--blue)' : 'var(--surface)',
-                  color: active ? '#fff' : 'var(--ink-3)', fontWeight: active ? 700 : 500 }}>
-                {t.label}
-                <span style={{ marginLeft: 5, fontSize: 11, opacity: 0.85 }}>{counts[t.id] ?? 0}</span>
-              </button>
-            )
-          })}
+        <UpdatedRow at={updatedAt} refreshing={refreshing} onRefresh={refresh} />
+        {/* เงาขอบขวาบอกว่ายังมีแท็บซ่อนอยู่ (มี 9 แท็บ เห็นพร้อมกันไม่หมด) */}
+        <div style={{ position: 'relative' }}>
+          <div ref={tabStrip} style={{ display: 'flex', gap: 7, overflowX: 'auto', padding: '0 14px 10px', WebkitOverflowScrolling: 'touch' }}>
+            {ORDER_TABS.map(t => {
+              const active = tab === t.id
+              return (
+                <button key={t.id} data-active={active ? '1' : '0'} onClick={() => setTab(t.id)} style={pillBtn(active)}>
+                  {t.label}
+                  <span style={{ fontSize: 11.5, opacity: 0.85 }}>{counts[t.id] ?? 0}</span>
+                </button>
+              )
+            })}
+          </div>
+          <div style={{ position: 'absolute', top: 0, right: 0, bottom: 10, width: 22, pointerEvents: 'none', background: 'linear-gradient(to right, transparent, var(--bg))' }} />
         </div>
       </div>
+
+      <PullIndicator pull={pull} refreshing={refreshing} />
 
       {error && (
         <div style={{ margin: '12px 14px', background: 'var(--red-bg)', border: '1px solid var(--red)', borderRadius: 10, padding: '10px 12px', color: 'var(--red)', fontSize: 13, display: 'flex', justifyContent: 'space-between', gap: 10 }}>
@@ -122,7 +142,7 @@ export default function MobileOrders() {
       )}
 
       {loading ? (
-        <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>กำลังโหลด…</div>
+        <CardSkeleton n={5} />
       ) : displayed.length === 0 ? (
         <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)', fontSize: 14 }}>
           {search ? 'ไม่เจอออเดอร์ที่ค้นหา' : 'ไม่มีออเดอร์ในหมวดนี้'}
@@ -140,19 +160,20 @@ export default function MobileOrders() {
             const folderHref = r.customer_name ? `/m/customers?name=${encodeURIComponent(r.customer_name)}` : null
             const CardTag = (folderHref ? Link : 'div') as React.ElementType
             return (
-              <CardTag key={r.id} {...(folderHref ? { href: folderHref } : {})}
-                style={{ display: 'block', textDecoration: 'none', color: 'inherit', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 13px', boxShadow: 'var(--shadow)' }}>
+              <CardTag key={r.id} {...(folderHref ? { href: folderHref, className: 'm-card-tap' } : {})}
+                style={{ display: 'block', textDecoration: 'none', color: 'inherit', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 13px', boxShadow: 'var(--shadow)', WebkitTapHighlightColor: 'transparent' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
                   <span style={{ display: 'flex', alignItems: 'baseline', gap: 5, minWidth: 0 }}>
                     <span style={{ fontSize: 15.5, fontWeight: 700, color: folderHref ? 'var(--blue)' : 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {r.customer_name || '—'}
+                      {r.customer_name || 'ไม่ระบุชื่อลูกค้า'}
                     </span>
                     {folderHref && <span style={{ fontSize: 11, color: 'var(--ink-4)', flexShrink: 0 }}>›</span>}
                   </span>
+                  {/* จัดส่งแล้ว = ปิดจ๊อบจริง (เขียวเข้ม) · งานเสร็จ = ผลิตเสร็จรอส่ง (เขียวอ่อน) — เดิมสีเดียวกันแยกไม่ออก */}
                   {shippedDone ? (
-                    <span style={{ fontSize: 12.5, fontWeight: 700, color: '#22c55e', flexShrink: 0 }}>งานเสร็จแล้ว</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--green)', flexShrink: 0 }}>✓ จัดส่งแล้ว</span>
                   ) : done ? (
-                    <span style={{ fontSize: 12.5, fontWeight: 700, color: '#22c55e', flexShrink: 0 }}>งานเสร็จ</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: '#65B36B', flexShrink: 0 }}>งานเสร็จ · รอส่ง</span>
                   ) : d !== null ? (
                     <span style={{ fontSize: 12.5, fontWeight: 700, color: daysColor(d), flexShrink: 0 }}>{daysLabel(d)}</span>
                   ) : (
@@ -166,20 +187,43 @@ export default function MobileOrders() {
 
                 {itemLines.length > 0 && (
                   <div style={{ margin: '9px 0 0', display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    {itemLines.map((line, i) => (
+                    {/* ออเดอร์ที่มีของเยอะๆ เคยยาวเต็มจอทั้งการ์ด — ตัดที่ 4 บรรทัด ที่เหลือดูในโฟลเดอร์ลูกค้า */}
+                    {itemLines.slice(0, 4).map((line, i) => (
                       <div key={i} style={{ fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.45, display: 'flex', gap: 6 }}>
                         <span style={{ color: 'var(--ink-4)', flexShrink: 0 }}>•</span>
-                        <span>{line}</span>
+                        <span style={clamp(2)}>{line}</span>
                       </div>
                     ))}
+                    {itemLines.length > 4 && (
+                      <div style={{ fontSize: 12, color: 'var(--ink-4)', paddingLeft: 12 }}>+ อีก {itemLines.length - 4} รายการ</div>
+                    )}
                   </div>
                 )}
 
                 {(r.is_installation && r.address) && (
-                  <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 7, lineHeight: 1.45 }}>📍 {r.address}</div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 7, lineHeight: 1.45, ...clamp(2) }}>📍 {r.address}</div>
                 )}
                 {r.notes && (
-                  <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.45 }}>หมายเหตุ: {r.notes}</div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.45, ...clamp(3) }}>หมายเหตุ: {r.notes}</div>
+                )}
+
+                {/* โทร / เปิดแผนที่ ได้จากการ์ดเลย (หน้าติดตั้งมีอยู่แล้ว หน้านี้เคยเป็นข้อความเปล่า)
+                    ‼️ ใช้ span + window.open ไม่ใช่ <a> — การ์ดทั้งใบเป็น <Link> อยู่แล้ว ซ้อน <a> ใน <a> ไม่ได้ */}
+                {(r.phone || r.address) && (
+                  <div style={{ display: 'flex', gap: 8, marginTop: 9, flexWrap: 'wrap' }}>
+                    {r.phone && (
+                      <span role="button" tabIndex={0} style={miniBtn}
+                        onClick={e => { e.preventDefault(); e.stopPropagation(); window.location.href = `tel:${r.phone}` }}>
+                        📞 {r.phone}
+                      </span>
+                    )}
+                    {r.address && (
+                      <span role="button" tabIndex={0} style={miniBtn}
+                        onClick={e => { e.preventDefault(); e.stopPropagation(); window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(r.address!)}`, '_blank', 'noopener') }}>
+                        📍 แผนที่
+                      </span>
+                    )}
+                  </div>
                 )}
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--border)' }}>
@@ -205,4 +249,10 @@ export default function MobileOrders() {
       )}
     </div>
   )
+}
+
+const miniBtn: React.CSSProperties = {
+  fontSize: 12.5, fontWeight: 600, color: 'var(--blue)', minHeight: 34, display: 'inline-flex', alignItems: 'center',
+  border: '1px solid var(--border)', borderRadius: 8, padding: '0 11px', background: 'var(--bg)',
+  cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
 }

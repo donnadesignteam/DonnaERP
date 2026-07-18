@@ -7,9 +7,12 @@ export const metadata: Metadata = {
 
 // หน้ามือถือแยก URL /m/* ต่างหากจากหน้าเดสก์ท็อป — หน้าเดสก์ท็อปเดิมไม่ถูกแตะเลย
 // viewport meta ใส่เฉพาะกลุ่มนี้ (root layout ไม่มี) → หน้า ERP เดิมยังทำงานเหมือนเดิมทุกอย่าง
+// ‼️ viewportFit: 'cover' จำเป็น — ถ้าไม่ใส่ env(safe-area-inset-*) จะคืน 0 เสมอ
+//    แถบเมนูล่างจะไปชนแถบ home indicator ของ iPhone และหัวเรื่องจะโดน notch บัง
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  viewportFit: 'cover',
   themeColor: '#C47E3A',
 }
 

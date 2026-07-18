@@ -5,9 +5,12 @@ import { usePathname } from 'next/navigation'
 
 // แถบเมนูล่างของหน้ามือถือ — มีแค่ 4 หมวดที่ผู้ใช้สั่งให้เห็น (ดูอย่างเดียว)
 // หมวดอื่นของ ERP (สต็อก/สั่งซื้อ/วิเคราะห์/พนักงาน/ตั้งค่า) ไม่มีหน้ามือถือ ตั้งใจไม่ใส่
-const NAV = [
+type NavItem = { href: string; label: string; icon: React.ReactNode; also?: string[] }
+
+const NAV: NavItem[] = [
   {
-    href: '/m/orders', label: 'ออเดอร์',
+    // โฟลเดอร์ลูกค้า (/m/customers) เข้ามาจากการ์ดออเดอร์/เคลม — ให้ไฮไลต์ปุ่มออเดอร์ไว้ ไม่งั้นแถบเมนูดับหมดไม่รู้ว่าอยู่ตรงไหน
+    href: '/m/orders', label: 'ออเดอร์', also: ['/m/customers'],
     icon: <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 3h6M7.5 3h9A1.5 1.5 0 0118 4.5v15a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 016 19.5v-15A1.5 1.5 0 017.5 3z" />,
   },
   {
@@ -40,12 +43,13 @@ export default function MobileNav() {
     }}>
       {NAV.map(item => {
         // /hub?pick=1 ไม่มีทางเป็นหน้าปัจจุบัน (อยู่คนละ layout) → ไม่ต้องไฮไลต์
-        const active = item.href.startsWith('/m/') && pathname.startsWith(item.href)
+        const active = item.href.startsWith('/m/')
+          && (pathname.startsWith(item.href) || (item.also ?? []).some(p => pathname.startsWith(p)))
         return (
           <Link key={item.href} href={item.href} style={{
             flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
             gap: 4, padding: '12px 2px 11px', textDecoration: 'none',
-            color: active ? 'var(--blue)' : 'var(--ink-4)',
+            color: active ? 'var(--blue)' : 'var(--ink-4)', WebkitTapHighlightColor: 'transparent',
           }}>
             <svg width="26" height="26" fill="none" stroke="currentColor" strokeWidth={active ? 2 : 1.6} viewBox="0 0 24 24">{item.icon}</svg>
             <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, whiteSpace: 'nowrap' }}>{item.label}</span>

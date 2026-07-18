@@ -1,10 +1,12 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
-import { getPageCache } from '@/lib/pageCache'
+import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { formatItemLines, type RawItem } from '@/lib/itemFormat'
+import { useStickyState, useScrollRestore, usePullToRefresh, PullIndicator, UpdatedRow, CardSkeleton, pillBtn, searchInput, clamp } from './mobileUi'
 
 // หน้างานเคลมบนมือถือ — ดูอย่างเดียว แก้ไม่ได้ (คนละไฟล์กับ ClaimsWorkspace ของเดสก์ท็อป)
 type Claim = {
@@ -46,8 +48,10 @@ export default function MobileClaims() {
   const [rows, setRows] = useState<Claim[]>(cached ?? [])
   const [loading, setLoading] = useState(!cached)
   const [error, setError] = useState('')
-  const [tab, setTab] = useState<string>('all')
-  const [search, setSearch] = useState('')
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null)
+  const [tab, setTab] = useStickyState<string>('claims:tab', 'all')
+  const [search, setSearch] = useStickyState('claims:q', '')
+  const tabStrip = useRef<HTMLDivElement>(null)
 
   const load = async () => {
     const { data, error: err } = await fetchAllRows<Claim>(() =>
@@ -56,12 +60,22 @@ export default function MobileClaims() {
         .order('created_at', { ascending: false })
         .order('id', { ascending: true }))
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
-    else setError('')
+    else {
+      setError('')
+      setPageCache('claims', data)   // เดิมอ่าน cache อย่างเดียว ไม่เคยเขียนกลับ
+      setUpdatedAt(Date.now())
+    }
     setRows(data)
     setLoading(false)
   }
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load() }, [])
+
+  const { pull, refreshing, refresh } = usePullToRefresh(load)
+  useScrollRestore('claims', !loading)
+  useEffect(() => {
+    tabStrip.current?.querySelector('[data-active="1"]')?.scrollIntoView({ block: 'nearest', inline: 'center' })
+  }, [tab])
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: rows.length }
@@ -80,10 +94,9 @@ export default function MobileClaims() {
     })
   }, [rows, tab, search])
 
-  const tabs: [string, string, string][] = [
-    ['all', 'ทั้งหมด', 'var(--blue)'],
-    ...WORKFLOW.map(w => [w.key, w.key, w.color] as [string, string, string]),
-  ]
+  // ‼️ แท็บที่เลือกใช้สีน้ำตาลของระบบทุกอัน ไม่ใช่สีสถานะ — เดิมแท็บ "แพ็คแล้ว" active เป็นสีชมพูแดง อ่านแล้วนึกว่าเป็นการเตือน
+  //    (สีสถานะยังอยู่ที่จุดกลมในการ์ดเหมือนเดิม)
+  const tabs: [string, string][] = [['all', 'ทั้งหมด'], ...WORKFLOW.map(w => [w.key, w.key] as [string, string])]
 
   return (
     <div>
@@ -92,24 +105,26 @@ export default function MobileClaims() {
           <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)' }}>งานเคลม</h1>
         </div>
         <div style={{ padding: '0 14px 8px' }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ลูกค้า / เลขออเดอร์ / สาเหตุ"
-            style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 12px', fontSize: 15, outline: 'none', background: 'var(--surface)', color: 'var(--ink)', boxSizing: 'border-box' }} />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ลูกค้า / เลขออเดอร์ / สาเหตุ" style={searchInput} />
         </div>
-        <div style={{ display: 'flex', gap: 7, overflowX: 'auto', padding: '0 14px 10px', WebkitOverflowScrolling: 'touch' }}>
-          {tabs.map(([key, label, color]) => {
-            const active = tab === key
-            return (
-              <button key={key} onClick={() => setTab(key)}
-                style={{ flexShrink: 0, padding: '6px 13px', borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 13,
-                  border: active ? 'none' : '1px solid var(--border)', background: active ? color : 'var(--surface)',
-                  color: active ? '#fff' : 'var(--ink-3)', fontWeight: active ? 700 : 500 }}>
-                {label}
-                <span style={{ marginLeft: 5, fontSize: 11, opacity: 0.85 }}>{counts[key] ?? 0}</span>
-              </button>
-            )
-          })}
+        <UpdatedRow at={updatedAt} refreshing={refreshing} onRefresh={refresh} />
+        <div style={{ position: 'relative' }}>
+          <div ref={tabStrip} style={{ display: 'flex', gap: 7, overflowX: 'auto', padding: '0 14px 10px', WebkitOverflowScrolling: 'touch' }}>
+            {tabs.map(([key, label]) => {
+              const active = tab === key
+              return (
+                <button key={key} data-active={active ? '1' : '0'} onClick={() => setTab(key)} style={pillBtn(active)}>
+                  {label}
+                  <span style={{ fontSize: 11.5, opacity: 0.85 }}>{counts[key] ?? 0}</span>
+                </button>
+              )
+            })}
+          </div>
+          <div style={{ position: 'absolute', top: 0, right: 0, bottom: 10, width: 22, pointerEvents: 'none', background: 'linear-gradient(to right, transparent, var(--bg))' }} />
         </div>
       </div>
+
+      <PullIndicator pull={pull} refreshing={refreshing} />
 
       {error && (
         <div style={{ margin: '12px 14px', background: 'var(--red-bg)', border: '1px solid var(--red)', borderRadius: 10, padding: '10px 12px', color: 'var(--red)', fontSize: 13, display: 'flex', justifyContent: 'space-between', gap: 10 }}>
@@ -119,7 +134,7 @@ export default function MobileClaims() {
       )}
 
       {loading ? (
-        <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>กำลังโหลด…</div>
+        <CardSkeleton n={5} />
       ) : displayed.length === 0 ? (
         <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)', fontSize: 14 }}>
           {search ? 'ไม่เจอเคสที่ค้นหา' : 'ไม่มีเคสในหมวดนี้'}
@@ -128,11 +143,19 @@ export default function MobileClaims() {
         <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
           {displayed.map(r => {
             const itemLines = formatItemLines(r.items)
+            // แตะการ์ด → โฟลเดอร์ลูกค้า เหมือนหน้าออเดอร์ (เดิมหน้าเคลมกดไม่ได้ทั้งที่มีชื่อลูกค้าพร้อมอยู่แล้ว)
+            const folderHref = r.customer_username ? `/m/customers?name=${encodeURIComponent(r.customer_username)}` : null
+            const CardTag = (folderHref ? Link : 'div') as React.ElementType
             return (
-              <div key={r.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 13px', boxShadow: 'var(--shadow)', opacity: r.closed_at ? 0.62 : 1 }}>
+              // ‼️ งานที่ปิดแล้วเดิมใช้ opacity 0.62 ทั้งใบ ตัวหนังสือสีเทาจางจนอ่านไม่ออก — เปลี่ยนเป็นป้าย "ปิดงานแล้ว" แทน
+              <CardTag key={r.id} {...(folderHref ? { href: folderHref, className: 'm-card-tap' } : {})}
+                style={{ display: 'block', textDecoration: 'none', color: 'inherit', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 13px', boxShadow: 'var(--shadow)', WebkitTapHighlightColor: 'transparent' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
-                  <span style={{ fontSize: 15.5, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {r.customer_username || '—'}
+                  <span style={{ display: 'flex', alignItems: 'baseline', gap: 5, minWidth: 0 }}>
+                    <span style={{ fontSize: 15.5, fontWeight: 700, color: folderHref ? 'var(--blue)' : 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {r.customer_username || 'ไม่ระบุชื่อลูกค้า'}
+                    </span>
+                    {folderHref && <span style={{ fontSize: 11, color: 'var(--ink-4)', flexShrink: 0 }}>›</span>}
                   </span>
                   <span style={{ fontSize: 11.5, color: 'var(--ink-4)', flexShrink: 0 }}>
                     {r.claim_date ? new Date(r.claim_date).toLocaleDateString('th-TH-u-ca-gregory', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
@@ -150,7 +173,7 @@ export default function MobileClaims() {
                   </div>
                 )}
 
-                {r.cause && <div style={{ fontSize: 12.5, color: 'var(--ink-2)', marginTop: 7, lineHeight: 1.45 }}>{r.cause}</div>}
+                {r.cause && <div style={{ fontSize: 12.5, color: 'var(--ink-2)', marginTop: 7, lineHeight: 1.45, ...clamp(3) }}>{r.cause}</div>}
 
                 {itemLines.length > 0 && (
                   <div style={{ margin: '8px 0 0', display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -165,22 +188,33 @@ export default function MobileClaims() {
 
                 {r.refund_amount != null && (
                   <div style={{ fontSize: 12.5, marginTop: 7, fontWeight: 600, color: r.money_direction === 'เก็บลูกค้า' ? '#16A34A' : 'var(--red)' }}>
+                    {/* บอกทิศทางเงินเป็นคำ ไม่ใช่แค่ +/− ตัวเล็กที่ต้องเดา */}
                     {r.money_direction === 'เก็บลูกค้า' ? '+' : '−'}{Number(r.refund_amount).toLocaleString('th-TH')} บาท
-                    {r.money_status && <span style={{ fontWeight: 400, color: 'var(--ink-4)', marginLeft: 6 }}>({r.money_status})</span>}
+                    <span style={{ fontWeight: 400, color: 'var(--ink-4)', marginLeft: 6 }}>
+                      {[r.money_direction || 'คืนลูกค้า', r.money_status].filter(Boolean).join(' · ')}
+                    </span>
                   </div>
                 )}
 
-                {r.notes && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.45 }}>หมายเหตุ: {r.notes}</div>}
+                {/* ที่อยู่ส่งกลับ — เดิมดึงมาแล้วไม่ได้แสดงผลเลย */}
+                {(r.ship_name || r.ship_address) && (
+                  <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 7, lineHeight: 1.45, ...clamp(2) }}>
+                    📦 {[r.ship_name, r.ship_address].filter(Boolean).join(' · ')}
+                  </div>
+                )}
+                {r.notes && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.45, ...clamp(3) }}>หมายเหตุ: {r.notes}</div>}
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--border)' }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                     <span style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS_COLOR(r.status), flexShrink: 0 }} />
                     <span style={{ fontSize: 12.5, fontWeight: 600, color: STATUS_COLOR(r.status) }}>{r.status || '—'}</span>
-                    {r.closed_at && <span style={{ fontSize: 11, color: '#16A34A', flexShrink: 0 }}>· ปิดงานแล้ว</span>}
+                    {r.closed_at && (
+                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, padding: '1px 7px', flexShrink: 0 }}>ปิดงานแล้ว</span>
+                    )}
                   </span>
                   {r.admin_name && <span style={{ fontSize: 11.5, color: 'var(--ink-4)', flexShrink: 0 }}>{r.admin_name}</span>}
                 </div>
-              </div>
+              </CardTag>
             )
           })}
           <div style={{ textAlign: 'center', fontSize: 12, color: 'var(--ink-4)', padding: '6px 0 2px' }}>
