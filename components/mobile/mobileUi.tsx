@@ -71,8 +71,8 @@ export function useSheetBack(open: boolean, onClose: () => void) {
 // ── ลากลงเพื่อรีเฟรช ──
 // เดิมทั้ง 5 หน้าโหลดครั้งเดียวตอนเปิด ข้อมูลค้างจนกว่าจะปิดแอปเปิดใหม่ ทั้งที่สถานะงานเปลี่ยนทั้งวัน
 // ‼️ ต้องลาก "ตั้งใจ" ถึงจะติด — เดิมปัดนิดเดียวก็รีเฟรชโดนบ่อยระหว่างเลื่อนดูรายการ
-export const PULL_DEADZONE = 40    // ลากช่วงแรกเท่านี้ไม่นับ (ปัดเบาๆ ตัวบ่งชี้ยังไม่โผล่ = ไม่กลายเป็นการรีเฟรช)
-export const PULL_THRESHOLD = 80   // เกินเท่านี้ (หลังหักคูณหน่วง) ถึงจะยิงโหลดใหม่ — รวมแล้วนิ้วต้องลากจริงราว 200px
+export const PULL_DEADZONE = 100   // ลากช่วงแรกเท่านี้ตัวบ่งชี้ยังไม่โผล่เลย — ปัดเบาๆ ระหว่างดูรายการจึงไม่มีอะไรเด้งขึ้นมากวน
+export const PULL_THRESHOLD = 60   // เกินเท่านี้ (หลังหักคูณหน่วง) ถึงจะยิงโหลดใหม่ — รวมแล้วนิ้วต้องลากจริงราว 210px
 
 export function usePullToRefresh(onRefresh: () => Promise<void> | void) {
   const [pull, setPull] = useState(0)
@@ -112,7 +112,7 @@ export function usePullToRefresh(onRefresh: () => Promise<void> | void) {
       if (dx > dy) { startY.current = null; set(0); return }
       e.preventDefault()          // ต้อง passive:false ถึงจะกัน bounce ของ iOS ได้ (ต้องกันตั้งแต่ต้นนิ้ว ไม่งั้น iOS ยึด gesture ไปแล้วสั่งทีหลังไม่ทัน)
       // ช่วง deadzone แรกยังไม่ขยับตัวบ่งชี้ — ปัดเบาๆ จึงไม่กลายเป็นการรีเฟรช
-      set(dy <= PULL_DEADZONE ? 0 : Math.min((dy - PULL_DEADZONE) * 0.5, 100))
+      set(dy <= PULL_DEADZONE ? 0 : Math.min((dy - PULL_DEADZONE) * 0.55, 90))
     }
     const onEnd = () => {
       if (startY.current === null) return
