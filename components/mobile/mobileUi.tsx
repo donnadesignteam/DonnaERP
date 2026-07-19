@@ -70,18 +70,22 @@ export function useSheetBack(open: boolean, onClose: () => void) {
 
 // ── ลากลงเพื่อรีเฟรช ──
 // เดิมทั้ง 5 หน้าโหลดครั้งเดียวตอนเปิด ข้อมูลค้างจนกว่าจะปิดแอปเปิดใหม่ ทั้งที่สถานะงานเปลี่ยนทั้งวัน
+// ‼️ ต้องลาก "ตั้งใจ" ถึงจะติด — เดิมปัดนิดเดียวก็รีเฟรชโดนบ่อยระหว่างเลื่อนดูรายการ
+export const PULL_DEADZONE = 40    // ลากช่วงแรกเท่านี้ไม่นับ (ปัดเบาๆ ตัวบ่งชี้ยังไม่โผล่ = ไม่กลายเป็นการรีเฟรช)
+export const PULL_THRESHOLD = 80   // เกินเท่านี้ (หลังหักคูณหน่วง) ถึงจะยิงโหลดใหม่ — รวมแล้วนิ้วต้องลากจริงราว 200px
+
 export function usePullToRefresh(onRefresh: () => Promise<void> | void) {
   const [pull, setPull] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
   const cb = useRef(onRefresh)
   useEffect(() => { cb.current = onRefresh })
   const startY = useRef<number | null>(null)
+  const startX = useRef<number | null>(null)
   const pullRef = useRef(0)
   const busy = useRef(false)
   const runRef = useRef<() => Promise<void>>(async () => {})
 
   useEffect(() => {
-    const THRESHOLD = 64        // ลากเกินเท่านี้ถึงจะยิงโหลดใหม่
     const set = (v: number) => { pullRef.current = v; setPull(v) }
 
     const run = async () => {
@@ -95,19 +99,26 @@ export function usePullToRefresh(onRefresh: () => Promise<void> | void) {
 
     const onStart = (e: TouchEvent) => {
       // ลากได้เฉพาะตอนอยู่บนสุดของหน้า ไม่งั้นจะไปแย่งการเลื่อนปกติ
-      startY.current = (window.scrollY <= 0 && !busy.current) ? e.touches[0].clientY : null
+      const ok = window.scrollY <= 0 && !busy.current
+      startY.current = ok ? e.touches[0].clientY : null
+      startX.current = ok ? e.touches[0].clientX : null
     }
     const onMove = (e: TouchEvent) => {
       if (startY.current === null) return
       const dy = e.touches[0].clientY - startY.current
+      const dx = Math.abs(e.touches[0].clientX - (startX.current ?? 0))
       if (dy <= 0 || window.scrollY > 0) { startY.current = null; set(0); return }
-      e.preventDefault()          // ต้อง passive:false ถึงจะกัน bounce ของ iOS ได้
-      set(Math.min(dy * 0.45, 88))
+      // ปัดเฉียงไปข้าง (เช่นสลับแท็บ) ไม่นับเป็นการลากลง
+      if (dx > dy) { startY.current = null; set(0); return }
+      e.preventDefault()          // ต้อง passive:false ถึงจะกัน bounce ของ iOS ได้ (ต้องกันตั้งแต่ต้นนิ้ว ไม่งั้น iOS ยึด gesture ไปแล้วสั่งทีหลังไม่ทัน)
+      // ช่วง deadzone แรกยังไม่ขยับตัวบ่งชี้ — ปัดเบาๆ จึงไม่กลายเป็นการรีเฟรช
+      set(dy <= PULL_DEADZONE ? 0 : Math.min((dy - PULL_DEADZONE) * 0.5, 100))
     }
     const onEnd = () => {
       if (startY.current === null) return
       startY.current = null
-      if (pullRef.current >= THRESHOLD) void run()
+      startX.current = null
+      if (pullRef.current >= PULL_THRESHOLD) void run()
       else set(0)
     }
 
@@ -128,7 +139,7 @@ export function usePullToRefresh(onRefresh: () => Promise<void> | void) {
 
 export function PullIndicator({ pull, refreshing }: { pull: number; refreshing: boolean }) {
   if (!pull && !refreshing) return null
-  const ready = pull >= 64
+  const ready = pull >= PULL_THRESHOLD
   return (
     <div style={{
       position: 'fixed', top: `calc(env(safe-area-inset-top) + ${refreshing ? 10 : Math.max(pull - 26, 0)}px)`,
