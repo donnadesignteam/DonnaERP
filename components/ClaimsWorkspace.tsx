@@ -11,6 +11,7 @@ import { itemBlockLines } from '@/lib/itemFormat'
 import { railLink } from '@/lib/rail'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { fetchEmployeeOptions } from '@/lib/staffDb'
+import { useStableView } from '@/lib/useStableView'
 
 type Item = {
   type: string; floors: number | null; rail_head: string; fabric_type: string
@@ -108,6 +109,8 @@ export default function ClaimsWorkspace() {
   // เปิดหน้าซ้ำ → โชว์ข้อมูลรอบก่อนทันที แล้ว load() ดึงของใหม่เบื้องหลัง (stale-while-revalidate)
   const cached = getPageCache<Claim[]>('claims')
   const [rows, setRows] = useState<Claim[]>(cached ?? [])
+  // แถวไม่เด้งออกจากแท็บตอนเปลี่ยนสถานะ/ติ๊กจัดส่ง — กรองด้วย stable() แสดงผลด้วย live() (ดู lib/useStableView.ts)
+  const { snapshot, stable, live } = useStableView<Claim>(rows)
   const [loading, setLoading] = useState(!cached)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
@@ -139,6 +142,7 @@ export default function ClaimsWorkspace() {
     const claims = data
     setPageCache('claims', claims)
     setRows(claims)
+    snapshot(claims)   // ตั้งจุดอ้างอิงใหม่ → เคลมที่เปลี่ยนสถานะค้างไว้ ย้ายเข้าแท็บใหม่ตอนนี้
     setLoading(false)
   }
   useEffect(() => { load() }, [])
@@ -444,16 +448,18 @@ ${body}
     setShipModal({ id: r.id, parcels: [...existing, { no: '', carrier: '', manual: false }] })
   }
 
-  const counts: Record<string, number> = { all: rows.length }
-  WORKFLOW.forEach(w => { counts[w.key] = rows.filter(r => r.status === w.key).length })
+  // นับ/กรองบนค่า "ตอนโหลดหน้า" (stable) แล้วคืนค่าสด (live) ก่อนวาด — แถวจึงค้างในแท็บเดิมให้ตรวจทานได้
+  const stableRows = rows.map(stable)
+  const counts: Record<string, number> = { all: stableRows.length }
+  WORKFLOW.forEach(w => { counts[w.key] = stableRows.filter(r => r.status === w.key).length })
 
-  const displayed = rows.filter(r => {
+  const displayed = stableRows.filter(r => {
     const q = search.toLowerCase()
     const matchSearch = !q || (r.customer_username ?? '').toLowerCase().includes(q) ||
       (r.original_order_number ?? '').toLowerCase().includes(q) || (r.cause ?? '').toLowerCase().includes(q)
     const matchTab = tab === 'all' || r.status === tab
     return matchSearch && matchTab
-  })
+  }).map(live)
 
   // ── inline-edit ในตาราง (กดที่ช่องแล้วแก้ได้เลย เหมือนหมวดออเดอร์) ──
   const isEditing = (id: string, f: string) => editCell?.id === id && editCell.field === f

@@ -7,6 +7,7 @@ import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { recordAction } from '@/lib/history'
 import { tUpdate, prevOf } from '@/lib/trackedDb'
+import { useStableView } from '@/lib/useStableView'
 
 type PO = {
   id: string
@@ -34,6 +35,8 @@ export default function PurchaseOrdersPage() {
   // เปิดหน้าซ้ำ → โชว์ข้อมูลรอบก่อนทันที แล้ว load() ดึงของใหม่เบื้องหลัง (stale-while-revalidate)
   const cached = getPageCache<PO[]>('purchase_orders')
   const [rows, setRows] = useState<PO[]>(cached ?? [])
+  // แถวไม่เด้งออกจากแท็บสถานะทันที — กรองด้วย stable() แสดงผลด้วย live() (ดู lib/useStableView.ts)
+  const { snapshot, stable, live } = useStableView<PO>(rows)
   const [loading, setLoading] = useState(!cached)
   const [modal, setModal] = useState<{ mode: 'add' | 'edit'; data: Partial<PO> } | null>(null)
   const [saving, setSaving] = useState(false)
@@ -52,6 +55,7 @@ export default function PurchaseOrdersPage() {
     const pos = data
     setPageCache('purchase_orders', pos)
     setRows(pos)
+    snapshot(pos)   // ตั้งจุดอ้างอิงใหม่ → แถวที่เปลี่ยนสถานะค้างไว้ ย้ายเข้าแท็บใหม่ตอนนี้
     setLoading(false)
   }
 
@@ -127,8 +131,10 @@ export default function PurchaseOrdersPage() {
 
   const updateStatus = async (id: string, status: string) => {
     const old = rows.find(r => r.id === id)
-    await tUpdate('purchase_orders', id, { status, updated_at: new Date().toISOString() }, { status: old?.status ?? null }, `แก้สถานะสั่งซื้อ ${old?.customer_name || old?.supplier || ''}`, load)
-    load()
+    const now = new Date().toISOString()
+    await tUpdate('purchase_orders', id, { status, updated_at: now }, { status: old?.status ?? null }, `แก้สถานะสั่งซื้อ ${old?.customer_name || old?.supplier || ''}`, load)
+    // อัปเดตแค่ state (ไม่ load ใหม่) — แถวจึงค้างในแท็บเดิมให้ตรวจทาน แล้วย้ายตอนรีเฟรช/เข้าหน้าใหม่
+    setRows(prev => prev.map(r => r.id === id ? { ...r, status, updated_at: now } : r))
   }
 
   const set = (k: string, v: string) => setModal(m => m ? { ...m, data: { ...m.data, [k]: v } } : null)
@@ -155,12 +161,14 @@ export default function PurchaseOrdersPage() {
     }
   }
 
-  const byStatus = filter === 'all' ? rows : rows.filter(r => r.status === filter)
+  // กรองบนค่า "ตอนโหลดหน้า" (stable) แล้วคืนค่าสด (live) ก่อนวาด
+  const stableRows = rows.map(stable)
+  const byStatus = filter === 'all' ? stableRows : stableRows.filter(r => r.status === filter)
   const q = search.trim().toLowerCase()
-  const displayed = !q ? byStatus : byStatus.filter(r =>
+  const displayed = (!q ? byStatus : byStatus.filter(r =>
     [r.customer_name, r.order_number, r.items, r.supplier, r.notes, r.status]
       .some(v => (v ?? '').toLowerCase().includes(q))
-  )
+  )).map(live)
 
   return (
     <div>

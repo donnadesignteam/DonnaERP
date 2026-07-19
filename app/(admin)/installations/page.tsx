@@ -10,6 +10,7 @@ import { formatItemLines, autoTapeHooks, type RawItem } from '@/lib/itemFormat'
 import { syncOutsourcePO } from '@/lib/outsourceSync'
 import { recordAction } from '@/lib/history'
 import { prevOf } from '@/lib/trackedDb'
+import { useStableView } from '@/lib/useStableView'
 
 type Installation = {
   id: string
@@ -148,6 +149,8 @@ export default function InstallationsPage() {
   // เปิดหน้าซ้ำ → โชว์ข้อมูลรอบก่อนทันที แล้ว load() ดึงของใหม่เบื้องหลัง (stale-while-revalidate)
   const cached = getPageCache<Installation[]>('installations')
   const [installs, setInstalls] = useState<Installation[]>(cached ?? [])
+  // งานไม่หายจากปฏิทิน/รายการทันทีตอนเปลี่ยนสถานะ — กรองด้วย stable() แสดงผลด้วย live() (ดู lib/useStableView.ts)
+  const { snapshot, stable, live } = useStableView<Installation>(installs)
   const [loading, setLoading] = useState(!cached)
   const [year, setYear] = useState(new Date().getFullYear())
   const [month, setMonth] = useState(new Date().getMonth())
@@ -201,6 +204,7 @@ export default function InstallationsPage() {
     }
     setPageCache('installations', rows)
     setInstalls(rows)
+    snapshot(rows)   // ตั้งจุดอ้างอิงใหม่ → งานที่เพิ่งเปลี่ยนสถานะค้างไว้ ออกจากปฏิทิน/รายการตอนนี้
     setLoading(false)
     // ดึงรายการสินค้าจากออเดอร์ต้นทางมาโชว์ในคอลัมน์ "รายการ"
     const orderIds = rows.map(r => r.source_order_id).filter((v): v is string => !!v)
@@ -422,19 +426,21 @@ export default function InstallationsPage() {
   const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y - 1) } else setMonth(m => m - 1) }
   const nextMonth = () => { if (month === 11) { setMonth(0); setYear(y => y + 1) } else setMonth(m => m + 1) }
 
-  const byMonth = listFilter === 'all' ? installs : installs.filter(ins => {
+  // กรองบนค่า "ตอนโหลดหน้า" (stable) แล้วคืนค่าสด (live) ก่อนวาด
+  const stableInstalls = installs.map(stable)
+  const byMonth = listFilter === 'all' ? stableInstalls : stableInstalls.filter(ins => {
     const d = new Date(ins.appointment_datetime)
     return d.getMonth() === Number(listFilter.split('-')[1]) - 1 && d.getFullYear() === Number(listFilter.split('-')[0])
   })
   const q = search.trim().toLowerCase()
-  const displayed = !q ? byMonth : byMonth.filter(ins =>
+  const displayed = (!q ? byMonth : byMonth.filter(ins =>
     [ins.serial_no, ins.customer_real_name, ins.customer_id, ins.platform, ins.province, ins.install_zone, ins.phone, ins.installation_status, ins.notes]
       .some(v => (v ?? '').toLowerCase().includes(q))
-  )
+  )).map(live)
 
   // ปฏิทินไม่แสดงงานที่ติดตั้งเสร็จแล้ว + filter ตามโซนที่เลือก
-  const calendarInstalls = installs.filter(ins =>
-    ins.installation_status !== 'ติดตั้งเสร็จ' && (!zoneFilter || ins.install_zone === zoneFilter))
+  const calendarInstalls = stableInstalls.filter(ins =>
+    ins.installation_status !== 'ติดตั้งเสร็จ' && (!zoneFilter || ins.install_zone === zoneFilter)).map(live)
 
   const sel = (label: string, key: string, options: string[]) => (
     <div style={{ marginBottom: 12 }}>

@@ -7,6 +7,7 @@ import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { effShipping } from '@/lib/shipping'
 import { syncWorkStatus } from '@/lib/workStatusSync'
+import { useStableView } from '@/lib/useStableView'
 
 type Order = {
   id: string
@@ -151,7 +152,7 @@ function OrderTable({ orders, today, onShip }: { orders: Order[]; today: string;
               <td style={{ padding: '10px 14px', color: 'var(--ink-3)' }}>{new Date(o.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' })}</td>
               {onShip && (
                 <td style={{ padding: '10px 14px', textAlign: 'center' }}>
-                  <input type="checkbox" onChange={e => { if (e.target.checked) onShip(o.id) }}
+                  <input type="checkbox" checked={o.order_status === 'จัดส่งแล้ว'} onChange={e => { if (e.target.checked) onShip(o.id) }}
                     style={{ cursor: 'pointer', width: 16, height: 16, accentColor: '#22c55e' }} />
                 </td>
               )}
@@ -167,6 +168,8 @@ export default function DashboardPage() {
   // เปิดหน้าซ้ำ → โชว์ข้อมูลรอบก่อนทันที แล้วดึงของใหม่เบื้องหลัง (stale-while-revalidate)
   const cached = getPageCache<Order[]>('dashboard:order_entries')
   const [all, setAll] = useState<Order[]>(cached ?? [])
+  // แถวไม่เด้งหนีตอนติ๊กจัดส่ง — กรอง/เรียงด้วย stable() แสดงผลด้วย live() (ดู lib/useStableView.ts)
+  const { snapshot, stable, live } = useStableView<Order>(all)
   const [modal, setModal] = useState<ModalData>(null)
   const [loading, setLoading] = useState(!cached)
   const [error, setError] = useState('')
@@ -219,6 +222,7 @@ export default function DashboardPage() {
     if (err) { setError(err.message || 'โหลดข้อมูลไม่สำเร็จ'); setLoading(false); return }
     setPageCache('dashboard:order_entries', rows)
     setAll(rows)
+    snapshot(rows)   // ตั้งจุดอ้างอิงใหม่ → แถวที่ติ๊กจัดส่งค้างไว้ หายออกจากรายการตอนนี้
     setLoading(false)
   }
 
@@ -247,7 +251,9 @@ export default function DashboardPage() {
   const courierOptions = ['งานติดตั้ง', ...new Set(all.map(r => r.courier).filter(Boolean))] as string[]
 
   // รายการออเดอร์ใน dashboard = งานที่ยังไม่จบ (จัดส่งแล้ว/ยกเลิก ไปดูที่หน้าออเดอร์แทน)
-  const ordersListBase = [...all].reverse().filter(o => o.order_status !== 'จัดส่งแล้ว' && o.order_status !== 'ยกเลิก')
+  // กรอง/เรียงบนค่า "ตอนโหลดหน้า" (stable) แล้วค่อยคืนค่าสด (live) ก่อนวาด — แถวจึงไม่หายทันทีที่ติ๊ก
+  const stableAll = all.map(stable)
+  const ordersListBase = [...stableAll].reverse().filter(o => o.order_status !== 'จัดส่งแล้ว' && o.order_status !== 'ยกเลิก')
   let ordersList = ordersListBase as Order[]
   if (deadlineFrom || deadlineTo) {
     ordersList = ordersList.filter(o => {
@@ -273,10 +279,11 @@ export default function DashboardPage() {
       return daysSort === 'asc' ? da - db : db - da
     })
   }
-  const todayDue = all.filter(o => effectiveISODate(o) === today)
-  const overdue = all.filter(o => { const iso = effectiveISODate(o); return iso && iso < today && !DONE_STATUSES.includes(o.order_status) })
+  ordersList = ordersList.map(live)
+  const todayDue = stableAll.filter(o => effectiveISODate(o) === today).map(live)
+  const overdue = stableAll.filter(o => { const iso = effectiveISODate(o); return iso && iso < today && !DONE_STATUSES.includes(o.order_status) }).map(live)
   // งานเสร็จ (is_urgent) ที่ยังไม่ได้จัดส่ง → รอติ๊กจัดส่งใน popup
-  const toShip = all.filter(o => o.is_urgent && o.order_status !== 'จัดส่งแล้ว')
+  const toShip = stableAll.filter(o => o.is_urgent && o.order_status !== 'จัดส่งแล้ว').map(live)
 
   // ติ๊กจัดส่งจาก popup: อัปเดตเหมือนหน้าออเดอร์ (สถานะ+shipped_at+sync work_status+ประวัติ)
   const markShipped = async (id: string) => {
@@ -298,7 +305,7 @@ export default function DashboardPage() {
       setPageCache('dashboard:order_entries', next)
       return next
     })
-    setModal(m => m ? { ...m, orders: m.orders.filter(o => o.id !== id) } : m)
+    // ‼️ ไม่ตัดแถวออกจาก popup ทันที — ให้ค้างไว้ตรวจทานได้ แถวจะหายตอนปิด popup แล้วเปิดใหม่/รีเฟรช
   }
 
   const statCounts = [todayDue.length, toShip.length, overdue.length]
@@ -700,7 +707,8 @@ export default function DashboardPage() {
               </div>
             </div>
             <div style={{ overflow: 'auto', flex: 1 }}>
-              <OrderTable orders={modal.orders} today={today} onShip={modal.showShipToggle ? markShipped : undefined} />
+              {/* รายชื่อในกล่องค้างไว้ตามตอนเปิด (ไม่หายเมื่อติ๊ก) แต่ข้อมูลแต่ละแถวดึงค่าสด */}
+              <OrderTable orders={modal.orders.map(live)} today={today} onShip={modal.showShipToggle ? markShipped : undefined} />
             </div>
           </div>
         </div>

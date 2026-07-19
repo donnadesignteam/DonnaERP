@@ -6,6 +6,7 @@ import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { tInsert, tUpdate, tDelete, prevOf } from '@/lib/trackedDb'
 import { FABRIC_LOOKUP } from '@/lib/fabrics'
+import { useStableView } from '@/lib/useStableView'
 
 
 const SHOP_LOOKUP: Record<string, { fabric_code: string; color_name: string; fabric_width: number; fabric_type: string; shop_name: string }> =
@@ -82,6 +83,8 @@ export default function StockPage() {
   // เปิดหน้าซ้ำ → โชว์ข้อมูลรอบก่อนทันที แล้ว load() ดึงของใหม่เบื้องหลัง (stale-while-revalidate)
   const cached = getPageCache<StockItem[]>('stock')
   const [items, setItems] = useState<StockItem[]>(cached ?? [])
+  // แถวไม่เด้งออกจากตัวกรองตอนติ๊กรอของ/บันทึกของเข้า — กรองด้วย stable() แสดงผลด้วย live() (ดู lib/useStableView.ts)
+  const { snapshot, stable, live } = useStableView<StockItem>(items)
   const [loading, setLoading] = useState(!cached)
   const [modal, setModal] = useState<{ mode: 'add' | 'edit'; data: Partial<StockItem> } | null>(null)
   const [saving, setSaving] = useState(false)
@@ -108,6 +111,7 @@ export default function StockPage() {
     const rows = (data ?? []) as StockItem[]
     setPageCache('stock', rows)
     setItems(rows)
+    snapshot(rows)   // ตั้งจุดอ้างอิงใหม่ → แถวที่ของเข้าแล้วค้างไว้ หายออกจาก "รอของเข้า" ตอนนี้
     setLoading(false)
   }
 
@@ -240,7 +244,8 @@ export default function StockPage() {
   const typeOptions = [...new Set(items.map(i => i.fabric_type).filter(Boolean))]
   const STATUS_OPTIONS = ['ปกติ', 'ของเหลือน้อย', 'ควรสั่ง', 'ของหมด']
 
-  let filtered = items.filter(i =>
+  // กรอง/เรียงบนค่า "ตอนโหลดหน้า" (stable) แล้วคืนค่าสด (live) ก่อนวาด
+  let filtered = items.map(stable).filter(i =>
     i.fabric_code?.toLowerCase().includes(search.toLowerCase()) ||
     i.color_name?.toLowerCase().includes(search.toLowerCase()) ||
     i.shop_code?.toLowerCase().includes(search.toLowerCase()) ||
@@ -256,6 +261,7 @@ export default function StockPage() {
     const tb = b.updated_at ? new Date(b.updated_at).getTime() : 0
     return updatedSort === 'desc' ? tb - ta : ta - tb
   })
+  filtered = filtered.map(live)
 
   const set = (k: string, v: string | number | null) =>
     setModal(m => m ? { ...m, data: { ...m.data, [k]: v } } : null)

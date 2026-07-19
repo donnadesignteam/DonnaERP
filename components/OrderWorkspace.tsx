@@ -16,6 +16,7 @@ import { syncOutsourcePO } from '@/lib/outsourceSync'
 import { syncWorkStatus as syncWorkStatusExact } from '@/lib/workStatusSync'
 import { recordAction } from '@/lib/history'
 import { prevOf } from '@/lib/trackedDb'
+import { useStableView } from '@/lib/useStableView'
 import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
 
@@ -303,6 +304,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   // เปิดหน้าซ้ำ → โชว์ข้อมูลรอบก่อนทันที แล้ว load() ดึงของใหม่เบื้องหลัง (stale-while-revalidate)
   const cached = getPageCache<{ rows: Entry[]; sortOrder: string[] }>('order_entries')
   const [rows, setRows] = useState<Entry[]>(cached?.rows ?? [])
+  // แถวไม่เด้งหนีตอนติ๊ก/เปลี่ยนสถานะ — กรอง+เรียงด้วย stable() แต่แสดงผลด้วย live() (ดู lib/useStableView.ts)
+  const { snapshot, stable, live } = useStableView<Entry>(rows)
   const [loading, setLoading] = useState(!cached)
   const [modal, setModal] = useState<{ mode: 'add' | 'edit'; data: Partial<Entry> } | null>(null)
   const [saving, setSaving] = useState(false)
@@ -442,6 +445,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const order = computeSortOrder(entries, daysSort)
     setPageCache('order_entries', { rows: entries, sortOrder: order })
     setRows(entries)
+    snapshot(entries)   // ตั้งจุดอ้างอิงใหม่ → แถวที่ค้างรอย้าย (ติ๊กจัดส่ง/งานเสร็จ) ไปเข้าที่ตอนนี้
     setSortOrder(order)
     setLoading(false)
   }
@@ -1313,9 +1317,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     return new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]))
   }
 
-  const scopedRows = rows.filter(r => scope === 'claims' ? isClaimRow(r.platform) : !isClaimRow(r.platform))
+  // ตั้งแต่บรรทัดนี้ถึงจบการเรียงลำดับ ทุกอย่างทำงานบนค่า "ตอนโหลดหน้า" (stable) แถวจึงไม่ขยับตอนแก้
+  const scopedRows = rows.map(stable).filter(r => scope === 'claims' ? isClaimRow(r.platform) : !isClaimRow(r.platform))
 
-  const displayed = scopedRows.filter(r => {
+  const displayedFrozen = scopedRows.filter(r => {
     const matchSearch = (r.customer_name ?? '').toLowerCase().includes(search.toLowerCase()) ||
       (r.order_number ?? '').toLowerCase().includes(search.toLowerCase())
     const matchStatus = statusFilters.length === 0 || statusFilters.includes(r.order_status ?? '')
@@ -1340,18 +1345,21 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   })
 
   if (updatedSort) {
-    displayed.sort((a, b) => {
+    displayedFrozen.sort((a, b) => {
       const da = a.updated_at ? new Date(a.updated_at).getTime() : 0
       const db = b.updated_at ? new Date(b.updated_at).getTime() : 0
       return updatedSort === 'desc' ? db - da : da - db
     })
   } else if (daysSort && sortOrder.length > 0) {
     const orderMap = new Map(sortOrder.map((id, i) => [id, i]))
-    displayed.sort((a, b) => (orderMap.get(a.id) ?? 999999) - (orderMap.get(b.id) ?? 999999))
+    displayedFrozen.sort((a, b) => (orderMap.get(a.id) ?? 999999) - (orderMap.get(b.id) ?? 999999))
   }
 
+  // คืนค่าสดก่อนเอาไปวาดบนจอ — ลำดับ/สมาชิกได้จาก stable แล้ว แต่ข้อมูลที่โชว์ต้องเป็นของล่าสุด
+  const displayed = displayedFrozen.map(live)
+
   const displayedOut = (() => {
-    let rs = displayed
+    let rs = displayedFrozen
     if (outPlatformFilters.length) rs = rs.filter(r => outPlatformFilters.includes(r.platform ?? ''))
     if (outPaymentFilters.length) rs = rs.filter(r => outPaymentFilters.includes(r.payment_status || 'ยังไม่ชำระ'))
     if (outAssignedFilters.length) rs = rs.filter(r => outAssignedFilters.includes(r.order_assigned || 'รออัพเดท'))
@@ -1380,11 +1388,11 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
         return outDaysSort === 'asc' ? da - db : db - da
       })
     }
-    return rs
+    return rs.map(live)
   })()
 
   const displayedAll = (() => {
-    let rs = displayed
+    let rs = displayedFrozen
     if (allPlatformFilters.length) rs = rs.filter(r => allPlatformFilters.includes(r.platform ?? ''))
     if (allCourierFilters.length) rs = rs.filter(r => r.is_installation ? allCourierFilters.includes('งานติดตั้ง') : allCourierFilters.includes(r.courier ?? ''))
     if (allStatusFilters.length) rs = rs.filter(r => allStatusFilters.includes(r.order_status ?? ''))
@@ -1421,7 +1429,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
         return allDaysSort === 'asc' ? da - db : db - da
       })
     }
-    return rs
+    return rs.map(live)
   })()
 
   const activeDisplayed = (quickFilter === 'all' || quickFilter === 'claim' || quickFilter === 'shipped') ? displayedAll
@@ -1640,7 +1648,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   }
 
   function getPrintRows(maxDays: number) {
-    return scopedRows.filter(r => {
+    // ปริ้นต้องดูค่าสด ไม่ใช่ค่าตอนโหลดหน้า — ติ๊กงานเสร็จแล้วต้องไม่ติดมาในใบปริ้น
+    return scopedRows.map(live).filter(r => {
       if (r.is_urgent) return false
       const es = effShipping(r)
       const d = es ? daysRemaining(es) : null
