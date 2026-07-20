@@ -9,6 +9,7 @@ import { formatItemLines, type RawItem } from '@/lib/itemFormat'
 import { effShipping } from '@/lib/shipping'
 import { ORDER_TABS, matchQuickTab, PROD_STATUS_COLOR, effectiveDueDate, daysRemaining, daysLabel, daysColor, type QuickTab } from '@/lib/orderTabs'
 import { useStickyState, useScrollRestore, usePullToRefresh, PullIndicator, UpdatedRow, CardSkeleton, pillBtn, searchInput, clamp } from './mobileUi'
+import ScanFolderButton from './ScanFolderButton'
 
 // หน้าออเดอร์บนมือถือ — ดูอย่างเดียว แก้ไม่ได้ (ตามที่ผู้ใช้สั่ง)
 // ‼️ เป็นคนละไฟล์กับหน้าเดสก์ท็อป (OrderWorkspace) โดยตั้งใจ — ของเดิมเป็นตาราง+จิ้มแก้ในช่อง ยัดลงมือถือไม่ไหว
@@ -109,7 +110,12 @@ export default function MobileOrders() {
       {/* ค้นหา + แท็บ ติดบนสุดตอนเลื่อน — ไม่มีชื่อหน้า (ผู้ใช้สั่งเอาออก แถบเมนูล่างบอกอยู่แล้วว่าอยู่หน้าไหน) */}
       <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'var(--bg)', paddingTop: 'calc(env(safe-area-inset-top) + 10px)', borderBottom: '1px solid var(--border)' }}>
         <div style={{ padding: '0 14px 8px' }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ชื่อลูกค้า / เลขออเดอร์ / เบอร์" style={searchInput} />
+          {/* ‼️ ต้องมี div ครอบชั้นนี้ (position: relative) — ปุ่ม QR วางทับมุมขวาของช่องค้นหา ไม่ใช่มุมขวาของแถบทั้งแถบ
+              paddingRight ในช่องค้นหาเผื่อที่ให้ปุ่ม ไม่งั้นคำค้นยาวๆ ลอดใต้ปุ่ม */}
+          <div style={{ position: 'relative' }}>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ชื่อลูกค้า / เลขออเดอร์ / เบอร์" style={{ ...searchInput, paddingRight: 44 }} />
+            <ScanFolderButton />
+          </div>
         </div>
         <UpdatedRow at={updatedAt} refreshing={refreshing} onRefresh={refresh} />
         {/* เงาขอบขวาบอกว่ายังมีแท็บซ่อนอยู่ (มี 9 แท็บ เห็นพร้อมกันไม่หมด) */}
