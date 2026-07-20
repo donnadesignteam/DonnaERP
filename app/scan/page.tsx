@@ -19,7 +19,7 @@ const SPECIAL_STAGES: { key: string; label: string; status: string; special: Spe
   { key: 'shipped', label: 'จัดส่งแล้ว', status: 'จัดส่งแล้ว', special: 'shipped' },
 ]
 const resolveStage = (key: string): any => stageByKey(key) || SPECIAL_STAGES.find(s => s.key === key)
-type Phase = 'scanning' | 'working' | 'done' | 'already' | 'noorder' | 'error' | 'barcode' | 'undone'
+type Phase = 'scanning' | 'working' | 'done' | 'already' | 'noorder' | 'error' | 'barcode' | 'undone' | 'joined'
 
 // กรอบสแกน: QR = สี่เหลี่ยมจัตุรัส / บาร์โค้ด 1D บนใบปะหน้า = แนวนอนกว้าง
 const QR_BOX = { width: 250, height: 250 }
@@ -88,10 +88,15 @@ function ScanContent() {
   const [employees, setEmployees] = useState<typeof EMPLOYEES>(EMPLOYEES)
   const [undoing, setUndoing] = useState(false)
 
+  // ช่วยกันทำขั้นเดียวกันหลายคน — สแกนซ้ำแล้วถามว่าจะลงชื่อเพิ่มไหม (sql/scan_helpers.sql)
+  const [joinInfo, setJoinInfo] = useState<{ stage: string; people: string[]; mine: boolean } | null>(null)
+  const [joining, setJoining] = useState(false)
+
   const scannerRef = useRef<any>(null)
   const resumeTimerRef = useRef<any>(null)  // timer auto-กลับไปสแกนต่อ (undo ต้องยกเลิกก่อน ไม่งั้นเด้งทับหน้า "ยกเลิกแล้ว")
   const busyRef = useRef(false)
   const startedRef = useRef(false)
+  const askJoinRef = useRef(false)  // กำลังถาม "ลงชื่อช่วยไหม" — ห้าม timer เด้งกลับไปสแกนต่อทับคำถาม
 
   // โหมดสแกนบาร์โค้ดเลขพัสดุ (ต่อจากสแกนจัดส่งแล้ว) — ใช้ ref คู่ state เพราะ callback ของกล้องเป็น closure เก่า
   const modeRef = useRef<'order' | 'barcode'>('order')
@@ -165,7 +170,7 @@ function ScanContent() {
     }
     // แผนกที่อัพโหลดรูปได้ → ค้างหน้าผลไว้ให้อัพรูปก่อน กด "สแกนต่อ" เอง
     // แผนกที่ไม่มีรูป → ค้างหน้าผล 4 วิ (ให้ทันเช็ก+กดยกเลิกถ้าสแกนผิด) แล้วกลับไปสแกนต่ออัตโนมัติ
-    if ((UPLOAD_SLOTS[tech.stageKey] ?? []).length === 0) {
+    if ((UPLOAD_SLOTS[tech.stageKey] ?? []).length === 0 && !askJoinRef.current) {
       resumeTimerRef.current = setTimeout(() => { try { html5.resume() } catch {}; busyRef.current = false; setPhase('scanning') }, 4000)
     }
   }
@@ -266,7 +271,8 @@ function ScanContent() {
   // กลับไปสแกนต่อ (ปุ่มกดเองของแผนกที่อัพโหลดรูปได้)
   function resumeScan() {
     if (resumeTimerRef.current) { clearTimeout(resumeTimerRef.current); resumeTimerRef.current = null }
-    setUploadedCnt({}); setUploadErr('')
+    setUploadedCnt({}); setUploadErr(''); setJoinInfo(null)
+    askJoinRef.current = false
     setPhase('scanning')
     busyRef.current = false
     try { scannerRef.current?.resume() } catch {}
@@ -336,7 +342,7 @@ function ScanContent() {
     const stage = resolveStage(t.stageKey)
     if (!stage) { setPhase('error'); setMsg('ไม่พบแผนกของผู้ใช้ กรุณาตั้งค่าใหม่'); return null }
     if (!id && !ord) { setPhase('noorder'); setMsg(''); return null }
-    setUploadedCnt({}); setUploadErr(''); setPhotos([])
+    setUploadedCnt({}); setUploadErr(''); setPhotos([]); setJoinInfo(null); askJoinRef.current = false
     setPhase('working')
     const o = await findOrder(id, ord)
     if (!o) { setOrder({ order_number: ord || `id:${id}` }); setPhase('noorder'); return null }
@@ -353,6 +359,9 @@ function ScanContent() {
     if (error) { setPhase('error'); setMsg(error.message); return null }
     if (!data?.ok) {
       if (data?.result === 'already') {
+        // ขั้นนี้มีคนสแกนไปแล้ว → ถามว่าเป็นการช่วยกันทำหรือเปล่า (ยืนยันแล้วค่อยเรียก scan_join)
+        setJoinInfo({ stage: data.stage || stage.label, people: Array.isArray(data.people) ? data.people : [], mine: !!data.mine })
+        askJoinRef.current = true   // ค้างหน้าถามไว้ ห้าม auto-กลับไปสแกนต่อทับคำถาม
         setPhase('already'); setMsg(`สถานะปัจจุบัน: ${data.current_status || 'รอดำเนินการ'}`); return null
       }
       if (data?.result === 'not_found') { setPhase('noorder'); return null }
@@ -365,6 +374,34 @@ function ScanContent() {
     setOrder(done)
     setPhase('done')
     return done
+  }
+
+  // ยืนยัน "ช่วยกันทำขั้นนี้" — บันทึกชื่อเพิ่มลง production_scans (is_helper) ไม่เดินสถานะออเดอร์
+  async function joinScan() {
+    if (!order?.id || !tech || joining) return
+    setJoining(true)
+    try {
+      const { data, error } = await supabase.rpc('scan_join', {
+        p_order_id: order.id,
+        p_stage_key: tech.stageKey,
+        p_tech_code: tech.code,
+        p_tech_name: tech.name,
+        p_scanned_term: order.order_number || '',
+      })
+      if (error) { setMsg(error.message); setPhase('error') }
+      else if (!data?.ok) {
+        // คนเดิมสแกนซ้ำเอง — ไม่บันทึกซ้ำ กันนับผลงานเกินจริง
+        if (data?.result === 'dup_self') { setMsg('คุณลงชื่อขั้นนี้ไปแล้ว ไม่ต้องลงซ้ำ'); setPhase('error') }
+        else { setMsg(String(data?.result || 'บันทึกไม่สำเร็จ')); setPhase('error') }
+      } else {
+        setJoinInfo({ stage: data.stage, people: Array.isArray(data.people) ? data.people : [], mine: true })
+        setPhase('joined')
+      }
+    } catch (e: any) {
+      setMsg(e?.message || String(e)); setPhase('error')
+    }
+    askJoinRef.current = false
+    setJoining(false)
   }
 
   // ยกเลิกการสแกนล่าสุด (สแกนผิด) — เรียก RPC scan_undo (all-or-nothing) ถอยสถานะ+ลบ log
@@ -455,7 +492,7 @@ function ScanContent() {
   const stageColor = '#2563eb'
   const slots = UPLOAD_SLOTS[tech.stageKey] ?? []
   // อัพรูปได้เมื่อเจอออเดอร์แล้ว (done หรือ already — เผื่อสแกนซ้ำเพื่อเพิ่มรูป)
-  const canUpload = slots.length > 0 && (phase === 'done' || phase === 'already') && order?.id
+  const canUpload = slots.length > 0 && (phase === 'done' || phase === 'already' || phase === 'joined') && order?.id
 
   // ---------- โหมดลิงก์ (มาจากแอปกล้องของเครื่อง) ----------
   if (urlOrder || urlId) {
@@ -557,9 +594,11 @@ function ScanContent() {
         {showOverlay && (
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(11,18,32,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, overflowY: 'auto' }}>
             <div style={{ ...card, maxWidth: 380 }}>
-              <Result phase={phase} order={order} msg={msg} stage={stage} onUndo={undoScan} undoing={undoing} />
+              <Result phase={phase} order={order} msg={msg} stage={stage} onUndo={undoScan} undoing={undoing}
+                joinInfo={joinInfo} onJoin={joinScan} onSkipJoin={resumeScan} joining={joining} />
               {canUpload && <PhotoUpload slots={slots} uploading={uploading} counts={uploadedCnt} err={uploadErr} onPick={pickPhoto} photos={photos} delBusy={delBusy} onDelete={deletePhoto} />}
-              {['done', 'already', 'undone', 'error'].includes(phase) && (
+              {/* หน้า 'already' ที่ยังรอตอบ "ลงชื่อช่วยไหม" ไม่ต้องมีปุ่มสแกนต่อ — ปุ่ม "ไม่ใช่" ทำหน้าที่นั้นแทน */}
+              {['done', 'already', 'undone', 'error', 'joined'].includes(phase) && !(phase === 'already' && joinInfo && !joinInfo.mine) && (
                 <button onClick={resumeScan} disabled={uploading !== null}
                   style={{ width: '100%', marginTop: 16, padding: 13, borderRadius: 12, border: 'none', background: uploading ? '#c7c7c7' : '#2563eb', color: '#fff', fontSize: 15, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer' }}>
                   สแกนต่อ →
@@ -661,7 +700,11 @@ function Identity({ tech, stageLabel, onLogout }: { tech: Tech; stageLabel?: str
   )
 }
 
-function Result({ phase, order, msg, stage, onUndo, undoing }: { phase: Phase; order: any; msg: string; stage: any; onUndo?: () => void; undoing?: boolean }) {
+function Result({ phase, order, msg, stage, onUndo, undoing, joinInfo, onJoin, onSkipJoin, joining }: {
+  phase: Phase; order: any; msg: string; stage: any; onUndo?: () => void; undoing?: boolean
+  joinInfo?: { stage: string; people: string[]; mine: boolean } | null
+  onJoin?: () => void; onSkipJoin?: () => void; joining?: boolean
+}) {
   if (phase === 'working') return <div style={{ fontSize: 16, padding: '24px 0' }}>⏳ กำลังอัปเดต…</div>
   if (phase === 'done') return (
     <>
@@ -685,12 +728,54 @@ function Result({ phase, order, msg, stage, onUndo, undoing }: { phase: Phase; o
       <p style={{ fontSize: 14, color: '#666' }}>สถานะกลับเป็น: <b>{order?.order_status || 'รอดำเนินการ'}</b></p>
     </>
   )
+  // สแกนซ้ำ = ส่วนใหญ่คือแบ่งงานกันทำหลายคนใน 1 ออเดอร์ → ถามก่อนว่าจะลงชื่อช่วยไหม (ไม่เดินสถานะให้เอง)
   if (phase === 'already') return (
     <>
       <div style={{ fontSize: 54, marginBottom: 8 }}>ℹ️</div>
-      <h1 style={{ fontSize: 19, fontWeight: 800, marginBottom: 6, color: '#d97706' }}>ไม่อัปเดต (กันข้ามขั้น)</h1>
+      <h1 style={{ fontSize: 19, fontWeight: 800, marginBottom: 6, color: '#d97706' }}>ออเดอร์นี้สแกนไปแล้ว</h1>
       <p style={{ fontSize: 15 }}>ออเดอร์ <b>{order?.order_number}</b></p>
       <p style={{ fontSize: 14, color: '#666' }}>{msg}</p>
+      {joinInfo && joinInfo.people.length > 0 && (
+        <p style={{ fontSize: 13, color: '#666', marginTop: 6 }}>
+          ขั้น <b style={{ color: '#1a1a1a' }}>{joinInfo.stage}</b> สแกนโดย: {joinInfo.people.join(', ')}
+        </p>
+      )}
+      {joinInfo?.mine ? (
+        <p style={{ fontSize: 13, color: '#d97706', marginTop: 12, fontWeight: 700 }}>คุณลงชื่อขั้นนี้ไปแล้ว ไม่ต้องลงซ้ำ</p>
+      ) : onJoin && (
+        <>
+          <p style={{ fontSize: 14, color: '#1a1a1a', marginTop: 14, fontWeight: 700 }}>
+            คุณช่วยทำขั้น{joinInfo?.stage ? ` "${joinInfo.stage}" ` : ''}ของออเดอร์นี้ด้วยใช่ไหม?
+          </p>
+          <p style={{ fontSize: 12, color: '#888', marginTop: 2 }}>ยืนยันแล้วจะบันทึกชื่อคุณเพิ่ม (สถานะออเดอร์ไม่เปลี่ยน)</p>
+          <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+            <button onClick={onSkipJoin} disabled={joining}
+              style={{ flex: 1, padding: 12, borderRadius: 12, border: '1px solid #ccc', background: '#fff', color: '#555', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+              ไม่ใช่
+            </button>
+            <button onClick={onJoin} disabled={joining}
+              style={{ flex: 2, padding: 12, borderRadius: 12, border: 'none', background: joining ? '#c7c7c7' : '#16a34a', color: '#fff', fontSize: 15, fontWeight: 800, cursor: joining ? 'default' : 'pointer' }}>
+              {joining ? 'กำลังบันทึก…' : 'ยืนยัน ลงชื่อเพิ่ม'}
+            </button>
+          </div>
+        </>
+      )}
+    </>
+  )
+  if (phase === 'joined') return (
+    <>
+      <div style={{ fontSize: 54, marginBottom: 8 }}>🤝</div>
+      <h1 style={{ fontSize: 20, fontWeight: 800, marginBottom: 6, color: '#16a34a' }}>บันทึกว่าช่วยทำแล้ว</h1>
+      <p style={{ fontSize: 15 }}>ออเดอร์ <b>{order?.order_number}</b></p>
+      <p style={{ fontSize: 13, color: '#666', marginTop: 6 }}>
+        ขั้น <b style={{ color: '#1a1a1a' }}>{joinInfo?.stage}</b> — {(joinInfo?.people ?? []).join(', ')}
+      </p>
+      {onUndo && (
+        <button onClick={onUndo} disabled={undoing}
+          style={{ marginTop: 16, border: '1px solid #dc2626', background: undoing ? '#fca5a5' : '#fff', color: '#dc2626', borderRadius: 10, padding: '9px 18px', fontSize: 14, fontWeight: 700, cursor: undoing ? 'default' : 'pointer' }}>
+          {undoing ? 'กำลังยกเลิก…' : 'ยกเลิก'}
+        </button>
+      )}
     </>
   )
   if (phase === 'noorder') return (
