@@ -26,6 +26,11 @@ type Order = {
   packing_photos?: string[] | null
   shipments?: Shipment[] | null
 }
+// ใครสแกนขั้นไหน (production_scans) — 1 ขั้นมีได้หลายคน (คนเดินสถานะ + คนที่กด "ลงชื่อช่วย" ดู sql/scan_helpers.sql)
+type Scan = { order_number: string; stage: string; tech_name: string | null; scanned_at: string | null; is_helper: boolean | null }
+// เรียงขั้นตามสายงานจริง ไม่ใช่ตามเวลาที่สแกน (สแกนย้อน/สแกนช่วยทีหลังจะได้ไม่สลับบรรทัด)
+const STAGE_ORDER = ['ตัด', 'เย็บ', 'รีด', 'แพ็ค', 'แพ็คราง', 'จัดส่งแล้ว']
+
 type Claim = { id: string; claim_date: string | null; claim_type: string | null; cause: string | null; refund_amount: number | null; money_direction: string | null; status: string }
 type Install = { id: string; serial_no: string | null; appointment_datetime: string | null; work_type: string | null; work_details: string | null; installation_status: string | null; price: number | null }
 type PO = { id: string; order_number: string | null; supplier: string | null; status: string; created_at: string }
@@ -40,6 +45,7 @@ export default function MobileCustomer() {
   const [claims, setClaims] = useState<Claim[]>([])
   const [installs, setInstalls] = useState<Install[]>([])
   const [pos, setPos] = useState<PO[]>([])
+  const [scans, setScans] = useState<Scan[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')          // เดิมทิ้ง error ทั้ง 4 query → เน็ตหลุดขึ้น "ไม่พบประวัติ" หลอกผู้ใช้ว่าลูกค้าไม่มีข้อมูล
   const [photo, setPhoto] = useState<string | null>(null)
@@ -67,6 +73,18 @@ export default function MobileCustomer() {
     const err = o.error ?? c.error ?? i.error ?? p.error
     setError(err ? `โหลดข้อมูลไม่ได้: ${err.message}` : '')
     setOrders((o.data as Order[]) ?? [])
+
+    // ใครสแกนขั้นไหนบ้าง — ค้นด้วยกุญแจเดียวกับที่ RPC ใช้ตอนลง log (order_number ว่าง = 'id:<uuid>')
+    // ‼️ ยิงหลัง query หลัก ไม่รวมใน Promise.all — ต้องรู้เลขออเดอร์ก่อนถึงจะค้นได้ และพังตรงนี้ไม่ควรทำให้ทั้งหน้าเป็น error
+    const keys = ((o.data as Order[]) ?? []).map(r => r.order_number || `id:${r.id}`).filter(Boolean)
+    if (keys.length) {
+      const { data: sc } = await supabase.from('production_scans')
+        .select('order_number, stage, tech_name, scanned_at, is_helper')
+        .in('order_number', keys)
+        .order('scanned_at', { ascending: true })
+      setScans((sc as Scan[]) ?? [])
+    } else setScans([])
+
     setClaims((c.data as Claim[]) ?? [])
     setInstalls((i.data as Install[]) ?? [])
     setPos((p.data as PO[]) ?? [])
@@ -183,6 +201,8 @@ export default function MobileCustomer() {
                         </div>
                       )}
 
+                      <ScanCredits scans={scans} orderKey={o.order_number || `id:${o.id}`} />
+
                       {Array.isArray(o.packing_photos) && o.packing_photos.length > 0 && (
                         <div style={{ display: 'flex', gap: 6, marginTop: 8, overflowX: 'auto' }}>
                           {/* กดดูรูปเต็มในหน้าเดิม — เดิมเปิดแท็บใหม่ ซึ่งบนแอป PWA = เด้งออกจากแอปไปเลย */}
@@ -292,6 +312,49 @@ export default function MobileCustomer() {
             style={{ position: 'absolute', top: 'calc(env(safe-area-inset-top) + 12px)', right: 14, width: 40, height: 40, borderRadius: 999, border: 'none', background: 'rgba(255,255,255,0.16)', color: '#fff', fontSize: 20, cursor: 'pointer' }}>×</button>
         </div>
       )}
+    </div>
+  )
+}
+
+// "ใครทำขั้นไหน" ในการ์ดออเดอร์ — 1 บรรทัดต่อขั้น ถ้าขั้นนั้นแบ่งกันทำหลายคนก็ขึ้นชื่อทุกคน
+function ScanCredits({ scans, orderKey }: { scans: Scan[]; orderKey: string }) {
+  const mine = scans.filter(s => s.order_number === orderKey)
+  if (mine.length === 0) return null
+
+  // จัดกลุ่มตามขั้น + กันชื่อซ้ำ (คนเดิมสแกนซ้ำในขั้นเดิมไม่ควรขึ้น 2 ครั้ง)
+  const byStage = new Map<string, { name: string; helper: boolean }[]>()
+  for (const s of mine) {
+    const name = (s.tech_name || '').trim()
+    if (!name) continue
+    const list = byStage.get(s.stage) ?? []
+    if (!list.some(x => x.name === name)) list.push({ name, helper: !!s.is_helper })
+    byStage.set(s.stage, list)
+  }
+  if (byStage.size === 0) return null
+
+  const stages = [...byStage.keys()].sort((a, b) => {
+    const ia = STAGE_ORDER.indexOf(a), ib = STAGE_ORDER.indexOf(b)
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib)   // ขั้นแปลกที่ไม่รู้จักไปท้ายสุด ไม่ทิ้ง
+  })
+
+  return (
+    <div style={{ marginTop: 9, paddingTop: 8, borderTop: '1px dashed var(--border)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>ผู้สแกนแต่ละขั้น</div>
+      {stages.map(st => (
+        <div key={st} style={{ display: 'flex', gap: 7, fontSize: 12, lineHeight: 1.45 }}>
+          <span style={{ color: 'var(--ink-4)', flexShrink: 0, minWidth: 52 }}>{st}</span>
+          <span style={{ color: 'var(--ink-2)' }}>
+            {byStage.get(st)!.map((p, i) => (
+              <span key={p.name}>
+                {i > 0 && ', '}
+                {p.name}
+                {/* คนที่กด "ลงชื่อช่วย" ทีหลัง — บอกไว้ให้แยกออกจากคนที่เดินสถานะ */}
+                {p.helper && <span style={{ color: 'var(--ink-4)' }}> (ช่วย)</span>}
+              </span>
+            ))}
+          </span>
+        </div>
+      ))}
     </div>
   )
 }
