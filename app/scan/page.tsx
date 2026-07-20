@@ -764,8 +764,8 @@ function Result({ phase, order, msg, stage, onUndo, undoing, joinInfo, onJoin, o
   )
   if (phase === 'joined') return (
     <>
-      <div style={{ fontSize: 54, marginBottom: 8 }}>🤝</div>
-      <h1 style={{ fontSize: 20, fontWeight: 800, marginBottom: 6, color: '#16a34a' }}>บันทึกว่าช่วยทำแล้ว</h1>
+      {/* ไม่มีอีโมจิหน้านี้ (ผู้ใช้สั่งเอาออก) — เว้นระยะบนแทนให้การ์ดไม่ดูชิดขอบ */}
+      <h1 style={{ fontSize: 20, fontWeight: 800, margin: '10px 0 6px', color: '#16a34a' }}>บันทึกว่าช่วยทำแล้ว</h1>
       <p style={{ fontSize: 15 }}>ออเดอร์ <b>{order?.order_number}</b></p>
       <p style={{ fontSize: 13, color: '#666', marginTop: 6 }}>
         ขั้น <b style={{ color: '#1a1a1a' }}>{joinInfo?.stage}</b> — {(joinInfo?.people ?? []).join(', ')}
