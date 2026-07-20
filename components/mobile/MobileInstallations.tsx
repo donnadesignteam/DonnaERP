@@ -8,6 +8,7 @@ import { HOLIDAYS } from '@/lib/holidays'
 import { formatItemLines, type RawItem } from '@/lib/itemFormat'
 import { INSTALL_STATUS_COLOR, DAYS_TH, TH_MONTHS, ymdOf, monthCells } from '@/lib/shopCalendar'
 import { useStickyState, usePullToRefresh, useSheetBack, PullIndicator, UpdatedRow, pillBtn, searchInput, monthNavBtn, clamp } from './mobileUi'
+import ScanFolderButton from './ScanFolderButton'
 
 // ปฏิทินงานติดตั้งบนมือถือ — ดูอย่างเดียว (เดสก์ท็อป = app/(admin)/installations)
 type Installation = {
@@ -166,7 +167,11 @@ export default function MobileInstallations() {
       {/* ไม่มีชื่อหน้า — ผู้ใช้สั่งเอาออกทุกหน้า (แถบเมนูล่างบอกอยู่แล้ว) */}
       <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'var(--bg)', paddingTop: 'calc(env(safe-area-inset-top) + 10px)', borderBottom: '1px solid var(--border)' }}>
         <div style={{ padding: '0 14px 8px' }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ลูกค้า / เลขงาน / เบอร์" style={searchInput} />
+          {/* ‼️ div ครอบชั้นนี้ต้อง position: relative — ปุ่ม QR วางทับมุมขวาของช่องค้นหา ไม่ใช่ของแถบทั้งแถบ */}
+          <div style={{ position: 'relative' }}>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ลูกค้า / เลขงาน / เบอร์" style={{ ...searchInput, paddingRight: 44 }} />
+            <ScanFolderButton />
+          </div>
         </div>
         {!searching && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px 8px', gap: 8 }}>

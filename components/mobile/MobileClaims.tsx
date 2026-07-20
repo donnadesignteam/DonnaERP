@@ -7,6 +7,7 @@ import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { formatItemLines, type RawItem } from '@/lib/itemFormat'
 import { useStickyState, useScrollRestore, usePullToRefresh, PullIndicator, UpdatedRow, CardSkeleton, pillBtn, searchInput, clamp } from './mobileUi'
+import ScanFolderButton from './ScanFolderButton'
 
 // หน้างานเคลมบนมือถือ — ดูอย่างเดียว แก้ไม่ได้ (คนละไฟล์กับ ClaimsWorkspace ของเดสก์ท็อป)
 type Claim = {
@@ -103,7 +104,11 @@ export default function MobileClaims() {
       {/* ไม่มีชื่อหน้า — ผู้ใช้สั่งเอาออกทุกหน้า (แถบเมนูล่างบอกอยู่แล้ว) */}
       <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'var(--bg)', paddingTop: 'calc(env(safe-area-inset-top) + 10px)', borderBottom: '1px solid var(--border)' }}>
         <div style={{ padding: '0 14px 8px' }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ลูกค้า / เลขออเดอร์ / สาเหตุ" style={searchInput} />
+          {/* ‼️ div ครอบชั้นนี้ต้อง position: relative — ปุ่ม QR วางทับมุมขวาของช่องค้นหา ไม่ใช่ของแถบทั้งแถบ */}
+          <div style={{ position: 'relative' }}>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ลูกค้า / เลขออเดอร์ / สาเหตุ" style={{ ...searchInput, paddingRight: 44 }} />
+            <ScanFolderButton />
+          </div>
         </div>
         <UpdatedRow at={updatedAt} refreshing={refreshing} onRefresh={refresh} />
         <div style={{ position: 'relative' }}>
