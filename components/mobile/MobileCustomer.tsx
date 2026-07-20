@@ -27,7 +27,7 @@ type Order = {
   shipments?: Shipment[] | null
 }
 // ใครสแกนขั้นไหน (production_scans) — 1 ขั้นมีได้หลายคน (คนเดินสถานะ + คนที่กด "ลงชื่อช่วย" ดู sql/scan_helpers.sql)
-type Scan = { order_number: string; stage: string; tech_name: string | null; scanned_at: string | null; is_helper: boolean | null }
+type Scan = { order_number: string; stage: string; tech_name: string | null; scanned_at: string | null }
 // เรียงขั้นตามสายงานจริง ไม่ใช่ตามเวลาที่สแกน (สแกนย้อน/สแกนช่วยทีหลังจะได้ไม่สลับบรรทัด)
 const STAGE_ORDER = ['ตัด', 'เย็บ', 'รีด', 'แพ็ค', 'แพ็คราง', 'จัดส่งแล้ว']
 
@@ -79,7 +79,7 @@ export default function MobileCustomer() {
     const keys = ((o.data as Order[]) ?? []).map(r => r.order_number || `id:${r.id}`).filter(Boolean)
     if (keys.length) {
       const { data: sc } = await supabase.from('production_scans')
-        .select('order_number, stage, tech_name, scanned_at, is_helper')
+        .select('order_number, stage, tech_name, scanned_at')
         .in('order_number', keys)
         .order('scanned_at', { ascending: true })
       setScans((sc as Scan[]) ?? [])
@@ -322,12 +322,13 @@ function ScanCredits({ scans, orderKey }: { scans: Scan[]; orderKey: string }) {
   if (mine.length === 0) return null
 
   // จัดกลุ่มตามขั้น + กันชื่อซ้ำ (คนเดิมสแกนซ้ำในขั้นเดิมไม่ควรขึ้น 2 ครั้ง)
-  const byStage = new Map<string, { name: string; helper: boolean }[]>()
+  // ‼️ ไม่แยกว่าใครเป็นคนเดินสถานะ/คนช่วย (ผู้ใช้สั่ง) — เอาแค่รายชื่อคนที่สแกนขั้นนั้น
+  const byStage = new Map<string, string[]>()
   for (const s of mine) {
     const name = (s.tech_name || '').trim()
     if (!name) continue
     const list = byStage.get(s.stage) ?? []
-    if (!list.some(x => x.name === name)) list.push({ name, helper: !!s.is_helper })
+    if (!list.includes(name)) list.push(name)
     byStage.set(s.stage, list)
   }
   if (byStage.size === 0) return null
@@ -343,16 +344,7 @@ function ScanCredits({ scans, orderKey }: { scans: Scan[]; orderKey: string }) {
       {stages.map(st => (
         <div key={st} style={{ display: 'flex', gap: 7, fontSize: 12, lineHeight: 1.45 }}>
           <span style={{ color: 'var(--ink-4)', flexShrink: 0, minWidth: 52 }}>{st}</span>
-          <span style={{ color: 'var(--ink-2)' }}>
-            {byStage.get(st)!.map((p, i) => (
-              <span key={p.name}>
-                {i > 0 && ', '}
-                {p.name}
-                {/* คนที่กด "ลงชื่อช่วย" ทีหลัง — บอกไว้ให้แยกออกจากคนที่เดินสถานะ */}
-                {p.helper && <span style={{ color: 'var(--ink-4)' }}> (ช่วย)</span>}
-              </span>
-            ))}
-          </span>
+          <span style={{ color: 'var(--ink-2)' }}>{byStage.get(st)!.join(', ')}</span>
         </div>
       ))}
     </div>
