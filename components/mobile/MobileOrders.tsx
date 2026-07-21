@@ -49,7 +49,9 @@ export default function MobileOrders() {
 
   const load = async () => {
     const { data, error: err } = await fetchAllRows<Entry>(() =>
-      supabase.from('order_entries').select('*')
+      // ‼️ เลือกเฉพาะคอลัมน์ที่การ์ด + ตรรกะแท็บ/วันที่ (orderTabs/shipping) ใช้จริง — เดิม select('*') ดึงทุกคอลัมน์เปลืองเน็ตมือถือ
+      supabase.from('order_entries')
+        .select('id, entry_date, deadline, shipping_datetime, customer_name, order_number, platform, order_status, courier, items, is_urgent, is_installation, is_dropoff, install_time, notes, address, phone')
         .order('entry_date', { ascending: false, nullsFirst: false }).order('id', { ascending: true }))
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
     else {

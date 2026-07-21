@@ -53,7 +53,10 @@ export default function MobileInstallations() {
 
   const load = async () => {
     const { data, error: err } = await fetchAllRows<Installation>(() =>
-      supabase.from('installations').select('*').order('id', { ascending: true }))
+      // ‼️ เลือกเฉพาะคอลัมน์ที่ปฏิทิน/การ์ดงานใช้ — เดิม select('*') ดึงทุกคอลัมน์เปลืองเน็ตมือถือ
+      supabase.from('installations')
+        .select('id, serial_no, appointment_datetime, work_type, platform, customer_id, customer_real_name, province, install_zone, phone, work_details, location_link, price, notes, payment_status, installation_status, send_to_technician, source_order_id')
+        .order('id', { ascending: true }))
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
     else {
       setError('')

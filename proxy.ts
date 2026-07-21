@@ -42,6 +42,6 @@ export const config = {
   // ‼️ manifest.webmanifest ต้องอยู่ในข้อยกเว้น — เดิมตกหล่นทำให้โดน redirect ไป /login
   //    เบราว์เซอร์เลยอ่าน manifest ไม่ได้ (ชื่อ/ไอคอน/start_url ไม่มีผลบน Android)
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|scan-app.webmanifest|donna-logo|icon-).*)',
+    '/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|scan-app.webmanifest|sw.js|donna-logo|icon-).*)',
   ],
 }

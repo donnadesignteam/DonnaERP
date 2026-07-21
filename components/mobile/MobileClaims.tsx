@@ -56,7 +56,9 @@ export default function MobileClaims() {
 
   const load = async () => {
     const { data, error: err } = await fetchAllRows<Claim>(() =>
-      supabase.from('claims').select('*')
+      // ‼️ เลือกเฉพาะคอลัมน์ที่การ์ดใช้ + created_at (ใช้ใน order by) — เดิม select('*') ดึงทุกคอลัมน์เปลืองเน็ตมือถือ
+      supabase.from('claims')
+        .select('id, claim_date, created_at, channel, customer_username, original_order_number, claim_type, fault, cause, items, ship_name, ship_address, refund_amount, money_direction, money_status, status, notes, admin_name, closed_at')
         .order('claim_date', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
         .order('id', { ascending: true }))

@@ -49,6 +49,27 @@ export default function MobileCustomer() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')          // เดิมทิ้ง error ทั้ง 4 query → เน็ตหลุดขึ้น "ไม่พบประวัติ" หลอกผู้ใช้ว่าลูกค้าไม่มีข้อมูล
   const [photo, setPhoto] = useState<string | null>(null)
+  const [copiedId, setCopiedId] = useState<string | null>(null)   // ออเดอร์ที่เพิ่งคัดลอก → โชว์ "คัดลอกแล้ว" ชั่วครู่
+
+  // แชร์รายการออเดอร์เข้ากลุ่ม LINE (navigator.share) — มือถือไม่มี share ก็คัดลอกลงคลิปบอร์ดแทน
+  const shareOrder = async (o: Order, lines: string[]) => {
+    const text = [
+      `📁 ${name}`,
+      `ออเดอร์ ${o.order_number || '-'}${o.platform ? ` · ${o.platform}` : ''}`,
+      ...lines.map(l => `• ${l}`),
+      o.order_status ? `สถานะ: ${o.order_status}` : '',
+      o.price != null ? `ยอด: ${o.price.toLocaleString('th-TH')} ฿` : '',
+    ].filter(Boolean).join('\n')
+    if (navigator.share) {
+      try { await navigator.share({ text }) } catch { /* ผู้ใช้กดยกเลิก → เงียบ */ }
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedId(o.id)
+      setTimeout(() => setCopiedId(c => (c === o.id ? null : c)), 1500)
+    } catch { /* คลิปบอร์ดใช้ไม่ได้ (สิทธิ์/เบราว์เซอร์เก่า) → ข้าม */ }
+  }
 
   const load = async () => {
     if (!name) { setLoading(false); return }
@@ -219,11 +240,17 @@ export default function MobileCustomer() {
                       )}
 
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: 9, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                           <span style={{ width: 7, height: 7, borderRadius: '50%', background: c, flexShrink: 0 }} />
                           <span style={{ fontSize: 12.5, fontWeight: 600, color: c }}>{o.order_status || '—'}</span>
                         </span>
-                        {o.price != null && <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{o.price.toLocaleString('th-TH')} ฿</span>}
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                          {o.price != null && <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{o.price.toLocaleString('th-TH')} ฿</span>}
+                          {/* แชร์รายการเข้ากลุ่ม LINE ในแตะเดียว — ดูอย่างเดียว ไม่แก้ข้อมูล */}
+                          <button onClick={() => shareOrder(o, lines)} style={shareBtn}>
+                            {copiedId === o.id ? '✓ คัดลอกแล้ว' : '📤 แชร์'}
+                          </button>
+                        </span>
                       </div>
                     </div>
                   )
@@ -354,6 +381,12 @@ function ScanCredits({ scans, orderKey }: { scans: Scan[]; orderKey: string }) {
 const cardBox: React.CSSProperties = {
   background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12,
   padding: '11px 12px', boxShadow: 'var(--shadow)',
+}
+const shareBtn: React.CSSProperties = {
+  fontSize: 12, fontWeight: 700, color: 'var(--blue)', minHeight: 32,
+  display: 'inline-flex', alignItems: 'center', border: '1px solid var(--border)',
+  borderRadius: 8, padding: '0 10px', background: 'var(--bg)', cursor: 'pointer',
+  WebkitTapHighlightColor: 'transparent', whiteSpace: 'nowrap',
 }
 const sectionTitle: React.CSSProperties = {
   fontSize: 14, fontWeight: 700, color: 'var(--ink)', marginBottom: 8,

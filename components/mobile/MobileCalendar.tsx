@@ -43,7 +43,10 @@ export default function MobileCalendar() {
 
   const load = async () => {
     const { data, error: err } = await fetchAllRows<Leave>(() =>
-      supabase.from('leave_requests').select('*').order('id', { ascending: true }))
+      // ‼️ เลือกเฉพาะคอลัมน์ที่ปฏิทินใบลาใช้ — เดิม select('*') ดึงทุกคอลัมน์เปลืองเน็ตมือถือ
+      supabase.from('leave_requests')
+        .select('id, employee_nickname, employee_name, department, leave_date, leave_end_date, leave_time, leave_type, reason, leave_status')
+        .order('id', { ascending: true }))
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
     else {
       setError('')
