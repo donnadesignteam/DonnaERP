@@ -52,16 +52,13 @@ export default function MobileCustomer() {
   const [copiedId, setCopiedId] = useState<string | null>(null)   // ออเดอร์ที่เพิ่งคัดลอก → โชว์ "คัดลอกแล้ว" ชั่วครู่
 
   // แชร์รายการออเดอร์เข้ากลุ่ม LINE (navigator.share) — มือถือไม่มี share ก็คัดลอกลงคลิปบอร์ดแทน
-  // ท้ายข้อความแนบลิงก์เปิดโฟลเดอร์ลูกค้าคนนี้โดยตรง (ใช้ origin จริงของแอป ไม่ฮาร์ดโค้ดโดเมน)
   const shareOrder = async (o: Order, lines: string[]) => {
-    const folderUrl = `${location.origin}/m/customers?name=${encodeURIComponent(name)}`
     const text = [
       name,
       `ออเดอร์ ${o.order_number || '-'}${o.platform ? ` · ${o.platform}` : ''}`,
       ...lines.map(l => `• ${l}`),
       o.order_status ? `สถานะ: ${o.order_status}` : '',
       o.price != null ? `ยอด: ${o.price.toLocaleString('th-TH')} ฿` : '',
-      `เปิดโฟลเดอร์ลูกค้า: ${folderUrl}`,
     ].filter(Boolean).join('\n')
     if (navigator.share) {
       try { await navigator.share({ text }) } catch { /* ผู้ใช้กดยกเลิก → เงียบ */ }
