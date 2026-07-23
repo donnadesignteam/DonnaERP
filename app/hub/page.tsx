@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Image from 'next/image'
 import { RAIL_PATH } from '@/lib/rail'
 import { CALC_PATH } from '@/lib/calc'
+import { readStaffSession, type StaffSession } from '@/lib/staffSession'
 
 // หน้ารวมเครื่องมือของแอป "Donna Design" (start_url ของ PWA ชี้มาที่นี่)
 // เปิดแอปครั้งแรกของรอบ → เด้งเข้าเครื่องมือที่ใช้ล่าสุดให้เลย · กดปุ่มกลับ hub / ปุ่ม back → เห็นหน้านี้ตามปกติ
@@ -66,6 +67,7 @@ function HubContent() {
   const pickMode = params.get('pick') === '1'
   const [ready, setReady] = useState(false)
   const [lastId, setLastId] = useState<string | null>(null)   // ติดป้าย "ใช้ล่าสุด" ให้รู้ว่าเปิดแอปเฉยๆ จะเด้งไปไหน
+  const [me, setMe] = useState<StaffSession | null>(null)     // พนักงานที่ล็อกอินอยู่ (null = เข้าด้วยรหัสรวมของร้าน)
 
   useEffect(() => {
     // เปิดแอปรอบใหม่ + เคยเลือกเครื่องมือไว้ → เข้าเครื่องมือนั้นเลย ไม่ต้องกดซ้ำทุกครั้ง
@@ -86,6 +88,7 @@ function HubContent() {
     // ถ้าอ่านตอน render แรกเลย ผลจะไม่ตรงกับที่ server เรนเดอร์มา → hydration mismatch
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLastId(last)
+    setMe(readStaffSession())   // คุกกี้อ่านได้เฉพาะบนเบราว์เซอร์เหมือนกัน
     setReady(true)
   }, [router, pickMode])
 
@@ -98,7 +101,28 @@ function HubContent() {
   if (!ready) return <HubSplash />
 
   return (
-    <div style={{ minHeight: '100dvh', background: 'var(--bg)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 'calc(32px + env(safe-area-inset-top)) 20px calc(32px + env(safe-area-inset-bottom))', gap: 28 }}>
+    <div style={{ position: 'relative', minHeight: '100dvh', background: 'var(--bg)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 'calc(32px + env(safe-area-inset-top)) 20px calc(32px + env(safe-area-inset-bottom))', gap: 28 }}>
+      {/* มุมขวาบน — ใครล็อกอินอยู่ กดแล้วเข้าแดชบอร์ดของตัวเอง (/m/me)
+          ยังไม่ได้เข้าด้วยรหัสพนักงาน (ใช้รหัสรวมของร้าน) → เป็นปุ่มชวนล็อกอินแทน */}
+      <button onClick={() => router.push(me ? '/m/me' : '/login?staff=1')}
+        style={{
+          position: 'absolute', top: 'calc(env(safe-area-inset-top) + 12px)', right: 14, zIndex: 10,
+          display: 'flex', alignItems: 'center', gap: 8, minHeight: 40, padding: me ? '5px 13px 5px 5px' : '0 14px',
+          borderRadius: 999, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--ink)',
+          fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: 'var(--shadow)', WebkitTapHighlightColor: 'transparent',
+        }}>
+        {me ? (
+          <>
+            <span style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--blue-bg)', color: 'var(--blue)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12.5, fontWeight: 700 }}>
+              {(me.nickname || me.code).slice(0, 2)}
+            </span>
+            {me.nickname || me.code}
+          </>
+        ) : (
+          <span style={{ color: 'var(--ink-3)' }}>เข้าสู่ระบบพนักงาน</span>
+        )}
+      </button>
+
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
         <Image src="/donna-logo.jpg" alt="Donna Design" width={84} height={84} priority
           style={{ borderRadius: 20, boxShadow: 'var(--shadow-md)' }} />
