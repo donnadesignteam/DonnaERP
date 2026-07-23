@@ -3,22 +3,15 @@
 import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
-type Mode = 'shop' | 'staff'
-
 function LoginForm() {
   const router = useRouter()
   const params = useSearchParams()
   const from = params.get('from') || '/dashboard'
 
-  // ?staff=1 (ปุ่มในหน้า hub ส่งมา) = เปิดมาที่โหมดพนักงานเลย
-  const [mode, setMode] = useState<Mode>(params.get('staff') === '1' ? 'staff' : 'shop')
   const [user, setUser] = useState('')
-  const [code, setCode] = useState('')
   const [pass, setPass] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-
-  const switchMode = (m: Mode) => { setMode(m); setError(''); setPass('') }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -28,12 +21,12 @@ function LoginForm() {
       const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mode === 'staff' ? { mode: 'staff', code, pass } : { user, pass }),
+        body: JSON.stringify({ user, pass }),
       })
       const data = await res.json()
       if (res.ok && data.ok) {
-        // เข้าด้วยรหัสพนักงานจากหน้าเปล่าๆ → พาไปแดชบอร์ดของตัวเองเลย
-        router.replace(mode === 'staff' && from === '/dashboard' ? '/m/me' : from)
+        // เข้าด้วยรหัสพนักงานจากหน้าเปล่าๆ → พาไปแดชบอร์ดของตัวเองเลย (ฝั่งเซิร์ฟเวอร์บอกมาว่าเป็นพนักงาน)
+        router.replace(data.staff && from === '/dashboard' ? '/m/me' : from)
       } else {
         setError(data.error || 'เข้าสู่ระบบไม่สำเร็จ')
       }
@@ -43,8 +36,6 @@ function LoginForm() {
       setLoading(false)
     }
   }
-
-  const staff = mode === 'staff'
 
   return (
     <div
@@ -79,30 +70,12 @@ function LoginForm() {
           <p style={{ fontSize: 13, color: '#7A6A58', marginTop: 4 }}>เข้าสู่ระบบเพื่อใช้งาน</p>
         </div>
 
-        {/* สลับโหมด: รหัสรวมของร้าน (เหมือนเดิม) หรือ รหัสพนักงานรายคน */}
-        <div style={{ display: 'flex', gap: 6, background: '#F4EFE8', borderRadius: 10, padding: 4, marginBottom: 20 }}>
-          {([['shop', 'รหัสร้าน'], ['staff', 'พนักงาน']] as [Mode, string][]).map(([m, label]) => (
-            <button key={m} type="button" onClick={() => switchMode(m)}
-              style={{
-                flex: 1, padding: '8px 0', borderRadius: 7, border: 'none', cursor: 'pointer',
-                fontSize: 13.5, fontWeight: mode === m ? 700 : 500,
-                background: mode === m ? '#FFFFFF' : 'transparent',
-                color: mode === m ? '#9D6025' : '#7A6A58',
-                boxShadow: mode === m ? '0 1px 3px rgba(0,0,0,0.12)' : 'none',
-              }}>
-              {label}
-            </button>
-          ))}
-        </div>
-
-        <label style={labelStyle}>{staff ? 'รหัสพนักงาน' : 'ชื่อผู้ใช้'}</label>
+        <label style={labelStyle}>ชื่อผู้ใช้</label>
         <input
-          value={staff ? code : user}
-          onChange={(e) => (staff ? setCode(e.target.value) : setUser(e.target.value))}
+          value={user}
+          onChange={(e) => setUser(e.target.value)}
           autoFocus
           autoComplete="username"
-          autoCapitalize="characters"
-          placeholder={staff ? 'เช่น DN015' : ''}
           style={inputStyle}
         />
 
@@ -112,15 +85,13 @@ function LoginForm() {
           value={pass}
           onChange={(e) => setPass(e.target.value)}
           autoComplete="current-password"
-          inputMode={staff ? 'numeric' : undefined}
-          placeholder={staff ? 'วันและเดือนที่เริ่มงาน' : ''}
           style={inputStyle}
         />
-        {staff && (
-          <p style={{ fontSize: 11.5, color: '#8A7A66', marginTop: 6, lineHeight: 1.5 }}>
-            รหัสผ่าน = วันและเดือนที่เริ่มงาน เช่น เริ่ม 31 มี.ค. → <b style={{ color: '#5A4A38' }}>313</b>
-          </p>
-        )}
+
+        {/* ช่องเดียวใช้ได้ทั้งรหัสรวมของร้านและรหัสพนักงาน — ระบบดูให้เองว่ากรอกอันไหนมา */}
+        <p style={{ fontSize: 11.5, color: '#8A7A66', marginTop: 8, lineHeight: 1.6 }}>
+          พนักงาน: ชื่อผู้ใช้ = รหัสพนักงาน (เช่น DN015) · รหัสผ่าน = วันและเดือนที่เริ่มงาน (เริ่ม 31 มี.ค. → <b style={{ color: '#5A4A38' }}>313</b>)
+        </p>
 
         {error && (
           <div

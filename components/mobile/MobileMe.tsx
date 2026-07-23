@@ -106,7 +106,7 @@ export default function MobileMe() {
 
   const logout = async () => {
     await fetch('/api/logout', { method: 'POST' }).catch(() => {})
-    router.replace('/login?staff=1')
+    router.replace('/login')
   }
 
   // ยังไม่ได้ล็อกอินด้วยรหัสพนักงาน (เข้าด้วยรหัสรวมของร้าน) → ชวนให้ล็อกอินก่อน
@@ -118,7 +118,7 @@ export default function MobileMe() {
         <p style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 8, lineHeight: 1.6 }}>
           เข้าสู่ระบบด้วยรหัสพนักงานของตัวเอง<br />แล้วจะเห็นวันลา งานที่สแกน และสถิติของตัวเอง
         </p>
-        <button onClick={() => router.push('/login?staff=1')}
+        <button onClick={() => router.push('/login')}
           style={{ marginTop: 20, minHeight: 44, padding: '0 26px', borderRadius: 12, border: 'none', background: 'var(--blue)', color: '#fff', fontSize: 14.5, fontWeight: 700, cursor: 'pointer' }}>
           เข้าสู่ระบบพนักงาน
         </button>

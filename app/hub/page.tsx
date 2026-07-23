@@ -104,7 +104,7 @@ function HubContent() {
     <div style={{ position: 'relative', minHeight: '100dvh', background: 'var(--bg)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 'calc(32px + env(safe-area-inset-top)) 20px calc(32px + env(safe-area-inset-bottom))', gap: 28 }}>
       {/* มุมขวาบน — ใครล็อกอินอยู่ กดแล้วเข้าแดชบอร์ดของตัวเอง (/m/me)
           ยังไม่ได้เข้าด้วยรหัสพนักงาน (ใช้รหัสรวมของร้าน) → เป็นปุ่มชวนล็อกอินแทน */}
-      <button onClick={() => router.push(me ? '/m/me' : '/login?staff=1')}
+      <button onClick={() => router.push(me ? '/m/me' : '/login')}
         style={{
           position: 'absolute', top: 'calc(env(safe-area-inset-top) + 12px)', right: 14, zIndex: 10,
           display: 'flex', alignItems: 'center', gap: 8, minHeight: 40, padding: me ? '5px 13px 5px 5px' : '0 14px',
