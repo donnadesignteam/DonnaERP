@@ -113,9 +113,8 @@ function HubContent() {
         }}>
         {me ? (
           <>
-            <span style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--blue-bg)', color: 'var(--blue)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12.5, fontWeight: 700 }}>
-              {(me.nickname || me.code).slice(0, 2)}
-            </span>
+            {/* วงกลมเปล่าๆ ไม่ใส่ตัวอักษรย่อ (user สั่ง) */}
+            <span style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--blue-bg)', border: '1px solid var(--border)', flexShrink: 0 }} />
             {me.nickname || me.code}
           </>
         ) : (

@@ -157,9 +157,8 @@ export default function MobileMe() {
           <>
             {/* หัว — ใครกำลังดูอยู่ */}
             <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 14 }}>
-              <span style={{ width: 54, height: 54, borderRadius: '50%', background: 'var(--blue-bg)', color: 'var(--blue)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 700, flexShrink: 0 }}>
-                {(emp.nickname || emp.code).slice(0, 2)}
-              </span>
+              {/* วงกลมเปล่าๆ ไม่ใส่ตัวอักษรย่อ (user สั่ง) */}
+              <span style={{ width: 54, height: 54, borderRadius: '50%', background: 'var(--blue-bg)', border: '1px solid var(--border)', flexShrink: 0 }} />
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink)' }}>{emp.nickname || emp.name || emp.code}</div>
                 <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>{emp.name || '—'}</div>
