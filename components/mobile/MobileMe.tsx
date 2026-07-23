@@ -14,6 +14,8 @@ import { usePullToRefresh, PullIndicator, CardSkeleton } from './mobileUi'
 
 type Leave = { date: string | null; time: string | null; type: string | null; reason: string | null; status: string | null }
 type ScanRow = { order_number: string; stage: string | null; scanned_at: string | null }
+type OrderRow = { id: string; order_number: string | null; customer_name: string | null; order_status: string | null }
+type OrderInfo = { customer: string | null; status: string | null }
 
 const STAGE_ORDER = ['ตัด', 'เย็บ', 'รีด', 'แพ็ค', 'แพ็คราง', 'จัดส่งแล้ว']
 const STATUS_COLOR: Record<string, string> = { 'อนุมัติ': 'var(--green)', 'ใบลาเรียบร้อย': 'var(--green)', 'ไม่อนุมัติ': 'var(--red)' }
@@ -31,6 +33,29 @@ function tenure(start: string | null): string {
   if (months < 0) return '—'
   const y = Math.floor(months / 12), m = months % 12
   return [y ? `${y} ปี` : '', m ? `${m} เดือน` : '', !y && !m ? 'เพิ่งเริ่ม' : ''].filter(Boolean).join(' ')
+}
+
+// หาชื่อลูกค้า/สถานะของออเดอร์ที่สแกนไป — เอาไว้โชว์ในรายการ + กดเข้าโฟลเดอร์ลูกค้าได้
+// ‼️ กุญแจใน production_scans = order_number หรือ 'id:<uuid>' ถ้าออเดอร์นั้นไม่มีเลข (ดู MobileCustomer)
+async function fetchOrderInfo(rows: ScanRow[]): Promise<Record<string, OrderInfo>> {
+  const keys = [...new Set(rows.map(r => String(r.order_number)))]
+  const nums = keys.filter(k => !k.startsWith('id:'))
+  const ids = keys.filter(k => k.startsWith('id:')).map(k => k.slice(3))
+  const chunk = <T,>(arr: T[], size = 200) => Array.from({ length: Math.ceil(arr.length / size) }, (_, i) => arr.slice(i * size, i * size + size))
+  const cols = 'id, order_number, customer_name, order_status'
+
+  const results = await Promise.all([
+    ...chunk(nums).map(c => fetchAllRows<OrderRow>(() => supabase.from('order_entries').select(cols).in('order_number', c))),
+    ...chunk(ids).map(c => fetchAllRows<OrderRow>(() => supabase.from('order_entries').select(cols).in('id', c))),
+  ])
+
+  const map: Record<string, OrderInfo> = {}
+  for (const r of results.flatMap(x => (x.data as OrderRow[]) ?? [])) {
+    const info = { customer: r.customer_name, status: r.order_status }
+    if (r.order_number) map[r.order_number] = info
+    map[`id:${r.id}`] = info
+  }
+  return map
 }
 
 const card: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 14, boxShadow: 'var(--shadow)' }
@@ -66,6 +91,7 @@ export default function MobileMe() {
   const [emp, setEmp] = useState<Staff | null>(null)
   const [leaves, setLeaves] = useState<Leave[]>([])
   const [scans, setScans] = useState<ScanRow[]>([])
+  const [orderInfo, setOrderInfo] = useState<Record<string, OrderInfo>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [allLeaves, setAllLeaves] = useState(false)
@@ -92,7 +118,9 @@ export default function MobileMe() {
       ])
       setLeaves((lv.data ?? []).map(l => ({ date: l.leave_date, time: l.leave_time, type: l.leave_type, reason: l.reason, status: l.leave_status })))
       // ทิ้งแถวขยะเก่าที่เก็บ URL ไว้ในช่องเลขออเดอร์ (เหมือนหน้า /staff/[code])
-      setScans(((sc.data as ScanRow[]) ?? []).filter(x => x.order_number && !String(x.order_number).startsWith('http')))
+      const rows = ((sc.data as ScanRow[]) ?? []).filter(x => x.order_number && !String(x.order_number).startsWith('http'))
+      setScans(rows)
+      setOrderInfo(await fetchOrderInfo(rows))
     } catch (e) {
       setError((e as { message?: string })?.message || 'โหลดข้อมูลไม่สำเร็จ')
     }
@@ -214,20 +242,42 @@ export default function MobileMe() {
               <div style={{ ...card, marginTop: 10, textAlign: 'center', color: 'var(--ink-4)', fontSize: 12.5 }}>ยังไม่มีประวัติการสแกน</div>
             ) : (
               <div style={{ ...card, marginTop: 10, padding: 0, overflow: 'hidden' }}>
-                {shownScans.map((s, i) => (
-                  <div key={`${s.order_number}-${s.scanned_at}-${i}`}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 13px', borderTop: i ? '1px solid var(--border)' : 'none' }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {String(s.order_number).startsWith('id:') ? '(ไม่มีเลขออเดอร์)' : s.order_number}
+                {shownScans.map((s, i) => {
+                  const info = orderInfo[String(s.order_number)]
+                  const customer = info?.customer || ''
+                  // มีชื่อลูกค้าถึงจะกดเข้าโฟลเดอร์ได้ (โฟลเดอร์ค้นด้วยชื่อลูกค้า) — ไม่มีชื่อก็แสดงเฉยๆ
+                  const rowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '10px 13px', borderTop: i ? '1px solid var(--border)' : 'none' }
+                  const body = (
+                    <>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {customer || (String(s.order_number).startsWith('id:') ? '(ไม่มีเลขออเดอร์)' : s.order_number)}
+                        </div>
+                        <div style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {[
+                            customer && !String(s.order_number).startsWith('id:') ? s.order_number : '',
+                            s.scanned_at ? new Date(s.scanned_at).toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '',
+                          ].filter(Boolean).join(' · ')}
+                        </div>
                       </div>
-                      <div style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 2 }}>
-                        {s.scanned_at ? new Date(s.scanned_at).toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
-                      </div>
-                    </div>
-                    <span style={{ flexShrink: 0, background: 'var(--blue-bg)', color: 'var(--blue)', borderRadius: 999, padding: '3px 10px', fontSize: 11.5, fontWeight: 600 }}>{s.stage || '—'}</span>
-                  </div>
-                ))}
+                      <span style={{ flexShrink: 0, background: 'var(--blue-bg)', color: 'var(--blue)', borderRadius: 999, padding: '3px 10px', fontSize: 11.5, fontWeight: 600 }}>{s.stage || '—'}</span>
+                      {customer && (
+                        <svg width="15" height="15" fill="none" stroke="var(--ink-4)" strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                        </svg>
+                      )}
+                    </>
+                  )
+                  const key = `${s.order_number}-${s.scanned_at}-${i}`
+                  return customer ? (
+                    <button key={key} className="m-card-tap" onClick={() => router.push(`/m/customers?name=${encodeURIComponent(customer)}`)}
+                      style={{ ...rowStyle, border: 'none', borderTop: i ? '1px solid var(--border)' : 'none', background: 'transparent', cursor: 'pointer', font: 'inherit', WebkitTapHighlightColor: 'transparent' }}>
+                      {body}
+                    </button>
+                  ) : (
+                    <div key={key} style={rowStyle}>{body}</div>
+                  )
+                })}
                 {scans.length > 8 && (
                   <button onClick={() => setAllScans(v => !v)}
                     style={{ width: '100%', minHeight: 40, border: 'none', borderTop: '1px solid var(--border)', background: 'transparent', color: 'var(--blue)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
