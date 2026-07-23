@@ -391,6 +391,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   })
   const [addTypeModal, setAddTypeModal] = useState(false)
   const [incompleteFilter, setIncompleteFilter] = useState(false)
+  const [unprintedFilter, setUnprintedFilter] = useState(false)
   const [allDaysSort, setAllDaysSort] = useState<'asc' | 'desc' | null>('asc')
   const [allUpdatedSort, setAllUpdatedSort] = useState<'asc' | 'desc' | null>(null)
   const [allDeadlineFrom, setAllDeadlineFrom] = useState('')
@@ -1341,7 +1342,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     // จัดส่งแล้ว/ยกเลิก → ย้ายไปอยู่หมวดของตัวเองหมวดเดียว หายจากหมวดอื่นทั้งหมด (ตรรกะอยู่ใน lib/orderTabs.ts)
     const matchQuick = matchQuickTab(r, quickFilter as QuickTab)
     const matchIncomplete = !incompleteFilter || (!r.items || r.items.length === 0 || !r.deadline || r.price == null || !r.customer_name || (OUTSIDE_PLATFORMS.includes(r.platform ?? '') && (!r.order_assigned || r.order_assigned === 'รออัพเดท')) || ((OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation) && (!r.payment_status || r.payment_status === 'ยังไม่ชำระ')))
-    return matchSearch && matchStatus && matchPlatform && matchCourier && matchAdmin && matchTech && matchUrgent && matchInstall && matchShipping && matchQuick && matchIncomplete
+    const matchUnprinted = !unprintedFilter || !r.printed_at
+    return matchSearch && matchStatus && matchPlatform && matchCourier && matchAdmin && matchTech && matchUrgent && matchInstall && matchShipping && matchQuick && matchIncomplete && matchUnprinted
   })
 
   if (updatedSort) {
@@ -1944,6 +1946,19 @@ ${body}
               ข้อมูลไม่ครบ
               <span style={{ background: incompleteFilter ? 'rgba(255,255,255,0.3)' : '#ef444422', color: incompleteFilter ? '#fff' : '#ef4444', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
                 {incompleteCount}
+              </span>
+            </button>
+          )
+        })()}
+        {(() => {
+          const unprintedCount = scopedRows.filter(r => matchQuickTab(r, quickFilter as QuickTab) && !r.printed_at).length
+          if (unprintedCount === 0) return null
+          return (
+            <button onClick={() => setUnprintedFilter(f => !f)}
+              style={{ padding: '6px 14px', borderRadius: 20, border: unprintedFilter ? 'none' : '1px solid var(--border)', background: unprintedFilter ? '#eab308' : 'var(--surface)', color: unprintedFilter ? '#fff' : '#eab308', fontSize: 13, fontWeight: unprintedFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+              ยังไม่ปริ้น
+              <span style={{ background: unprintedFilter ? 'rgba(255,255,255,0.3)' : '#eab30822', color: unprintedFilter ? '#fff' : '#eab308', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
+                {unprintedCount}
               </span>
             </button>
           )
