@@ -292,6 +292,15 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
 
 const isClaimRow = (platform: string | null | undefined) => (platform ?? '').startsWith('เคลม:')
 
+// ปริ้นใบงานเกิน 24 ชม. แล้ว แต่สถานะผลิตยังไม่ขยับ (ยังเป็น "รอดำเนินการ")
+const isPrintedPending = (r: Entry) => {
+  if (!r.printed_at) return false
+  if (r.order_status && r.order_status !== 'รอดำเนินการ') return false
+  const t = new Date(r.printed_at).getTime()
+  if (Number.isNaN(t)) return false
+  return Date.now() - t >= 24 * 60 * 60 * 1000
+}
+
 // สถานะติดตั้ง: แถวเก่าที่ติ๊ก checkbox ไว้ (is_dropoff) ให้ถือเป็น "ติดตั้งแล้ว"
 const installStatusOf = (r: Entry) => r.install_status || (r.is_dropoff ? 'ติดตั้งแล้ว' : '')
 const INSTALL_STATUS_OPTIONS = ['ติดตั้งแล้ว', 'ติดตั้ง50%']
@@ -392,6 +401,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [addTypeModal, setAddTypeModal] = useState(false)
   const [incompleteFilter, setIncompleteFilter] = useState(false)
   const [unprintedFilter, setUnprintedFilter] = useState(false)
+  const [printedPendingFilter, setPrintedPendingFilter] = useState(false)
   const [allDaysSort, setAllDaysSort] = useState<'asc' | 'desc' | null>('asc')
   const [allUpdatedSort, setAllUpdatedSort] = useState<'asc' | 'desc' | null>(null)
   const [allDeadlineFrom, setAllDeadlineFrom] = useState('')
@@ -1343,7 +1353,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const matchQuick = matchQuickTab(r, quickFilter as QuickTab)
     const matchIncomplete = !incompleteFilter || (!r.items || r.items.length === 0 || !r.deadline || r.price == null || !r.customer_name || (OUTSIDE_PLATFORMS.includes(r.platform ?? '') && (!r.order_assigned || r.order_assigned === 'รออัพเดท')) || ((OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation) && (!r.payment_status || r.payment_status === 'ยังไม่ชำระ')))
     const matchUnprinted = !unprintedFilter || !r.printed_at
-    return matchSearch && matchStatus && matchPlatform && matchCourier && matchAdmin && matchTech && matchUrgent && matchInstall && matchShipping && matchQuick && matchIncomplete && matchUnprinted
+    const matchPrintedPending = !printedPendingFilter || isPrintedPending(r)
+    return matchSearch && matchStatus && matchPlatform && matchCourier && matchAdmin && matchTech && matchUrgent && matchInstall && matchShipping && matchQuick && matchIncomplete && matchUnprinted && matchPrintedPending
   })
 
   if (updatedSort) {
@@ -1954,11 +1965,25 @@ ${body}
           const unprintedCount = scopedRows.filter(r => matchQuickTab(r, quickFilter as QuickTab) && !r.printed_at).length
           if (unprintedCount === 0) return null
           return (
-            <button onClick={() => setUnprintedFilter(f => !f)}
+            <button onClick={() => { setUnprintedFilter(f => !f); setPrintedPendingFilter(false) }}
               style={{ padding: '6px 14px', borderRadius: 20, border: unprintedFilter ? 'none' : '1px solid var(--border)', background: unprintedFilter ? '#eab308' : 'var(--surface)', color: unprintedFilter ? '#fff' : '#eab308', fontSize: 13, fontWeight: unprintedFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
               ยังไม่ปริ้น
               <span style={{ background: unprintedFilter ? 'rgba(255,255,255,0.3)' : '#eab30822', color: unprintedFilter ? '#fff' : '#eab308', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
                 {unprintedCount}
+              </span>
+            </button>
+          )
+        })()}
+        {(() => {
+          const printedPendingCount = scopedRows.filter(r => matchQuickTab(r, quickFilter as QuickTab) && isPrintedPending(r)).length
+          if (printedPendingCount === 0) return null
+          return (
+            <button onClick={() => { setPrintedPendingFilter(f => !f); setUnprintedFilter(false) }}
+              title="ปริ้นใบงานไปเกิน 24 ชม. แล้ว แต่สถานะยังเป็น รอดำเนินการ"
+              style={{ padding: '6px 14px', borderRadius: 20, border: printedPendingFilter ? 'none' : '1px solid var(--border)', background: printedPendingFilter ? '#3b82f6' : 'var(--surface)', color: printedPendingFilter ? '#fff' : '#3b82f6', fontSize: 13, fontWeight: printedPendingFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+              ปริ้นแล้วแต่ยังไม่ดำเนินการ
+              <span style={{ background: printedPendingFilter ? 'rgba(255,255,255,0.3)' : '#3b82f622', color: printedPendingFilter ? '#fff' : '#3b82f6', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
+                {printedPendingCount}
               </span>
             </button>
           )
