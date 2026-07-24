@@ -5,8 +5,8 @@ import ServiceWorkerRegister from '@/components/ServiceWorkerRegister'
 export const metadata: Metadata = {
   title: 'Donna Design',
   description: 'Donna Design Management System',
-  // apple-touch-icon ผ่าน metadata (ไม่ฮาร์ดโค้ดใน <head>) — โลโก้แบรนด์เว้นขอบ วางบนพื้นน้ำตาล
-  icons: { apple: '/icon-hub-apple-180.png' },
+  // apple-touch-icon ผ่าน metadata (ไม่ฮาร์ดโค้ดใน <head>) — ใช้โลโก้เดิม (ดูคอมเมนต์ใน app/manifest.ts)
+  icons: { apple: '/donna-logo.jpg' },
   // ‼️ iOS ไม่อ่านชื่อ/ไอคอนจาก manifest — ชื่อแอปบน iPhone มาจาก title ตรงนี้เท่านั้น (ต้องตรงกับ manifest)
   appleWebApp: {
     capable: true,

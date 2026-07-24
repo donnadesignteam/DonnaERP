@@ -3,6 +3,25 @@
 import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
+// เข้าจากมือถือ (แอปที่ติดตั้งไว้ หรือเปิดในเบราว์เซอร์จอเล็ก) → ห้ามพาไปหน้าเดสก์ท็อป
+function onPhone() {
+  if (typeof window === 'undefined') return false
+  const standalone = window.matchMedia('(display-mode: standalone)').matches
+    || (window.navigator as Navigator & { standalone?: boolean }).standalone === true
+  return standalone || window.matchMedia('(max-width: 820px)').matches
+}
+
+// เลือกหน้าปลายทางหลังล็อกอิน
+// - from = '/dashboard' หรือ '/' แปลว่า "ไม่ได้ตั้งใจมาหน้าไหนเป็นพิเศษ" (ค่า default / เปิดหน้าแรก)
+//   เคสนี้เท่านั้นที่เลือกปลายทางให้เอง: พนักงาน → แดชบอร์ดของตัวเอง, มือถือ → hub, คอม → /dashboard
+// - ถ้ามาจากหน้าอื่น (เช่น /scan?o=... ที่โดนเด้งมา) ให้กลับไปหน้านั้นเสมอ
+function landing(from: string, staff: boolean) {
+  const noPreference = from === '/dashboard' || from === '/'
+  if (!noPreference) return from
+  if (staff) return '/m/me'
+  return onPhone() ? '/hub' : '/dashboard'
+}
+
 function LoginForm() {
   const router = useRouter()
   const params = useSearchParams()
@@ -25,8 +44,7 @@ function LoginForm() {
       })
       const data = await res.json()
       if (res.ok && data.ok) {
-        // เข้าด้วยรหัสพนักงานจากหน้าเปล่าๆ → พาไปแดชบอร์ดของตัวเองเลย (ฝั่งเซิร์ฟเวอร์บอกมาว่าเป็นพนักงาน)
-        router.replace(data.staff && from === '/dashboard' ? '/m/me' : from)
+        router.replace(landing(from, !!data.staff))
       } else {
         setError(data.error || 'เข้าสู่ระบบไม่สำเร็จ')
       }

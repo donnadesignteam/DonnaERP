@@ -13,12 +13,16 @@ export default function manifest(): MetadataRoute.Manifest {
     display: 'standalone',
     background_color: '#FAF8F5',
     theme_color: '#C47E3A',
-    // ‼️ ไอคอน hub = โลโก้แบรนด์ (icon-hub-*) ไม่ใช่ icon-192/512 ที่เป็นธีม QR ของแอปสแกน
-    //    maskable ต้องมีแยก + เว้น safe zone ไม่งั้น Android ครอปตัวหนังสือ DESIGN ทิ้ง
+    // ‼️ user สั่งกลับมาใช้รูปโลโก้เดิม (donna-logo.jpg) — icon-hub-*.png ที่เคยทำให้
+    //    มีเส้นขาวของกรอบโลโก้ขึ้นบนไอคอน อย่าเสนอเปลี่ยนกลับ
+    //    (icon-192/512.png ในโฟลเดอร์ public เป็นธีม QR ของแอปสแกน ห้ามเอามาใช้กับ hub)
     icons: [
-      { src: '/icon-hub-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-      { src: '/icon-hub-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-      { src: '/icon-hub-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      {
+        src: '/donna-logo.jpg',
+        sizes: 'any',
+        type: 'image/jpeg',
+        purpose: 'any',
+      },
     ],
   }
 }
