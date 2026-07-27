@@ -672,8 +672,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
 
     push('')
 
-    if (r.shipping_datetime && r.shipping_datetime !== '-') {
-      push(`ส่งก่อน ${r.shipping_datetime}`)
+    // ‼️ ใช้ effShipping (dropoff +2 + เลี่ยงวันอาทิตย์/วันหยุดร้าน) ให้ตรงกับวันที่ที่โชว์บนหน้าจอ — ห้ามใช้ shipping_datetime ดิบ
+    const effShip = effShipping(r)
+    if (effShip && effShip !== '-') {
+      push(`ส่งก่อน ${effShip}`)
     }
     if (r.courier) push(r.courier)
     if (r.notes) push(`หมายเหตุ: ${r.notes}`)
