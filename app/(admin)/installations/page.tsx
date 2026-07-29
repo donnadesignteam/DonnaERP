@@ -163,6 +163,8 @@ export default function InstallationsPage() {
   const [apptTime, setApptTime] = useState('9:00')
   const [listFilter, setListFilter] = useState<'all' | string>('all')
   const [zoneFilter, setZoneFilter] = useState<string | null>(null)  // filter ปฏิทินตามโซนติดตั้ง
+  const [listZone, setListZone] = useState<string | null>(null)   // filter รายการด้านล่างตามโซนติดตั้ง
+  const [bonusZone, setBonusZone] = useState<string | null>(null) // filter ยอดติดตั้งตามโซนติดตั้ง
   const [search, setSearch] = useState('')
   const [error, setError] = useState('')
   const [pasteText, setPasteText] = useState('')
@@ -453,8 +455,9 @@ export default function InstallationsPage() {
     const d = new Date(ins.appointment_datetime)
     return d.getMonth() === Number(listFilter.split('-')[1]) - 1 && d.getFullYear() === Number(listFilter.split('-')[0])
   })
+  const byZone = listZone ? byMonth.filter(ins => ins.install_zone === listZone) : byMonth
   const q = search.trim().toLowerCase()
-  const displayed = (!q ? byMonth : byMonth.filter(ins =>
+  const displayed = (!q ? byZone : byZone.filter(ins =>
     [ins.serial_no, ins.customer_real_name, ins.customer_id, ins.platform, ins.province, ins.install_zone, ins.phone, ins.installation_status, ins.notes]
       .some(v => (v ?? '').toLowerCase().includes(q))
   )).map(live)
@@ -548,6 +551,19 @@ export default function InstallationsPage() {
       {/* List */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)' }}>รายการทั้งหมด</h2>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        {/* เลือกโซนของรายการด้านล่าง — ชุดเดียวกับชิปโซนบนปฏิทิน แต่คุมเฉพาะตารางรายการ */}
+        <div className="no-print" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {([['ทุกโซน', null], ...ZONES.map(z => [z, z] as [string, string])] as [string, string | null][]).map(([label, val]) => {
+            const n = val ? byMonth.filter(i => i.install_zone === val).length : byMonth.length
+            return (
+              <button key={label} onClick={() => setListZone(val)}
+                style={{ padding: '5px 12px', borderRadius: 980, border: listZone === val ? 'none' : '1px solid var(--border)', background: listZone === val ? 'var(--blue)' : '#fff', color: listZone === val ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: listZone === val ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                {label} <span style={{ opacity: 0.75 }}>{n}</span>
+              </button>
+            )
+          })}
+        </div>
         <select value={listFilter} onChange={e => setListFilter(e.target.value)}
           style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 12px', fontSize: 13, outline: 'none' }}>
           <option value="all">ทั้งหมด</option>
@@ -558,6 +574,7 @@ export default function InstallationsPage() {
             <option key={m} value={m}>{TH_MONTHS[Number(m.split('-')[1]) - 1]} {Number(m.split('-')[0]) + 543}</option>
           ))}
         </select>
+        </div>
       </div>
       <div style={{ position: 'relative', marginBottom: 16 }}>
         <input value={search} onChange={e => setSearch(e.target.value)}
@@ -911,6 +928,7 @@ export default function InstallationsPage() {
         const inMonth = installs.filter(ins => {
           if (!ins.appointment_datetime) return false
           const d = new Date(ins.appointment_datetime)
+          if (bonusZone && ins.install_zone !== bonusZone) return false
           return d.getFullYear() === by && d.getMonth() === bm - 1
         })
         const done = inMonth.filter(ins => ins.installation_status === 'ติดตั้งเสร็จ')
@@ -935,8 +953,17 @@ export default function InstallationsPage() {
           <div onClick={() => setBonusModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 860, maxHeight: '88vh', overflowY: 'auto' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 10 }}>
-                <h2 style={{ fontSize: 17, fontWeight: 700 }}>ยอดติดตั้ง</h2>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <h2 style={{ fontSize: 17, fontWeight: 700 }}>ยอดติดตั้ง{bonusZone ? <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--ink-3)' }}> — โซน{bonusZone}</span> : null}</h2>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                  {/* เลือกโซน — ยอด/โบนัสจะคิดเฉพาะงานในโซนที่เลือก */}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {([['ทุกโซน', null], ...ZONES.map(z => [z, z] as [string, string])] as [string, string | null][]).map(([label, val]) => (
+                      <button key={label} onClick={() => setBonusZone(val)}
+                        style={{ padding: '5px 12px', borderRadius: 980, border: bonusZone === val ? 'none' : '1px solid var(--border)', background: bonusZone === val ? 'var(--blue)' : '#fff', color: bonusZone === val ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: bonusZone === val ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                   <select value={bonusMonth} onChange={e => setBonusMonth(e.target.value)}
                     style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '6px 12px', fontSize: 13, outline: 'none' }}>
                     {monthOptions.map(m => (
@@ -967,7 +994,7 @@ export default function InstallationsPage() {
                 </div>
               )}
               {done.length === 0 ? (
-                <p style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 24, fontSize: 13 }}>ยังไม่มีงานติดตั้งเสร็จในเดือนนี้</p>
+                <p style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 24, fontSize: 13 }}>ยังไม่มีงานติดตั้งเสร็จในเดือนนี้{bonusZone ? ` (โซน${bonusZone})` : ''}</p>
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead>

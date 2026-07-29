@@ -48,6 +48,12 @@ function extractOrder(text: string): string {
   return t
 }
 
+// ดึง id ของ "งานเคลม" จาก QR ใบเคลม (ฝัง ?c=<uuid>) — คนละตารางกับออเดอร์ (claims)
+function extractClaimId(text: string): string {
+  const m = String(text).match(/[?&]c=([0-9a-f-]{36})/i)
+  return m ? m[1] : ''
+}
+
 // ดึง id ของแถวจาก QR (QR ใหม่ฝัง ?id=NNN — แม่นยำกว่า order_number)
 function extractId(text: string): string {
   try { const u = new URL(text); const id = u.searchParams.get('id'); if (id) return id } catch {}
@@ -63,6 +69,7 @@ function ScanContent() {
   const sp = useSearchParams()
   const urlOrder = (sp.get('o') || '').trim()
   const urlId = (sp.get('id') || '').trim()
+  const urlClaim = (sp.get('c') || '').trim()   // เปิดจาก QR ใบเคลม
 
   const [tech, setTech] = useState<Tech | null>(null)
   const [ready, setReady] = useState(false)
@@ -126,10 +133,11 @@ function ScanContent() {
 
   // กรณีเปิดจากลิงก์ที่มี id/เลขออเดอร์ (เช่นสแกนด้วยแอปกล้องของเครื่อง) → อัปเดตครั้งเดียว
   useEffect(() => {
-    if (!ready || !tech || (!urlOrder && !urlId)) return
-    runScan(tech, urlId, urlOrder)
+    if (!ready || !tech || (!urlOrder && !urlId && !urlClaim)) return
+    if (urlClaim) runClaimScan(tech, urlClaim)
+    else runScan(tech, urlId, urlOrder)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, tech, urlOrder, urlId])
+  }, [ready, tech, urlOrder, urlId, urlClaim])
 
   // handler สแกน — เก็บใน ref ให้ callback ของกล้องเรียกตัวล่าสุดเสมอ (เปลี่ยนโหมด/state แล้วไม่ค้าง closure เก่า)
   const decodeRef = useRef<(decoded: string) => void>(() => {})
@@ -156,10 +164,20 @@ function ScanContent() {
       return
     }
 
+    // ---- QR ใบเคลม (?c=) → เดินสถานะงานเคลม ----
+    const claimId = extractClaimId(decoded)
+    if (claimId) {
+      await runClaimScan(tech, claimId)
+      if (!askJoinRef.current) {
+        resumeTimerRef.current = setTimeout(() => { try { html5.resume() } catch {}; busyRef.current = false; setPhase('scanning') }, 4000)
+      }
+      return
+    }
+
     // ---- โหมดปกติ: สแกน QR ใบออเดอร์ ----
     const res = await runScan(tech, extractId(decoded), extractOrder(decoded))
     // แผนกจัดส่งแล้ว: ติ๊กเสร็จ → ต่อด้วยสแกนบาร์โค้ดเลขพัสดุทันที
-    if (tech.stageKey === 'shipped' && res?.id) {
+    if (tech.stageKey === 'shipped' && res?.id && !res.isClaim) {
       shipRef.current = { id: res.id, orderNumber: res.order_number || '', courier: res.courier || '', existing: Array.isArray(res.shipments) ? res.shipments : [] }
       shipNosRef.current = []; setShipNos([]); setShipMsg('')
       modeRef.current = 'barcode'
@@ -242,14 +260,14 @@ function ScanContent() {
   }
 
   useEffect(() => {
-    if (!ready || !tech || urlOrder || urlId) return
+    if (!ready || !tech || urlOrder || urlId || urlClaim) return
     startCamera()
     return () => {
       const s = scannerRef.current
       if (s) { try { s.stop().then(() => s.clear()).catch(() => {}) } catch {} ; scannerRef.current = null; startedRef.current = false }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, tech, urlOrder, urlId])
+  }, [ready, tech, urlOrder, urlId, urlClaim])
 
   // ค้นออเดอร์: id ก่อน (แม่นสุด) → order_number แบบไม่สนตัวพิมพ์ → contains (เผื่อช่องว่าง/QR เก่า)
   async function findOrder(id: string, ord: string) {
@@ -337,6 +355,52 @@ function ScanContent() {
 
   // คืนค่า order ที่อัปเดตแล้วเมื่อสำเร็จ (แผนกจัดส่งแล้วใช้ต่อเป็นโหมดสแกนบาร์โค้ด) / null เมื่อไม่สำเร็จ
   // การบันทึกทั้งหมด (สถานะ + กันข้ามขั้น + sync กระดานงาน + log สแกน + ประวัติ) ทำใน RPC ตัวเดียว
+  // ===== สแกน QR ใบเคลม → เดินสถานะงานเคลม (ตาราง claims ผ่าน RPC claim_scan_advance) =====
+  // ‼️ ต้องรัน sql/claim_scan.sql ใน Supabase ก่อน ไม่งั้น RPC ไม่มีจริง
+  async function runClaimScan(t: Tech, claimId: string): Promise<any> {
+    const stage = resolveStage(t.stageKey)
+    if (!stage) { setPhase('error'); setMsg('ไม่พบแผนกของผู้ใช้ กรุณาตั้งค่าใหม่'); return null }
+    setUploadedCnt({}); setUploadErr(''); setPhotos([]); setJoinInfo(null); askJoinRef.current = false
+    setPhase('working')
+
+    const { data: c } = await supabase.from('claims')
+      .select('id, claim_date, channel, customer_username, original_order_number, status')
+      .eq('id', claimId).limit(1)
+    const cl = c && c[0]
+    if (!cl) { setOrder({ order_number: 'ใบเคลม (ไม่พบในระบบ)', isClaim: true }); setPhase('noorder'); return null }
+
+    // ใช้โครงเดียวกับออเดอร์เพื่อให้หน้าจอผลลัพธ์ใช้ร่วมกันได้ (order_number = ป้ายที่โชว์)
+    const base = {
+      id: cl.id, isClaim: true,
+      order_number: 'เคลม ' + [cl.channel, cl.customer_username].filter(Boolean).join(': '),
+      customer_name: cl.original_order_number ? 'ออเดอร์เดิม ' + cl.original_order_number : '',
+      order_status: cl.status,
+    }
+    setOrder(base)
+
+    const { data, error } = await supabase.rpc('claim_scan_advance', {
+      p_claim_id: cl.id,
+      p_stage_key: t.stageKey,
+      p_tech_code: t.code,
+      p_tech_name: t.name,
+    })
+    if (error) { setPhase('error'); setMsg(error.message); return null }
+    if (!data?.ok) {
+      if (data?.result === 'already') {
+        setJoinInfo({ stage: data.stage || stage.label, people: Array.isArray(data.people) ? data.people : [], mine: !!data.mine })
+        askJoinRef.current = true
+        setPhase('already'); setMsg(`สถานะปัจจุบัน: ${data.current_status || 'รอของคืน'}`); return null
+      }
+      if (data?.result === 'bad_stage') { setPhase('error'); setMsg('งานเคลมไม่มีขั้นนี้ (เช่น แพ็คราง) — เปลี่ยนแผนกก่อนสแกน'); return null }
+      if (data?.result === 'not_found') { setPhase('noorder'); return null }
+      setPhase('error'); setMsg(String(data?.result || 'อัปเดตไม่สำเร็จ')); return null
+    }
+    const done = { ...base, order_status: data.status }
+    setOrder(done)
+    setPhase('done')
+    return done
+  }
+
   // แบบ all-or-nothing (sql/scan_advance_rpc.sql) — สำเร็จคือครบทุกตาราง พังคือไม่บันทึกอะไรเลย
   async function runScan(t: Tech, id: string, ord: string): Promise<any> {
     const stage = resolveStage(t.stageKey)
@@ -381,13 +445,17 @@ function ScanContent() {
     if (!order?.id || !tech || joining) return
     setJoining(true)
     try {
-      const { data, error } = await supabase.rpc('scan_join', {
-        p_order_id: order.id,
-        p_stage_key: tech.stageKey,
-        p_tech_code: tech.code,
-        p_tech_name: tech.name,
-        p_scanned_term: order.order_number || '',
-      })
+      const { data, error } = order.isClaim
+        ? await supabase.rpc('claim_scan_join', {
+            p_claim_id: order.id, p_stage_key: tech.stageKey, p_tech_code: tech.code, p_tech_name: tech.name,
+          })
+        : await supabase.rpc('scan_join', {
+            p_order_id: order.id,
+            p_stage_key: tech.stageKey,
+            p_tech_code: tech.code,
+            p_tech_name: tech.name,
+            p_scanned_term: order.order_number || '',
+          })
       if (error) { setMsg(error.message); setPhase('error') }
       else if (!data?.ok) {
         // คนเดิมสแกนซ้ำเอง — ไม่บันทึกซ้ำ กันนับผลงานเกินจริง
@@ -490,7 +558,8 @@ function ScanContent() {
 
   const stage = resolveStage(tech.stageKey)
   const stageColor = '#2563eb'
-  const slots = UPLOAD_SLOTS[tech.stageKey] ?? []
+  // งานเคลมยังไม่มีที่เก็บรูป (packing_photos อยู่ที่ตารางออเดอร์) → ไม่โชว์ปุ่มอัพรูป
+  const slots = order?.isClaim ? [] : (UPLOAD_SLOTS[tech.stageKey] ?? [])
   // อัพรูปได้เมื่อเจอออเดอร์แล้ว (done หรือ already — เผื่อสแกนซ้ำเพื่อเพิ่มรูป)
   const canUpload = slots.length > 0 && (phase === 'done' || phase === 'already' || phase === 'joined') && order?.id
 
@@ -500,7 +569,7 @@ function ScanContent() {
       <div style={centerWrap}>
         <div style={card}>
           <Identity tech={tech} stageLabel={stage?.label} onLogout={logout} />
-          <Result phase={phase} order={order} msg={msg} stage={stage} onUndo={undoScan} undoing={undoing} />
+          <Result phase={phase} order={order} msg={msg} stage={stage} onUndo={order?.isClaim ? undefined : undoScan} undoing={undoing} />
           {canUpload && <PhotoUpload slots={slots} uploading={uploading} counts={uploadedCnt} err={uploadErr} onPick={pickPhoto} photos={photos} delBusy={delBusy} onDelete={deletePhoto} />}
           <a href="/scan" style={{ display: 'inline-block', marginTop: 18, color: stageColor, fontSize: 14, fontWeight: 600 }}>เปิดกล้องสแกนต่อ →</a>
         </div>
@@ -594,7 +663,7 @@ function ScanContent() {
         {showOverlay && (
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(11,18,32,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, overflowY: 'auto' }}>
             <div style={{ ...card, maxWidth: 380 }}>
-              <Result phase={phase} order={order} msg={msg} stage={stage} onUndo={undoScan} undoing={undoing}
+              <Result phase={phase} order={order} msg={msg} stage={stage} onUndo={order?.isClaim ? undefined : undoScan} undoing={undoing}
                 joinInfo={joinInfo} onJoin={joinScan} onSkipJoin={resumeScan} joining={joining} />
               {canUpload && <PhotoUpload slots={slots} uploading={uploading} counts={uploadedCnt} err={uploadErr} onPick={pickPhoto} photos={photos} delBusy={delBusy} onDelete={deletePhoto} />}
               {/* หน้า 'already' ที่ยังรอตอบ "ลงชื่อช่วยไหม" ไม่ต้องมีปุ่มสแกนต่อ — ปุ่ม "ไม่ใช่" ทำหน้าที่นั้นแทน */}
@@ -709,8 +778,8 @@ function Result({ phase, order, msg, stage, onUndo, undoing, joinInfo, onJoin, o
   if (phase === 'done') return (
     <>
       <div style={{ fontSize: 54, marginBottom: 8 }}>✅</div>
-      <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6, color: '#16a34a' }}>{stage?.status}</h1>
-      <p style={{ fontSize: 15 }}>ออเดอร์ <b>{order?.order_number}</b></p>
+      <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6, color: '#16a34a' }}>{order?.isClaim ? (order?.order_status || stage?.status) : stage?.status}</h1>
+      <p style={{ fontSize: 15 }}>{order?.isClaim ? '' : 'ออเดอร์ '}<b>{order?.order_number}</b></p>
       <p style={{ fontSize: 14, color: '#666' }}>{order?.customer_name}</p>
       {onUndo && (
         <button onClick={onUndo} disabled={undoing}
@@ -724,7 +793,7 @@ function Result({ phase, order, msg, stage, onUndo, undoing, joinInfo, onJoin, o
     <>
       <div style={{ fontSize: 54, marginBottom: 8 }}>↩️</div>
       <h1 style={{ fontSize: 20, fontWeight: 800, marginBottom: 6, color: '#dc2626' }}>ยกเลิกการสแกนแล้ว</h1>
-      <p style={{ fontSize: 15 }}>ออเดอร์ <b>{order?.order_number}</b></p>
+      <p style={{ fontSize: 15 }}>{order?.isClaim ? '' : 'ออเดอร์ '}<b>{order?.order_number}</b></p>
       <p style={{ fontSize: 14, color: '#666' }}>สถานะกลับเป็น: <b>{order?.order_status || 'รอดำเนินการ'}</b></p>
     </>
   )
@@ -733,7 +802,7 @@ function Result({ phase, order, msg, stage, onUndo, undoing, joinInfo, onJoin, o
     <>
       <div style={{ fontSize: 54, marginBottom: 8 }}>ℹ️</div>
       <h1 style={{ fontSize: 19, fontWeight: 800, marginBottom: 6, color: '#d97706' }}>ออเดอร์นี้สแกนไปแล้ว</h1>
-      <p style={{ fontSize: 15 }}>ออเดอร์ <b>{order?.order_number}</b></p>
+      <p style={{ fontSize: 15 }}>{order?.isClaim ? '' : 'ออเดอร์ '}<b>{order?.order_number}</b></p>
       <p style={{ fontSize: 14, color: '#666' }}>{msg}</p>
       {joinInfo && joinInfo.people.length > 0 && (
         <p style={{ fontSize: 13, color: '#666', marginTop: 6 }}>
@@ -766,7 +835,7 @@ function Result({ phase, order, msg, stage, onUndo, undoing, joinInfo, onJoin, o
     <>
       {/* ไม่มีอีโมจิหน้านี้ (ผู้ใช้สั่งเอาออก) — เว้นระยะบนแทนให้การ์ดไม่ดูชิดขอบ */}
       <h1 style={{ fontSize: 20, fontWeight: 800, margin: '10px 0 6px', color: '#16a34a' }}>บันทึกว่าช่วยทำแล้ว</h1>
-      <p style={{ fontSize: 15 }}>ออเดอร์ <b>{order?.order_number}</b></p>
+      <p style={{ fontSize: 15 }}>{order?.isClaim ? '' : 'ออเดอร์ '}<b>{order?.order_number}</b></p>
       <p style={{ fontSize: 13, color: '#666', marginTop: 6 }}>
         ขั้น <b style={{ color: '#1a1a1a' }}>{joinInfo?.stage}</b> — {(joinInfo?.people ?? []).join(', ')}
       </p>

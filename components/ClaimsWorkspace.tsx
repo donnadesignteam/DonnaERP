@@ -8,6 +8,7 @@ import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { recordAction } from '@/lib/history'
 import { tUpdate, prevOf } from '@/lib/trackedDb'
 import { itemBlockLines } from '@/lib/itemFormat'
+import QRCode from 'qrcode'
 import { railLink } from '@/lib/rail'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { fetchEmployeeOptions } from '@/lib/staffDb'
@@ -315,8 +316,8 @@ export default function ClaimsWorkspace() {
   }
 
   // ปริ้น: หน้าต่างใหม่ + ปุ่มปริ้นในหน้านั้น (แก้ข้อความในใบก่อนปริ้นได้)
-  // ไม่มี QR เหมือนใบออเดอร์ — หน้า /scan อ่านจากตาราง order_entries เคสเคลมสแกนไม่เจอ
-  function openPrintWindow(toPrint: Claim[], title: string, mode: 'auto' | 'table' | 'form' = 'auto') {
+  // ใบแบบฟอร์มมี QR ให้ทีมผลิตสแกนเดินสถานะงานเคลม (/scan?c=<id> → RPC claim_scan_advance ใน sql/claim_scan.sql)
+  async function openPrintWindow(toPrint: Claim[], title: string, mode: 'auto' | 'table' | 'form' = 'auto') {
     const escHtml = (v: unknown) => String(v ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!))
     const asForm = mode === 'form' || (mode === 'auto' && toPrint.length === 1)
 
@@ -331,8 +332,17 @@ export default function ClaimsWorkspace() {
         if (!err) setRows(p => p.map(x => printedIds.includes(x.id) ? { ...x, printed_at: printedNow } : x))
       })
 
+    // QR ต่อใบ — ชี้ไปหน้า /scan บนโดเมนเดียวกับที่เปิดอยู่ (สแกนแล้วเดินสถานะเคลมใบนั้น)
+    let qrs: string[] = []
+    if (asForm) {
+      const origin = window.location.origin
+      qrs = await Promise.all(toPrint.map(r =>
+        QRCode.toDataURL(`${origin}/scan?c=${r.id}`, { margin: 1, width: 240 }).catch(() => '')
+      ))
+    }
+
     const body = asForm
-      ? toPrint.map(r => `<div class="order"><pre class="copy">${formatClaimHtml(r)}</pre></div>`).join('')
+      ? toPrint.map((r, i) => `<div class="order"><pre class="copy">${formatClaimHtml(r)}</pre>${qrs[i] ? `<div class="qr-box"><img class="qr" src="${qrs[i]}"/><div class="qr-cap">สแกนเดินสถานะงานเคลม</div></div>` : ''}</div>`).join('')
       : `<h2>${escHtml(title)} (${toPrint.length} รายการ)</h2>
 <table>
 <thead><tr>
@@ -350,6 +360,9 @@ ${toPrint.map((r, i) => `<tr><td>${i + 1}</td><td>${r.claim_date ? escHtml(new D
 <title>ปริ้นใบเคลม</title>
 <style>
   * { box-sizing: border-box; }
+  .qr-box { display: inline-block; text-align: center; margin-top: 12px; }
+  .qr { width: 120px; height: 120px; display: block; }
+  .qr-cap { font-size: 11px; color: #555; margin-top: 4px; }
   body { font-family: 'Sarabun', 'Noto Sans Thai', sans-serif; font-size: 12px; color: #000; margin: 0; padding: 16px; }
   h2 { font-size: 14px; margin-bottom: 10px; }
   table { width: 100%; border-collapse: collapse; }
@@ -387,7 +400,7 @@ ${body}
   const printTitle = (list: Claim[]) => `ใบเคลม ${list.length} รายการ — ${new Date().toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' })}`
   const requestPrint = (list: Claim[]) => {
     if (list.length === 0) return
-    if (list.length === 1) { openPrintWindow(list, printTitle(list)); return }
+    if (list.length === 1) { void openPrintWindow(list, printTitle(list)); return }
     setPrintAsk(list)
   }
 
@@ -829,11 +842,11 @@ ${body}
             <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>ปริ้น {printAsk.length} รายการ</h3>
             <p style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 16 }}>เลือกรูปแบบเอกสาร</p>
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => { const l = printAsk; setPrintAsk(null); openPrintWindow(l, printTitle(l), 'table') }}
+              <button onClick={() => { const l = printAsk; setPrintAsk(null); void openPrintWindow(l, printTitle(l), 'table') }}
                 style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
                 ตารางสรุป
               </button>
-              <button onClick={() => { const l = printAsk; setPrintAsk(null); openPrintWindow(l, printTitle(l), 'form') }}
+              <button onClick={() => { const l = printAsk; setPrintAsk(null); void openPrintWindow(l, printTitle(l), 'form') }}
                 style={{ flex: 1, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#fff' }}>
                 ฟอร์มรายใบ
               </button>
