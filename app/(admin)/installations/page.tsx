@@ -162,8 +162,7 @@ export default function InstallationsPage() {
   const [apptDate, setApptDate] = useState('')
   const [apptTime, setApptTime] = useState('9:00')
   const [listFilter, setListFilter] = useState<'all' | string>('all')
-  const [zoneFilter, setZoneFilter] = useState<string | null>(null)  // filter ปฏิทินตามโซนติดตั้ง
-  const [listZone, setListZone] = useState<string | null>(null)   // filter รายการด้านล่างตามโซนติดตั้ง
+  const [zoneFilter, setZoneFilter] = useState<string | null>(null)  // โซนติดตั้ง — ชิปชุดเดียวคุมทั้งปฏิทินและรายการด้านล่าง
   const [bonusZone, setBonusZone] = useState<string | null>(null) // filter ยอดติดตั้งตามโซนติดตั้ง
   const [search, setSearch] = useState('')
   const [error, setError] = useState('')
@@ -455,7 +454,7 @@ export default function InstallationsPage() {
     const d = new Date(ins.appointment_datetime)
     return d.getMonth() === Number(listFilter.split('-')[1]) - 1 && d.getFullYear() === Number(listFilter.split('-')[0])
   })
-  const byZone = listZone ? byMonth.filter(ins => ins.install_zone === listZone) : byMonth
+  const byZone = zoneFilter ? byMonth.filter(ins => ins.install_zone === zoneFilter) : byMonth
   const q = search.trim().toLowerCase()
   const displayed = (!q ? byZone : byZone.filter(ins =>
     [ins.serial_no, ins.customer_real_name, ins.customer_id, ins.platform, ins.province, ins.install_zone, ins.phone, ins.installation_status, ins.notes]
@@ -521,15 +520,6 @@ export default function InstallationsPage() {
           </h2>
           <button className="no-print" onClick={nextMonth} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 14, background: '#fff' }}>›</button>
         </div>
-        {/* filter โซนติดตั้ง — กดเลือกดูเฉพาะงานในโซนนั้นบนปฏิทิน */}
-        <div className="no-print" style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-          {([['ทั้งหมด', null], ...ZONES.map(z => [z, z] as [string, string])] as [string, string | null][]).map(([label, val]) => (
-            <button key={label} onClick={() => setZoneFilter(val)}
-              style={{ padding: '5px 14px', borderRadius: 980, border: zoneFilter === val ? 'none' : '1px solid var(--border)', background: zoneFilter === val ? 'var(--blue)' : '#fff', color: zoneFilter === val ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: zoneFilter === val ? 600 : 400, cursor: 'pointer' }}>
-              {label}
-            </button>
-          ))}
-        </div>
         <Calendar year={year} month={month} installs={calendarInstalls} onDayClick={day => {
           const items = calendarInstalls.filter(ins => {
             const d = new Date(ins.appointment_datetime)
@@ -552,13 +542,13 @@ export default function InstallationsPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)' }}>รายการทั้งหมด</h2>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        {/* เลือกโซนของรายการด้านล่าง — ชุดเดียวกับชิปโซนบนปฏิทิน แต่คุมเฉพาะตารางรายการ */}
+        {/* เลือกโซนติดตั้ง — ชิปชุดนี้ชุดเดียว คุมทั้งปฏิทินด้านบนและตารางรายการด้านล่าง */}
         <div className="no-print" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {([['ทุกโซน', null], ...ZONES.map(z => [z, z] as [string, string])] as [string, string | null][]).map(([label, val]) => {
             const n = val ? byMonth.filter(i => i.install_zone === val).length : byMonth.length
             return (
-              <button key={label} onClick={() => setListZone(val)}
-                style={{ padding: '5px 12px', borderRadius: 980, border: listZone === val ? 'none' : '1px solid var(--border)', background: listZone === val ? 'var(--blue)' : '#fff', color: listZone === val ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: listZone === val ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              <button key={label} onClick={() => setZoneFilter(val)}
+                style={{ padding: '5px 12px', borderRadius: 980, border: zoneFilter === val ? 'none' : '1px solid var(--border)', background: zoneFilter === val ? 'var(--blue)' : '#fff', color: zoneFilter === val ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: zoneFilter === val ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 {label} <span style={{ opacity: 0.75 }}>{n}</span>
               </button>
             )
