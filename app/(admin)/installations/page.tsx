@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { useInstallPhotos, photoSaveError, type InstallPhoto } from '@/components/InstallPhotos'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { HOLIDAYS } from '@/lib/holidays'
@@ -36,6 +37,7 @@ type Installation = {
   created_at: string
   updated_at: string
   source_order_id?: string | null   // ผูกกับ order_entries ถ้าแถวนี้ sync มาจากหมวดออเดอร์
+  photos?: InstallPhoto[]           // รูปหน้างาน (ยังไม่ได้รัน migrations/add_installation_photos.sql = ไม่มีคอลัมน์นี้)
 }
 
 const PLATFORMS = ['Tiktok','Tiktok-Chat','Shopee','Shopee-Chat','Lazada','Facebook','LineOA',
@@ -142,7 +144,7 @@ const emptyForm = (): Omit<Installation, 'id' | 'created_at' | 'updated_at' | 's
   customer_real_name: '', province: '', install_zone: '', phone: '', work_details: '', location_link: '',
   price: 0, notes: '', payment_status: 'รอมัดจำ', appointment_status: 'นัดหมายแล้ว',
   production_status: 'กำลังผลิต', send_to_technician: 'หน้าร้าน',
-  installation_status: 'วัดหน้างาน', entered_by: '',
+  installation_status: 'วัดหน้างาน', entered_by: '', photos: [],
 })
 
 export default function InstallationsPage() {
@@ -172,7 +174,7 @@ export default function InstallationsPage() {
   // รายการสินค้าของออเดอร์ต้นทาง (เฉพาะแถวที่ sync มาจากหมวดออเดอร์) — key = source_order_id
   const [orderItems, setOrderItems] = useState<Record<string, RawItem[]>>({})
   // popup แก้รายการสินค้า (แบบเดียวกับหมวดออเดอร์) — บันทึกกลับไปที่ order_entries ต้นทาง
-  const [itemsModal, setItemsModal] = useState<{ orderId: string; items: RawItem[] } | null>(null)
+  const [itemsModal, setItemsModal] = useState<{ orderId: string; items: RawItem[]; instId: string } | null>(null)
   const [itemsPasteText, setItemsPasteText] = useState('')
   const [itemsParsing, setItemsParsing] = useState(false)
   const [itemsError, setItemsError] = useState('')
@@ -228,10 +230,17 @@ export default function InstallationsPage() {
     setApptTime('9:00')
     setPasteText('')
     setParseError('')
+    ph.begin([], null)
     setModal({ mode: 'add', data: emptyForm() })
   }
 
   const set = (k: string, v: string | number) => setModal(m => m ? { ...m, data: { ...m.data, [k]: v } } : null)
+
+  // รูปหน้างาน — ตรรกะทั้งหมดอยู่ในคอมโพเนนต์กลาง components/InstallPhotos.tsx (ใช้ร่วมกับหมวดออเดอร์)
+  const ph = useInstallPhotos()
+
+  const closeModal = () => { setModal(null); ph.cancel() }
+  const closeItemsModal = () => { setItemsModal(null); setItemsError(''); ph.cancel() }
 
   const parseFromLine = async () => {
     if (!pasteText.trim()) return
@@ -282,7 +291,10 @@ export default function InstallationsPage() {
     const instStatus = (modal.mode === 'add' || INITIAL_STATUSES.includes(d.installation_status ?? ''))
       ? (STATUS_BY_TYPE[d.work_type ?? ''] ?? d.installation_status)
       : d.installation_status
-    const payload = { ...d, appointment_datetime: dt, installation_status: instStatus, serial_no: modal.mode === 'add' ? nextSerial() : d.serial_no, updated_at: new Date().toISOString() }
+    const payload: Partial<Installation> = { ...d, appointment_datetime: dt, installation_status: instStatus, serial_no: modal.mode === 'add' ? nextSerial() : d.serial_no, updated_at: new Date().toISOString(), photos: ph.photos }
+    // ยังไม่เคยใช้รูปกับรายการนี้ → ไม่ต้องส่งคอลัมน์ photos (เว็บทำงานได้ตามปกติแม้ยังไม่ได้รัน SQL เพิ่มคอลัมน์)
+    const hadPhotos = !!installs.find(i => i.id === d.id)?.photos?.length
+    if (!ph.photos.length && !hadPhotos) delete payload.photos
     const name = (d.customer_real_name || d.serial_no || '').toString()
     let err
     if (modal.mode === 'add') {
@@ -303,8 +315,9 @@ export default function InstallationsPage() {
     }
     setSaving(false)
     if (err) {
-      setError(`บันทึกไม่สำเร็จ: ${err.message}`)
+      setError(/photos/.test(err.message) ? photoSaveError(err.message) : `บันทึกไม่สำเร็จ: ${err.message}`)
     } else {
+      ph.commit()   // บันทึกผ่านแล้วค่อยลบไฟล์ของรูปที่กดเอาออก (กดยกเลิกกลางทางรูปเดิมจะไม่หาย)
       setModal(null)
       load()
     }
@@ -357,6 +370,14 @@ export default function InstallationsPage() {
     }
     const { error: err } = await supabase.from('order_entries').update({ items: newItems, updated_at: now, ...outUpdates }).eq('id', itemsModal.orderId)
     if (err) { setError(`บันทึกรายการไม่สำเร็จ: ${err.message}`); return }
+    // รูปหน้างานผูกกับแถวงานติดตั้ง (ตาราง installations) ไม่ใช่ตัวออเดอร์ — บันทึกพร้อมกันตอนกดบันทึกรายการ
+    const hadPhotos = !!installs.find(i => i.id === itemsModal.instId)?.photos?.length
+    if (ph.photos.length || hadPhotos) {
+      const { error: pErr } = await supabase.from('installations').update({ photos: ph.photos, updated_at: now }).eq('id', itemsModal.instId)
+      if (pErr) { setError(photoSaveError(pErr.message)); return }
+      setInstalls(prev => prev.map(i => i.id === itemsModal.instId ? { ...i, photos: ph.photos } : i))
+    }
+    ph.commit()   // ลบไฟล์ของรูปที่เอาออก หลังบันทึกผ่านแล้ว
     // สั่งนอกเปลี่ยน → sync ไปหมวดสั่งซื้อด้วย
     if (outChanged) {
       const { data: oe } = await supabase.from('order_entries').select('customer_name, order_number').eq('id', itemsModal.orderId).single()
@@ -605,11 +626,15 @@ export default function InstallationsPage() {
                       {(ins.customer_real_name || ins.customer_id)
                         ? <Link href={`/customers?name=${encodeURIComponent(ins.customer_real_name || ins.customer_id!)}`} title="เปิดโฟลเดอร์ออเดอร์" style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>{ins.customer_real_name || ins.customer_id}</Link>
                         : '-'}
+                      {/* มีรูปหน้างานกี่รูป — เปิดดู/แก้ได้ในเมนู "แก้ไข" ของแถวนี้ */}
+                      {!!ins.photos?.length && (
+                        <span title={`มีรูปหน้างาน ${ins.photos.length} รูป`} style={{ marginLeft: 6, fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>📷 {ins.photos.length}</span>
+                      )}
                     </td>
                     <td style={{ padding: '6px 14px', minWidth: 160, maxWidth: 200 }}>
                       {ins.source_order_id ? (
                         // มาจากหมวดออเดอร์ → จิ้มเปิด popup แก้รายการ บันทึกกลับไปที่ออเดอร์ต้นทาง
-                        <div onClick={() => { setItemsModal({ orderId: ins.source_order_id!, items: withAutoHooks(orderItems[ins.source_order_id!] ?? []) }); setItemsPasteText(''); setItemsError('') }}
+                        <div onClick={() => { ph.begin(ins.photos, ins.id); setItemsModal({ orderId: ins.source_order_id!, items: withAutoHooks(orderItems[ins.source_order_id!] ?? []), instId: ins.id }); setItemsPasteText(''); setItemsError('') }}
                           style={{ cursor: 'pointer' }} title="จิ้มเพื่อแก้รายการ">
                           {orderItems[ins.source_order_id]?.length ? (
                             // โชว์แบบเดียวกับคอลัมน์รายการในหมวดออเดอร์: บรรทัดสั้น 1 บรรทัด/ชิ้น ตัดท้ายด้วย …
@@ -696,6 +721,7 @@ export default function InstallationsPage() {
             <div onMouseDown={() => setActionMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 1500 }} />
             <div style={{ position: 'fixed', top: actionMenu.top, left: actionMenu.left, width: 120, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 1600, overflow: 'hidden' }}>
               <button onClick={() => {
+                ph.begin(ins.photos, ins.id)
                 setModal({ mode: 'edit', data: { ...ins } })
                 setApptDate(ins.appointment_datetime?.split('T')[0] ?? '')
                 setApptTime(ins.appointment_datetime ? new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : '9:00')
@@ -711,7 +737,7 @@ export default function InstallationsPage() {
 
       {/* Items modal — แก้รายการสินค้าของออเดอร์ต้นทาง (หน้าตา/พฤติกรรมเดียวกับหมวดออเดอร์) */}
       {itemsModal && (
-        <div onClick={() => { setItemsModal(null); setItemsError('') }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+        <div onClick={closeItemsModal} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 1000, padding: 24 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: 900, maxHeight: '90vh', overflowY: 'auto', padding: '24px 28px' }}>
 
             <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', marginBottom: 14 }}>รายการสินค้า</h3>
@@ -811,8 +837,10 @@ export default function InstallationsPage() {
               + เพิ่มแถว
             </button>
 
+            {ph.trigger()}
+
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => { setItemsModal(null); setItemsError('') }}
+              <button onClick={closeItemsModal}
                 style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>
                 ยกเลิก
               </button>
@@ -822,6 +850,7 @@ export default function InstallationsPage() {
               </button>
             </div>
           </div>
+          {ph.open && ph.panel()}
         </div>
       )}
 
@@ -981,7 +1010,7 @@ export default function InstallationsPage() {
 
       {/* Add/Edit modal */}
       {modal && (
-        <div onMouseDown={e => { if (e.target === e.currentTarget) setModal(null) }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+        <div onMouseDown={e => { if (e.target === e.currentTarget) closeModal() }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 1000, padding: 24 }}>
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 680, maxHeight: '90vh', overflowY: 'auto' }}>
             <h2 style={{ fontSize: 17, fontWeight: 700, marginBottom: 20 }}>
               {modal.mode === 'add' ? '+ เพิ่มรายการติดตั้ง' : 'แก้ไขรายการ'}
@@ -1046,8 +1075,11 @@ export default function InstallationsPage() {
               <textarea value={modal.data.notes ?? ''} onChange={e => set('notes', e.target.value)} rows={2}
                 style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
             </div>
+
+            {ph.trigger()}
+
             <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-              <button onClick={() => setModal(null)}
+              <button onClick={closeModal}
                 style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ยกเลิก</button>
               <button onClick={save} disabled={saving}
                 style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
@@ -1055,6 +1087,7 @@ export default function InstallationsPage() {
               </button>
             </div>
           </div>
+          {ph.open && ph.panel()}
         </div>
       )}
     </div>

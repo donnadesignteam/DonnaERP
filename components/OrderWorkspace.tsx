@@ -13,6 +13,8 @@ import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { effShipping } from '@/lib/shipping'
 import { thaiTrackStatus } from '@/lib/trackExtract'
 import { syncOutsourcePO } from '@/lib/outsourceSync'
+import { useInstallPhotos, photoSaveError } from '@/components/InstallPhotos'
+import ProvinceSelect from '@/components/ProvinceSelect'
 import { syncWorkStatus as syncWorkStatusExact } from '@/lib/workStatusSync'
 import { recordAction } from '@/lib/history'
 import { prevOf } from '@/lib/trackedDb'
@@ -284,6 +286,7 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
     { id: 'done', label: 'งานเสร็จ' }, { id: 'installed', label: 'ติดตั้ง' },
     { id: 'rail', label: 'สถานะราง' },
     { id: 'created', label: 'วันที่สร้าง' }, { id: 'outsource', label: 'สั่งนอก' },
+    { id: 'province', label: 'จังหวัด' },
     { id: 'address', label: 'ที่อยู่' }, { id: 'phone', label: 'เบอร์โทร' }, { id: 'maps', label: 'Maps' },
     { id: 'notes', label: 'หมายเหตุ' },
     { id: 'updated', label: 'แก้ไขล่าสุด' },
@@ -361,7 +364,9 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [pasteSaving, setPasteSaving] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [modalItems, setModalItems] = useState<Item[]>([])
-  const [itemsModal, setItemsModal] = useState<{ id: string; items: Item[] } | null>(null)
+  const [itemsModal, setItemsModal] = useState<{ id: string; items: Item[]; instId: string | null } | null>(null)
+  // รูปหน้างาน (งานติดตั้ง) — คอมโพเนนต์กลางตัวเดียวกับหน้างานติดตั้ง
+  const ph = useInstallPhotos()
   const [itemsPasteText, setItemsPasteText] = useState('')
   const [itemsModalPasteText, setItemsModalPasteText] = useState('')
   const [itemsModalLoading, setItemsModalLoading] = useState(false)
@@ -594,6 +599,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       if (res.error) { setSaving(false); setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
       const saved = res.data as Entry
       await syncInstallation(payload, saved.id)
+      if (payload.is_installation) await saveOrderPhotos(saved.id)
       if (outsourceVal) await syncOutsourcePO(saved.id, payload.customer_name, payload.order_number, outsourceVal, modalItems)
       setSaving(false)
       setRows(prev => [saved, ...prev])
@@ -618,6 +624,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       const res = await supabase.from('order_entries').update(payload).eq('id', d.id).select().single()
       if (res.error) { setSaving(false); setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
       await syncInstallation(payload, String(d.id))
+      if (payload.is_installation) await saveOrderPhotos(String(d.id))
       if (outsourceVal || prevOutsource) await syncOutsourcePO(String(d.id), payload.customer_name, payload.order_number, outsourceVal, modalItems)
       setSaving(false)
       setRows(prev => prev.map(r => r.id === d.id ? res.data as Entry : r))
@@ -1503,6 +1510,39 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     }
   }
 
+  // เปิดป๊อปอัปรายการสินค้า — ถ้าออเดอร์นี้เป็นงานติดตั้ง ดึงรูปหน้างานของแถวในปฏิทินติดตั้งมาแก้ในแผงรูปได้เลย
+  const openItemsModal = async (r: Entry) => {
+    setItemsModal({ id: r.id, items: Array.isArray(r.items) ? r.items : [], instId: null })
+    setItemsModalPasteText('')
+    ph.begin([], null)
+    if (!r.is_installation) return
+    const { data } = await supabase.from('installations').select('id').eq('source_order_id', r.id).maybeSingle()
+    if (!data) return
+    // อ่านรูปแยกคำสั่ง — คอลัมน์ photos อาจยังไม่มี (ยังไม่ได้รัน migrations/add_installation_photos.sql) อ่านไม่ได้ก็ถือว่ายังไม่มีรูป
+    const { data: pRow } = await supabase.from('installations').select('photos').eq('id', data.id).maybeSingle()
+    ph.begin(Array.isArray(pRow?.photos) ? pRow.photos : [], data.id)
+    setItemsModal(m => m && m.id === r.id ? { ...m, instId: data.id } : m)
+  }
+
+  const closeItemsModal = () => { setItemsModal(null); setItemsModalError(''); ph.cancel() }
+
+  // เปิดฟอร์มแก้ไขออเดอร์ → ถ้าเป็นงานติดตั้ง ดึงรูปหน้างานของแถวในปฏิทินติดตั้งมาให้แก้ได้เลย
+  const loadOrderPhotos = async (r: Entry) => {
+    ph.begin([], null)
+    if (!r.is_installation) return
+    const { data } = await supabase.from('installations').select('id, photos').eq('source_order_id', r.id).maybeSingle()
+    if (data) ph.begin(Array.isArray(data.photos) ? data.photos : [], data.id)
+  }
+
+  // บันทึกรูปหน้างานลงแถวงานติดตั้งที่ผูกกับออเดอร์ (syncInstallation สร้าง/อัปเดตแถวให้ก่อนหน้านี้แล้ว)
+  const saveOrderPhotos = async (orderId: string) => {
+    const { data } = await supabase.from('installations').select('id').eq('source_order_id', orderId).maybeSingle()
+    if (!data) return
+    const { error: pErr } = await supabase.from('installations').update({ photos: ph.photos, updated_at: new Date().toISOString() }).eq('id', data.id)
+    if (pErr) setError(photoSaveError(pErr.message))   // ออเดอร์บันทึกไปแล้ว บอกเฉพาะส่วนรูปที่พลาด
+    else ph.commit()
+  }
+
   const handleParseItems = async () => {
     if (!itemsModalPasteText.trim()) return
     setItemsModalLoading(true)
@@ -1903,7 +1943,7 @@ ${body}
             style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
             🖨️ ปริ้น{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
           </button>
-          <button onClick={() => { if (scope === 'claims') { setAddType('claim'); setModalTab('form'); setModal({ mode: 'add', data: { ...emptyForm(), shipping_datetime: '' } }); setModalItems([]); setItemsPasteText('') } else setAddTypeModal(true) }}
+          <button onClick={() => { if (scope === 'claims') { setAddType('claim'); setModalTab('form'); setModal({ mode: 'add', data: { ...emptyForm(), shipping_datetime: '' } }); ph.begin([], null); setModalItems([]); setItemsPasteText('') } else setAddTypeModal(true) }}
             style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,122,255,0.3)' }}>
             + เพิ่มรายการ
           </button>
@@ -2244,6 +2284,9 @@ ${body}
                 {showCol('outsource') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>สั่งนอก</th>
                 )}
+                {quickFilter === 'install' && showCol('province') && (
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>จังหวัด</th>
+                )}
                 {showCol('address') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ที่อยู่</th>
                 )}
@@ -2297,6 +2340,20 @@ ${body}
                     <div onClick={() => setEditCell({ id: r.id, field, val })}
                       style={{ cursor: 'text', color: val ? (field === 'customer_name' ? 'var(--blue)' : 'var(--ink)') : 'var(--ink-4)', fontWeight: field === 'customer_name' && val ? 600 : undefined, maxWidth: field === 'notes' ? 160 : undefined, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {val || placeholder}
+                    </div>
+                  )
+                }
+                // จังหวัด: จิ้มแล้วเป็นช่องพิมพ์ค้นหา เลือกจากรายชื่อจังหวัดทั้งหมด (เชียงราย/เชียงใหม่/กทม อยู่บนสุด)
+                const provinceCell = () => {
+                  const val = r.province ?? ''
+                  return isEditing('province') ? (
+                    <ProvinceSelect value={val}
+                      onPick={v => saveTextCell(r.id, 'province', v)}
+                      onCancel={() => setEditCell(null)} />
+                  ) : (
+                    <div onClick={() => setEditCell({ id: r.id, field: 'province', val })}
+                      style={{ cursor: 'pointer', color: val ? 'var(--ink)' : 'var(--ink-4)', whiteSpace: 'nowrap' }}>
+                      {val || '—'}
                     </div>
                   )
                 }
@@ -2444,7 +2501,7 @@ ${body}
                     )}
                     {showCol('items') && (
                     <td style={{ padding: '6px 14px', maxWidth: 200 }}>
-                      <button onClick={() => { setItemsModal({ id: r.id, items: Array.isArray(r.items) ? r.items : [] }); setItemsModalPasteText('') }}
+                      <button onClick={() => { openItemsModal(r) }}
                         style={{ border: 'none', background: 'transparent', fontSize: 11, cursor: 'pointer', padding: 0, color: r.items?.length ? 'var(--ink)' : 'var(--ink-4)', textAlign: 'left', display: 'block', width: '100%' }}>
                         {r.items?.length ? (
                           <div>
@@ -2549,6 +2606,9 @@ ${body}
                     )}
                     {showCol('outsource') && (
                     <td style={{ padding: '8px 14px', minWidth: 100 }}>{outsourceCell()}</td>
+                    )}
+                    {quickFilter === 'install' && showCol('province') && (
+                    <td style={{ padding: '8px 14px', minWidth: 100 }}>{provinceCell()}</td>
                     )}
                     {showCol('address') && (
                     <td style={{ padding: '8px 14px', minWidth: 120 }}>{textCell('address', '—')}</td>
@@ -3172,7 +3232,7 @@ ${body}
                     )}
                     {showCol('items') && (
                     <td style={{ padding: '6px 14px', maxWidth: 240 }}>
-                      <button onClick={() => { setItemsModal({ id: r.id, items: Array.isArray(r.items) ? r.items : [] }); setItemsModalPasteText('') }}
+                      <button onClick={() => { openItemsModal(r) }}
                         style={{ border: 'none', background: 'transparent', fontSize: 11, cursor: 'pointer', padding: 0, color: r.items?.length ? 'var(--ink)' : 'var(--ink-4)', textAlign: 'left', display: 'block', width: '100%' }}>
                         {r.items?.length ? (
                           <div>
@@ -3402,7 +3462,7 @@ ${body}
                 สถานะพัสดุ
               </button>
             )}
-            <button onClick={() => { setOpenAction(null); setActionRect(null); setModal({ mode: 'edit', data: { ...r, items: null } }); setModalItems(Array.isArray(r.items) ? [...(r.items as Item[])] : []); setItemsPasteText('') }}
+            <button onClick={() => { setOpenAction(null); setActionRect(null); setModal({ mode: 'edit', data: { ...r, items: null } }); void loadOrderPhotos(r); setModalItems(Array.isArray(r.items) ? [...(r.items as Item[])] : []); setItemsPasteText('') }}
               style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)' }}>
               <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/></svg>
               แก้ไข
@@ -3589,9 +3649,9 @@ ${body}
       {modal && (
         <div
           onMouseDown={e => { modalDownOnBackdrop.current = e.target === e.currentTarget }}
-          onClick={e => { if (e.target === e.currentTarget && modalDownOnBackdrop.current) setModal(null) }}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: 680, maxHeight: '90vh', overflowY: 'auto' }}>
+          onClick={e => { if (e.target === e.currentTarget && modalDownOnBackdrop.current) { setModal(null); ph.cancel() } }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 1000, padding: 24 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: 680, maxHeight: '90vh', overflowY: 'auto' }}>
 
             {/* Tabs (add) / Title (edit) */}
             {modal.mode === 'edit' ? (
@@ -3923,8 +3983,11 @@ ${body}
                 style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
             </div>
 
+            {/* รูปหน้างาน — เฉพาะงานติดตั้ง (เก็บที่แถวปฏิทินติดตั้งของออเดอร์นี้) วางไว้บรรทัดล่างสุดก่อนปุ่มบันทึก */}
+            {(modal.mode === 'add' ? addType === 'install' : !!modal.data.is_installation) && ph.trigger()}
+
             <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-              <button onClick={() => { setModal(null); setAddType(null) }}
+              <button onClick={() => { setModal(null); setAddType(null); ph.cancel() }}
                 style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ยกเลิก</button>
               <button onClick={save} disabled={saving}
                 style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
@@ -3935,6 +3998,7 @@ ${body}
             )}
             </div>
           </div>
+          {ph.open && ph.panel()}
         </div>
       )}
 
@@ -3955,6 +4019,7 @@ ${body}
                   setAddType(type)
                   setModalTab('form')
                   setModal({ mode: 'add', data: { ...emptyForm(), shipping_datetime: '', ...extra } })
+                  ph.begin([], null)
                   setModalItems([])
                   setItemsPasteText('')
                   setOrderPasteText('')
@@ -4009,7 +4074,7 @@ ${body}
 
       {/* Items modal */}
       {itemsModal && (
-        <div onClick={() => { setItemsModal(null); setItemsModalError('') }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+        <div onClick={closeItemsModal} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 1000, padding: 24 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: 900, maxHeight: '90vh', overflowY: 'auto', padding: '24px 28px' }}>
 
             <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', marginBottom: 14 }}>รายการสินค้า</h3>
@@ -4107,8 +4172,10 @@ ${body}
               + เพิ่มแถว
             </button>
 
+            {itemsModal.instId && ph.trigger()}
+
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => { setItemsModal(null); setItemsModalError('') }}
+              <button onClick={closeItemsModal}
                 style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>
                 ยกเลิก
               </button>
@@ -4130,6 +4197,12 @@ ${body}
                     const row = rows.find(r => r.id === itemsModal.id)
                     await syncOutsourcePO(itemsModal.id, row?.customer_name, row?.order_number, itemsOut, itemsModal.items)
                   }
+                  // รูปหน้างานเก็บที่แถวงานติดตั้ง (installations.photos) ไม่ใช่ที่ออเดอร์
+                  if (itemsModal.instId) {
+                    const { error: pErr } = await supabase.from('installations').update({ photos: ph.photos, updated_at: now }).eq('id', itemsModal.instId)
+                    if (pErr) { setItemsModalError(photoSaveError(pErr.message)); return }
+                  }
+                  ph.commit()
                   setRows(prev => prev.map(r => r.id === itemsModal.id ? { ...r, ...updates } as Entry : r))
                   setItemsModal(null)
                   setItemsModalError('')
@@ -4140,6 +4213,7 @@ ${body}
               </button>
             </div>
           </div>
+          {ph.open && ph.panel()}
         </div>
       )}
     </div>
