@@ -2257,14 +2257,12 @@ SHB92 Cloud Whisper
        NULL, NULL, NULL, now(), now()
 where not exists (select 1 from public.claims where notes like 'ชีทเคลม #0106%');
 -- #0107 10/7/2026 | by_nee
-2606277VE92M85 (สั่งตัด)
 insert into public.claims
   (claim_date, channel, customer_username, original_order_number, claim_type, fault, cause,
    items, ship_address, ship_phone, courier, refund_amount, money_direction, payment_target,
    money_status, status, notes, raw_text, admin_name, closed_by, closed_at,
    ship_back_cost, ship_return_cost, estimated_price, created_at, updated_at)
-select '2026-07-10', 'Shopee', 'by_nee
-2606277VE92M85 (สั่งตัด)', NULL, NULL, 'ร้าน', 'ขนาดรางผิด',
+select '2026-07-10', 'Shopee', 'by_nee', '2606277VE92M85', NULL, 'ร้าน', 'ขนาดรางผิด',
        '[{"type": "รางม่านจีบ", "floors": 2, "rail_head": "", "fabric_type": "", "color_code": "", "color_name": "ขาว", "color_desc": "", "width": "2.56", "height": "", "quantity": 1, "unit": "ชุด", "hooks": "", "note": "เดี่ยว — เดิมส่งขนาด 1.14 ผิด"}]'::jsonb, NULL, NULL, NULL, NULL, NULL, NULL,
        NULL, 'รอของคืน', 'ชีทเคลม #0107 · สถานะในชีท: เลยกำหนด · ผิดโดย: แพท · ส่งแก้: หน้าร้าน · วิธีแก้: รางต้อง2.56', 'รางม่านจีบ 2 ชั้น  สีขาว เดี่ยว  ขนาด 1.14 = 1 ชุด', 'หนูนา', NULL, NULL,
        NULL, NULL, NULL, now(), now()
@@ -2325,13 +2323,13 @@ select '2026-07-19', 'Shopee', 'ammkkkk', NULL, NULL, NULL, 'ราง 1.5 ไ�
 ตัวปิดรางจีบ =6 ชิ้น', NULL, 'หนูนา', NULL, NULL,
        NULL, NULL, NULL, now(), now()
 where not exists (select 1 from public.claims where notes like 'ชีทเคลม #0110%');
--- #0111 19/7/2026 | mr_bobbo 260623RJWQY2H9
+-- #0111 19/7/2026 | mr_bobbo
 insert into public.claims
   (claim_date, channel, customer_username, original_order_number, claim_type, fault, cause,
    items, ship_address, ship_phone, courier, refund_amount, money_direction, payment_target,
    money_status, status, notes, raw_text, admin_name, closed_by, closed_at,
    ship_back_cost, ship_return_cost, estimated_price, created_at, updated_at)
-select '2026-07-19', 'Shopee', 'mr_bobbo 260623RJWQY2H9', '260622RCGD2P94', NULL, 'ร้าน', 'ผ้าทั้งสองออร์เดอร์ความสูงสลับกันครับผม',
+select '2026-07-19', 'Shopee', 'mr_bobbo', '260623RJWQY2H9, 260622RCGD2P94', NULL, 'ร้าน', 'ผ้าทั้งสองออร์เดอร์ความสูงสลับกันครับผม',
        '[{"type": "ผ้าม่าน (แก้ขนาด)", "floors": null, "rail_head": "", "fabric_type": "", "color_code": "", "color_name": "", "color_desc": "", "width": "1.00", "height": "2.45", "quantity": 1, "unit": "ผืน", "hooks": "", "note": ""}, {"type": "ผ้าม่าน (แก้ขนาด)", "floors": null, "rail_head": "", "fabric_type": "", "color_code": "", "color_name": "", "color_desc": "", "width": "1.60", "height": "2.70", "quantity": 1, "unit": "ผืน", "hooks": "", "note": ""}]'::jsonb, 'นายชลายุทธ  แก้วคำ
 หมู่บ้าน Everyday Village 222/32 หมู่ 3  
 ต.สันทรายน้อย อ.สันทราย จ.เชียงใหม่ 50210', '099-4129982', NULL, NULL, NULL, NULL,
@@ -2340,13 +2338,13 @@ select '2026-07-19', 'Shopee', 'mr_bobbo 260623RJWQY2H9', '260622RCGD2P94', NULL
 ผ้าขนาด 1.60*2.70 = 1 ผืน', NULL, 'หนูนา', NULL, NULL,
        93, NULL, NULL, now(), now()
 where not exists (select 1 from public.claims where notes like 'ชีทเคลม #0111%');
--- #0112 20/7/2026 | deerdent2021 ออเดอร์
+-- #0112 20/7/2026 | deerdent2021
 insert into public.claims
   (claim_date, channel, customer_username, original_order_number, claim_type, fault, cause,
    items, ship_address, ship_phone, courier, refund_amount, money_direction, payment_target,
    money_status, status, notes, raw_text, admin_name, closed_by, closed_at,
    ship_back_cost, ship_return_cost, estimated_price, created_at, updated_at)
-select '2026-07-20', 'Shopee', 'deerdent2021 ออเดอร์', '260715R1E8K9WJ', NULL, NULL, 'อุปกรณืืไม่ครบ',
+select '2026-07-20', 'Shopee', 'deerdent2021', '260715R1E8K9WJ', NULL, NULL, 'อุปกรณืืไม่ครบ',
        '[{"type": "ขารางม่านตาไก่ 1 ชั้น", "floors": null, "rail_head": "", "fabric_type": "", "color_code": "", "color_name": "สัก", "color_desc": "", "width": "", "height": "", "quantity": 4, "unit": "ขา", "hooks": "", "note": ""}]'::jsonb, 'ณัฏฐา นครชัย
 181/96 ถ.บางขุนนนท์ ซอย31 แยก6
 แขวงบางขุนนนท์ เขตบางกอกน้อย กทม. 10700', '0805664269', NULL, NULL, NULL, NULL,
@@ -2446,7 +2444,7 @@ where not exists (select 1 from public.claims where notes like 'ชีทเค�
 
 -- ============================================================================
 -- ตรวจผล: จำนวนเคลมที่นำเข้าจากชีท (ควรได้ 115 แถว)
-select count(*) as นำเข้าจากชีทแล้ว from public.claims where notes like 'ชีทเคลม #%';
+select count(*) as "นำเข้าจากชีทแล้ว" from public.claims where notes like 'ชีทเคลม #%';
 -- ดูรายการทั้งหมด: select claim_date, channel, customer_username, status, notes from public.claims where notes like 'ชีทเคลม #%' order by claim_date;
 -- ย้อนกลับทั้งหมด (ถ้าอยากลบที่นำเข้าไป): delete from public.claims where notes like 'ชีทเคลม #%';
 -- ============================================================================
