@@ -571,12 +571,16 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const itemsOut = itemsOutsourceText(modalItems)
     const prevOutsource = modal.mode === 'edit' ? (rows.find(r => r.id === d.id)?.outsource ?? '') : ''
     const outsourceVal = itemsOut || d.outsource || null
+    // ‼️ ส่งช่องแอดมินไปเฉพาะตอนที่คนกรอกเปลี่ยนเอง — ถ้าส่งไปทุกครั้ง ระบบจะถือว่า "เลือกเอง"
+    //    แล้วไม่ใส่ชื่อแอดมินหลักที่มาแก้ให้อัตโนมัติ (ดู stampUpdate ใน lib/adminActor.ts)
+    const prevAdmin = modal.mode === 'edit' ? (rows.find(r => r.id === d.id)?.admin_name ?? '') : ''
+    const adminPicked = (d.admin_name ?? '') !== prevAdmin
     const payload = {
       entry_date: d.entry_date || null,
       deadline: d.deadline || null,
       shipping_datetime: (d.shipping_datetime && d.shipping_datetime !== '-') ? d.shipping_datetime : calcShipping(d.deadline ?? '', d.courier ?? ''),
       status: d.status || 'อยู่ในกำหนด',
-      admin_name: d.admin_name || null,
+      ...(adminPicked ? { admin_name: d.admin_name || null } : {}),
       technician: d.technician || null,
       customer_name: d.customer_name || null,
       order_number: d.order_number || null,
@@ -606,7 +610,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       const res = await oeInsert(payload).select().single()
       if (res.error) { setSaving(false); setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
       const saved = res.data as Entry
-      await syncInstallation(payload, saved.id)
+      await syncInstallation({ ...payload, admin_name: d.admin_name || null }, saved.id)
       if (payload.is_installation) await saveOrderPhotos(saved.id)
       if (outsourceVal) await syncOutsourcePO(saved.id, payload.customer_name, payload.order_number, outsourceVal, modalItems)
       setSaving(false)
@@ -622,7 +626,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
         },
         redo: async () => {
           await supabase.from('order_entries').insert(saved)
-          await syncInstallation(payload, saved.id)
+          await syncInstallation({ ...payload, admin_name: d.admin_name || null }, saved.id)
           if (outsourceVal) await syncOutsourcePO(saved.id, payload.customer_name, payload.order_number, outsourceVal, modalItems)
           await load()
         },
@@ -631,7 +635,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       const orig = rows.find(r => r.id === d.id)
       const res = await oeUpdate(payload).eq('id', d.id).select().single()
       if (res.error) { setSaving(false); setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
-      await syncInstallation(payload, String(d.id))
+      await syncInstallation({ ...payload, admin_name: d.admin_name || null }, String(d.id))
       if (payload.is_installation) await saveOrderPhotos(String(d.id))
       if (outsourceVal || prevOutsource) await syncOutsourcePO(String(d.id), payload.customer_name, payload.order_number, outsourceVal, modalItems)
       setSaving(false)
@@ -3296,10 +3300,14 @@ ${body}
                     </td>
                     )}
                     {showCol('admin') && (
-                    // ระบบคุมเอง = แอดมินหลักคนล่าสุดที่แก้เนื้อออเดอร์ (แก้มือไม่ได้ ดู lib/adminActor.ts)
-                    <td style={{ padding: '12px 14px', fontSize: 12, color: r.admin_name ? 'var(--ink)' : 'var(--ink-4)', whiteSpace: 'nowrap' }}
-                      title={r.admin_name ? 'เจ้าของโบนัสออเดอร์นี้ — ระบบเปลี่ยนให้เองเมื่อมีแอดมินหลักมาแก้ออเดอร์' : 'ยังไม่มีแอดมินหลักแก้ออเดอร์นี้'}>
-                      {r.admin_name || '—'}
+                    // เลือกเองได้เหมือนเดิม + ระบบเปลี่ยนให้เองเมื่อมีแอดมินหลักมาแก้เนื้อออเดอร์ (lib/adminActor.ts)
+                    <td style={{ padding: '8px 14px' }}>
+                      <select value={r.admin_name || ''} onChange={e => updateField(r.id, 'admin_name', e.target.value)}
+                        title="เลือกเองได้ · ระบบจะเปลี่ยนให้เองเมื่อมีแอดมินหลักมาแก้เนื้อออเดอร์"
+                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.admin_name ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 80 }}>
+                        <option value="">—</option>
+                        {adminNames.map(a => <option key={a} value={a}>{a}</option>)}
+                      </select>
                     </td>
                     )}
                     {showCol('tech') && (
@@ -3895,13 +3903,8 @@ ${body}
                   </div>
                 </div>
               )}
-              {/* แอดมิน = ระบบใส่ให้เอง (แอดมินหลักคนล่าสุดที่แก้ออเดอร์) เลือกเองไม่ได้แล้ว */}
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>แอดมิน (ระบบบันทึกให้เอง)</label>
-                <div style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, background: 'var(--bg)', color: modal.data.admin_name ? 'var(--ink)' : 'var(--ink-4)' }}>
-                  {modal.data.admin_name || '— ยังไม่มีแอดมินหลักแก้ออเดอร์นี้'}
-                </div>
-              </div>
+              {/* แอดมิน: เลือกเองได้ + ระบบทับให้เองเมื่อแอดมินหลักแก้เนื้อออเดอร์ */}
+              {sel('แอดมิน', 'admin_name', adminNames)}
               {sel('ช่างที่รับผิดชอบ', 'technician', TECHS)}
               {!isInstall && sel('บริษัทจัดส่ง', 'courier', COURIERS)}
               {inp('สั่งนอก', 'outsource')}

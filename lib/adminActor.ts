@@ -50,6 +50,15 @@ export function stampUpdate(patch: Row): Row {
   const s = readStaffSession()               // ไม่มี = ล็อกอินด้วยรหัสรวมของร้าน (ไม่รู้ว่าใคร)
   const out: Row = { ...patch }
   if (s) { out.actor_code = s.code; out.actor_name = s.nickname }
+
+  // ‼️ มี admin_name มาในคำสั่ง = คนกรอกเลือกเอง (dropdown ในตาราง/ฟอร์ม) → ยึดตามที่เลือก ไม่ทับ
+  //    เติมรหัสให้ตรงชื่อเพื่อให้ฝั่งรายงานอ้างอิงได้ (ชื่อที่ไม่ใช่แอดมินหลัก = ไม่มีรหัส)
+  if ('admin_name' in patch) {
+    const picked = BONUS_ADMINS.find(a => a.name === patch.admin_name)
+    out.admin_code = picked ? picked.code : null
+    return out
+  }
+
   if (touchesContent(patch)) {
     out.last_content_at = new Date().toISOString()
     if (s && isBonusAdmin(s.code)) {
@@ -75,7 +84,11 @@ export function stampInsert(row: Row): Row {
     actor_code: s.code, actor_name: s.nickname,
     last_content_at: now,
   }
-  if (isBonusAdmin(s.code)) {
+  // เลือกชื่อแอดมินมาเองในฟอร์ม = ยึดตามนั้น ไม่งั้นระบบใส่ชื่อคนสร้างให้ถ้าเป็นแอดมินหลัก
+  if (row.admin_name) {
+    const picked = BONUS_ADMINS.find(a => a.name === row.admin_name)
+    out.admin_code = picked ? picked.code : null
+  } else if (isBonusAdmin(s.code)) {
     out.admin_code = s.code
     out.admin_name = s.nickname
   }
