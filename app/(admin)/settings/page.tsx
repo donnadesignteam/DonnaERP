@@ -1,14 +1,30 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import ActivityLog from '@/components/ActivityLog'
 import { CHANGELOG } from '@/lib/changelog'
+import { readStaffSession } from '@/lib/staffSession'
+import { fetchStaffOne } from '@/lib/staffDb'
 
 const fmtChangeDate = (d: string) =>
   new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })
 
 export default function SettingsPage() {
   const [loggingOut, setLoggingOut] = useState(false)
+  // ใครล็อกอินอยู่ — ล็อกอินด้วยรหัสพนักงานจะขึ้นชื่อคนนั้น, รหัสรวมของร้านขึ้นชื่อร้านเหมือนเดิม
+  const [me, setMe] = useState<{ code: string; nickname: string } | null>(null)
+  const [meDetail, setMeDetail] = useState('')
+
+  useEffect(() => {
+    const s = readStaffSession()
+    setMe(s)
+    if (s) {
+      fetchStaffOne(s.code)
+        .then(st => setMeDetail([st?.name, st?.position].filter(Boolean).join(' · ')))
+        .catch(() => {})
+    }
+  }, [])
 
   async function logout() {
     setLoggingOut(true)
@@ -31,11 +47,21 @@ export default function SettingsPage() {
           <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 18, color: 'var(--ink)' }}>บัญชีที่เข้าใช้งาน</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <div style={{ width: 48, height: 48, borderRadius: 24, background: 'var(--blue)22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>👤</div>
-            <div>
-              <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>Donna Design Admin</div>
-              <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>ระบบจัดการหลังบ้าน</div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>
+                {me ? (me.nickname || me.code) : 'Donna Design Admin'}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>
+                {me ? [me.code, meDetail].filter(Boolean).join(' · ') : 'ระบบจัดการหลังบ้าน'}
+              </div>
             </div>
           </div>
+          {me && (
+            <Link href={`/staff/${me.code}`}
+              style={{ display: 'block', marginTop: 14, textAlign: 'center', padding: '8px', borderRadius: 10, border: '1px solid var(--border)', color: 'var(--blue)', textDecoration: 'none', fontSize: 13, fontWeight: 500 }}>
+              ข้อมูลของฉัน · ประวัติการแก้ไข
+            </Link>
+          )}
           <button onClick={logout} disabled={loggingOut} style={{ marginTop: 20, width: '100%', padding: '9px', borderRadius: 10, border: '1px solid #ff375f', background: '#fff', color: 'var(--red)', cursor: loggingOut ? 'default' : 'pointer', fontSize: 14, fontWeight: 500, opacity: loggingOut ? 0.6 : 1 }}>
             {loggingOut ? 'กำลังออกจากระบบ…' : '🚪 Logout'}
           </button>
