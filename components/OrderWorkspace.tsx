@@ -697,6 +697,22 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     if (r.courier) push(r.courier)
     if (r.notes) push(`หมายเหตุ: ${r.notes}`)
 
+    // ที่อยู่จัดส่ง — ขึ้นเมื่อมีข้อมูลเท่านั้น
+    // ‼️ คอลัมน์ "ที่อยู่จัดส่งแยก" ของแท็บงานแพลตฟอร์ม = ช่อง address ตัวเดียวกับ "ที่อยู่" ของแท็บอื่น
+    //    (ดู COLUMN_DEFS: platform → ship_address, outside/install → address) เลยครอบคลุมทุกแท็บในที่เดียว
+    const shipAddr = (r.address ?? '').trim()
+    const shipPhone = (r.phone ?? '').trim()
+    if (shipAddr || shipPhone) {
+      push('')
+      push(r.is_installation ? 'ที่อยู่หน้างาน' : 'ที่อยู่จัดส่ง')
+      if (r.customer_name) push(r.customer_name)
+      if (shipPhone) push(shipPhone)
+      if (shipAddr) {
+        const prov = (r.province ?? '').trim()
+        push(prov && !shipAddr.includes(prov) ? `${shipAddr} ${prov}` : shipAddr)
+      }
+    }
+
     return lines
   }
 
