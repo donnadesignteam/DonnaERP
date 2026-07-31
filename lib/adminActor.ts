@@ -22,6 +22,7 @@ export const BONUS_ADMINS: { code: string; name: string }[] = [
   { code: 'DN029', name: 'หนูนา' },
   { code: 'DN010', name: 'แพท' },
   { code: 'DN035', name: 'กาย' },
+  { code: 'DN015', name: 'น็อต' },   // เพิ่ม 31 ก.ค. 69 (user ขอไว้ลองเทสระบบ) — เอาออกเมื่อไหร่ก็ลบบรรทัดนี้
 ]
 
 export const isBonusAdmin = (code: string | null | undefined) =>
