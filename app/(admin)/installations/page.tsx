@@ -12,6 +12,8 @@ import { syncOutsourcePO } from '@/lib/outsourceSync'
 import { recordAction } from '@/lib/history'
 import { prevOf } from '@/lib/trackedDb'
 import { useStableView } from '@/lib/useStableView'
+import { oeUpdate, instUpdate, instInsert } from '@/lib/adminActor'
+
 
 type Installation = {
   id: string
@@ -202,7 +204,7 @@ export default function InstallationsPage() {
     const overdue = rows.filter(r => r.installation_status === 'วัดหน้างาน' && r.appointment_datetime && new Date(r.appointment_datetime).getTime() < now)
     if (overdue.length) {
       const ids = overdue.map(r => r.id)
-      await supabase.from('installations').update({ installation_status: 'วัดหน้างานแล้ว' }).in('id', ids)
+      await instUpdate({ installation_status: 'วัดหน้างานแล้ว' }).in('id', ids)
       rows = rows.map(r => ids.includes(r.id) ? { ...r, installation_status: 'วัดหน้างานแล้ว' } : r)
     }
     setPageCache('installations', rows)
@@ -278,8 +280,8 @@ export default function InstallationsPage() {
   const trackInst = (id: string, patch: Record<string, any>, prev: Record<string, any>, label: string) => {
     recordAction({
       label,
-      undo: async () => { await supabase.from('installations').update(prev).eq('id', id); await load() },
-      redo: async () => { await supabase.from('installations').update(patch).eq('id', id); await load() },
+      undo: async () => { await instUpdate(prev).eq('id', id); await load() },
+      redo: async () => { await instUpdate(patch).eq('id', id); await load() },
     })
   }
 
@@ -299,18 +301,18 @@ export default function InstallationsPage() {
     const name = (d.customer_real_name || d.serial_no || '').toString()
     let err
     if (modal.mode === 'add') {
-      const res = await supabase.from('installations').insert(payload).select().single()
+      const res = await instInsert(payload).select().single()
       err = res.error
       if (!err && res.data) {
         const saved = res.data
         recordAction({
           label: `เพิ่มงานติดตั้ง ${name}`,
           undo: async () => { await supabase.from('installations').delete().eq('id', saved.id); await load() },
-          redo: async () => { await supabase.from('installations').insert(saved); await load() },
+          redo: async () => { await instInsert(saved); await load() },
         })
       }
     } else {
-      const res = await supabase.from('installations').update(payload).eq('id', d.id)
+      const res = await instUpdate(payload).eq('id', d.id)
       err = res.error
       if (!err) { const orig = installs.find(i => i.id === d.id); trackInst(d.id as string, payload, prevOf(orig ?? {}, payload), `แก้งานติดตั้ง ${name}`) }
     }
@@ -330,7 +332,7 @@ export default function InstallationsPage() {
     const now = new Date().toISOString()
     const old = installs.find(i => i.id === id)
     setInstalls(prev => prev.map(i => i.id === id ? { ...i, appointment_datetime: dt, updated_at: now } : i))
-    const { error: err } = await supabase.from('installations').update({ appointment_datetime: dt, updated_at: now }).eq('id', id)
+    const { error: err } = await instUpdate({ appointment_datetime: dt, updated_at: now }).eq('id', id)
     if (err) { setError(`บันทึกวันนัดไม่สำเร็จ: ${err.message}`); load() }
     else trackInst(id, { appointment_datetime: dt, updated_at: now }, { appointment_datetime: old?.appointment_datetime ?? null, updated_at: old?.updated_at ?? null }, `แก้วันนัดติดตั้ง ${old?.customer_real_name || ''}`)
   }
@@ -369,12 +371,12 @@ export default function InstallationsPage() {
       const { data: cur } = await supabase.from('order_entries').select('outsource').eq('id', itemsModal.orderId).single()
       if (itemsOut !== (cur?.outsource ?? '')) { outUpdates = { outsource: itemsOut, outsource_at: now }; outChanged = true }
     }
-    const { error: err } = await supabase.from('order_entries').update({ items: newItems, updated_at: now, ...outUpdates }).eq('id', itemsModal.orderId)
+    const { error: err } = await oeUpdate({ items: newItems, updated_at: now, ...outUpdates }).eq('id', itemsModal.orderId)
     if (err) { setError(`บันทึกรายการไม่สำเร็จ: ${err.message}`); return }
     // รูปหน้างานผูกกับแถวงานติดตั้ง (ตาราง installations) ไม่ใช่ตัวออเดอร์ — บันทึกพร้อมกันตอนกดบันทึกรายการ
     const hadPhotos = !!installs.find(i => i.id === itemsModal.instId)?.photos?.length
     if (ph.photos.length || hadPhotos) {
-      const { error: pErr } = await supabase.from('installations').update({ photos: ph.photos, updated_at: now }).eq('id', itemsModal.instId)
+      const { error: pErr } = await instUpdate({ photos: ph.photos, updated_at: now }).eq('id', itemsModal.instId)
       if (pErr) { setError(photoSaveError(pErr.message)); return }
       setInstalls(prev => prev.map(i => i.id === itemsModal.instId ? { ...i, photos: ph.photos } : i))
     }
@@ -400,7 +402,7 @@ export default function InstallationsPage() {
     const now = new Date().toISOString()
     const old = installs.find(i => i.id === id)
     setInstalls(prev => prev.map(i => i.id === id ? { ...i, work_details: value, updated_at: now } : i))
-    const { error: err } = await supabase.from('installations').update({ work_details: value, updated_at: now }).eq('id', id)
+    const { error: err } = await instUpdate({ work_details: value, updated_at: now }).eq('id', id)
     if (err) { setError(`บันทึกรายละเอียดงานไม่สำเร็จ: ${err.message}`); load() }
     else trackInst(id, { work_details: value, updated_at: now }, { work_details: old?.work_details ?? null, updated_at: old?.updated_at ?? null }, `แก้รายละเอียดงานติดตั้ง ${old?.customer_real_name || ''}`)
   }
@@ -410,7 +412,7 @@ export default function InstallationsPage() {
     const now = new Date().toISOString()
     const old = installs.find(i => i.id === id)
     setInstalls(prev => prev.map(i => i.id === id ? { ...i, notes: value, updated_at: now } : i))
-    const { error: err } = await supabase.from('installations').update({ notes: value, updated_at: now }).eq('id', id)
+    const { error: err } = await instUpdate({ notes: value, updated_at: now }).eq('id', id)
     if (err) { setError(`บันทึกหมายเหตุไม่สำเร็จ: ${err.message}`); load() }
     else trackInst(id, { notes: value, updated_at: now }, { notes: old?.notes ?? null, updated_at: old?.updated_at ?? null }, `แก้หมายเหตุติดตั้ง ${old?.customer_real_name || ''}`)
   }
@@ -419,7 +421,7 @@ export default function InstallationsPage() {
     const now = new Date().toISOString()
     const old = installs.find(i => i.id === id)
     setInstalls(prev => prev.map(i => i.id === id ? { ...i, installation_status: status, updated_at: now } : i))
-    const { error: err } = await supabase.from('installations').update({ installation_status: status, updated_at: now }).eq('id', id)
+    const { error: err } = await instUpdate({ installation_status: status, updated_at: now }).eq('id', id)
     if (err) { setError(`อัพเดทสถานะไม่สำเร็จ: ${err.message}`); load() }
     else trackInst(id, { installation_status: status, updated_at: now }, { installation_status: old?.installation_status ?? null, updated_at: old?.updated_at ?? null }, `แก้สถานะติดตั้ง ${old?.customer_real_name || ''}`)
   }
@@ -428,7 +430,7 @@ export default function InstallationsPage() {
     const now = new Date().toISOString()
     const old = installs.find(i => i.id === id)
     setInstalls(prev => prev.map(i => i.id === id ? { ...i, install_zone: zone, updated_at: now } : i))
-    const { error: err } = await supabase.from('installations').update({ install_zone: zone, updated_at: now }).eq('id', id)
+    const { error: err } = await instUpdate({ install_zone: zone, updated_at: now }).eq('id', id)
     if (err) { setError(`อัพเดทโซนไม่สำเร็จ: ${err.message}`); load() }
     else trackInst(id, { install_zone: zone, updated_at: now }, { install_zone: old?.install_zone ?? null, updated_at: old?.updated_at ?? null }, `แก้โซนติดตั้ง ${old?.customer_real_name || ''}`)
   }
@@ -439,7 +441,7 @@ export default function InstallationsPage() {
     await supabase.from('installations').delete().eq('id', id)
     if (row) recordAction({
       label: `ลบงานติดตั้ง ${row.customer_real_name || row.serial_no || ''}`,
-      undo: async () => { await supabase.from('installations').insert(row); await load() },
+      undo: async () => { await instInsert(row); await load() },
       redo: async () => { await supabase.from('installations').delete().eq('id', id); await load() },
     })
     load()

@@ -7,6 +7,7 @@ import { fetchAllRows } from '@/lib/fetchAll'
 import { fetchStaffOne, type Staff } from '@/lib/staffDb'
 import { readStaffSession } from '@/lib/staffSession'
 import { usePullToRefresh, PullIndicator, CardSkeleton } from './mobileUi'
+import MyActivity from '@/components/MyActivity'
 
 // แดชบอร์ด "ของฉัน" — พนักงานที่ล็อกอินด้วยรหัสตัวเองเห็นเฉพาะข้อมูลของตัวเอง
 // เข้าจากปุ่มมุมขวาบนของหน้า /hub · ข้อมูลชุดเดียวกับหน้าเดสก์ท็อป /staff/[code] แต่ตัดส่วนของแอดมิน
@@ -286,6 +287,12 @@ export default function MobileMe() {
                 )}
               </div>
             )}
+
+            {/* ประวัติการแก้ไขของตัวเองเท่านั้น (คนอื่นไม่เห็นของเรา) */}
+            <div style={sectionTitle}>ประวัติการแก้ไขของฉัน</div>
+            <div style={{ ...card, padding: '2px 13px 13px' }}>
+              <MyActivity code={code} mobile />
+            </div>
 
             <div style={sectionTitle}>ประวัติการลา</div>
             {leaves.length === 0 ? (

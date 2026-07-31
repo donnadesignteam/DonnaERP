@@ -8,6 +8,8 @@ import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { recordAction } from '@/lib/history'
 import { tUpdate, prevOf } from '@/lib/trackedDb'
 import { useStableView } from '@/lib/useStableView'
+import { oeUpdate } from '@/lib/adminActor'
+
 
 type PO = {
   id: string
@@ -107,7 +109,7 @@ export default function PurchaseOrdersPage() {
       const clearItems = items && items.some((it: { outsource?: string }) => (it.outsource ?? '').trim())
         ? items.map((it: { outsource?: string }) => ({ ...it, outsource: '' }))
         : undefined
-      await supabase.from('order_entries').update({
+      await oeUpdate({
         outsource: null, outsource_at: null, updated_at: new Date().toISOString(),
         ...(clearItems ? { items: clearItems } : {}),
       }).eq('id', src)
@@ -117,11 +119,11 @@ export default function PurchaseOrdersPage() {
       label: `ลบรายการสั่งซื้อ ${po.customer_name || po.supplier || ''}`,
       undo: async () => {
         await supabase.from('purchase_orders').insert(po)
-        if (src && srcPrev) await supabase.from('order_entries').update({ outsource: srcPrev.outsource, outsource_at: srcPrev.outsource_at, items: srcPrev.items, updated_at: new Date().toISOString() }).eq('id', src)
+        if (src && srcPrev) await oeUpdate({ outsource: srcPrev.outsource, outsource_at: srcPrev.outsource_at, items: srcPrev.items, updated_at: new Date().toISOString() }).eq('id', src)
         await load()
       },
       redo: async () => {
-        if (src) await supabase.from('order_entries').update({ outsource: null, outsource_at: null, updated_at: new Date().toISOString() }).eq('id', src)
+        if (src) await oeUpdate({ outsource: null, outsource_at: null, updated_at: new Date().toISOString() }).eq('id', src)
         await supabase.from('purchase_orders').delete().eq('id', id)
         await load()
       },

@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { claimUpdate, claimInsert } from '@/lib/adminActor'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { recordAction } from '@/lib/history'
@@ -231,7 +232,7 @@ export default function ClaimsWorkspace() {
     }
     const name = (d.customer_username || d.original_order_number || '').toString()
     if (modal.mode === 'add') {
-      const res = await supabase.from('claims').insert(payload).select().single()
+      const res = await claimInsert(payload).select().single()
       setSaving(false)
       if (res.error) { setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
       const saved = res.data as Claim
@@ -239,19 +240,19 @@ export default function ClaimsWorkspace() {
       recordAction({
         label: `เพิ่มเคลม ${name}`,
         undo: async () => { await supabase.from('claims').delete().eq('id', saved.id); await load() },
-        redo: async () => { await supabase.from('claims').insert(saved); await load() },
+        redo: async () => { await claimInsert(saved); await load() },
       })
     } else {
       const old = rows.find(r => r.id === d.id)
-      const res = await supabase.from('claims').update(payload).eq('id', d.id).select().single()
+      const res = await claimUpdate(payload).eq('id', d.id).select().single()
       setSaving(false)
       if (res.error) { setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
       setRows(prev => prev.map(r => r.id === d.id ? res.data as Claim : r))
       const prev = prevOf(old ?? {}, payload)
       recordAction({
         label: `แก้เคลม ${name}`,
-        undo: async () => { await supabase.from('claims').update(prev).eq('id', d.id); await load() },
-        redo: async () => { await supabase.from('claims').update(payload).eq('id', d.id); await load() },
+        undo: async () => { await claimUpdate(prev).eq('id', d.id); await load() },
+        redo: async () => { await claimUpdate(payload).eq('id', d.id); await load() },
       })
     }
     setModal(null)
@@ -271,7 +272,7 @@ export default function ClaimsWorkspace() {
       setRows(prev => prev.filter(r => r.id !== id))
       if (row) recordAction({
         label: `ลบเคลม ${row.customer_username || row.original_order_number || ''}`,
-        undo: async () => { await supabase.from('claims').insert(row); await load() },
+        undo: async () => { await claimInsert(row); await load() },
         redo: async () => { await supabase.from('claims').delete().eq('id', id); await load() },
       })
     }
@@ -327,9 +328,9 @@ export default function ClaimsWorkspace() {
     // จำเวลาปริ้นล่าสุดต่อใบ → โชว์ข้างปุ่มปริ้นในเมนู ··· (ไม่แตะ updated_at เพราะไม่ใช่การแก้ข้อมูล)
     const printedNow = new Date().toISOString()
     const printedIds = toPrint.map(r => r.id)
-    supabase.from('claims').update({ printed_at: printedNow }).in('id', printedIds)
-      .then(({ error: err }) => {
-        if (!err) setRows(p => p.map(x => printedIds.includes(x.id) ? { ...x, printed_at: printedNow } : x))
+    claimUpdate({ printed_at: printedNow }).in('id', printedIds)
+      .then((res: { error: { message: string } | null }) => {
+        if (!res.error) setRows(p => p.map(x => printedIds.includes(x.id) ? { ...x, printed_at: printedNow } : x))
       })
 
     // QR ต่อใบ — ชี้ไปหน้า /scan บนโดเมนเดียวกับที่เปิดอยู่ (สแกนแล้วเดินสถานะเคลมใบนั้น)
@@ -444,7 +445,7 @@ ${body}
     }
     setRows(p => p.map(r => r.id === shipModal.id ? { ...r, ...updates } as Claim : r))
     setShipModal(null)
-    const { error: err } = await supabase.from('claims').update(updates).eq('id', shipModal.id)
+    const { error: err } = await claimUpdate(updates).eq('id', shipModal.id)
     if (err) { setError(`บันทึกเลขพัสดุไม่สำเร็จ: ${err.message}`); await load() }
   }
 
@@ -453,7 +454,7 @@ ${body}
     const now = new Date().toISOString()
     const updates = { shipped_at: null, status: 'แพ็คแล้ว', updated_at: now }
     setRows(p => p.map(x => x.id === r.id ? { ...x, ...updates } as Claim : x))
-    await supabase.from('claims').update(updates).eq('id', r.id)
+    await claimUpdate(updates).eq('id', r.id)
   }
 
   const openShipModal = (r: Claim) => {
@@ -506,7 +507,7 @@ ${body}
       ? { closed_by: r.admin_name || 'ไม่ระบุ', closed_at: now, updated_at: now }
       : { closed_by: null, closed_at: null, updated_at: now }
     setRows(prev => prev.map(x => x.id === r.id ? ({ ...x, ...updates } as Claim) : x))
-    await supabase.from('claims').update(updates).eq('id', r.id)
+    await claimUpdate(updates).eq('id', r.id)
   }
 
   const selectInline = (r: Claim, field: keyof Claim, options: string[]) => (
@@ -525,7 +526,7 @@ ${body}
     const now = new Date().toISOString()
     setRows(prev => prev.map(r => r.id === itemsModal.id ? ({ ...r, items, updated_at: now } as Claim) : r))
     setItemsModal(null)
-    await supabase.from('claims').update({ items, updated_at: now }).eq('id', itemsModal.id)
+    await claimUpdate({ items, updated_at: now }).eq('id', itemsModal.id)
   }
 
   // แปลงข้อความรายการ → items (เรียก AI เหมือนหมวดออเดอร์)

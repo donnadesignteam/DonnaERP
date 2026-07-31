@@ -18,6 +18,7 @@ import ProvinceSelect from '@/components/ProvinceSelect'
 import { syncWorkStatus as syncWorkStatusExact } from '@/lib/workStatusSync'
 import { recordAction } from '@/lib/history'
 import { prevOf } from '@/lib/trackedDb'
+import { stampInsert, oeUpdate, oeInsert, instUpdate, instInsert, BONUS_ADMINS } from '@/lib/adminActor'
 import { useStableView } from '@/lib/useStableView'
 import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
@@ -101,6 +102,13 @@ type Entry = {
   printed_at: string | null
   status_history: StatusEvent[] | null
   shipments: Shipment[] | null
+  // ใครทำ (sql/admin_activity.sql) — คนลงออเดอร์ตั้งครั้งเดียว, actor = คนบันทึกล่าสุด
+  created_by_code?: string | null
+  created_by_name?: string | null
+  actor_code?: string | null
+  actor_name?: string | null
+  admin_code?: string | null
+  last_content_at?: string | null
 }
 
 const emptyItem = (): Item => ({ type: '', floors: null, rail_head: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', orientation: '', fabric_split: '', chemical: '', weight_chain: '', pull_side: '', note: '', outsource: '' })
@@ -134,8 +142,8 @@ const COURIERS = [
   'Standard Delivery Bulky - ส่งสินค้าขนาดใหญ่-Flash Express Bulky',
 ]
 
-const ADMINS = ['กาย', 'แพท', 'หนูนา', 'ยุน', 'ส้ม']
 const TECHS = ['ช่างดอนน่า', 'ช่างพี่ฟอง', 'ช่างเชียงใหม่']
+
 const TIMES = ['8:00','9:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00']
 
 function calcShipping(deadline: string, courier: string): string {
@@ -525,12 +533,12 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       }
       const { data: existing } = await supabase.from('installations').select('id').eq('source_order_id', orderId).maybeSingle()
       if (existing) {
-        await supabase.from('installations').update(onsite).eq('source_order_id', orderId)
+        await instUpdate(onsite).eq('source_order_id', orderId)
       } else {
         // รัน serial เลข 4 หลักต่อจากที่มีอยู่ (เหมือนรายการที่ลงในหน้าปฏิทินเอง)
         const { data: serials } = await supabase.from('installations').select('serial_no')
         const maxN = (serials ?? []).reduce((mx, r) => Math.max(mx, parseInt(String(r.serial_no), 10) || 0), 0)
-        await supabase.from('installations').insert({
+        await instInsert({
           source_order_id: orderId,
           serial_no: String(maxN + 1).padStart(4, '0'),
           work_type: 'งานติดตั้ง',
@@ -595,7 +603,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     }
     const oname = (payload.order_number || payload.customer_name || '').toString()
     if (modal.mode === 'add') {
-      const res = await supabase.from('order_entries').insert(payload).select().single()
+      const res = await oeInsert(payload).select().single()
       if (res.error) { setSaving(false); setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
       const saved = res.data as Entry
       await syncInstallation(payload, saved.id)
@@ -621,7 +629,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       })
     } else {
       const orig = rows.find(r => r.id === d.id)
-      const res = await supabase.from('order_entries').update(payload).eq('id', d.id).select().single()
+      const res = await oeUpdate(payload).eq('id', d.id).select().single()
       if (res.error) { setSaving(false); setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
       await syncInstallation(payload, String(d.id))
       if (payload.is_installation) await saveOrderPhotos(String(d.id))
@@ -637,6 +645,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const del = async (id: string) => {
     if (!confirm('ลบรายการนี้?')) return
     const row = rows.find(r => r.id === id)
+    // แปะชื่อคนลบก่อน แล้วค่อยลบ — ประวัติจะได้รู้ว่าใครลบ (trigger อ่านจากแถวที่กำลังถูกลบ)
+    await oeUpdate({ updated_at: new Date().toISOString() }).eq('id', id)
     const { error: err } = await supabase.from('order_entries').delete().eq('id', id)
     if (!err) {
       setSelectedIds(prev => { const s = new Set(prev); s.delete(id); return s })
@@ -739,6 +749,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     if (!confirm(`ลบ ${selectedIds.size} รายการที่เลือก?`)) return
     const ids = Array.from(selectedIds)
     const deleted = rows.filter(r => ids.includes(r.id))   // เก็บแถวที่ลบไว้ย้อนกลับ
+    await oeUpdate({ updated_at: new Date().toISOString() }).in('id', ids)   // แปะชื่อคนลบก่อนลบ (ดู del)
     const { error: err } = await supabase.from('order_entries').delete().in('id', ids)
     if (!err) {
       setSelectedIds(new Set())
@@ -763,14 +774,14 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const prev = Array.isArray(existing) ? existing : []
     if (prev.length && prev[prev.length - 1]?.status === status) return  // กันบันทึกซ้ำสถานะเดิม
     const next = [...prev, { status, at: now, by: null }]
-    const { error } = await supabase.from('order_entries').update({ status_history: next }).eq('id', id)
+    const { error } = await oeUpdate({ status_history: next }).eq('id', id)
     if (!error) setRows(p => p.map(r => r.id === id ? { ...r, status_history: next } as Entry : r))
   }
 
   // แก้ค่าจริง (DB + sync กระดานงาน + log ประวัติ + state) — ไม่บันทึกกองประวัติ ใช้ซ้ำได้ทั้ง undo/redo
   const applyField = async (id: string, field: string, value: string | boolean): Promise<boolean> => {
     const now = new Date().toISOString()
-    const { error: err } = await supabase.from('order_entries').update({ [field]: value, updated_at: now }).eq('id', id)
+    const { error: err } = await oeUpdate({ [field]: value, updated_at: now }).eq('id', id)
     if (err) return false
     if (field === 'order_status' && typeof value === 'string') {
       const row = rows.find(r => r.id === id)
@@ -802,8 +813,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const trackOrderField = (id: string, patch: Record<string, any>, prev: Record<string, any>, label: string) => {
     recordAction({
       label,
-      undo: async () => { await supabase.from('order_entries').update(prev).eq('id', id); await load() },
-      redo: async () => { await supabase.from('order_entries').update(patch).eq('id', id); await load() },
+      undo: async () => { await oeUpdate(prev).eq('id', id); await load() },
+      redo: async () => { await oeUpdate(patch).eq('id', id); await load() },
     })
   }
 
@@ -824,7 +835,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   // ติ๊กช่องปริ้นเอง: ติ๊ก = บันทึกเวลาปริ้นตอนนี้, เอาติ๊กออก = ล้างค่า (ไม่แตะ updated_at เพราะไม่ใช่การแก้ข้อมูลออเดอร์)
   const togglePrinted = async (id: string, printed: boolean) => {
     const val = printed ? new Date().toISOString() : null
-    const { error: err } = await supabase.from('order_entries').update({ printed_at: val }).eq('id', id)
+    const { error: err } = await oeUpdate({ printed_at: val }).eq('id', id)
     if (!err) setRows(prev => prev.map(r => r.id === id ? { ...r, printed_at: val } : r))
   }
 
@@ -851,7 +862,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const updates = checked
       ? { is_urgent: true, order_status: row?.is_installation ? 'รอติดตั้ง' : 'รอจัดส่ง', done_at: now, updated_at: now }
       : { is_urgent: false, order_status: 'รอดำเนินการ', done_at: null, updated_at: now }
-    const { error: err } = await supabase.from('order_entries').update(updates).eq('id', id)
+    const { error: err } = await oeUpdate(updates).eq('id', id)
     if (!err) {
       if (row) {
         await syncWorkStatus(row.order_number, row.customer_name, updates.order_status, now)
@@ -871,7 +882,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const updates = checked
       ? { is_urgent: true, order_status: 'จัดส่งแล้ว', shipped_at: now, updated_at: now }
       : { is_urgent: true, order_status: 'รอจัดส่ง', shipped_at: null, updated_at: now }
-    const { error: err } = await supabase.from('order_entries').update(updates).eq('id', id)
+    const { error: err } = await oeUpdate(updates).eq('id', id)
     if (!err) {
       if (row) {
         await syncWorkStatus(row.order_number, row.customer_name, updates.order_status, now)
@@ -910,7 +921,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       return old ? { ...old, carrier } : { no: p.no, carrier, status: '', events: null, checked_at: null }
     })
     const updates = { shipments: list, is_urgent: true, order_status: 'จัดส่งแล้ว', shipped_at: row?.shipped_at || now, updated_at: now }
-    const { error: err } = await supabase.from('order_entries').update(updates).eq('id', shipModal.id)
+    const { error: err } = await oeUpdate(updates).eq('id', shipModal.id)
     setShipSaving(false)
     if (err) {
       alert(`บันทึกไม่สำเร็จ: ${err.message}${/shipments/.test(err.message) ? '\n\n(ต้องรัน sql/add_shipments.sql ใน Supabase ก่อน)' : ''}`)
@@ -976,7 +987,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       return res?.ok ? { ...s, status: res.status || s.status, events: res.events?.length ? res.events : s.events, checked_at: now } : s
     })
     if (results.some(x => x.ok)) {
-      const { error: err } = await supabase.from('order_entries').update({ shipments: merged, updated_at: now }).eq('id', entryId)
+      const { error: err } = await oeUpdate({ shipments: merged, updated_at: now }).eq('id', entryId)
       if (!err) setRows(p => p.map(r => r.id === entryId ? { ...r, shipments: merged } as Entry : r))
     }
     setTrackChecking(c => c === entryId ? null : c)
@@ -1008,7 +1019,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const toggleRailPacked = async (id: string, checked: boolean) => {
     const now = new Date().toISOString()
     const updates = { rail_packed: checked, rail_packed_at: checked ? now : null, updated_at: now }
-    const { error: err } = await supabase.from('order_entries').update(updates).eq('id', id)
+    const { error: err } = await oeUpdate(updates).eq('id', id)
     if (!err) {
       const sy = window.scrollY
       flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, ...updates } as Entry : r)))
@@ -1237,7 +1248,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       const existing = rows.find(row => row.order_number === r.orderNumber)
       if (!existing) continue
       const now = new Date().toISOString()
-      const { error: err } = await supabase.from('order_entries').update({ is_dropoff: true, updated_at: now }).eq('id', existing.id)
+      const { error: err } = await oeUpdate({ is_dropoff: true, updated_at: now }).eq('id', existing.id)
       if (!err) updatedIds.push(existing.id)
     }
 
@@ -1249,7 +1260,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       const now = new Date().toISOString()
       const shippedAt = toShippedIso(r.shippedDate) || existing.shipped_at || now
       const updates = { order_status: 'จัดส่งแล้ว', shipped_at: shippedAt, is_urgent: true, updated_at: now }
-      const { error: err } = await supabase.from('order_entries').update(updates).eq('id', existing.id)
+      const { error: err } = await oeUpdate(updates).eq('id', existing.id)
       if (!err) {
         shippedApplied.set(existing.id, updates)
         if (existing.order_status !== 'จัดส่งแล้ว') {
@@ -1266,7 +1277,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       if (!existing) continue
       const now = new Date().toISOString()
       const updates = { order_status: 'ยกเลิก', updated_at: now }
-      const { error: err } = await supabase.from('order_entries').update(updates).eq('id', existing.id)
+      const { error: err } = await oeUpdate(updates).eq('id', existing.id)
       if (!err) {
         cancelApplied.set(existing.id, updates)
         await syncWorkStatus(existing.order_number, existing.customer_name, 'ยกเลิก', now)
@@ -1283,7 +1294,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
 
     let insertedRows: Entry[] = []
     if (insertPayload.length > 0) {
-      const res = await supabase.from('order_entries').insert(insertPayload).select()
+      const res = await supabase.from('order_entries').insert(insertPayload.map(p => stampInsert(p))).select()
       if (res.error) { setPasteSaving(false); setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
       insertedRows = res.data as Entry[]
     }
@@ -1379,6 +1390,12 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
 
   // คืนค่าสดก่อนเอาไปวาดบนจอ — ลำดับ/สมาชิกได้จาก stable แล้ว แต่ข้อมูลที่โชว์ต้องเป็นของล่าสุด
   const displayed = displayedFrozen.map(live)
+
+  // ตัวเลือกกรองคอลัมน์แอดมิน = แอดมินหลัก + ชื่อที่มีอยู่จริงในข้อมูล (ออเดอร์เก่าที่เคยกรอกมือ)
+  const adminNames = Array.from(new Set([
+    ...BONUS_ADMINS.map(a => a.name),
+    ...rows.map(r => r.admin_name).filter((n): n is string => !!n),
+  ]))
 
   const displayedOut = (() => {
     let rs = displayedFrozen
@@ -1538,7 +1555,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const saveOrderPhotos = async (orderId: string) => {
     const { data } = await supabase.from('installations').select('id').eq('source_order_id', orderId).maybeSingle()
     if (!data) return
-    const { error: pErr } = await supabase.from('installations').update({ photos: ph.photos, updated_at: new Date().toISOString() }).eq('id', data.id)
+    const { error: pErr } = await instUpdate({ photos: ph.photos, updated_at: new Date().toISOString() }).eq('id', data.id)
     if (pErr) setError(photoSaveError(pErr.message))   // ออเดอร์บันทึกไปแล้ว บอกเฉพาะส่วนรูปที่พลาด
     else ph.commit()
   }
@@ -1573,7 +1590,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const [h, mi] = timeStr.split(':')
     const raw = `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()},${h.padStart(2, '0')}:${mi}:00`
     const now = new Date().toISOString()
-    const { error: err } = await supabase.from('order_entries').update({ shipping_datetime: raw, updated_at: now }).eq('id', r.id)
+    const { error: err } = await oeUpdate({ shipping_datetime: raw, updated_at: now }).eq('id', r.id)
     if (!err) setRows(prev => prev.map(x => x.id === r.id ? { ...x, shipping_datetime: raw, updated_at: now } : x))
   }
 
@@ -1613,7 +1630,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const now = new Date().toISOString()
     const row = rows.find(r => r.id === id)
     const oldVal = row ? (row as any)[field] ?? null : null
-    const { error: err } = await supabase.from('order_entries').update({ [field]: val || null, updated_at: now }).eq('id', id)
+    const { error: err } = await oeUpdate({ [field]: val || null, updated_at: now }).eq('id', id)
     if (!err) {
       const sy = window.scrollY
       flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: val || null, updated_at: now } as Entry : r)))
@@ -1634,7 +1651,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
         updates.items = items.map(it => ({ ...it, outsource: '' }))
       }
     }
-    const { error: err } = await supabase.from('order_entries').update(updates).eq('id', id)
+    const { error: err } = await oeUpdate(updates).eq('id', id)
     if (!err) {
       const row = rows.find(x => x.id === id)
       await syncOutsourcePO(id, row?.customer_name, row?.order_number, val, row?.items)
@@ -1651,7 +1668,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const now = new Date().toISOString()
     const row = rows.find(r => r.id === id)
     const updates = { deadline: dateStr, install_time: timeStr, updated_at: now }
-    const { error: err } = await supabase.from('order_entries').update(updates).eq('id', id)
+    const { error: err } = await oeUpdate(updates).eq('id', id)
     if (!err) {
       setRows(prev => prev.map(r => r.id === id ? { ...r, ...updates } as Entry : r))
       if (row) trackOrderField(id, updates, prevOf(row, updates), `แก้วันติดตั้ง ${row.order_number || row.customer_name || ''}`)
@@ -1664,7 +1681,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const now = new Date().toISOString()
     const updates: Record<string, unknown> = { install_status: val || null, is_dropoff: val === 'ติดตั้งแล้ว', updated_at: now }
     if (val === 'ติดตั้ง50%') updates.deadline = null
-    const { error: err } = await supabase.from('order_entries').update(updates).eq('id', r.id)
+    const { error: err } = await oeUpdate(updates).eq('id', r.id)
     if (!err) {
       const sy = window.scrollY
       flushSync(() => setRows(prev => prev.map(row => row.id === r.id ? { ...row, ...updates } as Entry : row)))
@@ -1678,7 +1695,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const updates: Record<string, unknown> = { payment_status: val, updated_at: now }
     if (val === 'มัดจำ50%' && r.price) updates.deposit = r.price / 2
     else if (val === 'มัดจำ') updates.deposit = null
-    const { error: err } = await supabase.from('order_entries').update(updates).eq('id', r.id)
+    const { error: err } = await oeUpdate(updates).eq('id', r.id)
     if (!err) {
       const sy = window.scrollY
       flushSync(() => setRows(prev => prev.map(row => row.id === r.id ? { ...row, ...updates, updated_at: now } as Entry : row)))
@@ -1692,7 +1709,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const now = new Date().toISOString()
     const row = rows.find(r => r.id === id)
     const oldVal = row ? (row as any)[field] ?? null : null
-    const { error: err } = await supabase.from('order_entries').update({ [field]: num, updated_at: now }).eq('id', id)
+    const { error: err } = await oeUpdate({ [field]: num, updated_at: now }).eq('id', id)
     if (!err) {
       const sy = window.scrollY
       flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: num, updated_at: now } as Entry : r)))
@@ -1738,9 +1755,9 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     // จำเวลาปริ้นล่าสุดต่อใบ → โชว์ข้างปุ่มปริ้นในเมนู ··· (ไม่แตะ updated_at เพราะไม่ใช่การแก้ข้อมูล)
     const printedNow = new Date().toISOString()
     const printedIds = toPrint.map(r => r.id)
-    supabase.from('order_entries').update({ printed_at: printedNow }).in('id', printedIds)
-      .then(({ error: err }) => {
-        if (!err) setRows(p => p.map(x => printedIds.includes(x.id) ? { ...x, printed_at: printedNow } : x))
+    oeUpdate({ printed_at: printedNow }).in('id', printedIds)
+      .then((res: { error: { message: string } | null }) => {
+        if (!res.error) setRows(p => p.map(x => printedIds.includes(x.id) ? { ...x, printed_at: printedNow } : x))
       })
 
     // ฟอร์ม → สร้าง QR ต่อออเดอร์ (ชี้ไปหน้า /scan บนโดเมนเดียวกับที่เปิดอยู่)
@@ -1844,7 +1861,7 @@ ${body}
         if (!Array.isArray(o.items) || o.items.length === 0) throw new Error('อ่านรายการจากข้อความที่แก้ไม่ได้')
         const now = new Date().toISOString()
         const updates = { items: o.items as Item[], updated_at: now }
-        const { error: err } = await supabase.from('order_entries').update(updates).eq('id', d.id)
+        const { error: err } = await oeUpdate(updates).eq('id', d.id)
         if (err) throw new Error(err.message)
         setRows(prev => prev.map(r => r.id === d.id ? { ...r, ...updates } as Entry : r))
       } catch (err) {
@@ -3080,7 +3097,7 @@ ${body}
                   </button>
                   {openFilter === 'admin' && (
                     <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 140, padding: '6px 0' }}>
-                      {ADMINS.map(a => (
+                      {adminNames.map(a => (
                         <label key={a} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--ink)', fontWeight: 400, background: adminFilters.includes(a) ? 'var(--blue-bg)' : 'transparent' }}>
                           <input type="checkbox" checked={adminFilters.includes(a)} onChange={() => setAdminFilters(toggleArr(adminFilters, a))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
                           {a}
@@ -3263,12 +3280,10 @@ ${body}
                     </td>
                     )}
                     {showCol('admin') && (
-                    <td style={{ padding: '8px 14px' }}>
-                      <select value={r.admin_name || ''} onChange={e => updateField(r.id, 'admin_name', e.target.value)}
-                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.admin_name ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 80 }}>
-                        <option value="">—</option>
-                        {ADMINS.map(a => <option key={a} value={a}>{a}</option>)}
-                      </select>
+                    // ระบบคุมเอง = แอดมินหลักคนล่าสุดที่แก้เนื้อออเดอร์ (แก้มือไม่ได้ ดู lib/adminActor.ts)
+                    <td style={{ padding: '12px 14px', fontSize: 12, color: r.admin_name ? 'var(--ink)' : 'var(--ink-4)', whiteSpace: 'nowrap' }}
+                      title={r.admin_name ? 'เจ้าของโบนัสออเดอร์นี้ — ระบบเปลี่ยนให้เองเมื่อมีแอดมินหลักมาแก้ออเดอร์' : 'ยังไม่มีแอดมินหลักแก้ออเดอร์นี้'}>
+                      {r.admin_name || '—'}
                     </td>
                     )}
                     {showCol('tech') && (
@@ -3864,7 +3879,13 @@ ${body}
                   </div>
                 </div>
               )}
-              {sel('แอดมิน', 'admin_name', ADMINS)}
+              {/* แอดมิน = ระบบใส่ให้เอง (แอดมินหลักคนล่าสุดที่แก้ออเดอร์) เลือกเองไม่ได้แล้ว */}
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>แอดมิน (ระบบบันทึกให้เอง)</label>
+                <div style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, background: 'var(--bg)', color: modal.data.admin_name ? 'var(--ink)' : 'var(--ink-4)' }}>
+                  {modal.data.admin_name || '— ยังไม่มีแอดมินหลักแก้ออเดอร์นี้'}
+                </div>
+              </div>
               {sel('ช่างที่รับผิดชอบ', 'technician', TECHS)}
               {!isInstall && sel('บริษัทจัดส่ง', 'courier', COURIERS)}
               {inp('สั่งนอก', 'outsource')}
@@ -4190,7 +4211,7 @@ ${body}
                   updated_at: now,
                   ...(itemsOut && itemsOut !== prevOut ? { outsource: itemsOut, outsource_at: now } : {}),
                 }
-                const { error: err } = await supabase.from('order_entries').update(updates).eq('id', itemsModal.id)
+                const { error: err } = await oeUpdate(updates).eq('id', itemsModal.id)
                 if (!err) {
                   // สั่งนอกเปลี่ยน → sync ไปหมวดสั่งซื้อด้วย
                   if (itemsOut && itemsOut !== prevOut) {
@@ -4199,7 +4220,7 @@ ${body}
                   }
                   // รูปหน้างานเก็บที่แถวงานติดตั้ง (installations.photos) ไม่ใช่ที่ออเดอร์
                   if (itemsModal.instId) {
-                    const { error: pErr } = await supabase.from('installations').update({ photos: ph.photos, updated_at: now }).eq('id', itemsModal.instId)
+                    const { error: pErr } = await instUpdate({ photos: ph.photos, updated_at: now }).eq('id', itemsModal.instId)
                     if (pErr) { setItemsModalError(photoSaveError(pErr.message)); return }
                   }
                   ph.commit()

@@ -2,108 +2,12 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-
-type Change = { from: unknown; to: unknown }
-type Log = {
-  id: string
-  table_name: string
-  category: string
-  action: 'insert' | 'update' | 'delete'
-  row_id: string | null
-  label: string | null
-  changes: Record<string, Change> | null
-  created_at: string
-}
+import { isOwnerLogin } from '@/lib/adminActor'
+import {
+  type Log, CAT_COLOR, actionLabel, changeSummary, groupByDay, hhmm, actorName,
+} from '@/lib/activityText'
 
 const PAGE = 50
-
-// หมวด → สีป้าย
-const CAT_COLOR: Record<string, string> = {
-  'ออเดอร์': '#C47E3A',
-  'เคลม': '#f43f5e',
-  'งานติดตั้ง': '#ff9f0a',
-  'สั่งซื้อ': '#5e9eff',
-  'สต็อก': '#30d158',
-  'ใบลา': '#bf5af2',
-  'สแกนผลิต': '#5ac8fa',
-  'ผู้จัดจำหน่าย': '#8e8e93',
-}
-
-// action → คำกริยา + สี
-function actionLabel(a: Log['action'], table: string) {
-  if (a === 'insert') return table === 'production_scans' ? { t: 'สแกน', c: '#5ac8fa' } : { t: 'เพิ่ม', c: '#30d158' }
-  if (a === 'delete') return { t: 'ลบ', c: '#f43f5e' }
-  return { t: 'แก้ไข', c: '#C47E3A' }
-}
-
-// ชื่อฟิลด์ → ภาษาไทย (ไม่เจอ = ใช้ชื่อดิบ)
-const FIELD_TH: Record<string, string> = {
-  order_status: 'สถานะงาน', status: 'สถานะ', deadline: 'กำหนดส่ง',
-  shipping_datetime: 'วันส่ง', shipped_at: 'จัดส่งเมื่อ', customer_name: 'ลูกค้า',
-  platform: 'แพลตฟอร์ม', notes: 'หมายเหตุ', price: 'ราคา', deposit: 'มัดจำ',
-  payment_status: 'การชำระ', is_urgent: 'งานเสร็จ', items: 'รายการสินค้า',
-  technician: 'ช่าง', admin_name: 'แอดมิน', courier: 'ขนส่ง', order_number: 'เลขออเดอร์',
-  province: 'จังหวัด', phone: 'เบอร์โทร', installation_date: 'วันติดตั้ง',
-  install_time: 'เวลานัด', work_type: 'ลักษณะงาน', location_link: 'ลิงก์โลเคชั่น',
-  refund_amount: 'ยอดเงินคืน', money_status: 'สถานะเงิน', return_tracking: 'เลขพัสดุคืน',
-  in_use_rolls: 'ม้วนที่ใช้', remaining_meters: 'เมตรคงเหลือ', stock_count: 'จำนวนสต็อก',
-  color_name: 'ลาย/สี', fabric_code: 'รหัสผ้า', fabric_type: 'ชนิดผ้า',
-  supplier: 'ผู้จัดจำหน่าย', leave_date: 'วันลา', leave_end_date: 'วันสิ้นสุดลา',
-  leave_type: 'ประเภทลา', order_assigned: 'ผู้รับผิดชอบ', outsource: 'สั่งนอก',
-  address: 'ที่อยู่', install_status: 'สถานะติดตั้ง',
-}
-
-function fmtVal(v: unknown): string {
-  if (v === null || v === undefined || v === '') return '—'
-  if (typeof v === 'boolean') return v ? 'ใช่' : 'ไม่'
-  if (typeof v === 'object') return 'อัปเดต' // jsonb/array เช่น รายการสินค้า
-  const s = String(v)
-  return s.length > 40 ? s.slice(0, 40) + '…' : s
-}
-
-function hhmm(iso: string): string {
-  return new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
-}
-
-function dayKey(iso: string): string {
-  const d = new Date(iso)
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
-}
-
-function dayLabel(iso: string): string {
-  const d = new Date(iso)
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const that = new Date(d.getFullYear(), d.getMonth(), d.getDate())
-  const diff = Math.round((today.getTime() - that.getTime()) / 86400000)
-  if (diff === 0) return 'วันนี้'
-  if (diff === 1) return 'เมื่อวาน'
-  return d.toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-}
-
-// สรุปการเปลี่ยนแปลงให้อยู่บรรทัดเดียว
-function changeSummary(changes: Record<string, Change> | null): string {
-  if (!changes) return ''
-  const keys = Object.keys(changes)
-  const parts = keys.slice(0, 2).map(k => `${FIELD_TH[k] || k}: ${fmtVal(changes[k].from)} → ${fmtVal(changes[k].to)}`)
-  if (keys.length > 2) parts.push(`+${keys.length - 2}`)
-  return parts.join(' · ')
-}
-
-// จัดกลุ่มตามวัน (logs เรียงใหม่→เก่าอยู่แล้ว)
-function groupByDay(logs: Log[]): { key: string; label: string; items: Log[] }[] {
-  const groups: { key: string; label: string; items: Log[] }[] = []
-  let cur: { key: string; label: string; items: Log[] } | null = null
-  for (const log of logs) {
-    const k = dayKey(log.created_at)
-    if (!cur || cur.key !== k) {
-      cur = { key: k, label: dayLabel(log.created_at), items: [] }
-      groups.push(cur)
-    }
-    cur.items.push(log)
-  }
-  return groups
-}
 
 export default function ActivityLog() {
   const [logs, setLogs] = useState<Log[]>([])
@@ -111,6 +15,9 @@ export default function ActivityLog() {
   const [loading, setLoading] = useState(true)
   const [hasMore, setHasMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // เห็นชื่อคนแก้ได้เฉพาะคนที่ล็อกอินด้วยรหัสรวมของร้าน (อ่านคุกกี้ได้เฉพาะฝั่งเบราว์เซอร์)
+  const [canSeeNames, setCanSeeNames] = useState(false)
+  useEffect(() => { setCanSeeNames(isOwnerLogin()) }, [])
 
   const load = useCallback(async (reset: boolean) => {
     setLoading(true)
@@ -179,11 +86,13 @@ export default function ActivityLog() {
               {group.items.map(log => {
                 const act = actionLabel(log.action, log.table_name)
                 const summary = changeSummary(log.changes)
+                const who = actorName(log, canSeeNames)
                 return (
                   <div key={log.id} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 4px', borderBottom: '1px solid var(--border)' }}>
                     <span style={{ width: 42, flexShrink: 0, fontSize: 12, color: 'var(--ink-4)', fontVariantNumeric: 'tabular-nums' }}>{hhmm(log.created_at)}</span>
                     <span style={{ width: 7, height: 7, borderRadius: 4, background: CAT_COLOR[log.category] || '#8e8e93', flexShrink: 0 }} />
                     <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {who && <span style={{ color: 'var(--blue)', fontWeight: 700 }}>{who} </span>}
                       <span style={{ color: act.c, fontWeight: 600 }}>{act.t}</span>
                       {' '}<span style={{ color: 'var(--ink-3)' }}>{log.category}</span>
                       {log.label && <span style={{ fontWeight: 600 }}> {log.label}</span>}

@@ -9,6 +9,7 @@ import { carrierTrackUrl } from '@/lib/carriers'
 import { PROD_STATUS_COLOR } from '@/lib/orderTabs'
 import { INSTALL_STATUS_COLOR } from '@/lib/shopCalendar'
 import { usePullToRefresh, useSheetBack, PullIndicator, CardSkeleton, clamp } from './mobileUi'
+import OrderHistory from '@/components/OrderHistory'
 
 // โฟลเดอร์ออเดอร์ของลูกค้า เวอร์ชันมือถือ — ดูอย่างเดียว
 // เดสก์ท็อป = app/(admin)/customers (มีลบรูปแพ็คได้ด้วย) · ที่นี่ดึงข้อมูลชุดเดียวกันเป๊ะ
@@ -25,6 +26,8 @@ type Order = {
   notes: string | null
   packing_photos?: string[] | null
   shipments?: Shipment[] | null
+  created_by_name?: string | null   // คนลงออเดอร์
+  admin_name?: string | null        // แอดมินหลักคนล่าสุดที่แก้ = เจ้าของโบนัส
 }
 // ใครสแกนขั้นไหน (production_scans) — 1 ขั้นมีได้หลายคน (คนเดินสถานะ + คนที่กด "ลงชื่อช่วย" ดู sql/scan_helpers.sql)
 type Scan = { order_number: string; stage: string; tech_name: string | null; scanned_at: string | null }
@@ -76,7 +79,7 @@ export default function MobileCustomer() {
     // query ชุดเดียวกับหน้าเดสก์ท็อป (app/(admin)/customers) — จับคู่ด้วยชื่อลูกค้าเหมือนกัน
     const [o, c, i, p] = await Promise.all([
       supabase.from('order_entries')
-        .select('id, entry_date, order_number, platform, order_status, payment_status, price, items, notes, packing_photos, shipments')
+        .select('id, entry_date, order_number, platform, order_status, payment_status, price, items, notes, packing_photos, shipments, created_by_name, admin_name')
         .eq('customer_name', name)
         .order('entry_date', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false }),
@@ -197,6 +200,11 @@ export default function MobileCustomer() {
                       <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 2 }}>
                         {[o.platform, o.payment_status].filter(Boolean).join(' · ')}
                       </div>
+                      {/* ใครลงออเดอร์ / แอดมินหลักคนล่าสุดที่แก้ (= เจ้าของโบนัส) */}
+                      <div style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 2 }}>
+                        ลงโดย <strong style={{ color: 'var(--ink-3)' }}>{o.created_by_name || '—'}</strong>
+                        {' · '}แอดมินล่าสุด <strong style={{ color: o.admin_name ? 'var(--blue)' : 'var(--ink-4)' }}>{o.admin_name || '—'}</strong>
+                      </div>
                       {lines.length > 0 && (
                         <div style={{ margin: '8px 0 0', display: 'flex', flexDirection: 'column', gap: 3 }}>
                           {lines.map((l, i) => (
@@ -223,6 +231,9 @@ export default function MobileCustomer() {
                       )}
 
                       <ScanCredits scans={scans} orderKey={o.order_number || `id:${o.id}`} />
+
+                      {/* ใครทำอะไรกับออเดอร์ใบนี้บ้าง (กดเปิดดู) */}
+                      <OrderHistory orderId={o.id} compact />
 
                       {Array.isArray(o.packing_photos) && o.packing_photos.length > 0 && (
                         <div style={{ display: 'flex', gap: 6, marginTop: 8, overflowX: 'auto' }}>

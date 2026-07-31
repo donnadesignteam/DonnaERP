@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { itemBlockLines, type RawItem } from '@/lib/itemFormat'
 import { deletePackingFile } from '@/lib/packingPhotos'
 import { thaiTrackStatus } from '@/lib/trackExtract'
+import OrderHistory from '@/components/OrderHistory'
 
 type Item = RawItem
 
@@ -50,6 +51,9 @@ type Order = {
   shipped_at: string | null
   packing_photos?: string[] | null   // ภาพตอนแพ็คราง/แพ็คม่าน (อนาคต) — array ของ URL รูป
   shipments?: Shipment[] | null      // เลขพัสดุ + สถานะที่เช็คล่าสุด
+  created_by_name?: string | null    // คนลงออเดอร์ (ตั้งครั้งเดียว)
+  admin_name?: string | null         // แอดมินหลักคนล่าสุดที่แก้ = เจ้าของโบนัส
+  last_content_at?: string | null
 }
 
 const fmtDate = (d: string | null) =>
@@ -153,7 +157,7 @@ function CustomerFolder() {
       setLoading(true)
       const { data } = await supabase
         .from('order_entries')
-        .select('id, entry_date, created_at, updated_at, order_number, platform, order_status, payment_status, is_installation, price, items, notes, status_history, done_at, shipped_at, packing_photos, shipments')
+        .select('id, entry_date, created_at, updated_at, order_number, platform, order_status, payment_status, is_installation, price, items, notes, status_history, done_at, shipped_at, packing_photos, shipments, created_by_name, admin_name, last_content_at')
         .eq('customer_name', name)
         .order('entry_date', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
@@ -249,6 +253,12 @@ function CustomerFolder() {
                     )}
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4 }}>{fmtDate(o.entry_date)}</div>
+                  {/* ใครลงออเดอร์ / แอดมินคนล่าสุดที่แก้ (= เจ้าของโบนัส) */}
+                  <div style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 3 }}>
+                    ลงโดย <strong style={{ color: 'var(--ink-3)' }}>{o.created_by_name || '—'}</strong>
+                    {' · '}แอดมินล่าสุด <strong style={{ color: o.admin_name ? 'var(--blue)' : 'var(--ink-4)' }}>{o.admin_name || '—'}</strong>
+                    {o.last_content_at && ` (${fmtDate(o.last_content_at)})`}
+                  </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   {o.price != null && (
@@ -291,6 +301,8 @@ function CustomerFolder() {
                     {o.order_status ? <>สถานะปัจจุบัน: <strong style={{ color: 'var(--ink-3)' }}>{o.order_status}</strong> — ยังไม่มีประวัติย้อนหลัง (เริ่มบันทึกเมื่อมีการเปลี่ยนสถานะครั้งถัดไป)</> : 'ยังไม่มีประวัติสถานะ'}
                   </div>
                 )}
+                {/* ใครทำอะไรกับออเดอร์ใบนี้บ้าง (กดเปิดดู) */}
+                <OrderHistory orderId={o.id} />
               </div>
 
               {/* สถานะพัสดุ — โชว์เฉพาะออเดอร์ที่ใส่เลขพัสดุแล้ว (สถานะ = ที่เช็คล่าสุดจากหน้าออเดอร์) */}

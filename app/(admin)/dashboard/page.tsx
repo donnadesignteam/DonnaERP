@@ -8,6 +8,8 @@ import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { effShipping } from '@/lib/shipping'
 import { syncWorkStatus } from '@/lib/workStatusSync'
 import { useStableView } from '@/lib/useStableView'
+import { oeUpdate } from '@/lib/adminActor'
+
 
 type Order = {
   id: string
@@ -290,14 +292,14 @@ export default function DashboardPage() {
     const row = all.find(o => o.id === id)
     const now = new Date().toISOString()
     const updates = { is_urgent: true, order_status: 'จัดส่งแล้ว', shipped_at: now, updated_at: now }
-    const { error } = await supabase.from('order_entries').update(updates).eq('id', id)
+    const { error } = await oeUpdate(updates).eq('id', id)
     if (error) return
     try {
       await syncWorkStatus(row?.order_number, row?.customer_name, 'จัดส่งแล้ว', now)
       const { data: r2 } = await supabase.from('order_entries').select('status_history').eq('id', id).single()
       const prev = Array.isArray(r2?.status_history) ? r2.status_history : []
       if (!prev.length || prev[prev.length - 1]?.status !== 'จัดส่งแล้ว') {
-        await supabase.from('order_entries').update({ status_history: [...prev, { status: 'จัดส่งแล้ว', at: now, by: null }] }).eq('id', id)
+        await oeUpdate({ status_history: [...prev, { status: 'จัดส่งแล้ว', at: now, by: null }] }).eq('id', id)
       }
     } catch {}
     setAll(prev => {

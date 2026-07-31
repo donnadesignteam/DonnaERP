@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { fetchStaffOne, type Staff } from '@/lib/staffDb'
+import MyActivity from '@/components/MyActivity'
 
 type Leave = { filed: string | null; date: string | null; time: string | null; type: string | null; reason: string | null; status: string | null; supervisor: string | null }
 type Scan = { order_number: string; customer_name: string | null; status: string | null; stages: string[]; last: string | null }
@@ -470,6 +471,12 @@ export default function StaffDetailPage() {
               </div>
             </>
           )}
+
+          {/* ประวัติการแก้ไขของคนนี้เท่านั้น (กรองด้วย actor_code — ดู lib/adminActor.ts) */}
+          <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink)', marginBottom: 12 }}>ประวัติการแก้ไขในระบบ</h2>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '6px 18px 18px', boxShadow: 'var(--shadow)', marginBottom: 26 }}>
+            <MyActivity code={code} />
+          </div>
 
           <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink)', marginBottom: 12 }}>ประวัติการลา ({leaves.length})</h2>
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'auto', boxShadow: 'var(--shadow)' }}>
