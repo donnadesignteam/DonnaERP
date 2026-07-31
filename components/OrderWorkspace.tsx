@@ -18,7 +18,7 @@ import ProvinceSelect from '@/components/ProvinceSelect'
 import { syncWorkStatus as syncWorkStatusExact } from '@/lib/workStatusSync'
 import { recordAction } from '@/lib/history'
 import { prevOf } from '@/lib/trackedDb'
-import { stampInsert, oeUpdate, oeInsert, instUpdate, instInsert, BONUS_ADMINS } from '@/lib/adminActor'
+import { stampInsert, oeUpdate, oeInsert, instUpdate, instInsert } from '@/lib/adminActor'
 import { useStableView } from '@/lib/useStableView'
 import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
@@ -142,6 +142,9 @@ const COURIERS = [
   'Standard Delivery Bulky - ส่งสินค้าขนาดใหญ่-Flash Express Bulky',
 ]
 
+// ตัวเลือกในช่องแอดมิน (เลือกเอง) — user กำหนดรายชื่อชุดนี้เอง
+// ‼️ คนละชุดกับ BONUS_ADMINS ใน lib/adminActor.ts (กลุ่มที่ระบบใส่ชื่อให้อัตโนมัติ)
+const ADMINS = ['กาย', 'แพท', 'หนูนา', 'ยุน', 'ส้ม']
 const TECHS = ['ช่างดอนน่า', 'ช่างพี่ฟอง', 'ช่างเชียงใหม่']
 
 const TIMES = ['8:00','9:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00']
@@ -1411,9 +1414,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   // คืนค่าสดก่อนเอาไปวาดบนจอ — ลำดับ/สมาชิกได้จาก stable แล้ว แต่ข้อมูลที่โชว์ต้องเป็นของล่าสุด
   const displayed = displayedFrozen.map(live)
 
-  // ตัวเลือกกรองคอลัมน์แอดมิน = แอดมินหลัก + ชื่อที่มีอยู่จริงในข้อมูล (ออเดอร์เก่าที่เคยกรอกมือ)
+  // ตัวเลือกกรองคอลัมน์แอดมิน = รายชื่อในช่องเลือก + ชื่อที่มีอยู่จริงในข้อมูล
+  // (ชื่อที่ระบบใส่ให้อัตโนมัติ เช่น น็อต จะได้กรองได้ด้วย ถึงจะไม่มีในช่องเลือก)
   const adminNames = Array.from(new Set([
-    ...BONUS_ADMINS.map(a => a.name),
+    ...ADMINS,
     ...rows.map(r => r.admin_name).filter((n): n is string => !!n),
   ]))
 
@@ -3306,7 +3310,7 @@ ${body}
                         title="เลือกเองได้ · ระบบจะเปลี่ยนให้เองเมื่อมีแอดมินหลักมาแก้เนื้อออเดอร์"
                         style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.admin_name ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 80 }}>
                         <option value="">—</option>
-                        {adminNames.map(a => <option key={a} value={a}>{a}</option>)}
+                        {ADMINS.map(a => <option key={a} value={a}>{a}</option>)}
                       </select>
                     </td>
                     )}
@@ -3904,7 +3908,7 @@ ${body}
                 </div>
               )}
               {/* แอดมิน: เลือกเองได้ + ระบบทับให้เองเมื่อแอดมินหลักแก้เนื้อออเดอร์ */}
-              {sel('แอดมิน', 'admin_name', adminNames)}
+              {sel('แอดมิน', 'admin_name', ADMINS)}
               {sel('ช่างที่รับผิดชอบ', 'technician', TECHS)}
               {!isInstall && sel('บริษัทจัดส่ง', 'courier', COURIERS)}
               {inp('สั่งนอก', 'outsource')}
