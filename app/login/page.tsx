@@ -8,18 +8,25 @@ function onPhone() {
   if (typeof window === 'undefined') return false
   const standalone = window.matchMedia('(display-mode: standalone)').matches
     || (window.navigator as Navigator & { standalone?: boolean }).standalone === true
-  return standalone || window.matchMedia('(max-width: 820px)').matches
+  if (standalone) return true
+  // ‼️ จอแคบอย่างเดียวไม่พอ — คอมที่ย่อหน้าต่าง/แบ่งครึ่งจอก็แคบได้ แล้วโดนเด้งไปหน้ามือถือ
+  //    ต้องเป็นจอสัมผัสด้วย (pointer: coarse) คอมที่ใช้เมาส์/แทร็กแพดจะไม่เข้าเงื่อนไขนี้
+  return window.matchMedia('(max-width: 820px)').matches
+    && window.matchMedia('(pointer: coarse)').matches
 }
 
 // เลือกหน้าปลายทางหลังล็อกอิน
 // - from = '/dashboard' หรือ '/' แปลว่า "ไม่ได้ตั้งใจมาหน้าไหนเป็นพิเศษ" (ค่า default / เปิดหน้าแรก)
-//   เคสนี้เท่านั้นที่เลือกปลายทางให้เอง: พนักงาน → แดชบอร์ดของตัวเอง, มือถือ → hub, คอม → /dashboard
+//   เคสนี้เท่านั้นที่เลือกปลายทางให้เอง
 // - ถ้ามาจากหน้าอื่น (เช่น /scan?o=... ที่โดนเด้งมา) ให้กลับไปหน้านั้นเสมอ
+//
+// ‼️ เครื่องเป็นตัวตัดสินก่อนเสมอ ไม่ใช่ว่าล็อกอินด้วยรหัสอะไร — เดิมเช็ค staff ก่อน
+//    ทำให้พนักงานที่ล็อกอินจากคอมโดนพาไปหน้ามือถือ /m/me
 function landing(from: string, staff: boolean) {
   const noPreference = from === '/dashboard' || from === '/'
   if (!noPreference) return from
-  if (staff) return '/m/me'
-  return onPhone() ? '/hub' : '/dashboard'
+  if (!onPhone()) return '/dashboard'   // คอม = หน้าเดสก์ท็อปเสมอ (พนักงานก็เห็นเท่าแอดมินอยู่แล้ว)
+  return staff ? '/m/me' : '/hub'       // มือถือ: พนักงาน→ข้อมูลของฉัน, รหัสร้าน→hub
 }
 
 function LoginForm() {
