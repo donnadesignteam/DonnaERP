@@ -7,7 +7,7 @@ import { EMPLOYEES, STAGES, stageByKey } from '@/lib/staff'
 import { fetchEmployeeOptions } from '@/lib/staffDb'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { uploadPackingFile, deletePackingFile, compressImage } from '@/lib/packingPhotos'
-import { cutMeters } from '@/lib/fabricUsage'
+import { cutMeters, type CutLine } from '@/lib/fabricUsage'
 import HubButton from '@/components/HubButton'
 
 const LS_KEY = 'donna-scan-tech'
@@ -39,6 +39,11 @@ const UPLOAD_SLOTS: Record<string, { tag: string; label: string }[]> = {
 // ── แผนกตัด: เมตรผ้าที่ตัดในออเดอร์ที่เพิ่งสแกน (sql/fabric_meters.sql) ──
 // pick = index ของรายการที่ "คนนี้" ตัด · others = คนอื่นที่ลงชื่อขั้นตัดของออเดอร์เดียวกัน
 type CutOwner = { tech_code: string; tech_name: string; pick: number[] }
+// สถานะของหน้าถามรายการที่ช่วยตัด — ขึ้นเฉพาะตอน "ลงชื่อเพิ่ม" เท่านั้น (คนแรกที่สแกนไม่ต้องตอบอะไร)
+type CutPick = {
+  scanNo: string; items: unknown; isClaim: boolean; myCode: string
+  pick: number[]; others: CutOwner[]; lines: CutLine[]
+}
 
 function loadTech(): Tech | null {
   try { const v = localStorage.getItem(LS_KEY); return v ? JSON.parse(v) : null } catch { return null }
@@ -103,6 +108,10 @@ function ScanContent() {
   // ช่วยกันทำขั้นเดียวกันหลายคน — สแกนซ้ำแล้วถามว่าจะลงชื่อเพิ่มไหม (sql/scan_helpers.sql)
   const [joinInfo, setJoinInfo] = useState<{ stage: string; people: string[]; mine: boolean } | null>(null)
   const [joining, setJoining] = useState(false)
+
+  // แผนกตัด: หน้าถามว่าช่วยตัดรายการไหน (เฉพาะคนที่ลงชื่อเพิ่ม)
+  const [cut, setCut] = useState<CutPick | null>(null)
+  const [cutSaving, setCutSaving] = useState(false)
 
   const scannerRef = useRef<any>(null)
   const resumeTimerRef = useRef<any>(null)  // timer auto-กลับไปสแกนต่อ (undo ต้องยกเลิกก่อน ไม่งั้นเด้งทับหน้า "ยกเลิกแล้ว")
@@ -337,10 +346,34 @@ function ScanContent() {
     }
   }
 
+  // ลงชื่อ "ช่วยตัด" สำเร็จ → ถามว่าช่วยตัดรายการไหนบ้าง (user สั่ง: เฉพาะคนที่สแกนเพิ่มเท่านั้นที่ต้องติ๊ก)
+  // ค่าเริ่มต้นติ๊กรายการที่ยังไม่มีใครลงชื่อไว้ · ติ๊กรายการที่คนอื่นจองไว้ = ย้ายมาเป็นของคนนี้ ไม่นับซ้ำ
+  async function startCutJoin(t: Tech, scanNo: string, items: unknown, isClaim: boolean) {
+    const lines = cutMeters(items, { isClaim }).lines.filter(l => !l.skip)
+    let others: CutOwner[] = []
+    try { others = await loadCutOwners(scanNo, t.code) } catch {}
+    const taken = new Set(others.flatMap(o => o.pick))
+    const mine = lines.map(l => l.i).filter(i => !taken.has(i))
+    setCut({ scanNo, items, isClaim, myCode: t.code, pick: mine, others, lines })
+    try { await saveCut(scanNo, items, isClaim, t.code, mine, others) } catch {}
+  }
+
+  // ติ๊ก/เอาออกรายการที่ช่วยตัด — บันทึกเมตรของทุกคนในขั้นตัดใหม่ทั้งชุดทุกครั้ง
+  async function toggleCutLine(i: number) {
+    if (!cut || cutSaving) return
+    const on = cut.pick.includes(i)
+    const pick = on ? cut.pick.filter(x => x !== i) : [...cut.pick, i].sort((a, b) => a - b)
+    const others = on ? cut.others : cut.others.map(o => ({ ...o, pick: o.pick.filter(x => x !== i) }))
+    setCut({ ...cut, pick, others })
+    setCutSaving(true)
+    try { await saveCut(cut.scanNo, cut.items, cut.isClaim, cut.myCode, pick, others) } catch {}
+    setCutSaving(false)
+  }
+
   // กลับไปสแกนต่อ (ปุ่มกดเองของแผนกที่อัพโหลดรูปได้)
   function resumeScan() {
     if (resumeTimerRef.current) { clearTimeout(resumeTimerRef.current); resumeTimerRef.current = null }
-    setUploadedCnt({}); setUploadErr(''); setJoinInfo(null)
+    setUploadedCnt({}); setUploadErr(''); setJoinInfo(null); setCut(null)
     askJoinRef.current = false
     setPhase('scanning')
     busyRef.current = false
@@ -523,7 +556,7 @@ function ScanContent() {
         // ช่วยกันตัด → ให้เลือกเองว่าช่วยตัดรายการไหน (เมตรของคนที่จองไว้ก่อนจะถูกหักออกให้)
         if (tech.stageKey === 'cut') {
           const scanNo = order.isClaim ? `claim:${order.id}` : ((order.order_number || '').trim() || `id:${order.id}`)
-          startCut(tech, scanNo, order.items, !!order.isClaim)
+          startCutJoin(tech, scanNo, order.items, !!order.isClaim)
         }
       }
     } catch (e: any) {
@@ -623,6 +656,8 @@ function ScanContent() {
   const slots = order?.isClaim ? [] : (UPLOAD_SLOTS[tech.stageKey] ?? [])
   // อัพรูปได้เมื่อเจอออเดอร์แล้ว (done หรือ already — เผื่อสแกนซ้ำเพื่อเพิ่มรูป)
   const canUpload = slots.length > 0 && (phase === 'done' || phase === 'already' || phase === 'joined') && order?.id
+  // หน้าถามรายการที่ช่วยตัด — เฉพาะหลังลงชื่อเพิ่มสำเร็จเท่านั้น
+  const showCutPick = !!cut && phase === 'joined' && cut.lines.length > 0
 
   // ---------- โหมดลิงก์ (มาจากแอปกล้องของเครื่อง) ----------
   if (urlOrder || urlId) {
@@ -631,6 +666,7 @@ function ScanContent() {
         <div style={card}>
           <Identity tech={tech} stageLabel={stage?.label} onLogout={logout} />
           <Result phase={phase} order={order} msg={msg} stage={stage} onUndo={order?.isClaim ? undefined : undoScan} undoing={undoing} />
+          {showCutPick && <CutPick v={cut!} saving={cutSaving} onToggle={toggleCutLine} />}
           {canUpload && <PhotoUpload slots={slots} uploading={uploading} counts={uploadedCnt} err={uploadErr} onPick={pickPhoto} photos={photos} delBusy={delBusy} onDelete={deletePhoto} />}
           <a href="/scan" style={{ display: 'inline-block', marginTop: 18, color: stageColor, fontSize: 14, fontWeight: 600 }}>เปิดกล้องสแกนต่อ →</a>
         </div>
@@ -726,6 +762,7 @@ function ScanContent() {
             <div style={{ ...card, maxWidth: 380 }}>
               <Result phase={phase} order={order} msg={msg} stage={stage} onUndo={order?.isClaim ? undefined : undoScan} undoing={undoing}
                 joinInfo={joinInfo} onJoin={joinScan} onSkipJoin={resumeScan} joining={joining} />
+              {showCutPick && <CutPick v={cut!} saving={cutSaving} onToggle={toggleCutLine} />}
               {canUpload && <PhotoUpload slots={slots} uploading={uploading} counts={uploadedCnt} err={uploadErr} onPick={pickPhoto} photos={photos} delBusy={delBusy} onDelete={deletePhoto} />}
               {/* หน้า 'already' ที่ยังรอตอบ "ลงชื่อช่วยไหม" ไม่ต้องมีปุ่มสแกนต่อ — ปุ่ม "ไม่ใช่" ทำหน้าที่นั้นแทน */}
               {['done', 'already', 'undone', 'error', 'joined'].includes(phase) && !(phase === 'already' && joinInfo && !joinInfo.mine) && (
@@ -817,6 +854,37 @@ function PhotoUpload({ slots, uploading, counts, err, onPick, photos, delBusy, o
         </div>
       )}
       {err && <p style={{ color: '#dc2626', fontSize: 12, marginTop: 8 }}>ไม่สำเร็จ: {err}</p>}
+    </div>
+  )
+}
+
+// ถามคนที่ลงชื่อช่วยตัดว่าช่วยตัดรายการไหนบ้าง (ไม่โชว์ตัวเลขเมตร ไม่มีอีโมจิ — user สั่ง)
+function CutPick({ v, saving, onToggle }: { v: CutPick; saving: boolean; onToggle: (i: number) => void }) {
+  const ownerOf = (i: number) => v.others.find(o => o.pick.includes(i))?.tech_name
+  return (
+    <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #eee', textAlign: 'left' }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>คุณช่วยตัดรายการไหนบ้าง?</div>
+      <div style={{ fontSize: 12, color: '#888', margin: '2px 0 10px' }}>ติ๊กเฉพาะรายการที่คุณตัด</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {v.lines.map(l => {
+          const on = v.pick.includes(l.i)
+          const other = ownerOf(l.i)
+          return (
+            <label key={l.i} onClick={e => { e.preventDefault(); onToggle(l.i) }}
+              style={{ display: 'flex', gap: 8, alignItems: 'flex-start', border: '1px solid ' + (on ? '#2563eb' : '#e5e7eb'), background: on ? '#eff6ff' : '#fff', borderRadius: 10, padding: '9px 10px', cursor: saving ? 'wait' : 'pointer' }}>
+              <input type="checkbox" checked={on} readOnly style={{ marginTop: 2, width: 18, height: 18, accentColor: '#2563eb' }} />
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ fontSize: 13.5, fontWeight: 700, color: '#1a1a1a', display: 'block' }}>{l.type}</span>
+                <span style={{ fontSize: 11.5, color: '#777' }}>
+                  {l.width > 0 ? `กว้าง ${l.width} จำนวน ${l.qty}` : `จำนวน ${l.qty}`}
+                  {other && !on && <span style={{ color: '#d97706' }}> · ตอนนี้เป็นของ {other}</span>}
+                </span>
+              </span>
+            </label>
+          )
+        })}
+      </div>
+      {saving && <div style={{ fontSize: 12, color: '#888', marginTop: 6 }}>กำลังบันทึก…</div>}
     </div>
   )
 }
