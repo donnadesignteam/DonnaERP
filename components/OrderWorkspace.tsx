@@ -2378,8 +2378,8 @@ ${body}
                       onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
                       style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: '100%', minWidth: 100, outline: 'none', padding: '2px 0' }} />
                   ) : (
-                    <div onClick={() => setEditCell({ id: r.id, field, val })}
-                      style={{ cursor: 'text', color: val ? (field === 'customer_name' ? 'var(--blue)' : 'var(--ink)') : 'var(--ink-4)', fontWeight: field === 'customer_name' && val ? 600 : undefined, maxWidth: field === 'notes' ? 160 : undefined, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div onClick={() => setEditCell({ id: r.id, field, val })} title={val || undefined}
+                      style={{ cursor: 'text', color: val ? (field === 'customer_name' ? 'var(--blue)' : 'var(--ink)') : 'var(--ink-4)', fontWeight: field === 'customer_name' && val ? 600 : undefined, maxWidth: field === 'notes' ? 160 : field === 'address' ? 180 : undefined, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {val || placeholder}
                     </div>
                   )
@@ -2652,7 +2652,7 @@ ${body}
                     <td style={{ padding: '8px 14px', minWidth: 100 }}>{provinceCell()}</td>
                     )}
                     {showCol('address') && (
-                    <td style={{ padding: '8px 14px', minWidth: 120 }}>{textCell('address', '—')}</td>
+                    <td style={{ padding: '8px 14px', minWidth: 120, maxWidth: 180 }}>{textCell('address', '—')}</td>
                     )}
                     {showCol('phone') && (
                     <td style={{ padding: '8px 14px', minWidth: 90 }}>{textCell('phone', '—')}</td>
@@ -3410,8 +3410,8 @@ ${body}
                           onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
                           style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: '100%', minWidth: 120, outline: 'none', padding: '2px 0' }} />
                       ) : (
-                        <div onClick={() => setEditCell({ id: r.id, field: 'address', val: r.address ?? '' })}
-                          style={{ cursor: 'text', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: r.address ? 'var(--ink)' : 'var(--ink-4)', minWidth: 60 }}>
+                        <div onClick={() => setEditCell({ id: r.id, field: 'address', val: r.address ?? '' })} title={r.address || undefined}
+                          style={{ cursor: 'text', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: r.address ? 'var(--ink)' : 'var(--ink-4)', minWidth: 60, maxWidth: 180 }}>
                           {r.address || '—'}
                         </div>
                       )}

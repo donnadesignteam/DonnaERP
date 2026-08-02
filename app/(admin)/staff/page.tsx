@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { fetchStaffList, type Staff } from '@/lib/staffDb'
+import StaffTabs from '@/components/StaffTabs'
 
 const n = (v: number | null | undefined) => (v == null ? '—' : String(v))
 
@@ -58,9 +59,11 @@ export default function StaffPage() {
   return (
     <div>
       <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', marginBottom: 4, letterSpacing: '-0.5px' }}>พนักงาน</h1>
-      <p style={{ color: 'var(--ink-3)', marginBottom: 20, fontSize: 14 }}>
+      <p style={{ color: 'var(--ink-3)', marginBottom: 16, fontSize: 14 }}>
         ข้อมูลพนักงานและสิทธิการลา
       </p>
+
+      <StaffTabs />
 
       {!loading && !error && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 18 }}>

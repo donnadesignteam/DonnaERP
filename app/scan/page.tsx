@@ -7,6 +7,7 @@ import { EMPLOYEES, STAGES, stageByKey } from '@/lib/staff'
 import { fetchEmployeeOptions } from '@/lib/staffDb'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { uploadPackingFile, deletePackingFile, compressImage } from '@/lib/packingPhotos'
+import { cutMeters, fmtMeters, type CutLine } from '@/lib/fabricUsage'
 import HubButton from '@/components/HubButton'
 
 const LS_KEY = 'donna-scan-tech'
@@ -33,6 +34,17 @@ const UPLOAD_SLOTS: Record<string, { tag: string; label: string }[]> = {
   pack: [{ tag: 'rail', label: 'ภาพรางม่าน' }, { tag: 'packed', label: 'ภาพแพ็คแล้ว' }],
   rail_pack: [{ tag: 'rail', label: 'ภาพรางม่าน' }, { tag: 'packed', label: 'ภาพแพ็คแล้ว' }],
   iron: [{ tag: 'ironed', label: 'ภาพม่านที่รีด' }],
+}
+
+// ── แผนกตัด: เมตรผ้าที่ตัดในออเดอร์ที่เพิ่งสแกน (sql/fabric_meters.sql) ──
+// pick = index ของรายการที่ "คนนี้" ตัด · others = คนอื่นที่ลงชื่อขั้นตัดของออเดอร์เดียวกัน
+type CutOwner = { tech_code: string; tech_name: string; pick: number[] }
+type CutView = {
+  scanNo: string; items: unknown; isClaim: boolean
+  myCode: string; myName: string
+  pick: number[]; others: CutOwner[]
+  lines: CutLine[]; total: number; warns: string[]
+  open: boolean
 }
 
 function loadTech(): Tech | null {
@@ -98,6 +110,11 @@ function ScanContent() {
   // ช่วยกันทำขั้นเดียวกันหลายคน — สแกนซ้ำแล้วถามว่าจะลงชื่อเพิ่มไหม (sql/scan_helpers.sql)
   const [joinInfo, setJoinInfo] = useState<{ stage: string; people: string[]; mine: boolean } | null>(null)
   const [joining, setJoining] = useState(false)
+
+  // แผนกตัด: เมตรผ้าของออเดอร์ที่เพิ่งสแกน
+  const [cut, setCut] = useState<CutView | null>(null)
+  const [cutSaving, setCutSaving] = useState(false)
+  const [cutErr, setCutErr] = useState('')
 
   const scannerRef = useRef<any>(null)
   const resumeTimerRef = useRef<any>(null)  // timer auto-กลับไปสแกนต่อ (undo ต้องยกเลิกก่อน ไม่งั้นเด้งทับหน้า "ยกเลิกแล้ว")
@@ -188,7 +205,8 @@ function ScanContent() {
     }
     // แผนกที่อัพโหลดรูปได้ → ค้างหน้าผลไว้ให้อัพรูปก่อน กด "สแกนต่อ" เอง
     // แผนกที่ไม่มีรูป → ค้างหน้าผล 4 วิ (ให้ทันเช็ก+กดยกเลิกถ้าสแกนผิด) แล้วกลับไปสแกนต่ออัตโนมัติ
-    if ((UPLOAD_SLOTS[tech.stageKey] ?? []).length === 0 && !askJoinRef.current) {
+    // แผนกตัดค้างหน้าผลไว้เหมือนแผนกที่อัพรูปได้ — ให้ช่างเห็นเมตรที่บันทึก/เลือกรายการที่ตัดก่อนกด "สแกนต่อ"
+    if ((UPLOAD_SLOTS[tech.stageKey] ?? []).length === 0 && tech.stageKey !== 'cut' && !askJoinRef.current) {
       resumeTimerRef.current = setTimeout(() => { try { html5.resume() } catch {}; busyRef.current = false; setPhase('scanning') }, 4000)
     }
   }
@@ -271,7 +289,7 @@ function ScanContent() {
 
   // ค้นออเดอร์: id ก่อน (แม่นสุด) → order_number แบบไม่สนตัวพิมพ์ → contains (เผื่อช่องว่าง/QR เก่า)
   async function findOrder(id: string, ord: string) {
-    const cols = 'id, order_number, customer_name, order_status, courier, shipments, packing_photos'
+    const cols = 'id, order_number, customer_name, order_status, courier, shipments, packing_photos, items'
     if (id) {
       const { data } = await supabase.from('order_entries').select(cols).eq('id', id).limit(1)
       if (data && data[0]) return data[0]
@@ -286,10 +304,78 @@ function ScanContent() {
     return null
   }
 
+  // ── แผนกตัด: บันทึกว่าใครตัดผ้าไปกี่เมตร ────────────────────────────────
+  // ตัวเลขคิดตอนสแกนแล้วเก็บนิ่งไว้ที่แถวสแกน (แก้รายการสินค้าย้อนหลังไม่กระทบผลงานช่าง)
+  const calcPayload = (items: unknown, isClaim: boolean, pick: number[]) => {
+    const c = cutMeters(items, { isClaim, pick })
+    return { meters: c.total, calc: { total: c.total, pick, lines: c.lines, warns: c.warns } }
+  }
+
+  // เขียนเมตรของ "ทุกคน" ที่ลงชื่อขั้นตัดของออเดอร์นี้พร้อมกัน (กันนับซ้ำ)
+  async function saveCut(v: CutView, myPick: number[], others: CutOwner[]) {
+    const rows = [
+      { tech_code: v.myCode, ...calcPayload(v.items, v.isClaim, myPick) },
+      ...others.map(o => ({ tech_code: o.tech_code, ...calcPayload(v.items, v.isClaim, o.pick) })),
+    ]
+    const { data, error } = await supabase.rpc('set_cut_meters', { p_scan_no: v.scanNo, p_rows: rows })
+    // ยังไม่ได้รัน sql/fabric_meters.sql = ไม่มีฟังก์ชัน/คอลัมน์ → บอกให้ชัด ไม่ใช่ error ดิบ
+    if (error) throw new Error(/PGRST202|set_cut_meters|meters/.test(error.message)
+      ? 'ยังไม่ได้รัน sql/fabric_meters.sql ใน Supabase (บอกแอดมิน) — สถานะออเดอร์บันทึกแล้ว แต่ยังไม่ได้เก็บเมตร'
+      : error.message)
+    if (!data?.ok) throw new Error(String(data?.result || 'บันทึกเมตรไม่สำเร็จ'))
+  }
+
+  // อ่านว่าคนอื่นในขั้นตัดของออเดอร์นี้จองรายการไหนไว้แล้ว
+  async function loadCutOwners(scanNo: string, myCode: string): Promise<CutOwner[]> {
+    const { data } = await supabase.from('production_scans')
+      .select('tech_code, tech_name, meters_calc').eq('order_number', scanNo).eq('stage', 'ตัด')
+    return (data ?? [])
+      .filter((r: any) => r.tech_code !== myCode)
+      .map((r: any) => ({
+        tech_code: r.tech_code, tech_name: r.tech_name || r.tech_code,
+        pick: Array.isArray(r.meters_calc?.pick) ? r.meters_calc.pick as number[] : [],
+      }))
+  }
+
+  // หลังสแกนขั้นตัดสำเร็จ — คนแรกได้ทุกรายการ, คนที่ 2 ขึ้นไปได้เฉพาะรายการที่ยังไม่มีใครจอง
+  async function startCut(t: Tech, scanNo: string, items: unknown, isClaim: boolean) {
+    setCutErr('')
+    const calc = cutMeters(items, { isClaim })
+    const all = calc.lines.filter(l => !l.skip).map(l => l.i)
+    let others: CutOwner[] = []
+    try { others = await loadCutOwners(scanNo, t.code) } catch {}
+    const taken = new Set(others.flatMap(o => o.pick))
+    const mine = others.length ? all.filter(i => !taken.has(i)) : all
+    const mineCalc = cutMeters(items, { isClaim, pick: mine })
+    const view: CutView = {
+      scanNo, items, isClaim, myCode: t.code, myName: t.name,
+      pick: mine, others, lines: calc.lines, total: mineCalc.total, warns: mineCalc.warns,
+      open: others.length > 0,   // มีคนอื่นร่วมตัดอยู่แล้ว → เปิดรายการให้เลือกเลย
+    }
+    setCut(view)
+    try { await saveCut(view, mine, others) } catch (e: any) { setCutErr(e?.message || String(e)) }
+  }
+
+  // ติ๊ก/เอาออกรายการที่ตัด — รายการที่คนนี้หยิบ จะถูกตัดออกจากคนที่จองไว้ก่อน (ไม่นับซ้ำ)
+  async function toggleCutLine(i: number) {
+    if (!cut || cutSaving) return
+    if (resumeTimerRef.current) { clearTimeout(resumeTimerRef.current); resumeTimerRef.current = null }
+    const on = cut.pick.includes(i)
+    const myPick = on ? cut.pick.filter(x => x !== i) : [...cut.pick, i].sort((a, b) => a - b)
+    const others = on ? cut.others : cut.others.map(o => ({ ...o, pick: o.pick.filter(x => x !== i) }))
+    const c = cutMeters(cut.items, { isClaim: cut.isClaim, pick: myPick })
+    const next = { ...cut, pick: myPick, others, total: c.total, warns: c.warns }
+    setCut(next)
+    setCutSaving(true); setCutErr('')
+    try { await saveCut(next, myPick, others) } catch (e: any) { setCutErr(e?.message || String(e)) }
+    setCutSaving(false)
+  }
+
   // กลับไปสแกนต่อ (ปุ่มกดเองของแผนกที่อัพโหลดรูปได้)
   function resumeScan() {
     if (resumeTimerRef.current) { clearTimeout(resumeTimerRef.current); resumeTimerRef.current = null }
     setUploadedCnt({}); setUploadErr(''); setJoinInfo(null)
+    setCut(null); setCutErr('')
     askJoinRef.current = false
     setPhase('scanning')
     busyRef.current = false
@@ -364,14 +450,14 @@ function ScanContent() {
     setPhase('working')
 
     const { data: c } = await supabase.from('claims')
-      .select('id, claim_date, channel, customer_username, original_order_number, status')
+      .select('id, claim_date, channel, customer_username, original_order_number, status, items')
       .eq('id', claimId).limit(1)
     const cl = c && c[0]
     if (!cl) { setOrder({ order_number: 'ใบเคลม (ไม่พบในระบบ)', isClaim: true }); setPhase('noorder'); return null }
 
     // ใช้โครงเดียวกับออเดอร์เพื่อให้หน้าจอผลลัพธ์ใช้ร่วมกันได้ (order_number = ป้ายที่โชว์)
     const base = {
-      id: cl.id, isClaim: true,
+      id: cl.id, isClaim: true, items: cl.items,
       order_number: 'เคลม ' + [cl.channel, cl.customer_username].filter(Boolean).join(': '),
       customer_name: cl.original_order_number ? 'ออเดอร์เดิม ' + cl.original_order_number : '',
       order_status: cl.status,
@@ -398,6 +484,8 @@ function ScanContent() {
     const done = { ...base, order_status: data.status }
     setOrder(done)
     setPhase('done')
+    // งานเคลม = งานแก้ → ทุกชนิดคิดเมตร ×1 (กติกาในชีท)
+    if (t.stageKey === 'cut') startCut(t, `claim:${cl.id}`, cl.items, true)
     return done
   }
 
@@ -437,6 +525,9 @@ function ScanContent() {
     const done = special === 'rail' ? o : { ...o, order_status: data.status }
     setOrder(done)
     setPhase('done')
+    if (t.stageKey === 'cut') {
+      startCut(t, (o.order_number || '').trim() || ord.trim() || `id:${o.id}`, o.items, false)
+    }
     return done
   }
 
@@ -464,6 +555,11 @@ function ScanContent() {
       } else {
         setJoinInfo({ stage: data.stage, people: Array.isArray(data.people) ? data.people : [], mine: true })
         setPhase('joined')
+        // ช่วยกันตัด → ให้เลือกเองว่าช่วยตัดรายการไหน (เมตรของคนที่จองไว้ก่อนจะถูกหักออกให้)
+        if (tech.stageKey === 'cut') {
+          const scanNo = order.isClaim ? `claim:${order.id}` : ((order.order_number || '').trim() || `id:${order.id}`)
+          startCut(tech, scanNo, order.items, !!order.isClaim)
+        }
       }
     } catch (e: any) {
       setMsg(e?.message || String(e)); setPhase('error')
@@ -562,6 +658,8 @@ function ScanContent() {
   const slots = order?.isClaim ? [] : (UPLOAD_SLOTS[tech.stageKey] ?? [])
   // อัพรูปได้เมื่อเจอออเดอร์แล้ว (done หรือ already — เผื่อสแกนซ้ำเพื่อเพิ่มรูป)
   const canUpload = slots.length > 0 && (phase === 'done' || phase === 'already' || phase === 'joined') && order?.id
+  // แผงเมตรผ้า: เฉพาะแผนกตัด หลังสแกน/ลงชื่อช่วยสำเร็จ
+  const showCut = !!cut && (phase === 'done' || phase === 'joined')
 
   // ---------- โหมดลิงก์ (มาจากแอปกล้องของเครื่อง) ----------
   if (urlOrder || urlId) {
@@ -570,6 +668,7 @@ function ScanContent() {
         <div style={card}>
           <Identity tech={tech} stageLabel={stage?.label} onLogout={logout} />
           <Result phase={phase} order={order} msg={msg} stage={stage} onUndo={order?.isClaim ? undefined : undoScan} undoing={undoing} />
+          {showCut && <CutPanel v={cut!} saving={cutSaving} err={cutErr} onToggle={toggleCutLine} onOpen={() => setCut(c => c && { ...c, open: true })} />}
           {canUpload && <PhotoUpload slots={slots} uploading={uploading} counts={uploadedCnt} err={uploadErr} onPick={pickPhoto} photos={photos} delBusy={delBusy} onDelete={deletePhoto} />}
           <a href="/scan" style={{ display: 'inline-block', marginTop: 18, color: stageColor, fontSize: 14, fontWeight: 600 }}>เปิดกล้องสแกนต่อ →</a>
         </div>
@@ -665,6 +764,7 @@ function ScanContent() {
             <div style={{ ...card, maxWidth: 380 }}>
               <Result phase={phase} order={order} msg={msg} stage={stage} onUndo={order?.isClaim ? undefined : undoScan} undoing={undoing}
                 joinInfo={joinInfo} onJoin={joinScan} onSkipJoin={resumeScan} joining={joining} />
+              {showCut && <CutPanel v={cut!} saving={cutSaving} err={cutErr} onToggle={toggleCutLine} onOpen={() => setCut(c => c && { ...c, open: true })} />}
               {canUpload && <PhotoUpload slots={slots} uploading={uploading} counts={uploadedCnt} err={uploadErr} onPick={pickPhoto} photos={photos} delBusy={delBusy} onDelete={deletePhoto} />}
               {/* หน้า 'already' ที่ยังรอตอบ "ลงชื่อช่วยไหม" ไม่ต้องมีปุ่มสแกนต่อ — ปุ่ม "ไม่ใช่" ทำหน้าที่นั้นแทน */}
               {['done', 'already', 'undone', 'error', 'joined'].includes(phase) && !(phase === 'already' && joinInfo && !joinInfo.mine) && (
@@ -756,6 +856,60 @@ function PhotoUpload({ slots, uploading, counts, err, onPick, photos, delBusy, o
         </div>
       )}
       {err && <p style={{ color: '#dc2626', fontSize: 12, marginTop: 8 }}>ไม่สำเร็จ: {err}</p>}
+    </div>
+  )
+}
+
+// แผงเมตรผ้าของแผนกตัด — โชว์ยอดที่บันทึกให้แล้ว + เปิดแก้ได้ว่าตัดรายการไหนบ้าง
+function CutPanel({ v, saving, err, onToggle, onOpen }: {
+  v: CutView; saving: boolean; err: string; onToggle: (i: number) => void; onOpen: () => void
+}) {
+  const rows = v.lines.filter(l => !l.skip)
+  const ownerOf = (i: number) => v.others.find(o => o.pick.includes(i))?.tech_name
+  return (
+    <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #eee', textAlign: 'left' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+        <span style={{ fontSize: 13, color: '#666' }}>✂️ ตัดผ้าไป</span>
+        <span style={{ fontSize: 20, fontWeight: 800, color: '#0f766e' }}>{fmtMeters(v.total)}</span>
+      </div>
+      {v.warns.map((w, k) => (
+        <div key={k} style={{ fontSize: 12, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '6px 8px', marginTop: 6 }}>⚠️ {w}</div>
+      ))}
+      {err && <div style={{ fontSize: 12, color: '#dc2626', marginTop: 6 }}>บันทึกเมตรไม่สำเร็จ: {err}</div>}
+
+      {!v.open && rows.length > 0 && (
+        <button onClick={onOpen}
+          style={{ marginTop: 8, border: 'none', background: 'transparent', color: '#2563eb', fontSize: 13, fontWeight: 700, cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
+          แก้รายการที่ตัด ({rows.length} รายการ)
+        </button>
+      )}
+
+      {v.open && (
+        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ fontSize: 12, color: '#888' }}>ติ๊กเฉพาะรายการที่คุณตัด</div>
+          {rows.map(l => {
+            const on = v.pick.includes(l.i)
+            const other = ownerOf(l.i)
+            return (
+              <label key={l.i} onClick={e => { e.preventDefault(); onToggle(l.i) }}
+                style={{ display: 'flex', gap: 8, alignItems: 'flex-start', border: '1px solid ' + (on ? '#0f766e' : '#e5e7eb'), background: on ? '#f0fdfa' : '#fff', borderRadius: 10, padding: '8px 10px', cursor: saving ? 'wait' : 'pointer' }}>
+                <input type="checkbox" checked={on} readOnly style={{ marginTop: 2, width: 18, height: 18, accentColor: '#0f766e' }} />
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', display: 'block' }}>{l.type}</span>
+                  <span style={{ fontSize: 11.5, color: '#777' }}>
+                    {l.width > 0 ? `กว้าง ${l.width} × ${l.qty}` : `จำนวน ${l.qty}`} · {l.rule}
+                    {other && !on && <span style={{ color: '#b45309' }}> · ตอนนี้เป็นของ {other}</span>}
+                  </span>
+                </span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: l.warn ? '#b45309' : '#0f766e', whiteSpace: 'nowrap' }}>
+                  {l.warn ? '⚠️' : fmtMeters(l.meters)}
+                </span>
+              </label>
+            )
+          })}
+          {saving && <div style={{ fontSize: 12, color: '#888' }}>กำลังบันทึก…</div>}
+        </div>
+      )}
     </div>
   )
 }
