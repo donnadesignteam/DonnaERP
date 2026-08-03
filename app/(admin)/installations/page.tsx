@@ -193,6 +193,11 @@ export default function InstallationsPage() {
     const saved = parseInt(localStorage.getItem('install_tech_count') ?? '', 10)
     if (saved > 0) setTechCount(saved)
   }, [])
+  // สรุปงานติดตั้ง — ข้อความอัพเดตงานล่วงหน้าไว้ส่งไลน์ทีมช่าง (แก้ในกล่องก่อนคัดลอกได้)
+  const [summaryModal, setSummaryModal] = useState(false)
+  const [summaryZone, setSummaryZone] = useState<string | null>(null)
+  const [summaryText, setSummaryText] = useState('')
+  const [summaryCopied, setSummaryCopied] = useState(false)
 
   const load = async () => {
     const { data, error: err } = await fetchAllRows<Installation>(() =>
@@ -450,6 +455,56 @@ export default function InstallationsPage() {
   const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y - 1) } else setMonth(m => m - 1) }
   const nextMonth = () => { if (month === 11) { setMonth(0); setYear(y => y + 1) } else setMonth(m => m + 1) }
 
+  // ── สรุปงานติดตั้ง: รวมงานที่ยังไม่เสร็จตั้งแต่วันนี้เป็นต้นไป จัดกลุ่มรายวัน ตามฟอร์แมตที่ทีมใช้ส่งไลน์ ──
+  const buildInstallSummary = (zone: string | null): string => {
+    const TH_DAYS = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์']
+    const DIVIDER = '______________________________________________'
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const upcoming = installs
+      .filter(ins => {
+        if (!ins.appointment_datetime) return false
+        if (ins.installation_status === 'ติดตั้งเสร็จ' || ins.installation_status === 'วัดหน้างานแล้ว') return false
+        if (zone && ins.install_zone !== zone) return false
+        return new Date(ins.appointment_datetime) >= today
+      })
+      .sort((a, b) => new Date(a.appointment_datetime).getTime() - new Date(b.appointment_datetime).getTime())
+
+    const lines: string[] = ['🔥อัพเดตงานติดตั้ง+วัดหน้างาน🔥', `           #${zone || 'ทุกโซน'}`]
+    let curDay = ''
+    upcoming.forEach(ins => {
+      const d = new Date(ins.appointment_datetime)
+      const dayKey = d.toDateString()
+      if (dayKey !== curDay) {
+        curDay = dayKey
+        lines.push(DIVIDER)
+        lines.push(`📍วัน${TH_DAYS[d.getDay()]} ที่ ${String(d.getDate()).padStart(2, '0')}/${d.getMonth() + 1}/${d.getFullYear()} `)
+      } else {
+        lines.push('')
+        lines.push('ต่อด้วย')
+        lines.push('')
+      }
+      const time = d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+      const workLabel = (ins.work_type || '').replace(/^งาน(?!แก้)/, '') || 'ติดตั้ง'   // งานติดตั้ง→ติดตั้ง แต่ "งานแก้" คงคำว่างานไว้
+      const details = (ins.work_details || '').trim()
+      lines.push(`- ${time} น. ${workLabel}${details ? ' ' + details : ''}`)
+      const who = [ins.platform, [ins.customer_real_name || ins.customer_id, ins.province ? `(${ins.province})` : ''].filter(Boolean).join(' ')].filter(Boolean)
+      if (who.length) lines.push(who.join(': '))
+      if ((ins.phone ?? '').trim()) lines.push(`เบอร์ : ${ins.phone.trim()}`)
+      if ((ins.notes ?? '').trim()) lines.push(ins.notes.trim())
+      if ((ins.location_link ?? '').trim()) { lines.push('พิกัด'); lines.push(ins.location_link.trim()) }
+    })
+    if (upcoming.length === 0) lines.push(DIVIDER, '— ไม่มีงานค้างตั้งแต่วันนี้เป็นต้นไป —')
+    lines.push(DIVIDER)
+    return lines.join('\n')
+  }
+
+  const openSummary = () => {
+    setSummaryZone(zoneFilter)
+    setSummaryText(buildInstallSummary(zoneFilter))
+    setSummaryCopied(false)
+    setSummaryModal(true)
+  }
+
   // กรองบนค่า "ตอนโหลดหน้า" (stable) แล้วคืนค่าสด (live) ก่อนวาด
   const stableInstalls = installs.map(stable)
   const byMonth = listFilter === 'all' ? stableInstalls : stableInstalls.filter(ins => {
@@ -494,6 +549,10 @@ export default function InstallationsPage() {
           <button onClick={() => setBonusModal(true)}
             style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border-2)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
             ยอดติดตั้ง
+          </button>
+          <button onClick={openSummary}
+            style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border-2)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+            สรุปงานติดตั้ง
           </button>
           <button onClick={() => window.print()}
             style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border-2)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
@@ -910,6 +969,36 @@ export default function InstallationsPage() {
               style={{ marginTop: 8, width: '100%', padding: '10px', borderRadius: 10, border: '1px dashed var(--border-2)', background: 'var(--surface)', color: 'var(--blue)', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
               + เพิ่มรายการวันนี้
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* สรุปงานติดตั้ง — ข้อความอัพเดตงานล่วงหน้ารายวัน แยกโซนได้ แก้ในกล่องก่อนคัดลอกส่งไลน์ */}
+      {summaryModal && (
+        <div onClick={() => setSummaryModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 620, maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 10 }}>
+              <h2 style={{ fontSize: 17, fontWeight: 700 }}>สรุปงานติดตั้ง</h2>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {([['ทุกโซน', null], ...ZONES.map(z => [z, z] as [string, string])] as [string, string | null][]).map(([label, val]) => (
+                  <button key={label} onClick={() => { setSummaryZone(val); setSummaryText(buildInstallSummary(val)); setSummaryCopied(false) }}
+                    style={{ padding: '5px 12px', borderRadius: 980, border: summaryZone === val ? 'none' : '1px solid var(--border)', background: summaryZone === val ? 'var(--blue)' : '#fff', color: summaryZone === val ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: summaryZone === val ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 10 }}>รวมงานที่ยังไม่เสร็จตั้งแต่วันนี้เป็นต้นไป — แก้ข้อความในกล่องได้ก่อนกดคัดลอก</p>
+            <textarea value={summaryText} onChange={e => { setSummaryText(e.target.value); setSummaryCopied(false) }}
+              style={{ flex: 1, minHeight: 320, width: '100%', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', fontSize: 13, lineHeight: 1.55, outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit', whiteSpace: 'pre' }} />
+            <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+              <button onClick={() => setSummaryModal(false)}
+                style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ปิด</button>
+              <button onClick={async () => { await navigator.clipboard.writeText(summaryText); setSummaryCopied(true); setTimeout(() => setSummaryCopied(false), 2000) }}
+                style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: summaryCopied ? '#34c759' : 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600, transition: 'background 0.15s' }}>
+                {summaryCopied ? '✓ คัดลอกแล้ว' : 'คัดลอกข้อความ'}
+              </button>
+            </div>
           </div>
         </div>
       )}
