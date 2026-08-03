@@ -728,14 +728,17 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       }
     }
 
+    // ชื่อแอดมินต่อท้ายสุด — ขึ้นทั้งตอนคัดลอกและใบปริ้น
+    if (r.admin_name) {
+      push('')
+      push(`แอดมิน: ${r.admin_name}`)
+    }
+
     return lines
   }
 
   function formatOrderText(r: Entry): string {
-    const lines = formatOrderLines(r).map(l => l.t)
-    // ชื่อแอดมินต่อท้ายเฉพาะตอนคัดลอก (formatOrderLines ใช้ร่วมกับใบปริ้น ไม่ใส่ที่นั่น)
-    if (r.admin_name) lines.push('', `แอดมิน: ${r.admin_name}`)
-    return lines.join('\n')
+    return formatOrderLines(r).map(l => l.t).join('\n')
   }
 
   // เวอร์ชัน HTML สำหรับปริ้น: บรรทัดของราง = สีแดง
