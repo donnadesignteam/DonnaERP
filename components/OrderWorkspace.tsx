@@ -102,6 +102,9 @@ type Entry = {
   printed_at: string | null
   status_history: StatusEvent[] | null
   shipments: Shipment[] | null
+  // ยอดโอนจริงจากไฟล์ Income Shopee (sql/add_net_income.sql)
+  net_income?: number | null
+  net_income_at?: string | null
   // ใครทำ (sql/admin_activity.sql) — คนลงออเดอร์ตั้งครั้งเดียว, actor = คนบันทึกล่าสุด
   created_by_code?: string | null
   created_by_name?: string | null
@@ -373,6 +376,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [pasteCol9, setPasteCol9] = useState('') // เวลาส่งสินค้า (Shopee) → ใช้เป็นวันที่จัดส่งแล้ว
   const [pasteRows, setPasteRows] = useState<{ paymentDate: string; deadline: string; orderNumber: string; price: number; customerName: string; courier: string; orderStatus: string; isDuplicate: boolean; isDropoff: boolean; shippedDate: string }[]>([])
   const [pasteSaving, setPasteSaving] = useState(false)
+  // ไฟล์ Income Shopee (ยอดโอนจริงหลังหักค่าธรรมเนียมครบ) — drop ช่องเดียวกับไฟล์ออเดอร์ ตรวจแยกอัตโนมัติ
+  const [incomeRows, setIncomeRows] = useState<{ orderNumber: string; amount: number; payoutDate: string; matchedId: string | null; hasIncome: boolean }[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [modalItems, setModalItems] = useState<Item[]>([])
   const [itemsModal, setItemsModal] = useState<{ id: string; items: Item[]; instId: string | null } | null>(null)
@@ -636,6 +641,9 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       })
     } else {
       const orig = rows.find(r => r.id === d.id)
+      // รายการสินค้าไม่ได้แก้ = ตัด items ออกจากคำสั่ง → ชื่อแอดมิน/โบนัสไม่ขยับ
+      // (กติกา 3 ส.ค. 69: แก้เฉพาะรายการสินค้าเท่านั้นที่ย้าย/ล้างเจ้าของโบนัส — ดู lib/adminActor.ts)
+      if (orig && JSON.stringify(orig.items ?? null) === JSON.stringify(payload.items ?? null)) delete (payload as Record<string, unknown>).items
       const res = await oeUpdate(payload).eq('id', d.id).select().single()
       if (res.error) { setSaving(false); setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
       await syncInstallation({ ...payload, admin_name: d.admin_name || null }, String(d.id))
@@ -724,7 +732,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   }
 
   function formatOrderText(r: Entry): string {
-    return formatOrderLines(r).map(l => l.t).join('\n')
+    const lines = formatOrderLines(r).map(l => l.t)
+    // ชื่อแอดมินต่อท้ายเฉพาะตอนคัดลอก (formatOrderLines ใช้ร่วมกับใบปริ้น ไม่ใส่ที่นั่น)
+    if (r.admin_name) lines.push('', `แอดมิน: ${r.admin_name}`)
+    return lines.join('\n')
   }
 
   // เวอร์ชัน HTML สำหรับปริ้น: บรรทัดของราง = สีแดง
@@ -1164,16 +1175,68 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     setModalTab('paste')
   }
 
+  // ไฟล์รายรับ Shopee (การเงิน → รายรับของฉัน → Export) มีชีทชื่อ "Income"
+  // หัวตารางไม่อยู่แถวแรก ต้องหาแถวที่มี "หมายเลขคำสั่งซื้อ" แล้วอ่านคอลัมน์ตามชื่อ
+  function processIncomeSheet(rawRows: string[][]) {
+    const hIdx = rawRows.findIndex(r => r.some(c => String(c).trim() === 'หมายเลขคำสั่งซื้อ'))
+    if (hIdx < 0) { setFileParseError('ไฟล์ Income ไม่มีหัวตาราง "หมายเลขคำสั่งซื้อ"'); return }
+    const headers = rawRows[hIdx].map(h => String(h).trim())
+    const colOrder = headers.indexOf('หมายเลขคำสั่งซื้อ')
+    const colAmount = headers.findIndex(h => h.startsWith('จำนวนเงินทั้งหมดที่โอนแล้ว'))
+    const colDate = headers.indexOf('วันที่โอนชำระเงินสำเร็จ')
+    if (colAmount < 0) { setFileParseError('ไฟล์ Income ไม่มีคอลัมน์ "จำนวนเงินทั้งหมดที่โอนแล้ว"'); return }
+    // ออเดอร์เดียวอาจมีหลายแถว (เช่นมีแถวคืนสินค้า) → รวมยอดต่อออเดอร์
+    const map = new Map<string, { amount: number; payoutDate: string }>()
+    for (const r of rawRows.slice(hIdx + 1)) {
+      const orderNumber = String(r[colOrder] ?? '').trim()
+      if (!orderNumber) continue
+      const amount = parseFloat(String(r[colAmount] ?? '0').replace(/,/g, '')) || 0
+      const payoutDate = colDate >= 0 ? String(r[colDate] ?? '').trim() : ''
+      const prev = map.get(orderNumber)
+      if (prev) prev.amount += amount
+      else map.set(orderNumber, { amount, payoutDate })
+    }
+    if (map.size === 0) { setFileParseError('ไม่พบข้อมูลในชีท Income'); return }
+    setIncomeRows(Array.from(map.entries()).map(([orderNumber, v]) => {
+      const existing = rows.find(row => row.order_number === orderNumber)
+      return { orderNumber, amount: v.amount, payoutDate: v.payoutDate, matchedId: existing?.id ?? null, hasIncome: existing?.net_income != null }
+    }))
+  }
+
   function processFileBuffer(buf: ArrayBuffer, filename: string) {
     setFileParseError('')
     try {
       const wb = XLSX.read(buf, { type: 'array', cellDates: true })
+      // แยกชนิดไฟล์อัตโนมัติ: ไฟล์รายรับมีชีท "Income", ไฟล์ออเดอร์มีชีทเดียว
+      const incomeSheet = wb.SheetNames.find(n => n.trim().toLowerCase() === 'income')
+      if (incomeSheet) {
+        const rawRows = XLSX.utils.sheet_to_json<string[]>(wb.Sheets[incomeSheet], { header: 1, defval: '' }) as string[][]
+        processIncomeSheet(rawRows)
+        return
+      }
       const ws = wb.Sheets[wb.SheetNames[0]]
       const rawRows = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, defval: '' }) as string[][]
       processRawRows(rawRows)
     } catch {
       setFileParseError('อ่านไฟล์ไม่ได้: ' + filename)
     }
+  }
+
+  async function saveIncomeRows() {
+    setPasteSaving(true)
+    const now = new Date().toISOString()
+    const applied = new Map<string, { net_income: number; net_income_at: string | null }>()
+    for (const r of incomeRows) {
+      if (!r.matchedId) continue
+      const updates = { net_income: r.amount, net_income_at: toIsoDate(r.payoutDate) || null }
+      const { error: err } = await oeUpdate({ ...updates, updated_at: now }).eq('id', r.matchedId)
+      if (err) { setPasteSaving(false); setError(`บันทึกยอดโอนไม่สำเร็จ: ${err.message}`); return }
+      applied.set(r.matchedId, updates)
+    }
+    setRows(prev => prev.map(r => applied.has(r.id) ? { ...r, ...applied.get(r.id)! } : r))
+    setPasteSaving(false)
+    setIncomeRows([])
+    setModal(null)
   }
 
   function processFileText(text: string, filename: string) {
@@ -3269,6 +3332,10 @@ ${body}
                     {showCol('price') && (
                     <td style={{ padding: '12px 14px', textAlign: 'right', whiteSpace: 'nowrap', fontWeight: r.price ? 600 : 400, color: r.price ? 'var(--ink)' : 'var(--ink-4)' }}>
                       {r.price ? `${r.price.toLocaleString('th-TH')} ฿` : '-'}
+                      {r.net_income != null && (
+                        <div title={`ยอดโอนจริงจากไฟล์รายรับ Shopee${r.net_income_at ? ` · โอนเมื่อ ${r.net_income_at}` : ''}`}
+                          style={{ fontSize: 11, fontWeight: 600, color: '#16a34a' }}>รับจริง {r.net_income.toLocaleString('th-TH')} ฿</div>
+                      )}
                     </td>
                     )}
                     {showCol('items') && (
@@ -3704,7 +3771,7 @@ ${body}
             ) : (
               <div style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
                 {(['form', ...(addType === 'platform' ? ['paste', 'file'] : [])] as ('form'|'paste'|'file')[]).map(t => (
-                  <button key={t} onClick={() => { setModalTab(t); setPasteRows([]); setFileParseError('') }}
+                  <button key={t} onClick={() => { setModalTab(t); setPasteRows([]); setIncomeRows([]); setFileParseError('') }}
                     style={{ flex: 1, padding: '16px 0', fontSize: 14, fontWeight: modalTab === t ? 600 : 400, border: 'none', borderBottom: modalTab === t ? '2px solid var(--blue)' : '2px solid transparent', background: 'transparent', cursor: 'pointer', color: modalTab === t ? 'var(--blue)' : 'var(--ink-3)', transition: 'all 0.15s' }}>
                     {t === 'form' ? 'กรอกฟอร์ม' : t === 'paste' ? 'วาง Copy' : 'Drop ไฟล์'}
                   </button>
@@ -3715,7 +3782,59 @@ ${body}
             <div style={{ padding: '24px 32px 32px' }}>
 
             {/* ---- File drop tab ---- */}
-            {modal.mode === 'add' && modalTab === 'file' && (
+            {modal.mode === 'add' && modalTab === 'file' && incomeRows.length > 0 && (
+              <div>
+                {(() => {
+                  const matchNew = incomeRows.filter(r => r.matchedId && !r.hasIncome).length
+                  const matchOld = incomeRows.filter(r => r.matchedId && r.hasIncome).length
+                  const noMatch = incomeRows.filter(r => !r.matchedId).length
+                  return (
+                    <p style={{ fontSize: 13, marginBottom: 10 }}>
+                      <strong style={{ color: 'var(--blue)' }}>ตรวจพบไฟล์รายรับ (Income)</strong> — {incomeRows.length} ออเดอร์ · ลงยอดใหม่ <strong>{matchNew}</strong>{matchOld > 0 && <> · ทับยอดเดิม <strong style={{ color: '#f59e0b' }}>{matchOld}</strong></>}{noMatch > 0 && <> · ไม่พบในระบบ <strong style={{ color: 'var(--red)' }}>{noMatch}</strong></>}
+                    </p>
+                  )
+                })()}
+                <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginBottom: 16, maxHeight: 300, overflowY: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
+                        {['สถานะ', 'เลขออเดอร์', 'ยอดโอนจริง', 'วันที่โอน'].map(h => (
+                          <th key={h} style={{ padding: '8px 10px', textAlign: h === 'ยอดโอนจริง' ? 'right' : 'left', fontWeight: 500, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {incomeRows.map((r, i) => (
+                        <tr key={i} style={{ borderBottom: '1px solid var(--border)', opacity: r.matchedId ? 1 : 0.55 }}>
+                          <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
+                            {!r.matchedId ? (
+                              <span style={{ fontSize: 10, fontWeight: 600, color: '#ef4444', background: '#fee2e2', borderRadius: 4, padding: '2px 6px' }}>ไม่พบในระบบ</span>
+                            ) : r.hasIncome ? (
+                              <span style={{ fontSize: 10, fontWeight: 600, color: '#f59e0b', background: '#fef3c7', borderRadius: 4, padding: '2px 6px' }}>ทับยอดเดิม</span>
+                            ) : (
+                              <span style={{ fontSize: 10, fontWeight: 600, color: '#22c55e', background: '#dcfce7', borderRadius: 4, padding: '2px 6px' }}>ลงยอดใหม่</span>
+                            )}
+                          </td>
+                          <td style={{ padding: '7px 10px', fontWeight: 600, color: 'var(--blue)' }}>{r.orderNumber}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600 }}>{r.amount.toLocaleString('th-TH')} ฿</td>
+                          <td style={{ padding: '7px 10px' }}>{r.payoutDate || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={() => setIncomeRows([])}
+                    style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ยกเลิก</button>
+                  <button onClick={saveIncomeRows} disabled={pasteSaving || incomeRows.every(r => !r.matchedId)}
+                    style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: incomeRows.every(r => !r.matchedId) ? 0.5 : 1 }}>
+                    {pasteSaving ? 'กำลังบันทึก…' : `บันทึกยอดโอนจริง ${incomeRows.filter(r => r.matchedId).length} ออเดอร์`}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {modal.mode === 'add' && modalTab === 'file' && incomeRows.length === 0 && (
               <div>
                 <div
                   onDragOver={e => { e.preventDefault(); setFileDragOver(true) }}
@@ -3739,7 +3858,8 @@ ${body}
                   </label>
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--ink-3)', background: 'var(--bg)', borderRadius: 8, padding: '10px 14px' }}>
-                  <strong>ลำดับคอลัมน์ที่รองรับ:</strong> เลขออเดอร์ · ชื่อลูกค้า · วันชำระ · บริษัทขนส่ง · วันต้องส่ง · ราคา · สถานะ · Drop-off
+                  <strong>ลำดับคอลัมน์ที่รองรับ:</strong> เลขออเดอร์ · ชื่อลูกค้า · วันชำระ · บริษัทขนส่ง · วันต้องส่ง · ราคา · สถานะ · Drop-off<br />
+                  <strong>ไฟล์รายรับ Shopee (Income):</strong> วางไฟล์เดียวกันได้เลย ระบบแยกอัตโนมัติ → ลงยอดโอนจริงให้ออเดอร์ที่มีอยู่
                 </div>
                 {fileParseError && <div style={{ marginTop: 12, fontSize: 13, color: 'var(--red)' }}>{fileParseError}</div>}
               </div>
