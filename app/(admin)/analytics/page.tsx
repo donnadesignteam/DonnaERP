@@ -27,6 +27,7 @@ type AllData = { orders: OrderRow[]; scans: ScanRow[]; claims: ClaimRow[] }
 const STAGES = [
   { status: 'ตัดผ้าแล้ว', label: 'แผนกตัดผ้า', color: '#0ea5e9' },
   { status: 'เย็บแล้ว',   label: 'แผนกเย็บผ้า', color: '#8b5cf6' },
+  { status: 'ตรวจสอบแล้ว', label: 'ผู้ช่วยช่าง', color: '#6366f1' },
   { status: 'รีดแล้ว',    label: 'แผนกรีดผ้า',  color: '#ec4899' },
   { status: 'แพ็คแล้ว',   label: 'แผนกแพ็คสินค้า', color: '#14b8a6' },
 ]

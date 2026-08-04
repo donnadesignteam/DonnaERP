@@ -32,7 +32,7 @@ type Order = {
 // ใครสแกนขั้นไหน (production_scans) — 1 ขั้นมีได้หลายคน (คนเดินสถานะ + คนที่กด "ลงชื่อช่วย" ดู sql/scan_helpers.sql)
 type Scan = { order_number: string; stage: string; tech_name: string | null; scanned_at: string | null }
 // เรียงขั้นตามสายงานจริง ไม่ใช่ตามเวลาที่สแกน (สแกนย้อน/สแกนช่วยทีหลังจะได้ไม่สลับบรรทัด)
-const STAGE_ORDER = ['ตัด', 'เย็บ', 'รีด', 'แพ็ค', 'แพ็คราง', 'จัดส่งแล้ว']
+const STAGE_ORDER = ['ตัด', 'เย็บ', 'ผู้ช่วยช่าง', 'รีด', 'แพ็ค', 'แพ็คราง', 'จัดส่งแล้ว']
 
 type Claim = { id: string; claim_date: string | null; claim_type: string | null; cause: string | null; refund_amount: number | null; money_direction: string | null; status: string }
 type Install = { id: string; serial_no: string | null; appointment_datetime: string | null; work_type: string | null; work_details: string | null; installation_status: string | null; price: number | null }

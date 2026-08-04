@@ -18,6 +18,23 @@ export type Staff = {
   note: string | null
 }
 
+// ── สิทธิลาพักร้อน ─────────────────────────────────────────────
+// ทำงานไม่ครบ 365 วัน = ยังไม่มีสิทธิลาพักร้อน → ไม่ต้องโชว์ข้อมูลพักร้อนเลย (ทั้งคอมและมือถือ)
+// (ถ้าไม่มีวันเริ่มงานในระบบ = เช็คไม่ได้ → โชว์ตามเดิม)
+export const VACATION_MIN_DAYS = 365
+
+export function tenureDays(start: string | null): number | null {
+  if (!start) return null
+  const t = new Date(start.length === 10 ? start + 'T00:00:00' : start).getTime()
+  if (Number.isNaN(t)) return null
+  return Math.floor((Date.now() - t) / 86400000)
+}
+
+export function hasVacationRight(start: string | null): boolean {
+  const d = tenureDays(start)
+  return d == null ? true : d >= VACATION_MIN_DAYS
+}
+
 // แปลงแถวแบน (คอลัมน์ DB) → โครงสร้างซ้อนที่หน้าเว็บใช้
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function rowToStaff(r: any): Staff {

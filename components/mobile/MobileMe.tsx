@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
-import { fetchStaffOne, type Staff } from '@/lib/staffDb'
+import { fetchStaffOne, hasVacationRight, type Staff } from '@/lib/staffDb'
 import { readStaffSession } from '@/lib/staffSession'
 import { usePullToRefresh, PullIndicator, CardSkeleton } from './mobileUi'
 import MyActivity from '@/components/MyActivity'
@@ -18,7 +18,7 @@ type ScanRow = { order_number: string; stage: string | null; scanned_at: string 
 type OrderRow = { id: string; order_number: string | null; customer_name: string | null; order_status: string | null }
 type OrderInfo = { customer: string | null; status: string | null }
 
-const STAGE_ORDER = ['ตัด', 'เย็บ', 'รีด', 'แพ็ค', 'แพ็คราง', 'จัดส่งแล้ว']
+const STAGE_ORDER = ['ตัด', 'เย็บ', 'ผู้ช่วยช่าง', 'รีด', 'แพ็ค', 'แพ็คราง', 'จัดส่งแล้ว']
 const STATUS_COLOR: Record<string, string> = { 'อนุมัติ': 'var(--green)', 'ใบลาเรียบร้อย': 'var(--green)', 'ไม่อนุมัติ': 'var(--red)' }
 
 const n = (v: number | null | undefined) => (v == null ? '—' : String(v))
@@ -210,7 +210,10 @@ export default function MobileMe() {
             <div style={sectionTitle}>วันลาคงเหลือ</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <Balance title="ลาป่วย" left={emp.sick.left} avail={emp.sick.avail} used={emp.sick.used} color="var(--blue)" />
-              <Balance title="ลาพักร้อน" left={emp.vacation.left} avail={emp.vacation.avail} used={emp.vacation.used} color="var(--green)" />
+              {/* ทำงานไม่ครบ 365 วัน = ยังไม่มีสิทธิพักร้อน → ไม่โชว์ */}
+              {hasVacationRight(emp.start_date) && (
+                <Balance title="ลาพักร้อน" left={emp.vacation.left} avail={emp.vacation.avail} used={emp.vacation.used} color="var(--green)" />
+              )}
               <div style={{ gridColumn: '1 / -1' }}>
                 <Balance title="ลากิจ" left={emp.personal.left} avail={emp.personal.avail}
                   used={(emp.personal.full ?? 0) + (emp.personal.half ?? 0) * 0.5} color="#8B5CF6" />

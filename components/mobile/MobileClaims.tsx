@@ -8,6 +8,7 @@ import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { formatItemLines, type RawItem } from '@/lib/itemFormat'
 import { useStickyState, useScrollRestore, usePullToRefresh, PullIndicator, UpdatedRow, CardSkeleton, pillBtn, searchInput, clamp } from './mobileUi'
 import ScanFolderButton from './ScanFolderButton'
+import { usePhotoViewer, type Photo } from './PhotoStrip'
 
 // หน้างานเคลมบนมือถือ — ดูอย่างเดียว แก้ไม่ได้ (คนละไฟล์กับ ClaimsWorkspace ของเดสก์ท็อป)
 type Claim = {
@@ -31,6 +32,7 @@ type Claim = {
   admin_name: string | null
   closed_at: string | null
   shipped_at: string | null
+  photos?: Photo[] | null   // รูปงานเคลม (แนบจากเว็บคอม) — ที่นี่ดูอย่างเดียว
 }
 
 // ให้ตรงกับ WORKFLOW ใน ClaimsWorkspace (เดสก์ท็อป)
@@ -38,6 +40,7 @@ const WORKFLOW: { key: string; color: string }[] = [
   { key: 'รอของคืน', color: '#ff9f0a' },
   { key: 'ตัดผ้าแล้ว', color: '#30d158' },
   { key: 'เย็บแล้ว', color: '#5e9eff' },
+  { key: 'ตรวจสอบแล้ว', color: '#6366f1' },
   { key: 'รีดแล้ว', color: '#bf5af2' },
   { key: 'แพ็คแล้ว', color: '#f43f5e' },
   { key: 'ส่งแล้ว', color: '#34c759' },
@@ -55,13 +58,16 @@ export default function MobileClaims() {
   const tabStrip = useRef<HTMLDivElement>(null)
 
   const load = async () => {
-    const { data, error: err } = await fetchAllRows<Claim>(() =>
-      // ‼️ เลือกเฉพาะคอลัมน์ที่การ์ดใช้ + created_at (ใช้ใน order by) — เดิม select('*') ดึงทุกคอลัมน์เปลืองเน็ตมือถือ
-      supabase.from('claims')
-        .select('id, claim_date, created_at, channel, customer_username, original_order_number, claim_type, fault, cause, items, ship_name, ship_address, refund_amount, money_direction, money_status, status, notes, admin_name, closed_at')
+    // ‼️ เลือกเฉพาะคอลัมน์ที่การ์ดใช้ + created_at (ใช้ใน order by) — เดิม select('*') ดึงทุกคอลัมน์เปลืองเน็ตมือถือ
+    const COLS = 'id, claim_date, created_at, channel, customer_username, original_order_number, claim_type, fault, cause, items, ship_name, ship_address, refund_amount, money_direction, money_status, status, notes, admin_name, closed_at'
+    const query = (cols: string) => fetchAllRows<Claim>(() =>
+      supabase.from('claims').select(cols)
         .order('claim_date', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
         .order('id', { ascending: true }))
+    // ยังไม่ได้รัน migrations/add_claim_photos.sql → ไม่มีคอลัมน์ photos ให้ดึงใหม่แบบไม่มีรูป หน้าจะได้ไม่พังทั้งหน้า
+    let { data, error: err } = await query(`${COLS}, photos`)
+    if (err && /photos/.test(err.message)) ({ data, error: err } = await query(COLS))
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
     else {
       setError('')
@@ -76,6 +82,7 @@ export default function MobileClaims() {
 
   const { pull, refreshing, refresh } = usePullToRefresh(load)
   useScrollRestore('claims', !loading)
+  const pv = usePhotoViewer()   // รูปงานเคลม — กดดูเต็มจอ
   useEffect(() => {
     tabStrip.current?.querySelector('[data-active="1"]')?.scrollIntoView({ block: 'nearest', inline: 'center' })
   }, [tab])
@@ -208,6 +215,7 @@ export default function MobileClaims() {
                   </div>
                 )}
                 {r.notes && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.45, ...clamp(3) }}>หมายเหตุ: {r.notes}</div>}
+                {pv.strip(r.photos)}
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--border)' }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
@@ -227,6 +235,8 @@ export default function MobileClaims() {
           </div>
         </div>
       )}
+
+      {pv.viewer()}
     </div>
   )
 }

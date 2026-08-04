@@ -9,6 +9,7 @@ import { formatItemLines, type RawItem } from '@/lib/itemFormat'
 import { INSTALL_STATUS_COLOR, DAYS_TH, TH_MONTHS, ymdOf, monthCells } from '@/lib/shopCalendar'
 import { useStickyState, usePullToRefresh, useSheetBack, PullIndicator, UpdatedRow, pillBtn, searchInput, monthNavBtn, clamp } from './mobileUi'
 import ScanFolderButton from './ScanFolderButton'
+import { usePhotoViewer, type Photo } from './PhotoStrip'
 
 // ปฏิทินงานติดตั้งบนมือถือ — ดูอย่างเดียว (เดสก์ท็อป = app/(admin)/installations)
 type Installation = {
@@ -30,6 +31,7 @@ type Installation = {
   installation_status: string | null
   send_to_technician: string | null
   source_order_id?: string | null   // ผูกกับ order_entries ถ้าแถวนี้ sync มาจากหมวดออเดอร์
+  photos?: Photo[] | null           // รูปหน้างาน (แนบจากเว็บคอม) — ที่นี่ดูอย่างเดียว
 }
 // ‼️ ตาราง installations ไม่มีคอลัมน์ items — รายการสินค้าอยู่ที่ order_entries ต้องดึงตาม source_order_id
 //    (ทำแบบเดียวกับหน้าเดสก์ท็อป app/(admin)/installations)
@@ -55,7 +57,7 @@ export default function MobileInstallations() {
     const { data, error: err } = await fetchAllRows<Installation>(() =>
       // ‼️ เลือกเฉพาะคอลัมน์ที่ปฏิทิน/การ์ดงานใช้ — เดิม select('*') ดึงทุกคอลัมน์เปลืองเน็ตมือถือ
       supabase.from('installations')
-        .select('id, serial_no, appointment_datetime, work_type, platform, customer_id, customer_real_name, province, install_zone, phone, work_details, location_link, price, notes, payment_status, installation_status, send_to_technician, source_order_id')
+        .select('id, serial_no, appointment_datetime, work_type, platform, customer_id, customer_real_name, province, install_zone, phone, work_details, location_link, price, notes, payment_status, installation_status, send_to_technician, source_order_id, photos')
         .order('id', { ascending: true }))
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
     else {
@@ -83,6 +85,7 @@ export default function MobileInstallations() {
 
   const { pull, refreshing, refresh } = usePullToRefresh(load)
   useSheetBack(!!daySheet, () => setDaySheet(null))
+  const pv = usePhotoViewer()   // รูปหน้างาน — กดดูเต็มจอ
 
   const filtered = useMemo(() => zone ? rows.filter(r => r.install_zone === zone) : rows, [rows, zone])
 
@@ -157,6 +160,7 @@ export default function MobileInstallations() {
           <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 6 }}>กำลังโหลดรายการสินค้า…</div>
         ) : null}
         {j.notes && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 5, lineHeight: 1.45, ...clamp(3) }}>หมายเหตุ: {j.notes}</div>}
+        {pv.strip(j.photos)}
         <div style={{ display: 'flex', gap: 8, marginTop: 9, flexWrap: 'wrap' }}>
           {j.phone && <a href={`tel:${j.phone}`} style={linkBtn}>📞 {j.phone}</a>}
           {j.location_link && <a href={j.location_link} target="_blank" rel="noreferrer" style={linkBtn}>📍 แผนที่</a>}
@@ -299,6 +303,8 @@ export default function MobileInstallations() {
           </div>
         </div>
       )}
+
+      {pv.viewer()}
     </div>
   )
 }

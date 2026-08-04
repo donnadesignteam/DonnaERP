@@ -39,15 +39,17 @@ export const EMPLOYEES: Employee[] = [
 ]
 
 // ลำดับสถานะงานผลิต (ใช้กันสแกนข้ามขั้น — เดินหน้าได้อย่างเดียว)
-export const PROD_STATUS_FLOW = ['รอดำเนินการ', 'ตัดผ้าแล้ว', 'เย็บแล้ว', 'รีดแล้ว', 'แพ็คแล้ว', 'รอจัดส่ง', 'จัดส่งแล้ว'] as const
+// ‼️ แก้ที่นี่แล้วต้องแก้ flow ใน SQL ให้ตรงกันด้วย (sql/scan_helpers.sql, sql/add_assistant_stage.sql)
+export const PROD_STATUS_FLOW = ['รอดำเนินการ', 'ตัดผ้าแล้ว', 'เย็บแล้ว', 'ตรวจสอบแล้ว', 'รีดแล้ว', 'แพ็คแล้ว', 'รอจัดส่ง', 'จัดส่งแล้ว'] as const
 
 // แผนกผลิตที่สแกนได้ → สถานะที่จะตั้งเมื่อแผนกนั้นทำเสร็จ
 export type Stage = { key: string; label: string; status: string }
 export const STAGES: Stage[] = [
-  { key: 'cut',  label: 'ตัด',  status: 'ตัดผ้าแล้ว' },
-  { key: 'sew',  label: 'เย็บ', status: 'เย็บแล้ว' },
-  { key: 'iron', label: 'รีด',  status: 'รีดแล้ว' },
-  { key: 'pack', label: 'แพ็ค', status: 'แพ็คแล้ว' },
+  { key: 'cut',    label: 'ตัด',        status: 'ตัดผ้าแล้ว' },
+  { key: 'sew',    label: 'เย็บ',       status: 'เย็บแล้ว' },
+  { key: 'assist', label: 'ผู้ช่วยช่าง', status: 'ตรวจสอบแล้ว' },   // ตรวจงานหลังเย็บ ก่อนส่งไปรีด
+  { key: 'iron',   label: 'รีด',        status: 'รีดแล้ว' },
+  { key: 'pack',   label: 'แพ็ค',       status: 'แพ็คแล้ว' },
 ]
 
 export const stageByKey = (key: string) => STAGES.find(s => s.key === key)

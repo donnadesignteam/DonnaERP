@@ -17,7 +17,8 @@ type CutScan = {
   tech_code: string | null
   tech_name: string | null
   meters: number | null
-  meters_calc: { total?: number; warns?: string[]; lines?: { type: string; rule: string; meters: number; warn?: string }[] } | null
+  // people/share = ออเดอร์นี้ช่วยกันตัดกี่คน + เมตรที่หารแล้วต่อคน (ของใหม่ 4 ส.ค. 69 — แถวเก่าไม่มี)
+  meters_calc: { total?: number; people?: number; share?: number; warns?: string[]; lines?: { type: string; rule: string; meters: number; warn?: string }[] } | null
   scanned_at: string
   is_helper: boolean
 }
@@ -186,6 +187,12 @@ export default function CuttingPage() {
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>{r.tech_name || '—'}{r.is_helper && <span style={{ color: 'var(--ink-4)', fontSize: 11 }}> (ช่วย)</span>}</td>
                 <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: r.meters == null ? 'var(--ink-4)' : '#0f766e', whiteSpace: 'nowrap' }}>
                   {r.meters == null ? '—' : fmtMeters(r.meters)}
+                  {/* ออเดอร์ที่ช่วยกันตัด — เมตรทั้งใบหารเท่ากันตามจำนวนคน */}
+                  {(r.meters_calc?.people ?? 0) > 1 && (
+                    <div style={{ fontSize: 10.5, fontWeight: 400, color: 'var(--ink-4)' }}>
+                      {fmtMeters(r.meters_calc?.total ?? 0)} ÷ {r.meters_calc?.people} คน
+                    </div>
+                  )}
                 </td>
                 <td style={{ ...td, fontSize: 11.5, color: 'var(--ink-3)' }}>
                   {(r.meters_calc?.lines ?? []).filter(l => l.meters > 0).map(l => l.type).join(', ') || '—'}

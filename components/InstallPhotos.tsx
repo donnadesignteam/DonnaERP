@@ -15,12 +15,16 @@ import { compressImage, uploadPackingFile, deletePackingFile } from '@/lib/packi
 export type InstallPhoto = { url: string; caption: string }
 
 // ข้อความ error ตอนบันทึกรูป — ถ้ายังไม่ได้เพิ่มคอลัมน์ในฐานข้อมูล บอกให้ตรงจุดแทนข้อความดิบของ Postgres
-export const photoSaveError = (msg: string) =>
+export const photoSaveError = (msg: string, sqlFile = 'migrations/add_installation_photos.sql') =>
   /photos/.test(msg) && /does not exist/i.test(msg)
-    ? 'บันทึกรูปไม่ได้ — ฐานข้อมูลยังไม่มีคอลัมน์ photos ให้รันไฟล์ migrations/add_installation_photos.sql ใน Supabase ก่อน'
+    ? `บันทึกรูปไม่ได้ — ฐานข้อมูลยังไม่มีคอลัมน์ photos ให้รันไฟล์ ${sqlFile} ใน Supabase ก่อน`
     : `บันทึกรูปหน้างานไม่สำเร็จ: ${msg}`
 
-export function useInstallPhotos() {
+// opts.prefix = โฟลเดอร์บน R2 (งานติดตั้ง = installations/ · งานเคลม = claims/)
+// opts.title  = หัวข้อที่โชว์ในแถบสรุป/แผงรูป
+export function useInstallPhotos(opts?: { prefix?: string; title?: string }) {
+  const prefix = opts?.prefix || 'installations'
+  const title = opts?.title || 'รูปหน้างาน'
   const [photos, setPhotos] = useState<InstallPhoto[]>([])
   const [open, setOpen] = useState(false)     // แผงรูปที่โผล่ข้างๆ หน้าต่างหลัก
   const [busy, setBusy] = useState(false)
@@ -55,7 +59,7 @@ export function useInstallPhotos() {
       for (const file of Array.from(files)) {
         const small = await compressImage(file)   // ย่อ 1600px / JPEG 80%
         const ext = (small.name.split('.').pop() || 'jpg').toLowerCase()
-        const key = `installations/${folder.current}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+        const key = `${prefix}/${folder.current}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
         const url = await uploadPackingFile(small, key)
         added.current.push(url)
         list.push({ url, caption: '' })
@@ -78,7 +82,7 @@ export function useInstallPhotos() {
     <div style={{ marginBottom: 12, border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', background: 'var(--bg)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
         <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>
-          รูปหน้างาน {photos.length
+          {title} {photos.length
             ? <span style={{ color: 'var(--ink-3)', fontWeight: 400 }}>({photos.length} รูป)</span>
             : <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>— ยังไม่มีรูป</span>}
         </label>
@@ -105,7 +109,7 @@ export function useInstallPhotos() {
       style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', flex: '0 1 440px', minWidth: 340, maxHeight: '90vh', overflowY: 'auto', padding: '20px 22px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
         <h2 style={{ fontSize: 17, fontWeight: 700 }}>
-          รูปหน้างาน {photos.length > 0 && <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--ink-3)' }}>({photos.length} รูป)</span>}
+          {title} {photos.length > 0 &&<span style={{ fontSize: 13, fontWeight: 400, color: 'var(--ink-3)' }}>({photos.length} รูป)</span>}
         </h2>
         <button type="button" onClick={() => setOpen(false)} title="ปิดแผงรูป"
           style={{ border: 'none', background: 'transparent', fontSize: 18, lineHeight: 1, color: 'var(--ink-3)', cursor: 'pointer' }}>✕</button>

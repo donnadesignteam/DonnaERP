@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { fetchStaffList, type Staff } from '@/lib/staffDb'
+import { fetchStaffList, hasVacationRight, type Staff } from '@/lib/staffDb'
 import StaffTabs from '@/components/StaffTabs'
 
 const n = (v: number | null | undefined) => (v == null ? '—' : String(v))
@@ -44,7 +44,8 @@ export default function StaffPage() {
     positions: new Set(staff.map((s) => s.position).filter(Boolean)).size,
     warnings: staff.filter((s) => s.warning).length,
     late: staff.filter((s) => (s.late || 0) > 0).length,
-    lowVac: staff.filter((s) => s.vacation.left != null && s.vacation.left <= 1).length,
+    // นับเฉพาะคนที่มีสิทธิพักร้อนแล้ว (ทำงานครบ 365 วัน)
+    lowVac: staff.filter((s) => hasVacationRight(s.start_date) && s.vacation.left != null && s.vacation.left <= 1).length,
   }), [staff])
 
   const rows = useMemo(() => {
@@ -126,7 +127,11 @@ export default function StaffPage() {
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>{s.position || '—'}</td>
                   <td style={{ ...td, textAlign: 'center' }}><Bal left={s.sick.left} avail={s.sick.avail} used={s.sick.used} /></td>
                   <td style={{ ...td, textAlign: 'center' }}><Bal left={s.personal.left} avail={s.personal.avail} /></td>
-                  <td style={{ ...td, textAlign: 'center' }}><Bal left={s.vacation.left} avail={s.vacation.avail} used={s.vacation.used} /></td>
+                  <td style={{ ...td, textAlign: 'center' }}>
+                    {hasVacationRight(s.start_date)
+                      ? <Bal left={s.vacation.left} avail={s.vacation.avail} used={s.vacation.used} />
+                      : <span style={{ color: 'var(--ink-4)', fontSize: 11 }}>ยังไม่มีสิทธิ</span>}
+                  </td>
                   <td style={{ ...td, textAlign: 'center', whiteSpace: 'nowrap', color: 'var(--ink-3)' }}>{n(s.wop.full)}/{n(s.wop.half)}/{n(s.wop.hours)}</td>
                   <td style={{ ...td, textAlign: 'center' }}>{s.late ? <b style={{ color: 'var(--red)' }}>{s.late}</b> : <span style={{ color: 'var(--ink-4)' }}>—</span>}</td>
                   <td style={{ ...td, textAlign: 'center' }}>{s.warning ? <b style={{ color: 'var(--red)' }}>{s.warning}</b> : <span style={{ color: 'var(--ink-4)' }}>—</span>}</td>

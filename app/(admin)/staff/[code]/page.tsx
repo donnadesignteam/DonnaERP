@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
-import { fetchStaffOne, type Staff } from '@/lib/staffDb'
+import { fetchStaffOne, hasVacationRight, type Staff } from '@/lib/staffDb'
 import MyActivity from '@/components/MyActivity'
 
 type Leave = { filed: string | null; date: string | null; time: string | null; type: string | null; reason: string | null; status: string | null; supervisor: string | null }
@@ -290,7 +290,7 @@ export default function StaffDetailPage() {
                 </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10, marginBottom: 14 }}>
-                {NUM_FIELDS.map(({ k, label }) => (
+                {NUM_FIELDS.filter(({ k }) => hasVacationRight(emp.start_date) || !k.startsWith('vacation_')).map(({ k, label }) => (
                   <div key={k}><label style={{ fontSize: 11, color: 'var(--ink-3)' }}>{label}</label>
                     <input type="number" step="0.5" style={inputStyle} value={String(form[k] ?? '')} onChange={(e) => setF(k, e.target.value)} /></div>
                 ))}
@@ -316,7 +316,9 @@ export default function StaffDetailPage() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 14 }}>
                 <BalanceCard title="ลาป่วย คงเหลือ" left={emp.sick.left} avail={emp.sick.avail} used={emp.sick.used} color="#5ac8fa" />
                 <BalanceCard title="ลากิจ คงเหลือ" left={emp.personal.left} avail={emp.personal.avail} used={emp.personal.avail != null && emp.personal.left != null ? emp.personal.avail - emp.personal.left : null} color="#C47E3A" />
-                <BalanceCard title="ลาพักร้อน คงเหลือ" left={emp.vacation.left} avail={emp.vacation.avail} used={emp.vacation.used} color="#30c759" />
+                {hasVacationRight(emp.start_date) && (
+                  <BalanceCard title="ลาพักร้อน คงเหลือ" left={emp.vacation.left} avail={emp.vacation.avail} used={emp.vacation.used} color="#30c759" />
+                )}
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 14, marginBottom: 26 }}>

@@ -7,7 +7,7 @@ import { EMPLOYEES, STAGES, stageByKey } from '@/lib/staff'
 import { fetchEmployeeOptions } from '@/lib/staffDb'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { uploadPackingFile, deletePackingFile, compressImage } from '@/lib/packingPhotos'
-import { cutMeters, type CutLine } from '@/lib/fabricUsage'
+import { cutMeters, round2 } from '@/lib/fabricUsage'
 import HubButton from '@/components/HubButton'
 
 const LS_KEY = 'donna-scan-tech'
@@ -22,12 +22,21 @@ const SPECIAL_STAGES: { key: string; label: string; status: string; special: Spe
 const resolveStage = (key: string): any => stageByKey(key) || SPECIAL_STAGES.find(s => s.key === key)
 type Phase = 'scanning' | 'working' | 'done' | 'already' | 'noorder' | 'error' | 'barcode' | 'undone' | 'joined'
 
-// กรอบสแกน: QR = สี่เหลี่ยมจัตุรัส / บาร์โค้ด 1D บนใบปะหน้า = แนวนอนกว้าง
+// กรอบสแกนจัตุรัสอันเดียว — ใช้ทั้ง QR ใบออเดอร์และ QR เลขพัสดุบนใบปะหน้า
+// (เดิมเลขพัสดุอ่านจากบาร์โค้ด 1D กรอบแนวนอน ซึ่งจับยากมากบนมือถือ user เลยสั่งให้เปลี่ยนมาสแกน QR แทน)
 const QR_BOX = { width: 250, height: 250 }
-const BARCODE_BOX = { width: 330, height: 140 }
 
-// เลขพัสดุจากบาร์โค้ด: ตัวอักษร/ตัวเลขล้วน ไม่ใช่ URL/QR ใบออเดอร์
+// เลขพัสดุ: ตัวอักษร/ตัวเลขล้วน ไม่ใช่ URL/QR ใบออเดอร์
 const isTrackingNo = (s: string) => /^[A-Z0-9-]{8,25}$/i.test(s) && !/^HTTP/i.test(s) && !s.includes('=')
+
+// ดึงเลขพัสดุจาก QR บนใบปะหน้า — บางเจ้าใส่เลขตรงๆ บางเจ้าใส่เป็นลิงก์เช็คสถานะ/ข้อความยาว
+// เลือกคำที่ "หน้าตาเป็นเลขพัสดุ" และเดาเจ้าขนส่งออก ถ้าเดาไม่ออกเอาคำที่ยาวสุด · '' = ไม่เจอ
+function trackingFromQr(raw: string): string {
+  const s = String(raw).trim().toUpperCase()
+  if (isTrackingNo(s)) return s
+  const tokens = s.split(/[^A-Z0-9-]+/).filter(t => isTrackingNo(t))
+  return tokens.find(t => detectCarrier(t)) || tokens.sort((a, b) => b.length - a.length)[0] || ''
+}
 
 // รูปที่แต่ละแผนกอัพโหลดได้หลังสแกน → เก็บลง order_entries.packing_photos (โชว์ในโฟลเดอร์ลูกค้า)
 const UPLOAD_SLOTS: Record<string, { tag: string; label: string }[]> = {
@@ -37,13 +46,9 @@ const UPLOAD_SLOTS: Record<string, { tag: string; label: string }[]> = {
 }
 
 // ── แผนกตัด: เมตรผ้าที่ตัดในออเดอร์ที่เพิ่งสแกน (sql/fabric_meters.sql) ──
-// pick = index ของรายการที่ "คนนี้" ตัด · others = คนอื่นที่ลงชื่อขั้นตัดของออเดอร์เดียวกัน
-type CutOwner = { tech_code: string; tech_name: string; pick: number[] }
-// สถานะของหน้าถามรายการที่ช่วยตัด — ขึ้นเฉพาะตอน "ลงชื่อเพิ่ม" เท่านั้น (คนแรกที่สแกนไม่ต้องตอบอะไร)
-type CutPick = {
-  scanNo: string; items: unknown; isClaim: boolean; myCode: string
-  pick: number[]; others: CutOwner[]; lines: CutLine[]
-}
+// กติกา (user สั่ง 4 ส.ค. 69): ไม่ถามว่าใครตัดรายการไหนแล้ว —
+// คิดเมตรทั้งใบตามสูตร (เช่นม่านจีบ ×2.2) แล้ว "หารเท่ากัน" ตามจำนวนคนที่ลงชื่อขั้นตัดของออเดอร์นั้น
+// คนที่ 2 ขึ้นไปเข้ามาด้วยคำถามเดิม "ลงชื่อเป็นผู้ร่วมทำออเดอร์ไหม" แล้วระบบเฉลี่ยใหม่ให้ทุกคนเอง
 
 function loadTech(): Tech | null {
   try { const v = localStorage.getItem(LS_KEY); return v ? JSON.parse(v) : null } catch { return null }
@@ -109,10 +114,6 @@ function ScanContent() {
   const [joinInfo, setJoinInfo] = useState<{ stage: string; people: string[]; mine: boolean } | null>(null)
   const [joining, setJoining] = useState(false)
 
-  // แผนกตัด: หน้าถามว่าช่วยตัดรายการไหน (เฉพาะคนที่ลงชื่อเพิ่ม)
-  const [cut, setCut] = useState<CutPick | null>(null)
-  const [cutSaving, setCutSaving] = useState(false)
-
   const scannerRef = useRef<any>(null)
   const resumeTimerRef = useRef<any>(null)  // timer auto-กลับไปสแกนต่อ (undo ต้องยกเลิกก่อน ไม่งั้นเด้งทับหน้า "ยกเลิกแล้ว")
   const busyRef = useRef(false)
@@ -125,6 +126,7 @@ function ScanContent() {
   const shipNosRef = useRef<{ no: string; carrier: string }[]>([])
   const [shipNos, setShipNos] = useState<{ no: string; carrier: string }[]>([])
   const [shipMsg, setShipMsg] = useState('')
+  const [shipTyped, setShipTyped] = useState('')   // ช่องพิมพ์เลขพัสดุเอง (ใบที่ไม่มี QR)
   const [shipSaving, setShipSaving] = useState(false)
   const [shipToast, setShipToast] = useState('')
 
@@ -161,19 +163,16 @@ function ScanContent() {
     busyRef.current = true
     try { await html5.pause(true) } catch {}
 
-    // ---- โหมดบาร์โค้ดเลขพัสดุ ----
+    // ---- โหมดสแกน QR เลขพัสดุ ----
     if (modeRef.current === 'barcode') {
-      const text = decoded.trim().toUpperCase()
-      const known = [...shipNosRef.current.map(x => x.no), ...(shipRef.current?.existing || []).map((s: any) => s.no)]
-      if (isTrackingNo(text) && !known.includes(text)) {
-        shipNosRef.current = [...shipNosRef.current, { no: text, carrier: detectCarrier(text, shipRef.current?.courier) || 'อื่นๆ' }]
-        setShipNos(shipNosRef.current)
-        setShipMsg('')
-        try { navigator.vibrate?.(120) } catch {}
-      } else if (isTrackingNo(text)) {
-        setShipMsg('เลขนี้สแกนไปแล้ว')
-        setTimeout(() => setShipMsg(''), 1800)
+      // กันสแกนโดน QR ใบออเดอร์/ใบเคลมของร้านเอง (ตอนนี้สแกน QR ทั้งคู่ จ่อผิดใบได้ง่าย)
+      if (extractId(decoded) || extractClaimId(decoded) || /[?&]o=/.test(decoded)) {
+        setShipMsg('อันนี้คือ QR ใบออเดอร์ — ให้จ่อ QR บนใบปะหน้าพัสดุ')
+        setTimeout(() => setShipMsg(''), 2200)
+        setTimeout(() => { try { html5.resume() } catch {}; busyRef.current = false }, 1100)
+        return
       }
+      if (addShipNo(decoded)) { try { navigator.vibrate?.(120) } catch {} }
       setTimeout(() => { try { html5.resume() } catch {}; busyRef.current = false }, 1100)
       return
     }
@@ -196,7 +195,8 @@ function ScanContent() {
       shipNosRef.current = []; setShipNos([]); setShipMsg('')
       modeRef.current = 'barcode'
       setPhase('barcode')
-      await restartWithBox(BARCODE_BOX)
+      // กรอบเดียวกับ QR ใบออเดอร์ → ไม่ต้องเปิดกล้องใหม่ แค่สแกนต่อได้เลย
+      try { html5.resume() } catch {}
       busyRef.current = false
       return
     }
@@ -207,31 +207,19 @@ function ScanContent() {
     }
   }
 
-  // เปิดกล้องใหม่ด้วยกรอบสแกนตามโหมด (สลับ QR จัตุรัส ↔ บาร์โค้ดแนวนอน)
-  async function restartWithBox(box: { width: number; height: number }) {
-    const s = scannerRef.current
-    if (!s) return
-    try { await s.stop() } catch {}
-    try {
-      await s.start({ facingMode: 'environment' }, { fps: 10, qrbox: box }, (d: string) => decodeRef.current(d), () => {})
-      setCamState('on')
-    } catch (e: any) {
-      setCamState('error'); setCamErr(e?.message || String(e)); startedRef.current = false
-    }
-  }
-
   // โหมดสแกนในแอป: เปิดกล้องสแกนต่อเนื่อง (เมื่อ login แล้ว และไม่ได้มาจากลิงก์)
   async function startCamera() {
     if (startedRef.current || !tech) return
     startedRef.current = true
     setCamState('starting'); setCamErr('')
     try {
-      const { Html5Qrcode } = await import('html5-qrcode')
-      const html5 = new Html5Qrcode('qr-reader', { verbose: false } as any)
+      const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import('html5-qrcode')
+      // อ่านเฉพาะ QR — ไม่ต้องเสียเวลาไล่ถอดบาร์โค้ด 1D ทุกเฟรม จับ QR ได้ไวขึ้น
+      const html5 = new Html5Qrcode('qr-reader', { verbose: false, formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE] } as any)
       scannerRef.current = html5
       await html5.start(
         { facingMode: 'environment' },
-        { fps: 10, qrbox: modeRef.current === 'barcode' ? BARCODE_BOX : QR_BOX },
+        { fps: 10, qrbox: QR_BOX },
         (decoded: string) => decodeRef.current(decoded),
         () => {} // ละเว้น error รายเฟรม
       )
@@ -240,6 +228,32 @@ function ScanContent() {
       startedRef.current = false
       setCamState('error'); setCamErr(e?.message || String(e))
     }
+  }
+
+  // เพิ่มเลขพัสดุ 1 เลข (มาจาก QR ที่สแกน หรือพิมพ์เองในช่องด้านล่าง) — true = เพิ่มสำเร็จ
+  function addShipNo(raw: string): boolean {
+    const text = trackingFromQr(raw)
+    if (!text) {
+      setShipMsg('อ่านเลขพัสดุไม่ได้ — พิมพ์เลขเองในช่องด้านล่างได้')
+      setTimeout(() => setShipMsg(''), 2200)
+      return false
+    }
+    const known = [...shipNosRef.current.map(x => x.no), ...(shipRef.current?.existing || []).map((s: any) => s.no)]
+    if (known.includes(text)) {
+      setShipMsg('เลขนี้สแกนไปแล้ว')
+      setTimeout(() => setShipMsg(''), 1800)
+      return false
+    }
+    shipNosRef.current = [...shipNosRef.current, { no: text, carrier: detectCarrier(text, shipRef.current?.courier) || 'อื่นๆ' }]
+    setShipNos(shipNosRef.current)
+    setShipMsg('')
+    return true
+  }
+
+  // ลบเลขที่เพิ่งเพิ่ม (สแกนผิดใบ/พิมพ์ผิด) — ลบได้เฉพาะเลขที่ยังไม่บันทึก
+  function removeShipNo(no: string) {
+    shipNosRef.current = shipNosRef.current.filter(x => x.no !== no)
+    setShipNos(shipNosRef.current)
   }
 
   // เปลี่ยนเจ้าขนส่งของเลขที่สแกนแล้ว (บางออเดอร์ส่งคนละเจ้า ระบบเดาให้ก่อน แก้ได้ต่อเลข)
@@ -266,10 +280,10 @@ function ScanContent() {
     }
     modeRef.current = 'order'
     shipRef.current = null
-    shipNosRef.current = []; setShipNos([]); setShipMsg('')
+    shipNosRef.current = []; setShipNos([]); setShipMsg(''); setShipTyped('')
     setPhase('scanning')
     if (savedCnt > 0) { setShipToast(`✓ บันทึก ${savedCnt} เลขพัสดุแล้ว`); setTimeout(() => setShipToast(''), 3000) }
-    await restartWithBox(QR_BOX)
+    try { scannerRef.current?.resume() } catch {}
     busyRef.current = false
   }
 
@@ -301,79 +315,37 @@ function ScanContent() {
   }
 
   // ── แผนกตัด: บันทึกว่าใครตัดผ้าไปกี่เมตร ────────────────────────────────
-  // ตัวเลขคิดตอนสแกนแล้วเก็บนิ่งไว้ที่แถวสแกน (แก้รายการสินค้าย้อนหลังไม่กระทบผลงานช่าง)
-  const calcPayload = (items: unknown, isClaim: boolean, pick: number[]) => {
-    const c = cutMeters(items, { isClaim, pick })
-    return { meters: c.total, calc: { total: c.total, pick, lines: c.lines, warns: c.warns } }
-  }
-
-  // เขียนเมตรของ "ทุกคน" ที่ลงชื่อขั้นตัดของออเดอร์นี้พร้อมกัน (กันนับซ้ำ)
-  async function saveCut(scanNo: string, items: unknown, isClaim: boolean, myCode: string, myPick: number[], others: CutOwner[]) {
-    const rows = [
-      { tech_code: myCode, ...calcPayload(items, isClaim, myPick) },
-      ...others.map(o => ({ tech_code: o.tech_code, ...calcPayload(items, isClaim, o.pick) })),
-    ]
-    const { data, error } = await supabase.rpc('set_cut_meters', { p_scan_no: scanNo, p_rows: rows })
-    if (error) throw new Error(error.message)
-    if (!data?.ok) throw new Error(String(data?.result || 'บันทึกเมตรไม่สำเร็จ'))
-  }
-
-  // อ่านว่าคนอื่นในขั้นตัดของออเดอร์นี้จองรายการไหนไว้แล้ว
-  async function loadCutOwners(scanNo: string, myCode: string): Promise<CutOwner[]> {
-    const { data } = await supabase.from('production_scans')
-      .select('tech_code, tech_name, meters_calc').eq('order_number', scanNo).eq('stage', 'ตัด')
-    return (data ?? [])
-      .filter((r: any) => r.tech_code !== myCode)
-      .map((r: any) => ({
-        tech_code: r.tech_code, tech_name: r.tech_name || r.tech_code,
-        pick: Array.isArray(r.meters_calc?.pick) ? r.meters_calc.pick as number[] : [],
-      }))
-  }
-
-  // หลังสแกนขั้นตัดสำเร็จ — บันทึกเงียบๆ เบื้องหลัง ไม่ขึ้นอะไรบนหน้าสแกน (user สั่ง: หน้าสแกนเหมือนเดิม
-  // ดูยอดที่เว็บ พนักงาน → ยอดตัดผ้า แทน) · ตัดผ้าผิดพลาดก็ไม่ไปกวนช่าง ปล่อยให้แอดมินเห็นในหน้ารายงาน
-  // คนแรกได้ทุกรายการในใบ · คนที่ 2 ขึ้นไป (ลงชื่อช่วย) ได้เฉพาะรายการที่ยังไม่มีใครจอง
-  async function startCut(t: Tech, scanNo: string, items: unknown, isClaim: boolean) {
+  // เมตรทั้งใบคิดตามสูตร (lib/fabricUsage.ts) แล้วหารเท่ากันตามจำนวนคนที่ลงชื่อขั้นตัดของออเดอร์นี้
+  // เขียนเมตรของ "ทุกคน" ใหม่ทั้งชุดทุกครั้ง (RPC set_cut_meters) → ไม่มีทางนับซ้ำ/นับขาด
+  // ทำเงียบๆ เบื้องหลัง ไม่ขึ้นอะไรบนหน้าสแกน (user สั่ง: ดูยอดที่เว็บ พนักงาน → ยอดตัดผ้า)
+  async function splitCut(scanNo: string, items: unknown, isClaim: boolean) {
     try {
-      const all = cutMeters(items, { isClaim }).lines.filter(l => !l.skip).map(l => l.i)
-      let others: CutOwner[] = []
-      try { others = await loadCutOwners(scanNo, t.code) } catch {}
-      const taken = new Set(others.flatMap(o => o.pick))
-      const mine = others.length ? all.filter(i => !taken.has(i)) : all
-      await saveCut(scanNo, items, isClaim, t.code, mine, others)
+      const c = cutMeters(items, { isClaim })
+      const { data } = await supabase.from('production_scans')
+        .select('tech_code').eq('order_number', scanNo).eq('stage', 'ตัด')
+      const codes = [...new Set((data ?? []).map((r: any) => r.tech_code).filter(Boolean))] as string[]
+      if (!codes.length) return
+      const share = round2(c.total / codes.length)
+      const rows = codes.map(code => ({
+        tech_code: code,
+        meters: share,
+        calc: { total: c.total, people: codes.length, share, lines: c.lines, warns: c.warns },
+      }))
+      const { error } = await supabase.rpc('set_cut_meters', { p_scan_no: scanNo, p_rows: rows })
+      if (error) throw new Error(error.message)
     } catch {
       // เก็บเมตรไม่สำเร็จไม่ควรไปขวางงานสแกน (สถานะออเดอร์บันทึกไปแล้ว) — เงียบไว้
     }
   }
 
-  // ลงชื่อ "ช่วยตัด" สำเร็จ → ถามว่าช่วยตัดรายการไหนบ้าง (user สั่ง: เฉพาะคนที่สแกนเพิ่มเท่านั้นที่ต้องติ๊ก)
-  // ค่าเริ่มต้นติ๊กรายการที่ยังไม่มีใครลงชื่อไว้ · ติ๊กรายการที่คนอื่นจองไว้ = ย้ายมาเป็นของคนนี้ ไม่นับซ้ำ
-  async function startCutJoin(t: Tech, scanNo: string, items: unknown, isClaim: boolean) {
-    const lines = cutMeters(items, { isClaim }).lines.filter(l => !l.skip)
-    let others: CutOwner[] = []
-    try { others = await loadCutOwners(scanNo, t.code) } catch {}
-    const taken = new Set(others.flatMap(o => o.pick))
-    const mine = lines.map(l => l.i).filter(i => !taken.has(i))
-    setCut({ scanNo, items, isClaim, myCode: t.code, pick: mine, others, lines })
-    try { await saveCut(scanNo, items, isClaim, t.code, mine, others) } catch {}
-  }
-
-  // ติ๊ก/เอาออกรายการที่ช่วยตัด — บันทึกเมตรของทุกคนในขั้นตัดใหม่ทั้งชุดทุกครั้ง
-  async function toggleCutLine(i: number) {
-    if (!cut || cutSaving) return
-    const on = cut.pick.includes(i)
-    const pick = on ? cut.pick.filter(x => x !== i) : [...cut.pick, i].sort((a, b) => a - b)
-    const others = on ? cut.others : cut.others.map(o => ({ ...o, pick: o.pick.filter(x => x !== i) }))
-    setCut({ ...cut, pick, others })
-    setCutSaving(true)
-    try { await saveCut(cut.scanNo, cut.items, cut.isClaim, cut.myCode, pick, others) } catch {}
-    setCutSaving(false)
-  }
+  // เลขที่ใช้อ้างแถวสแกนของออเดอร์/ใบเคลมนี้ (ตรงกับที่ RPC เขียนลง production_scans)
+  const scanNoOf = (o: any, fallbackTerm = '') =>
+    o?.isClaim ? `claim:${o.id}` : ((o?.order_number || '').trim() || fallbackTerm.trim() || `id:${o?.id}`)
 
   // กลับไปสแกนต่อ (ปุ่มกดเองของแผนกที่อัพโหลดรูปได้)
   function resumeScan() {
     if (resumeTimerRef.current) { clearTimeout(resumeTimerRef.current); resumeTimerRef.current = null }
-    setUploadedCnt({}); setUploadErr(''); setJoinInfo(null); setCut(null)
+    setUploadedCnt({}); setUploadErr(''); setJoinInfo(null)
     askJoinRef.current = false
     setPhase('scanning')
     busyRef.current = false
@@ -483,7 +455,7 @@ function ScanContent() {
     setOrder(done)
     setPhase('done')
     // งานเคลม = งานแก้ → ทุกชนิดคิดเมตร ×1 (กติกาในชีท)
-    if (t.stageKey === 'cut') startCut(t, `claim:${cl.id}`, cl.items, true)
+    if (t.stageKey === 'cut') splitCut(`claim:${cl.id}`, cl.items, true)
     return done
   }
 
@@ -523,9 +495,7 @@ function ScanContent() {
     const done = special === 'rail' ? o : { ...o, order_status: data.status }
     setOrder(done)
     setPhase('done')
-    if (t.stageKey === 'cut') {
-      startCut(t, (o.order_number || '').trim() || ord.trim() || `id:${o.id}`, o.items, false)
-    }
+    if (t.stageKey === 'cut') splitCut(scanNoOf(o, ord), o.items, false)
     return done
   }
 
@@ -553,11 +523,8 @@ function ScanContent() {
       } else {
         setJoinInfo({ stage: data.stage, people: Array.isArray(data.people) ? data.people : [], mine: true })
         setPhase('joined')
-        // ช่วยกันตัด → ให้เลือกเองว่าช่วยตัดรายการไหน (เมตรของคนที่จองไว้ก่อนจะถูกหักออกให้)
-        if (tech.stageKey === 'cut') {
-          const scanNo = order.isClaim ? `claim:${order.id}` : ((order.order_number || '').trim() || `id:${order.id}`)
-          startCutJoin(tech, scanNo, order.items, !!order.isClaim)
-        }
+        // ช่วยกันตัด → เฉลี่ยเมตรทั้งใบใหม่ตามจำนวนคนที่ลงชื่อ (ไม่ถามว่าใครตัดรายการไหนแล้ว)
+        if (tech.stageKey === 'cut') splitCut(scanNoOf(order), order.items, !!order.isClaim)
       }
     } catch (e: any) {
       setMsg(e?.message || String(e)); setPhase('error')
@@ -578,7 +545,11 @@ function ScanContent() {
       })
       if (error) { setMsg(error.message); setPhase('error') }
       else if (!data?.ok) { setMsg(data?.result === 'no_scan' ? 'ไม่พบรายการสแกนให้ยกเลิก' : String(data?.result || 'ยกเลิกไม่สำเร็จ')); setPhase('error') }
-      else { setOrder((o: any) => o ? { ...o, order_status: data.status } : o); setPhase('undone') }
+      else {
+        setOrder((o: any) => o ? { ...o, order_status: data.status } : o); setPhase('undone')
+        // ยกเลิกคนที่ตัด → เฉลี่ยเมตรใหม่ให้คนที่เหลือ (ไม่งั้นยอดรวมของออเดอร์นี้จะขาดไปส่วนหนึ่ง)
+        if (tech?.stageKey === 'cut') splitCut(scanNoOf(order), order.items, !!order.isClaim)
+      }
     } catch (e: any) {
       setMsg(e?.message || String(e)); setPhase('error')
     }
@@ -656,8 +627,6 @@ function ScanContent() {
   const slots = order?.isClaim ? [] : (UPLOAD_SLOTS[tech.stageKey] ?? [])
   // อัพรูปได้เมื่อเจอออเดอร์แล้ว (done หรือ already — เผื่อสแกนซ้ำเพื่อเพิ่มรูป)
   const canUpload = slots.length > 0 && (phase === 'done' || phase === 'already' || phase === 'joined') && order?.id
-  // หน้าถามรายการที่ช่วยตัด — เฉพาะหลังลงชื่อเพิ่มสำเร็จเท่านั้น
-  const showCutPick = !!cut && phase === 'joined' && cut.lines.length > 0
 
   // ---------- โหมดลิงก์ (มาจากแอปกล้องของเครื่อง) ----------
   if (urlOrder || urlId) {
@@ -666,7 +635,6 @@ function ScanContent() {
         <div style={card}>
           <Identity tech={tech} stageLabel={stage?.label} onLogout={logout} />
           <Result phase={phase} order={order} msg={msg} stage={stage} onUndo={order?.isClaim ? undefined : undoScan} undoing={undoing} />
-          {showCutPick && <CutPick v={cut!} saving={cutSaving} onToggle={toggleCutLine} />}
           {canUpload && <PhotoUpload slots={slots} uploading={uploading} counts={uploadedCnt} err={uploadErr} onPick={pickPhoto} photos={photos} delBusy={delBusy} onDelete={deletePhoto} />}
           <a href="/scan" style={{ display: 'inline-block', marginTop: 18, color: stageColor, fontSize: 14, fontWeight: 600 }}>เปิดกล้องสแกนต่อ →</a>
         </div>
@@ -725,10 +693,10 @@ function ScanContent() {
         {phase === 'barcode' && (
           <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(11,18,32,0.95)', borderTop: '1px solid rgba(255,255,255,0.15)', padding: '14px 16px 18px', textAlign: 'left' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: '#7dd3fc', marginBottom: 2 }}>
-              📦 สแกนบาร์โค้ดเลขพัสดุ
+              📦 สแกน QR เลขพัสดุ
             </div>
             <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 10 }}>
-              ออเดอร์ <b style={{ color: '#fff' }}>{shipRef.current?.orderNumber || order?.customer_name || ''}</b> — จ่อบาร์โค้ดบนใบปะหน้าทีละกล่อง มีหลายกล่องสแกนต่อได้เลย
+              ออเดอร์ <b style={{ color: '#fff' }}>{shipRef.current?.orderNumber || order?.customer_name || ''}</b> — จ่อ QR บนใบปะหน้าทีละกล่อง มีหลายกล่องสแกนต่อได้เลย
             </div>
             {shipNos.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
@@ -739,11 +707,24 @@ function ScanContent() {
                       style={{ border: 'none', borderRadius: 6, background: 'rgba(255,255,255,0.25)', color: '#fff', fontSize: 11, fontWeight: 600, padding: '2px 4px', outline: 'none', cursor: 'pointer' }}>
                       {CARRIER_OPTIONS.map(c => <option key={c} value={c} style={{ color: '#111' }}>{c}</option>)}
                     </select>
+                    <button onClick={() => removeShipNo(x.no)} aria-label={`เอา ${x.no} ออก`}
+                      style={{ border: 'none', background: 'transparent', color: '#fff', fontSize: 14, lineHeight: 1, padding: '0 4px', cursor: 'pointer' }}>✕</button>
                   </span>
                 ))}
               </div>
             )}
             {shipMsg && <div style={{ fontSize: 12, color: '#fbbf24', marginBottom: 8 }}>{shipMsg}</div>}
+
+            {/* ใบไหนไม่มี QR / QR เลอะอ่านไม่ออก → พิมพ์เลขเองได้ ไม่ต้องกลับไปทำที่เว็บคอม */}
+            <form onSubmit={e => { e.preventDefault(); if (addShipNo(shipTyped)) setShipTyped('') }}
+              style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              <input value={shipTyped} onChange={e => setShipTyped(e.target.value)} placeholder="พิมพ์เลขพัสดุเอง"
+                autoComplete="off" autoCapitalize="characters" spellCheck={false}
+                style={{ flex: 1, minWidth: 0, borderRadius: 10, border: '1px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.08)', color: '#fff', padding: '10px 12px', fontSize: 14, outline: 'none' }} />
+              <button type="submit" disabled={!shipTyped.trim()}
+                style={{ borderRadius: 10, border: 'none', background: shipTyped.trim() ? '#2563eb' : '#475569', color: '#fff', padding: '0 16px', fontSize: 14, fontWeight: 700, cursor: shipTyped.trim() ? 'pointer' : 'not-allowed' }}>เพิ่ม</button>
+            </form>
+
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => finishBarcode(false)} disabled={shipSaving}
                 style={{ flex: 1, padding: 12, borderRadius: 12, border: '1px solid rgba(255,255,255,0.3)', background: 'transparent', color: '#cbd5e1', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
@@ -762,7 +743,6 @@ function ScanContent() {
             <div style={{ ...card, maxWidth: 380 }}>
               <Result phase={phase} order={order} msg={msg} stage={stage} onUndo={order?.isClaim ? undefined : undoScan} undoing={undoing}
                 joinInfo={joinInfo} onJoin={joinScan} onSkipJoin={resumeScan} joining={joining} />
-              {showCutPick && <CutPick v={cut!} saving={cutSaving} onToggle={toggleCutLine} />}
               {canUpload && <PhotoUpload slots={slots} uploading={uploading} counts={uploadedCnt} err={uploadErr} onPick={pickPhoto} photos={photos} delBusy={delBusy} onDelete={deletePhoto} />}
               {/* หน้า 'already' ที่ยังรอตอบ "ลงชื่อช่วยไหม" ไม่ต้องมีปุ่มสแกนต่อ — ปุ่ม "ไม่ใช่" ทำหน้าที่นั้นแทน */}
               {['done', 'already', 'undone', 'error', 'joined'].includes(phase) && !(phase === 'already' && joinInfo && !joinInfo.mine) && (
@@ -854,37 +834,6 @@ function PhotoUpload({ slots, uploading, counts, err, onPick, photos, delBusy, o
         </div>
       )}
       {err && <p style={{ color: '#dc2626', fontSize: 12, marginTop: 8 }}>ไม่สำเร็จ: {err}</p>}
-    </div>
-  )
-}
-
-// ถามคนที่ลงชื่อช่วยตัดว่าช่วยตัดรายการไหนบ้าง (ไม่โชว์ตัวเลขเมตร ไม่มีอีโมจิ — user สั่ง)
-function CutPick({ v, saving, onToggle }: { v: CutPick; saving: boolean; onToggle: (i: number) => void }) {
-  const ownerOf = (i: number) => v.others.find(o => o.pick.includes(i))?.tech_name
-  return (
-    <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #eee', textAlign: 'left' }}>
-      <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>คุณช่วยตัดรายการไหนบ้าง?</div>
-      <div style={{ fontSize: 12, color: '#888', margin: '2px 0 10px' }}>ติ๊กเฉพาะรายการที่คุณตัด</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {v.lines.map(l => {
-          const on = v.pick.includes(l.i)
-          const other = ownerOf(l.i)
-          return (
-            <label key={l.i} onClick={e => { e.preventDefault(); onToggle(l.i) }}
-              style={{ display: 'flex', gap: 8, alignItems: 'flex-start', border: '1px solid ' + (on ? '#2563eb' : '#e5e7eb'), background: on ? '#eff6ff' : '#fff', borderRadius: 10, padding: '9px 10px', cursor: saving ? 'wait' : 'pointer' }}>
-              <input type="checkbox" checked={on} readOnly style={{ marginTop: 2, width: 18, height: 18, accentColor: '#2563eb' }} />
-              <span style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ fontSize: 13.5, fontWeight: 700, color: '#1a1a1a', display: 'block' }}>{l.type}</span>
-                <span style={{ fontSize: 11.5, color: '#777' }}>
-                  {l.width > 0 ? `กว้าง ${l.width} จำนวน ${l.qty}` : `จำนวน ${l.qty}`}
-                  {other && !on && <span style={{ color: '#d97706' }}> · ตอนนี้เป็นของ {other}</span>}
-                </span>
-              </span>
-            </label>
-          )
-        })}
-      </div>
-      {saving && <div style={{ fontSize: 12, color: '#888', marginTop: 6 }}>กำลังบันทึก…</div>}
     </div>
   )
 }

@@ -14,6 +14,7 @@ import { railLink } from '@/lib/rail'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { fetchEmployeeOptions } from '@/lib/staffDb'
 import { useStableView } from '@/lib/useStableView'
+import { useInstallPhotos, photoSaveError, type InstallPhoto } from '@/components/InstallPhotos'
 
 type Item = {
   type: string; floors: number | null; rail_head: string; fabric_type: string
@@ -55,6 +56,7 @@ type Claim = {
   is_urgent: boolean
   notes: string | null
   raw_text: string | null
+  photos?: InstallPhoto[]     // รูปงานเคลม (ยังไม่ได้รัน migrations/add_claim_photos.sql = ไม่มีคอลัมน์นี้)
   admin_name: string | null   // แอดมินที่รับผิดชอบเคสนี้ — โชว์ใน dashboard พนักงานรายคนด้วย
   closed_by: string | null    // ใครปิดงานเคสนี้ (เลือกชื่อ = ปิดงานแล้ว)
   closed_at: string | null
@@ -79,6 +81,7 @@ const WORKFLOW: { key: string; color: string }[] = [
   { key: 'รอของคืน', color: '#ff9f0a' },
   { key: 'ตัดผ้าแล้ว', color: '#30d158' },     // สายผลิต — DonnaBot อัปเดตอัตโนมัติจากรูปกลุ่มช่าง
   { key: 'เย็บแล้ว', color: '#5e9eff' },
+  { key: 'ตรวจสอบแล้ว', color: '#6366f1' },   // ผู้ช่วยช่างสแกน (ก่อนรีด)
   { key: 'รีดแล้ว', color: '#bf5af2' },
   { key: 'แพ็คแล้ว', color: '#f43f5e' },
   { key: 'ส่งแล้ว', color: '#34c759' },
@@ -171,8 +174,12 @@ export default function ClaimsWorkspace() {
   const set = (k: keyof Claim, v: string | boolean | number | null) =>
     setModal(m => m ? { ...m, data: { ...m.data, [k]: v } } : null)
 
-  const openAdd = () => { setPasteText(''); setParseError(''); setItemsPaste(''); setItemsParseErr(''); setModal({ mode: 'add', data: emptyClaim() }) }
-  const openEdit = (c: Claim) => { setPasteText(c.raw_text ?? ''); setParseError(''); setItemsPaste(''); setItemsParseErr(''); setModal({ mode: 'edit', data: { ...c } }) }
+  // รูปงานเคลม — ใช้คอมโพเนนต์กลางตัวเดียวกับรูปหน้างานของงานติดตั้ง (ไฟล์อยู่บน R2 โฟลเดอร์ claims/)
+  const ph = useInstallPhotos({ prefix: 'claims', title: 'รูปงานเคลม' })
+
+  const openAdd = () => { setPasteText(''); setParseError(''); setItemsPaste(''); setItemsParseErr(''); ph.begin([], null); setModal({ mode: 'add', data: emptyClaim() }) }
+  const openEdit = (c: Claim) => { setPasteText(c.raw_text ?? ''); setParseError(''); setItemsPaste(''); setItemsParseErr(''); ph.begin(c.photos, c.id); setModal({ mode: 'edit', data: { ...c } }) }
+  const closeModal = () => { setModal(null); ph.cancel() }
 
   // แก้ไขรายการที่เคลม (เก็บเป็น array ใน items jsonb)
   const setItems = (updater: (cur: Item[]) => Item[]) =>
@@ -217,7 +224,7 @@ export default function ClaimsWorkspace() {
     if (!modal) return
     setSaving(true); setError('')
     const d = modal.data
-    const payload = {
+    const payload: Partial<Claim> = {
       claim_date: d.claim_date || null, channel: d.channel || null, customer_username: d.customer_username || null,
       original_order_number: d.original_order_number || null, claim_type: d.claim_type || null, fault: d.fault || null,
       cause: d.cause || null, resolution: d.resolution || null, items: d.items && d.items.length ? d.items : null,
@@ -228,13 +235,18 @@ export default function ClaimsWorkspace() {
       money_direction: d.money_direction || null, payment_target: d.payment_target || null, money_status: d.money_status || null,
       status: d.status || 'รอของคืน', is_urgent: !!d.is_urgent, notes: d.notes || null, raw_text: d.raw_text || null,
       admin_name: d.admin_name || null,
+      photos: ph.photos,
       updated_at: new Date().toISOString(),
     }
+    // ยังไม่เคยใช้รูปกับเคสนี้ → ไม่ต้องส่งคอลัมน์ photos (เว็บทำงานได้ตามปกติแม้ยังไม่ได้รัน SQL เพิ่มคอลัมน์)
+    const hadPhotos = !!rows.find(r => r.id === d.id)?.photos?.length
+    if (!ph.photos.length && !hadPhotos) delete payload.photos
+    const claimErr = (msg: string) => /photos/.test(msg) ? photoSaveError(msg, 'migrations/add_claim_photos.sql') : `บันทึกไม่สำเร็จ: ${msg}`
     const name = (d.customer_username || d.original_order_number || '').toString()
     if (modal.mode === 'add') {
       const res = await claimInsert(payload).select().single()
       setSaving(false)
-      if (res.error) { setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
+      if (res.error) { setError(claimErr(res.error.message)); return }
       const saved = res.data as Claim
       setRows(prev => [saved, ...prev])
       recordAction({
@@ -246,7 +258,7 @@ export default function ClaimsWorkspace() {
       const old = rows.find(r => r.id === d.id)
       const res = await claimUpdate(payload).eq('id', d.id).select().single()
       setSaving(false)
-      if (res.error) { setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
+      if (res.error) { setError(claimErr(res.error.message)); return }
       setRows(prev => prev.map(r => r.id === d.id ? res.data as Claim : r))
       const prev = prevOf(old ?? {}, payload)
       recordAction({
@@ -255,6 +267,7 @@ export default function ClaimsWorkspace() {
         redo: async () => { await claimUpdate(payload).eq('id', d.id); await load() },
       })
     }
+    ph.commit()   // บันทึกผ่านแล้วค่อยลบไฟล์ของรูปที่กดเอาออก (กดยกเลิกกลางทางรูปเดิมจะไม่หาย)
     setModal(null)
   }
 
@@ -697,6 +710,9 @@ ${body}
                           : '-'}
                       </div>
                       {r.original_order_number && <div style={{ color: 'var(--ink-4)', fontSize: 11 }}>#{r.original_order_number}</div>}
+                      {r.photos && r.photos.length > 0 && (
+                        <div title={`มีรูปงานเคลม ${r.photos.length} รูป`} style={{ fontSize: 11, color: 'var(--ink-3)' }}>📷 {r.photos.length}</div>
+                      )}
                     </td>
                     <td style={{ padding: '8px 14px' }}>
                       {selectInline(r, 'claim_type', CLAIM_TYPES)}
@@ -964,8 +980,8 @@ ${body}
 
       {/* Add / Edit modal */}
       {modal && (
-        <div onMouseDown={e => { if (e.target === e.currentTarget) setModal(null) }}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 1000, padding: 24, overflowY: 'auto' }}>
+        <div onMouseDown={e => { if (e.target === e.currentTarget) closeModal() }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: 16, zIndex: 1000, padding: 24, overflowY: 'auto' }}>
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: 720, padding: '24px 28px', margin: 'auto' }}>
             <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)', marginBottom: 16 }}>{modal.mode === 'add' ? 'เพิ่มเคลม' : 'แก้ไขเคลม'}</h3>
 
@@ -1016,13 +1032,16 @@ ${body}
               {itemEditor(modal.data.items ?? [], setItems)}
             </div>
 
+            {ph.trigger()}
+
             <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
-              <button onClick={() => setModal(null)} style={{ flex: 1, padding: '11px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ยกเลิก</button>
+              <button onClick={closeModal} style={{ flex: 1, padding: '11px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ยกเลิก</button>
               <button onClick={save} disabled={saving} style={{ flex: 2, padding: '11px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
                 {saving ? 'กำลังบันทึก…' : 'บันทึก'}
               </button>
             </div>
           </div>
+          {ph.open && ph.panel()}
         </div>
       )}
     </div>
