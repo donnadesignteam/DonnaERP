@@ -150,6 +150,9 @@ const COURIERS = [
 const ADMINS = ['กาย', 'แพท', 'หนูนา', 'ยุน', 'ส้ม']
 const TECHS = ['ช่างดอนน่า', 'ช่างพี่ฟอง', 'ช่างเชียงใหม่']
 
+// ไฮไลต์ช่องที่ยังไม่ได้ลงข้อมูล (คอลัมน์แอดมิน/ช่าง) — สีส้มชุดเดียวกับสถานะ "รอดำเนินการ" (#f59e0b ใน PROD_STATUS_COLOR)
+const EMPTY_HL = 'rgba(245,158,11,0.42)'
+
 const TIMES = ['8:00','9:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00']
 
 function calcShipping(deadline: string, courier: string): string {
@@ -3375,7 +3378,8 @@ ${body}
                     )}
                     {showCol('admin') && (
                     // เลือกเองได้เหมือนเดิม + ระบบเปลี่ยนให้เองเมื่อมีแอดมินหลักมาแก้เนื้อออเดอร์ (lib/adminActor.ts)
-                    <td style={{ padding: '8px 14px' }}>
+                    // ยังไม่ได้ลงชื่อ = ไฮไลต์เหลืองให้เห็นว่าตกหล่น (user สั่ง 4 ส.ค. 69)
+                    <td style={{ padding: '8px 14px', background: r.admin_name ? undefined : EMPTY_HL }}>
                       <select value={r.admin_name || ''} onChange={e => updateField(r.id, 'admin_name', e.target.value)}
                         title="เลือกเองได้ · ระบบจะเปลี่ยนให้เองเมื่อมีแอดมินหลักมาแก้เนื้อออเดอร์"
                         style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.admin_name ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 80 }}>
@@ -3385,7 +3389,7 @@ ${body}
                     </td>
                     )}
                     {showCol('tech') && (
-                    <td style={{ padding: '8px 14px' }}>
+                    <td style={{ padding: '8px 14px', background: r.technician ? undefined : EMPTY_HL }}>
                       <select value={r.technician || ''} onChange={e => updateField(r.id, 'technician', e.target.value)}
                         style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.technician ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 100 }}>
                         <option value="">—</option>
