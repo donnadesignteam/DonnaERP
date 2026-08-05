@@ -25,6 +25,7 @@ type Installation = {
   customer_real_name: string
   province: string
   install_zone: string
+  technician_type: string   // ช่างร้าน / ช่างนอก — โซนกทมเติม "ช่างนอก" ให้เอง
   phone: string
   work_details: string
   location_link: string
@@ -50,6 +51,9 @@ const TIMES = ['8:00','9:00','10:00','11:00','12:00','13:00','14:00','15:00','16
 const ENTERED_BY = ['เก๋','หนูนา','สู้','ยุน']
 const WORK_TYPES = ['งานติดตั้ง','งานวัดหน้างาน','งานแก้']
 const ZONES = ['เชียงราย','เชียงใหม่','กทม']
+const TECHS = ['ช่างร้าน','ช่างนอก']
+// โซนที่รู้ชนิดช่างอยู่แล้ว → เติมให้อัตโนมัติ (เชียงราย/เชียงใหม่ เว้นไว้ให้เลือกเอง)
+const TECH_BY_ZONE: Record<string, string> = { 'กทม': 'ช่างนอก' }
 const INST_STATUS = ['วัดหน้างาน','วัดหน้างานแล้ว','ติดตั้ง','ติดตั้งเสร็จ','ติดตั้ง50%','รอแก้']
 
 // สถานะตั้งต้นตามลักษณะงาน (ช่องสถานะถูกเอาออกจากฟอร์ม จึงกำหนดอัตโนมัติ)
@@ -143,7 +147,7 @@ function Calendar({ year, month, installs, onDayClick }: {
 
 const emptyForm = (): Omit<Installation, 'id' | 'created_at' | 'updated_at' | 'serial_no'> => ({
   appointment_datetime: '', work_type: 'งานวัดหน้างาน', platform: '', customer_id: '',
-  customer_real_name: '', province: '', install_zone: '', phone: '', work_details: '', location_link: '',
+  customer_real_name: '', province: '', install_zone: '', technician_type: '', phone: '', work_details: '', location_link: '',
   price: 0, notes: '', payment_status: 'รอมัดจำ', appointment_status: 'นัดหมายแล้ว',
   production_status: 'กำลังผลิต', send_to_technician: 'หน้าร้าน',
   installation_status: 'วัดหน้างาน', entered_by: '', photos: [],
@@ -165,7 +169,8 @@ export default function InstallationsPage() {
   const [apptTime, setApptTime] = useState('9:00')
   const [listFilter, setListFilter] = useState<'all' | string>('all')
   const [zoneFilter, setZoneFilter] = useState<string | null>(null)  // โซนติดตั้ง — ชิปชุดเดียวคุมทั้งปฏิทินและรายการด้านล่าง
-  const [bonusZone, setBonusZone] = useState<string | null>(null) // filter ยอดติดตั้งตามโซนติดตั้ง
+  const [bonusZones, setBonusZones] = useState<string[]>([])      // filter ยอดติดตั้งตามโซน — เลือกพร้อมกันได้หลายโซน ([] = ทุกโซน)
+  const [bonusTech, setBonusTech] = useState<string | null>(null)  // filter ยอดติดตั้งตามชนิดช่าง (null = ทุกช่าง)
   const [search, setSearch] = useState('')
   const [error, setError] = useState('')
   const [pasteText, setPasteText] = useState('')
@@ -242,7 +247,13 @@ export default function InstallationsPage() {
     setModal({ mode: 'add', data: emptyForm() })
   }
 
-  const set = (k: string, v: string | number) => setModal(m => m ? { ...m, data: { ...m.data, [k]: v } } : null)
+  const set = (k: string, v: string | number) => setModal(m => {
+    if (!m) return null
+    // เลือกโซนกทม → เติมช่อง "ช่าง" เป็นช่างนอกให้เลย (ถ้ายังไม่ได้เลือกไว้)
+    const auto = k === 'install_zone' && TECH_BY_ZONE[String(v)] && !m.data.technician_type
+      ? { technician_type: TECH_BY_ZONE[String(v)] } : null
+    return { ...m, data: { ...m.data, [k]: v, ...auto } }
+  })
 
   // รูปหน้างาน — ตรรกะทั้งหมดอยู่ในคอมโพเนนต์กลาง components/InstallPhotos.tsx (ใช้ร่วมกับหมวดออเดอร์)
   const ph = useInstallPhotos()
@@ -434,10 +445,24 @@ export default function InstallationsPage() {
   const updateZone = async (id: string, zone: string) => {
     const now = new Date().toISOString()
     const old = installs.find(i => i.id === id)
-    setInstalls(prev => prev.map(i => i.id === id ? { ...i, install_zone: zone, updated_at: now } : i))
-    const { error: err } = await instUpdate({ install_zone: zone, updated_at: now }).eq('id', id)
+    // เลือกโซนที่รู้ชนิดช่างอยู่แล้ว (กทม = ช่างนอก) → เติมช่องช่างให้เลย ถ้ายังไม่ได้เลือกไว้
+    const autoTech = TECH_BY_ZONE[zone]
+    const patch = autoTech && !old?.technician_type
+      ? { install_zone: zone, technician_type: autoTech, updated_at: now }
+      : { install_zone: zone, updated_at: now }
+    setInstalls(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i))
+    const { error: err } = await instUpdate(patch).eq('id', id)
     if (err) { setError(`อัพเดทโซนไม่สำเร็จ: ${err.message}`); load() }
-    else trackInst(id, { install_zone: zone, updated_at: now }, { install_zone: old?.install_zone ?? null, updated_at: old?.updated_at ?? null }, `แก้โซนติดตั้ง ${old?.customer_real_name || ''}`)
+    else trackInst(id, patch, { install_zone: old?.install_zone ?? null, technician_type: old?.technician_type ?? null, updated_at: old?.updated_at ?? null }, `แก้โซนติดตั้ง ${old?.customer_real_name || ''}`)
+  }
+
+  const updateTech = async (id: string, tech: string) => {
+    const now = new Date().toISOString()
+    const old = installs.find(i => i.id === id)
+    setInstalls(prev => prev.map(i => i.id === id ? { ...i, technician_type: tech, updated_at: now } : i))
+    const { error: err } = await instUpdate({ technician_type: tech, updated_at: now }).eq('id', id)
+    if (err) { setError(`อัพเดทช่างไม่สำเร็จ: ${err.message}`); load() }
+    else trackInst(id, { technician_type: tech, updated_at: now }, { technician_type: old?.technician_type ?? null, updated_at: old?.updated_at ?? null }, `แก้ช่าง ${old?.customer_real_name || ''}`)
   }
 
   const del = async (id: string) => {
@@ -646,7 +671,7 @@ export default function InstallationsPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
-                {['Serial','นัดหมาย','ลูกค้า','รายการ','แพลตฟอร์ม','จังหวัด','โซน','เบอร์','สถานะติดตั้ง','หมายเหตุ','แก้ไขล่าสุด',''].map(h => (
+                {['Serial','นัดหมาย','ลูกค้า','รายการ','แพลตฟอร์ม','จังหวัด','โซน','ช่าง','เบอร์','สถานะติดตั้ง','หมายเหตุ','แก้ไขล่าสุด',''].map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '12px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -734,6 +759,13 @@ export default function InstallationsPage() {
                         style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px', fontSize: 11, color: ins.install_zone ? 'var(--ink)' : 'var(--ink-4)', background: '#fff', outline: 'none', cursor: 'pointer' }}>
                         <option value="">—</option>
                         {ZONES.map(z => <option key={z} value={z}>{z}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ padding: '12px 14px' }}>
+                      <select value={ins.technician_type || ''} onChange={e => updateTech(ins.id, e.target.value)}
+                        style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px', fontSize: 11, color: ins.technician_type ? 'var(--ink)' : 'var(--ink-4)', background: '#fff', outline: 'none', cursor: 'pointer' }}>
+                        <option value="">—</option>
+                        {TECHS.map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
                     </td>
                     <td style={{ padding: '12px 14px', color: 'var(--ink-3)' }}>{ins.phone || '-'}</td>
@@ -1009,7 +1041,8 @@ export default function InstallationsPage() {
         const inMonth = installs.filter(ins => {
           if (!ins.appointment_datetime) return false
           const d = new Date(ins.appointment_datetime)
-          if (bonusZone && ins.install_zone !== bonusZone) return false
+          if (bonusZones.length && !bonusZones.includes(ins.install_zone)) return false
+          if (bonusTech && ins.technician_type !== bonusTech) return false
           return d.getFullYear() === by && d.getMonth() === bm - 1
         })
         const done = inMonth.filter(ins => ins.installation_status === 'ติดตั้งเสร็จ')
@@ -1034,13 +1067,29 @@ export default function InstallationsPage() {
           <div onClick={() => setBonusModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 860, maxHeight: '88vh', overflowY: 'auto' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 10 }}>
-                <h2 style={{ fontSize: 17, fontWeight: 700 }}>ยอดติดตั้ง{bonusZone ? <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--ink-3)' }}> — โซน{bonusZone}</span> : null}</h2>
+                <h2 style={{ fontSize: 17, fontWeight: 700 }}>ยอดติดตั้ง{(bonusZones.length || bonusTech) ? <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--ink-3)' }}> — {[bonusZones.length ? `โซน${bonusZones.join(' + ')}` : '', bonusTech || ''].filter(Boolean).join(' · ')}</span> : null}</h2>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                  {/* เลือกโซน — ยอด/โบนัสจะคิดเฉพาะงานในโซนที่เลือก */}
+                  {/* เลือกโซน — กดได้หลายโซนพร้อมกัน (กดซ้ำเพื่อเอาออก) · ไม่เลือกเลย = ทุกโซน */}
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {([['ทุกโซน', null], ...ZONES.map(z => [z, z] as [string, string])] as [string, string | null][]).map(([label, val]) => (
-                      <button key={label} onClick={() => setBonusZone(val)}
-                        style={{ padding: '5px 12px', borderRadius: 980, border: bonusZone === val ? 'none' : '1px solid var(--border)', background: bonusZone === val ? 'var(--blue)' : '#fff', color: bonusZone === val ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: bonusZone === val ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    <button onClick={() => setBonusZones([])}
+                      style={{ padding: '5px 12px', borderRadius: 980, border: bonusZones.length === 0 ? 'none' : '1px solid var(--border)', background: bonusZones.length === 0 ? 'var(--blue)' : '#fff', color: bonusZones.length === 0 ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: bonusZones.length === 0 ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      ทุกโซน
+                    </button>
+                    {ZONES.map(z => {
+                      const on = bonusZones.includes(z)
+                      return (
+                        <button key={z} onClick={() => setBonusZones(prev => on ? prev.filter(v => v !== z) : [...prev, z])}
+                          style={{ padding: '5px 12px', borderRadius: 980, border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--blue)' : '#fff', color: on ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: on ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                          {on ? '✓ ' : ''}{z}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {/* เลือกชนิดช่าง */}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {([['ทุกช่าง', null], ...TECHS.map(t => [t, t] as [string, string])] as [string, string | null][]).map(([label, val]) => (
+                      <button key={label} onClick={() => setBonusTech(val)}
+                        style={{ padding: '5px 12px', borderRadius: 980, border: bonusTech === val ? 'none' : '1px solid var(--border)', background: bonusTech === val ? '#ff9f0a' : '#fff', color: bonusTech === val ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: bonusTech === val ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                         {label}
                       </button>
                     ))}
@@ -1075,12 +1124,12 @@ export default function InstallationsPage() {
                 </div>
               )}
               {done.length === 0 ? (
-                <p style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 24, fontSize: 13 }}>ยังไม่มีงานติดตั้งเสร็จในเดือนนี้{bonusZone ? ` (โซน${bonusZone})` : ''}</p>
+                <p style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 24, fontSize: 13 }}>ยังไม่มีงานติดตั้งเสร็จในเดือนนี้{bonusZones.length ? ` (โซน${bonusZones.join(' + ')})` : ''}{bonusTech ? ` (${bonusTech})` : ''}</p>
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
-                      {['Serial', 'ลูกค้า', 'วันติดตั้ง', 'แพลตฟอร์ม', 'สถานะชำระ', 'ราคา'].map(h => (
+                      {['Serial', 'ลูกค้า', 'วันติดตั้ง', 'แพลตฟอร์ม', 'โซน', 'ช่าง', 'สถานะชำระ', 'ราคา'].map(h => (
                         <th key={h} style={{ textAlign: h === 'ราคา' ? 'right' : 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
                       ))}
                     </tr>
@@ -1098,6 +1147,8 @@ export default function InstallationsPage() {
                           {ins.appointment_datetime ? new Date(ins.appointment_datetime).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '-'}
                         </td>
                         <td style={{ padding: '10px 14px', color: 'var(--ink-3)' }}>{ins.platform || '-'}</td>
+                        <td style={{ padding: '10px 14px', color: 'var(--ink-3)' }}>{ins.install_zone || '-'}</td>
+                        <td style={{ padding: '10px 14px', color: 'var(--ink-3)' }}>{ins.technician_type || '-'}</td>
                         <td style={{ padding: '10px 14px', color: ins.payment_status === 'ชำระครบ' ? '#34c759' : 'var(--ink-3)', fontWeight: ins.payment_status === 'ชำระครบ' ? 600 : 400 }}>{ins.payment_status || '-'}</td>
                         <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: ins.price > 0 ? 'var(--ink)' : '#b45309', whiteSpace: 'nowrap' }}>
                           {ins.price > 0 ? fmtB(ins.price) : 'ยังไม่ลงราคา'}
@@ -1105,7 +1156,7 @@ export default function InstallationsPage() {
                       </tr>
                     ))}
                     <tr>
-                      <td colSpan={5} style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700 }}>รวม</td>
+                      <td colSpan={7} style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700 }}>รวม</td>
                       <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 800, color: 'var(--blue)', whiteSpace: 'nowrap' }}>{fmtB(total)}</td>
                     </tr>
                   </tbody>
@@ -1169,6 +1220,7 @@ export default function InstallationsPage() {
               {inp('ชื่อจริงลูกค้า', 'customer_real_name')}
               {inp('จังหวัด', 'province')}
               {sel('โซนติดตั้ง', 'install_zone', ZONES)}
+              {sel('ช่าง', 'technician_type', TECHS)}
               {inp('เบอร์โทร', 'phone')}
               {sel('การนัดหมาย', 'appointment_status', ['รอนัดหมาย','นัดหมายแล้ว','จัดส่งตามที่อยู่'])}
             </div>

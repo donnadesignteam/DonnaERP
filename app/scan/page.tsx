@@ -3,8 +3,8 @@
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { EMPLOYEES, STAGES, stageByKey } from '@/lib/staff'
-import { fetchEmployeeOptions } from '@/lib/staffDb'
+import { STAGES, stageByKey } from '@/lib/staff'
+import { readStaffSession, type StaffSession } from '@/lib/staffSession'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { uploadPackingFile, deletePackingFile, compressImage } from '@/lib/packingPhotos'
 import { cutMeters, round2 } from '@/lib/fabricUsage'
@@ -25,6 +25,9 @@ type Phase = 'scanning' | 'working' | 'done' | 'already' | 'noorder' | 'error' |
 // กรอบสแกนจัตุรัสอันเดียว — ใช้ทั้ง QR ใบออเดอร์และ QR เลขพัสดุบนใบปะหน้า
 // (เดิมเลขพัสดุอ่านจากบาร์โค้ด 1D กรอบแนวนอน ซึ่งจับยากมากบนมือถือ user เลยสั่งให้เปลี่ยนมาสแกน QR แทน)
 const QR_BOX = { width: 250, height: 250 }
+// กรอบแนวนอนสำหรับบาร์โค้ด 1D (เลขพัสดุบางเจ้ายังเป็นบาร์โค้ด ไม่มี QR)
+const BAR_BOX = { width: 280, height: 140 }
+const SYM_KEY = 'donna-scan-symbol'   // จำชนิดโค้ดที่เลือกไว้ต่อเครื่อง
 
 // เลขพัสดุ: ตัวอักษร/ตัวเลขล้วน ไม่ใช่ URL/QR ใบออเดอร์
 const isTrackingNo = (s: string) => /^[A-Z0-9-]{8,25}$/i.test(s) && !/^HTTP/i.test(s) && !s.includes('=')
@@ -102,12 +105,9 @@ function ScanContent() {
   const [photos, setPhotos] = useState<string[]>([])       // รูปที่อัพแล้วของออเดอร์ที่เพิ่งสแกน (ลบได้)
   const [delBusy, setDelBusy] = useState<string | null>(null)
 
-  // login form
-  const [q, setQ] = useState('')
-  const [pickCode, setPickCode] = useState('')
+  // login form (เหลือแค่เลือกแผนก — ชื่อยึดตามคนที่ล็อกอิน)
+  const [staff, setStaff] = useState<StaffSession | null>(null)
   const [pickStage, setPickStage] = useState('')
-  // รายชื่อพนักงานดึงจากตาราง staff (active) — อัปเดตเองเมื่อมีคนเข้า/ออก, fallback รายชื่อในโค้ด
-  const [employees, setEmployees] = useState<typeof EMPLOYEES>(EMPLOYEES)
   const [undoing, setUndoing] = useState(false)
 
   // ช่วยกันทำขั้นเดียวกันหลายคน — สแกนซ้ำแล้วถามว่าจะลงชื่อเพิ่มไหม (sql/scan_helpers.sql)
@@ -129,9 +129,23 @@ function ScanContent() {
   const [shipTyped, setShipTyped] = useState('')   // ช่องพิมพ์เลขพัสดุเอง (ใบที่ไม่มี QR)
   const [shipSaving, setShipSaving] = useState(false)
   const [shipToast, setShipToast] = useState('')
+  // ชนิดโค้ดที่กล้องอ่านตอนสแกนเลขพัสดุ: QR (ค่าเริ่มต้น) หรือบาร์โค้ด 1D — จำค่าไว้ต่อเครื่อง
+  const [symbol, setSymbol] = useState<'qr' | 'barcode'>('qr')
+  const symbolRef = useRef<'qr' | 'barcode'>('qr')
 
-  useEffect(() => { setTech(loadTech()); setReady(true) }, [])
-  useEffect(() => { fetchEmployeeOptions().then(list => { if (list.length) setEmployees(list) }).catch(() => {}) }, [])
+  // ชื่อผู้สแกน = คนที่ล็อกอินอยู่ (คุกกี้ donna_staff) ไม่ให้เลือกชื่อเองแล้ว — เครื่องนี้จำแค่ "แผนก"
+  // ล็อกอินคนใหม่บนมือถือเครื่องเดิม → ชื่อเปลี่ยนตามทันที ไม่ต้องไปแก้ที่หน้าตั้งค่า
+  useEffect(() => {
+    try {
+      const sym = localStorage.getItem(SYM_KEY)
+      if (sym === 'barcode' || sym === 'qr') { symbolRef.current = sym; setSymbol(sym) }
+    } catch {}
+    const s = readStaffSession()
+    setStaff(s)
+    const saved = loadTech()
+    setTech(s && saved?.stageKey ? { code: s.code, name: `${s.nickname || s.code} (${s.code})`, stageKey: saved.stageKey } : null)
+    setReady(true)
+  }, [])
 
   // พื้นหลังหน้า /scan เป็นสีเข้ม (กัน iOS bounce โชว์ขอบขาว) + กัน overscroll — คืนค่าเดิมตอนออกจากหน้า
   useEffect(() => {
@@ -213,13 +227,17 @@ function ScanContent() {
     startedRef.current = true
     setCamState('starting'); setCamErr('')
     try {
-      const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import('html5-qrcode')
-      // อ่านเฉพาะ QR — ไม่ต้องเสียเวลาไล่ถอดบาร์โค้ด 1D ทุกเฟรม จับ QR ได้ไวขึ้น
-      const html5 = new Html5Qrcode('qr-reader', { verbose: false, formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE] } as any)
+      const { Html5Qrcode, Html5QrcodeSupportedFormats: F } = await import('html5-qrcode')
+      // อ่านทีละชนิด — ไล่ถอดทุกฟอร์แมตทุกเฟรมจะช้า · โหมดบาร์โค้ดยังอ่าน QR ใบออเดอร์ได้ด้วย
+      const formats = symbolRef.current === 'barcode'
+        ? [F.QR_CODE, F.CODE_128, F.CODE_39, F.CODE_93, F.ITF, F.EAN_13, F.EAN_8, F.UPC_A, F.CODABAR]
+        : [F.QR_CODE]
+      const html5 = new Html5Qrcode('qr-reader', { verbose: false, formatsToSupport: formats } as any)
       scannerRef.current = html5
       await html5.start(
         { facingMode: 'environment' },
-        { fps: 10, qrbox: QR_BOX },
+        // บาร์โค้ด 1D = กรอบแนวนอน (จ่อง่ายกว่ากรอบจัตุรัส) · QR = กรอบจัตุรัส
+        { fps: 10, qrbox: symbolRef.current === 'barcode' ? BAR_BOX : QR_BOX },
         (decoded: string) => decodeRef.current(decoded),
         () => {} // ละเว้น error รายเฟรม
       )
@@ -228,6 +246,20 @@ function ScanContent() {
       startedRef.current = false
       setCamState('error'); setCamErr(e?.message || String(e))
     }
+  }
+
+  // สลับ QR ↔ บาร์โค้ด ระหว่างสแกนเลขพัสดุ — ต้องเปิดกล้องใหม่เพราะฟอร์แมตตั้งตอนสร้างตัวอ่าน
+  async function switchSymbol(next: 'qr' | 'barcode') {
+    if (next === symbolRef.current) return
+    symbolRef.current = next
+    setSymbol(next)
+    try { localStorage.setItem(SYM_KEY, next) } catch {}
+    const s = scannerRef.current
+    if (s) { try { await s.stop() } catch {} ; try { s.clear() } catch {} }
+    scannerRef.current = null
+    startedRef.current = false
+    busyRef.current = false
+    await startCamera()
   }
 
   // เพิ่มเลขพัสดุ 1 เลข (มาจาก QR ที่สแกน หรือพิมพ์เองในช่องด้านล่าง) — true = เพิ่มสำเร็จ
@@ -557,55 +589,41 @@ function ScanContent() {
   }
 
   function saveLogin() {
-    const emp = employees.find(e => e.code === pickCode)
-    if (!emp || !pickStage) return
-    localStorage.setItem(LS_KEY, JSON.stringify({ code: emp.code, name: `${emp.nickname} (${emp.code})`, stageKey: pickStage }))
+    if (!staff || !pickStage) return
+    localStorage.setItem(LS_KEY, JSON.stringify({ code: staff.code, name: `${staff.nickname || staff.code} (${staff.code})`, stageKey: pickStage }))
     setTech(loadTech())
   }
 
-  // กด "เปลี่ยน" — จำชื่อพนักงานที่ตั้งไว้ ให้เลือกแผนกใหม่ได้เลย (ไม่ต้องกรอกชื่อซ้ำ)
-  // อยากเปลี่ยนชื่อด้วยก็กด × ที่ชิปชื่อในหน้าตั้งค่าได้
+  // กด "เปลี่ยน" — กลับไปหน้าเลือกแผนก (ชื่อเปลี่ยนไม่ได้แล้ว ยึดตามคนที่ล็อกอิน)
   function logout() {
     const s = scannerRef.current
     if (s) { try { s.stop().catch(() => {}) } catch {} }
-    const cur = loadTech()
-    setTech(null); startedRef.current = false; setCamState('idle'); setQ('')
-    setPickCode(cur?.code ?? ''); setPickStage('')
+    setTech(null); startedRef.current = false; setCamState('idle')
+    setPickStage('')
   }
 
   if (!ready) return <div style={centerWrap}><div style={{ opacity: 0.6 }}>กำลังโหลด…</div></div>
 
-  // ---------- ตั้งค่าครั้งแรก ----------
+  // ---------- ตั้งค่าครั้งแรก: เหลือแค่เลือกแผนก ----------
   if (!tech) {
-    const matches = q.trim() ? employees.filter(e => e.nickname.includes(q) || e.realName.includes(q) || e.code.toLowerCase().includes(q.toLowerCase())).slice(0, 8) : []
-    const picked = employees.find(e => e.code === pickCode)
+    // ยังไม่ได้ล็อกอินด้วยรหัสพนักงาน (เช่นเข้าด้วยรหัสร้าน) → สแกนไม่ได้ เพราะไม่รู้ว่าใครสแกน
+    if (!staff) return (
+      <div style={centerWrap}>
+        <div style={card}>
+          <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>เข้าระบบด้วยรหัสพนักงานก่อน</h1>
+          <p style={{ fontSize: 14, color: '#666', marginBottom: 20 }}>
+            ชื่อผู้สแกนยึดตามคนที่ล็อกอิน ไม่ต้องเลือกชื่อเองแล้ว —
+            ตอนนี้เครื่องนี้เข้าด้วยรหัสร้าน กรุณาออกแล้วเข้าใหม่ด้วย <b>รหัสพนักงาน + วันเดือนที่เริ่มงาน</b> ของตัวเอง
+          </p>
+          <a href="/login?from=%2Fscan" style={{ display: 'block', padding: 14, borderRadius: 12, background: '#2563eb', color: '#fff', fontSize: 16, fontWeight: 700, textDecoration: 'none' }}>ไปหน้าเข้าสู่ระบบ</a>
+        </div>
+      </div>
+    )
     return (
       <div style={centerWrap}>
         <div style={card}>
-          <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>{picked ? 'เปลี่ยนแผนก' : 'ตั้งค่าเครื่องสแกน'}</h1>
-          <p style={{ fontSize: 14, color: '#666', marginBottom: 20 }}>{picked ? 'เลือกแผนกใหม่ได้เลย — อยากเปลี่ยนชื่อกด × ที่ชื่อ' : 'ทำครั้งเดียวต่อมือถือ — เลือกชื่อและแผนกของคุณ'}</p>
-          <label style={{ display: 'block', fontSize: 13, fontWeight: 600, textAlign: 'left', marginBottom: 6 }}>1. ชื่อพนักงาน</label>
-          {picked ? (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #2563eb', background: '#eff6ff', borderRadius: 10, padding: '10px 14px', marginBottom: 18 }}>
-              <span style={{ fontWeight: 700 }}>{picked.nickname} · {picked.realName} <span style={{ color: '#2563eb' }}>({picked.code})</span></span>
-              <button onClick={() => { setPickCode(''); setQ('') }} style={{ border: 'none', background: 'transparent', color: '#666', cursor: 'pointer', fontSize: 18 }}>×</button>
-            </div>
-          ) : (
-            <div style={{ position: 'relative', marginBottom: 18 }}>
-              <input value={q} onChange={e => setQ(e.target.value)} placeholder="พิมพ์ชื่อเล่น / ชื่อจริง / รหัส"
-                style={{ width: '100%', border: '1px solid #ccc', borderRadius: 10, padding: '11px 14px', fontSize: 15, outline: 'none', boxSizing: 'border-box' }} />
-              {matches.length > 0 && (
-                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #ddd', borderRadius: 10, marginTop: 4, boxShadow: '0 6px 20px rgba(0,0,0,0.12)', zIndex: 10, overflow: 'hidden', textAlign: 'left' }}>
-                  {matches.map(e => (
-                    <div key={e.code} onClick={() => { setPickCode(e.code); setQ('') }} style={{ padding: '10px 14px', cursor: 'pointer', fontSize: 14, borderBottom: '1px solid #f0f0f0' }}>
-                      <b>{e.nickname}</b> · {e.realName} <span style={{ color: '#2563eb' }}>{e.code}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          <label style={{ display: 'block', fontSize: 13, fontWeight: 600, textAlign: 'left', marginBottom: 6 }}>2. แผนกของคุณ</label>
+          <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>เลือกแผนก</h1>
+          <p style={{ fontSize: 14, color: '#666', marginBottom: 18 }}>สแกนในชื่อ <b style={{ color: '#1a1a1a' }}>{staff.nickname || staff.code}</b> <span style={{ color: '#2563eb' }}>({staff.code})</span></p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 22 }}>
             {[...STAGES, ...SPECIAL_STAGES].map(s => (
               <button key={s.key} onClick={() => setPickStage(s.key)}
@@ -614,8 +632,8 @@ function ScanContent() {
               </button>
             ))}
           </div>
-          <button onClick={saveLogin} disabled={!pickCode || !pickStage}
-            style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: (!pickCode || !pickStage) ? '#c7c7c7' : '#2563eb', color: '#fff', fontSize: 16, fontWeight: 700, cursor: (!pickCode || !pickStage) ? 'not-allowed' : 'pointer' }}>บันทึก</button>
+          <button onClick={saveLogin} disabled={!pickStage}
+            style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: !pickStage ? '#c7c7c7' : '#2563eb', color: '#fff', fontSize: 16, fontWeight: 700, cursor: !pickStage ? 'not-allowed' : 'pointer' }}>บันทึก</button>
         </div>
       </div>
     )
@@ -692,11 +710,22 @@ function ScanContent() {
         {/* โหมดสแกนบาร์โค้ดเลขพัสดุ — กล้องยังเปิดอยู่ แผงคุมอยู่ด้านล่าง */}
         {phase === 'barcode' && (
           <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(11,18,32,0.95)', borderTop: '1px solid rgba(255,255,255,0.15)', padding: '14px 16px 18px', textAlign: 'left' }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: '#7dd3fc', marginBottom: 2 }}>
-              📦 สแกน QR เลขพัสดุ
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: '#7dd3fc' }}>
+                📦 สแกน{symbol === 'barcode' ? 'บาร์โค้ด' : ' QR'}เลขพัสดุ
+              </div>
+              {/* ใบปะหน้าบางเจ้าเป็นบาร์โค้ด บางเจ้าเป็น QR — เลือกได้เอง (จำค่าไว้ให้) */}
+              <div style={{ display: 'flex', gap: 4, background: 'rgba(255,255,255,0.10)', borderRadius: 980, padding: 3 }}>
+                {([['QR', 'qr'], ['บาร์โค้ด', 'barcode']] as [string, 'qr' | 'barcode'][]).map(([label, val]) => (
+                  <button key={val} onClick={() => switchSymbol(val)}
+                    style={{ border: 'none', borderRadius: 980, padding: '4px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: symbol === val ? '#2563eb' : 'transparent', color: symbol === val ? '#fff' : '#cbd5e1' }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
             <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 10 }}>
-              ออเดอร์ <b style={{ color: '#fff' }}>{shipRef.current?.orderNumber || order?.customer_name || ''}</b> — จ่อ QR บนใบปะหน้าทีละกล่อง มีหลายกล่องสแกนต่อได้เลย
+              ออเดอร์ <b style={{ color: '#fff' }}>{shipRef.current?.orderNumber || order?.customer_name || ''}</b> — จ่อ{symbol === 'barcode' ? 'บาร์โค้ด' : ' QR'}บนใบปะหน้าทีละกล่อง มีหลายกล่องสแกนต่อได้เลย
             </div>
             {shipNos.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
