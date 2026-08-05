@@ -395,6 +395,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   // จัดส่งแล้ว + ติดตามพัสดุ — manual = ผู้ใช้เลือกเจ้าเองจาก dropdown แล้ว ไม่ต้องเดาทับ
   const [shipModal, setShipModal] = useState<{ id: string; parcels: { no: string; carrier: string; manual: boolean }[] } | null>(null)
   const [shipSaving, setShipSaving] = useState(false)
+  const [editShipped, setEditShipped] = useState<string | null>(null)  // "<entry id>|<done_at|shipped_at>" ที่กำลังแก้วัน-เวลา
   const [trackModal, setTrackModal] = useState<string | null>(null)   // entry id ที่เปิดดูสถานะพัสดุ
   const [trackChecking, setTrackChecking] = useState<string | null>(null)  // entry id ที่กำลังเช็ค — แยกต่อออเดอร์ กันเช็คตัวหนึ่งค้างแล้วล็อกทั้งหน้า
   const [trackError, setTrackError] = useState('')
@@ -935,6 +936,50 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       window.scrollTo(window.scrollX, sy)
     }
   }
+
+  // แก้วัน-เวลาย้อนหลังใต้ช่องติ๊ก "งานเสร็จ" (done_at) และ "จัดส่งแล้ว" (shipped_at)
+  // — เผื่อติ๊กช้ากว่าที่ทำจริง กดที่ตัวเลขแล้วเลือกใหม่ได้
+  const toLocalInput = (iso: string) => {
+    const d = new Date(iso), p = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+  }
+  const saveStampAt = async (id: string, field: 'done_at' | 'shipped_at', local: string) => {
+    setEditShipped(null)
+    const row = rows.find(r => r.id === id)
+    if (!row || !local) return
+    const iso = new Date(local).toISOString()
+    if (!iso || iso === row[field]) return
+    const patch = { [field]: iso, updated_at: new Date().toISOString() }
+    const { error: err } = await oeUpdate(patch).eq('id', id)
+    if (err) { alert('บันทึกวัน-เวลาไม่สำเร็จ: ' + err.message); return }
+    setRows(prev => prev.map(r => r.id === id ? { ...r, ...patch } as Entry : r))
+    trackOrderField(id, patch, { [field]: row[field], updated_at: row.updated_at },
+      `แก้${field === 'done_at' ? 'วันงานเสร็จ' : 'วันจัดส่ง'} ${row.order_number || row.customer_name || ''}`)
+  }
+  // วัน-เวลาใต้ช่องติ๊ก (ใช้ร่วมกันทั้ง 3 ตาราง ทั้งงานเสร็จและจัดส่ง) — กดที่ตัวเลขเพื่อแก้
+  const timeStamp = (r: Entry, field: 'done_at' | 'shipped_at') => {
+    const iso = r[field]
+    const shown = field === 'done_at' ? !!r.is_urgent : r.order_status === 'จัดส่งแล้ว'
+    if (!shown || !iso) return null
+    const key = `${r.id}|${field}`
+    if (editShipped === key) return (
+      <input type="datetime-local" autoFocus defaultValue={toLocalInput(iso)}
+        onBlur={e => saveStampAt(r.id, field, e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+          if (e.key === 'Escape') setEditShipped(null)
+        }}
+        style={{ fontSize: 10, padding: '1px 4px', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--ink)', background: 'var(--bg)' }} />
+    )
+    return (
+      <span onClick={() => setEditShipped(key)} title={`กดเพื่อแก้วัน-เวลา${field === 'done_at' ? 'งานเสร็จ' : 'จัดส่ง'}`}
+        style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3, cursor: 'pointer', textDecoration: 'underline dotted' }}>
+        {new Date(iso).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
+        {new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+      </span>
+    )
+  }
+  const shippedStamp = (r: Entry) => timeStamp(r, 'shipped_at')
 
   // ===== ติดตามพัสดุ (Donna Track extension) =====
   // จับมือกับ extension: extension ประกาศ READY ตอนโหลดหน้า / ตอบ PING
@@ -2659,12 +2704,7 @@ ${body}
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                         <input type="checkbox" checked={!!r.is_urgent} onChange={e => toggleDone(r.id, e.target.checked)}
                           style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
-                        {r.is_urgent && r.done_at && (
-                          <span style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3 }}>
-                            {new Date(r.done_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
-                            {new Date(r.done_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        )}
+                        {timeStamp(r, 'done_at')}
                       </div>
                     </td>
                     )}
@@ -2673,12 +2713,7 @@ ${body}
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                           <input type="checkbox" checked={r.order_status === 'จัดส่งแล้ว'} onChange={e => toggleShipped(r.id, e.target.checked)}
                             style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
-                          {r.order_status === 'จัดส่งแล้ว' && r.shipped_at && (
-                            <span style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3 }}>
-                              {new Date(r.shipped_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
-                              {new Date(r.shipped_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                          )}
+                          {shippedStamp(r)}
                           {Array.isArray(r.shipments) && r.shipments.length > 0 && (
                             <button onClick={() => { setTrackModal(r.id); setTrackError('') }} title="ดูสถานะพัสดุ"
                               style={{ border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 6, padding: '1px 6px', fontSize: 10, cursor: 'pointer', color: 'var(--ink-2)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -2981,12 +3016,7 @@ ${body}
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                         <input type="checkbox" checked={!!r.is_urgent} onChange={e => toggleDone(r.id, e.target.checked)}
                           style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
-                        {r.is_urgent && r.done_at && (
-                          <span style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3 }}>
-                            {new Date(r.done_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
-                            {new Date(r.done_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        )}
+                        {timeStamp(r, 'done_at')}
                       </div>
                     </td>
                     )}
@@ -2998,12 +3028,7 @@ ${body}
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                           <input type="checkbox" checked={r.order_status === 'จัดส่งแล้ว'} onChange={e => toggleShipped(r.id, e.target.checked)}
                             style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
-                          {r.order_status === 'จัดส่งแล้ว' && r.shipped_at && (
-                            <span style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3 }}>
-                              {new Date(r.shipped_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
-                              {new Date(r.shipped_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                          )}
+                          {shippedStamp(r)}
                           {Array.isArray(r.shipments) && r.shipments.length > 0 && (
                             <button onClick={() => { setTrackModal(r.id); setTrackError('') }} title="ดูสถานะพัสดุ"
                               style={{ border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 6, padding: '1px 6px', fontSize: 10, cursor: 'pointer', color: 'var(--ink-2)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -3411,12 +3436,7 @@ ${body}
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                         <input type="checkbox" checked={!!r.is_urgent} onChange={e => toggleDone(r.id, e.target.checked)}
                           style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
-                        {r.is_urgent && r.done_at && (
-                          <span style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3 }}>
-                            {new Date(r.done_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
-                            {new Date(r.done_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        )}
+                        {timeStamp(r, 'done_at')}
                       </div>
                     </td>
                     )}
@@ -3425,12 +3445,7 @@ ${body}
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                         <input type="checkbox" checked={r.order_status === 'จัดส่งแล้ว'} onChange={e => toggleShipped(r.id, e.target.checked)}
                           style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
-                        {r.order_status === 'จัดส่งแล้ว' && r.shipped_at && (
-                          <span style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3 }}>
-                            {new Date(r.shipped_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
-                            {new Date(r.shipped_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        )}
+                        {shippedStamp(r)}
                         {Array.isArray(r.shipments) && r.shipments.length > 0 && (
                           <button onClick={() => { setTrackModal(r.id); setTrackError('') }} title="ดูสถานะพัสดุ"
                             style={{ border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 6, padding: '1px 6px', fontSize: 10, cursor: 'pointer', color: 'var(--ink-2)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
