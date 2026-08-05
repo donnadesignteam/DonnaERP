@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
-import { itemBlockLines, heightText, formatItemLines } from '@/lib/itemFormat'
+import { itemBlockLines, heightText, formatItemLines, railKind } from '@/lib/itemFormat'
 import { railLink } from '@/lib/rail'
 import { OUTSIDE_PLATFORMS, PROD_STATUSES, INSTALL_STATUSES, PROD_STATUS_COLOR, matchQuickTab, effectiveDueDate, type QuickTab } from '@/lib/orderTabs'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
@@ -763,15 +763,17 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const railItemsOf = (r: Entry) => (Array.isArray(r.items) ? r.items : []).filter(it => typeof it.type === 'string' && it.type.startsWith('ราง'))
   const hasRail = (r: Entry) => railItemsOf(r).length > 0
   const openRailCalc = (r: Entry) => {
-    const typeMap: Record<string, string> = { 'รางม่านจีบ': 'รางจีบ', 'รางม่านลอนเทป': 'รางลอนเทป', 'รางม่านตาไก่': 'รางตาไก่' }
     const courier = (r.courier || '').toLowerCase()
     const carrier = r.is_installation ? 'ติดตั้ง'
       : /spx|shopee/.test(courier) ? 'Spx'
       : /flash/.test(courier) ? 'Flash'
       : /j&t|jt/.test(courier) ? 'J&T'
       : 'อื่นๆ'
+    // ชนิดรางดูจากคำในชื่อ (railKind) — ชื่อที่อ่านไม่ออกให้เตือนก่อน ไม่เดาเป็นรางจีบเงียบๆ
+    const unknown = railItemsOf(r).filter(it => !railKind(it.type)).map(it => it.type)
+    if (unknown.length && !confirm(`อ่านชนิดรางไม่ออก: ${unknown.join(', ')}\nจะคิดเป็น "รางจีบ" ให้ — ไปต่อไหม?`)) return
     const items = railItemsOf(r).map(it => ({
-      type: typeMap[it.type] || 'รางจีบ',
+      type: railKind(it.type) || 'รางจีบ',
       size: typeof it.width === 'string' && it.width.includes('+') ? it.width.trim() : (Number(it.width) || 0),
       qty: Number(it.quantity) || 1,
       layers: Number(it.floors) === 2 ? 2 : 1,

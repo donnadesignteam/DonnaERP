@@ -24,6 +24,46 @@ export type RawItem = {
   outsource?: string      // สั่งนอกของรายการนี้ — ตอนบันทึกจะรวมไปลงคอลัมน์สั่งนอกของออเดอร์
 }
 
+// ===== คำมาตรฐานของชื่อชนิด (type) =====
+// AI แปลงข้อความเขียนชื่อชนิดได้หลายแบบ (รางตาไก่ / รางม่านตาไก่ / รางม่านตาไก่ 2 ชั้น)
+// ทำให้ระบบที่เทียบชื่อแบบเป๊ะ (เช่น ปุ่มคำนวณอุปกรณ์ราง) หลุดไปใช้ค่า fallback ผิดชนิด
+// → กวาดให้เหลือคำเดียวกันเสมอ ตั้งแต่ตอนแปลง โดยดูจาก "คำในชื่อ" ไม่ใช่ทั้งสตริง
+// ชนิดที่อ่านแบบม่านไม่ออก (ผ้าม่านหน้าต่าง, ม่านพับ, มู่ลี่ไม้) ไม่แตะ — เก็บชื่อต้นฉบับตามเดิม
+
+// [คำที่ต้องเจอในชื่อ, ชื่อแบบม่าน] เรียงจากเฉพาะเจาะจงไปกว้าง (ลอนเทปต้องมาก่อนลอนตะขอ/จีบ)
+const STYLE_WORDS: [RegExp, string][] = [
+  [/ตาไก่/, 'ตาไก่'],
+  [/ซ่อนหู/, 'ซ่อนหู'],
+  [/คอกระเช้า/, 'คอกระเช้า'],
+  [/ลอนเทป/, 'ลอนเทป'],
+  [/ลอน.*ตะขอ|ลอนตะขอ/, 'ลอนตะขอ'],
+  [/จีบ/, 'จีบ'],
+  [/สอด/, 'สอด'],
+]
+// ชนิดที่ไม่ได้แยกตามแบบหัวม่าน — ห้ามแตะชื่อ (เช่น "ม่านพับมินิมอล" ห้ามกลายเป็น "ผ้าม่านพับ")
+const KEEP_AS_IS = /ม่านพับ|ม่านม้วน|มู่ลี่|มุ้ง|ตัวอย่าง/
+
+export function normalizeItemType(type: string): string {
+  const t = String(type ?? '').replace(/\s+/g, ' ').trim()
+  if (!t || KEEP_AS_IS.test(t)) return t
+  const style = STYLE_WORDS.find(([re]) => re.test(t))?.[1]
+  if (!style) return t
+  if (t.startsWith('ราง')) return 'รางม่าน' + style
+  // ผ้า/ม่าน = ตัวผ้าม่าน · ผ้าโปร่งใช้คำนำหน้า "ผ้าโปร่ง" (ผ้าโปร่งตาไก่)
+  if (/^(ผ้า|ม่าน)/.test(t)) return (t.includes('โปร่ง') ? 'ผ้าโปร่ง' : 'ผ้าม่าน') + style
+  return t   // อุปกรณ์อื่น (หัวราง ขาราง ตะขอ ลูกล้อ) ไม่แตะ
+}
+
+// ชนิดรางสำหรับเว็บคำนวณอุปกรณ์ราง (donna-rail) — ดูจากคำในชื่อ ไม่เทียบทั้งสตริง
+export function railKind(type: string): 'รางจีบ' | 'รางลอนเทป' | 'รางตาไก่' | null {
+  const t = String(type ?? '')
+  if (!t.startsWith('ราง')) return null
+  if (t.includes('ตาไก่')) return 'รางตาไก่'
+  if (t.includes('ลอนเทป')) return 'รางลอนเทป'
+  if (t.includes('จีบ')) return 'รางจีบ'
+  return null   // อ่านไม่ออก — ให้ผู้เรียกตัดสินใจเอง ห้ามเดาเป็นรางจีบเงียบๆ
+}
+
 // เติมฟิลด์ที่ AI ตัดทิ้งตอนค่าว่างกลับให้ครบ (ประหยัด output token แต่ผลลัพธ์เหมือนเดิม)
 // เช็ก == null เท่านั้น: ถ้า AI ยังส่ง "" มาก็ไม่ทับ → ได้ค่าเดียวกันไม่ว่า AI จะตัดหรือส่งว่าง
 // รวมฟิลด์หลัก (type/width/height/quantity/unit) ด้วย — AI ตัดทิ้งได้จริงถ้าต้นฉบับไม่ระบุ
@@ -35,6 +75,10 @@ export function fillItemDefaults(it: RawItem): RawItem {
   const out: RawItem = { ...it }
   if (out.floors == null) out.floors = null
   for (const k of ITEM_EMPTY_FIELDS) if (out[k] == null) out[k] = ''
+  // จำนวนชั้นที่ AI ติดมาในชื่อ ("รางม่านตาไก่ 2 ชั้น") → ย้ายลง floors ก่อนกวาดชื่อ ไม่ให้หาย
+  const floorsInName = String(out.type ?? '').match(/(\d+)\s*ชั้น/)
+  if (floorsInName && !out.floors) out.floors = Number(floorsInName[1])
+  out.type = normalizeItemType(String(out.type ?? ''))
   return out
 }
 
