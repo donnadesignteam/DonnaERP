@@ -617,6 +617,7 @@ function ScanContent() {
           </p>
           <a href="/login?from=%2Fscan" style={{ display: 'block', padding: 14, borderRadius: 12, background: '#2563eb', color: '#fff', fontSize: 16, fontWeight: 700, textDecoration: 'none' }}>ไปหน้าเข้าสู่ระบบ</a>
         </div>
+        <HubButton dark />
       </div>
     )
     return (
@@ -635,6 +636,7 @@ function ScanContent() {
           <button onClick={saveLogin} disabled={!pickStage}
             style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: !pickStage ? '#c7c7c7' : '#2563eb', color: '#fff', fontSize: 16, fontWeight: 700, cursor: !pickStage ? 'not-allowed' : 'pointer' }}>บันทึก</button>
         </div>
+        <HubButton dark />
       </div>
     )
   }
@@ -657,6 +659,7 @@ function ScanContent() {
           <a href="/scan" style={{ display: 'inline-block', marginTop: 18, color: stageColor, fontSize: 14, fontWeight: 600 }}>เปิดกล้องสแกนต่อ →</a>
         </div>
         {preview && <PhotoPreview preview={preview} onCancel={cancelPreview} onConfirm={confirmPreview} />}
+        <HubButton dark />
       </div>
     )
   }
@@ -670,7 +673,11 @@ function ScanContent() {
           <div style={{ fontWeight: 700 }}>{tech.name}</div>
           <div style={{ color: '#7dd3fc' }}>แผนก {stage?.label} → {stage?.status}</div>
         </div>
-        <button onClick={logout} style={{ border: '1px solid rgba(255,255,255,0.25)', background: 'transparent', color: '#fff', borderRadius: 8, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>เปลี่ยน</button>
+        {/* ปุ่มเครื่องมืออยู่ในแถบนี้ ไม่ลอยทับกล้อง/แผงสแกนเลขพัสดุที่กินพื้นที่ล่างจอ */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <HubButton dark inline />
+          <button onClick={logout} style={{ border: '1px solid rgba(255,255,255,0.25)', background: 'transparent', color: '#fff', borderRadius: 8, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>เปลี่ยน</button>
+        </div>
       </div>
 
       <div style={{ position: 'relative', width: '100%', maxWidth: 480, flex: 1 }}>
@@ -977,7 +984,6 @@ export default function ScanPage() {
       <Suspense fallback={<div style={centerWrap}><div style={{ opacity: 0.6 }}>กำลังโหลด…</div></div>}>
         <ScanContent />
       </Suspense>
-      <HubButton dark />
     </>
   )
 }
