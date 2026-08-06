@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
-import { itemBlockLines, heightText, formatItemLines, railKind } from '@/lib/itemFormat'
+import { itemBlockLines, heightText, formatItemLines, railKind, railSplit } from '@/lib/itemFormat'
 import { railLink } from '@/lib/rail'
 import { OUTSIDE_PLATFORMS, PROD_STATUSES, INSTALL_STATUSES, PROD_STATUS_COLOR, matchQuickTab, effectiveDueDate, type QuickTab } from '@/lib/orderTabs'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
@@ -779,7 +779,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       qty: Number(it.quantity) || 1,
       layers: Number(it.floors) === 2 ? 2 : 1,
       color: (it.color_name || '').replace(/^สี/, '') || undefined,
-      split: /สไลด์|เดี่ยว/.test(`${it.fabric_split || ''} ${it.note || ''}`) ? 'สไลด์เดี่ยว' : 'แยกกลาง',
+      // ออเดอร์ไม่ได้ลงว่าแยกกลาง/สไลด์เดี่ยว → ส่งค่าว่าง ไม่เดาให้ (donna-rail จะเว้นไว้ให้ช่างกดเลือกเอง)
+      split: railSplit(`${it.fabric_split || ''} ${it.note || ''}`),
       head: it.rail_head || undefined,
       carrier,
     }))

@@ -8,7 +8,7 @@ import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { recordAction } from '@/lib/history'
 import { tUpdate, prevOf } from '@/lib/trackedDb'
-import { itemBlockLines } from '@/lib/itemFormat'
+import { itemBlockLines, railSplit } from '@/lib/itemFormat'
 import QRCode from 'qrcode'
 import { railLink } from '@/lib/rail'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
@@ -434,7 +434,8 @@ ${body}
       qty: Number(it.quantity) || 1,
       layers: Number(it.floors) === 2 ? 2 : 1,
       color: (it.color_name || '').replace(/^สี/, '') || undefined,
-      split: /สไลด์|เดี่ยว/.test(it.note || '') ? 'สไลด์เดี่ยว' : 'แยกกลาง',
+      // ออเดอร์ไม่ได้ลงว่าแยกกลาง/สไลด์เดี่ยว → ส่งค่าว่าง ไม่เดาให้ (donna-rail จะเว้นไว้ให้ช่างกดเลือกเอง)
+      split: railSplit(it.note || ''),
       head: it.rail_head || undefined,
       carrier,
     }))
