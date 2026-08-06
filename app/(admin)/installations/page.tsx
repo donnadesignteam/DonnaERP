@@ -73,7 +73,7 @@ const STATUS_COLOR: Record<string, string> = {
   'รอแก้': 'var(--red)',
 }
 
-const emptyItem = (): RawItem => ({ type: '', floors: null, rail_head: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', orientation: '', fabric_split: '', chemical: '', weight_chain: '', pull_side: '', note: '', outsource: '' })
+const emptyItem = (): RawItem => ({ type: '', floors: null, rail_head: '', hook_type: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', orientation: '', fabric_split: '', chemical: '', weight_chain: '', pull_side: '', note: '', outsource: '' })
 
 // เติมกระดูมม่านลอนเทปที่ยังว่างให้อัตโนมัติ — ใช้ตอนเปิดโมดัล (ออเดอร์เก่าที่บันทึกกระดูมว่างไว้ก็โชว์ให้)
 const withAutoHooks = (items: RawItem[]): RawItem[] =>
@@ -868,7 +868,7 @@ export default function InstallationsPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr style={{ background: '#FAFAFA', borderBottom: '1px solid var(--border)' }}>
-                    {['#', 'ประเภท', 'สีตาไก่', 'ชั้น', 'หัวราง/หัวม่าน', 'รหัสสี', 'ชื่อสี', 'กว้าง (ม.)', 'สูง (ม.)', 'จำนวน', 'หน่วย', 'กระดูม', 'ขวางผ้า', 'แบ่งผ้า', 'เคมี', 'โซ่ถ่วง', 'ฝั่งดึง', 'สั่งนอก', 'หมายเหตุ'].map(h => (
+                    {['#', 'ประเภท', 'สีตาไก่', 'ชั้น', 'หัวราง/จีบ', 'ตะขอ', 'รหัสสี', 'ชื่อสี', 'กว้าง (ม.)', 'สูง (ม.)', 'จำนวน', 'หน่วย', 'กระดูม', 'ขวางผ้า', 'แบ่งผ้า', 'เคมี', 'โซ่ถ่วง', 'ฝั่งดึง', 'สั่งนอก', 'หมายเหตุ'].map(h => (
                       <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 500, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                     <th style={{ padding: '8px 10px', position: 'sticky', right: 0, background: '#FAFAFA', zIndex: 1 }} />
@@ -883,6 +883,7 @@ export default function InstallationsPage() {
                         ['eyelet_color', 'text', 64],
                         ['floors', 'number', 44],
                         ['rail_head', 'text', 64],
+                        ['hook_type', 'text', 70],
                         ['color_code', 'text', 60],
                         ['color_name', 'text', 90],
                         ['width', 'text', 56],

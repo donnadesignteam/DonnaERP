@@ -8,7 +8,7 @@ import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { recordAction } from '@/lib/history'
 import { tUpdate, prevOf } from '@/lib/trackedDb'
-import { itemBlockLines, railSplit } from '@/lib/itemFormat'
+import { itemBlockLines, railSplit, railLayers } from '@/lib/itemFormat'
 import QRCode from 'qrcode'
 import { railLink } from '@/lib/rail'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
@@ -17,7 +17,7 @@ import { useStableView } from '@/lib/useStableView'
 import { useInstallPhotos, photoSaveError, type InstallPhoto } from '@/components/InstallPhotos'
 
 type Item = {
-  type: string; floors: number | null; rail_head: string; fabric_type: string
+  type: string; floors: number | null; rail_head: string; hook_type?: string; fabric_type: string
   color_code: string; color_name: string; color_desc: string
   width: number | string; height: number | string; quantity: number | string
   unit: string; hooks: string; note: string
@@ -100,10 +100,10 @@ function emptyClaim(): Claim {
   }
 }
 
-const emptyItem = (): Item => ({ type: '', floors: null, rail_head: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', note: '' })
+const emptyItem = (): Item => ({ type: '', floors: null, rail_head: '', hook_type: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', note: '' })
 
 function itemLine(it: Item): string {
-  const head = [it.type, it.floors ? `${it.floors}ชั้น` : '', it.rail_head, it.color_code, it.color_name].filter(Boolean).join(' ')
+  const head = [it.type, it.floors ? `${it.floors}ชั้น` : '', it.rail_head, it.hook_type, it.color_code, it.color_name].filter(Boolean).join(' ')
   const w = Number(it.width), h = Number(it.height)
   const dim = w > 0 && h > 0 ? `ก${w}*ส${h}` : w > 0 ? `ก${w}` : ''
   const tail = [dim, it.quantity ? `= ${it.quantity} ${it.unit || ''}`.trim() : '', it.note].filter(Boolean).join(' ')
@@ -432,7 +432,7 @@ ${body}
       type: typeMap[it.type] || 'รางจีบ',
       size: typeof it.width === 'string' && it.width.includes('+') ? it.width.trim() : (Number(it.width) || 0),
       qty: Number(it.quantity) || 1,
-      layers: Number(it.floors) === 2 ? 2 : 1,
+      layers: railLayers(it),   // ช่องชั้นว่าง → อ่านจากชื่อชนิด ("รางม่านจีบ 2 ชั้น")
       color: (it.color_name || '').replace(/^สี/, '') || undefined,
       // ออเดอร์ไม่ได้ลงว่าแยกกลาง/สไลด์เดี่ยว → ส่งค่าว่าง ไม่เดาให้ (donna-rail จะเว้นไว้ให้ช่างกดเลือกเอง)
       split: railSplit(it.note || ''),
@@ -584,7 +584,7 @@ ${body}
               style={{ border: 'none', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontSize: 12, padding: 0 }}>ลบ</button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 2fr 2fr 2fr 2fr 2fr', gap: '6px 8px', marginBottom: 6 }}>
-            {([['ประเภท', 'type', 'text'], ['ชั้น', 'floors', 'number'], ['หัวราง', 'rail_head', 'text'], ['ประเภทผ้า', 'fabric_type', 'text'], ['แบรนด์', 'color_code', 'text'], ['ลาย/สไตล์', 'color_name', 'text'], ['สีจริง', 'color_desc', 'text']] as [string, keyof Item, string][]).map(([lbl, key, type]) => (
+            {([['ประเภท', 'type', 'text'], ['ชั้น', 'floors', 'number'], ['หัวราง/จีบ', 'rail_head', 'text'], ['ตะขอ', 'hook_type', 'text'], ['ประเภทผ้า', 'fabric_type', 'text'], ['แบรนด์', 'color_code', 'text'], ['ลาย/สไตล์', 'color_name', 'text'], ['สีจริง', 'color_desc', 'text']] as [string, keyof Item, string][]).map(([lbl, key, type]) => (
               <div key={key}>
                 <label style={{ fontSize: 11, color: 'var(--ink-4)', display: 'block', marginBottom: 2 }}>{lbl}</label>
                 <input type={type} step={type === 'number' ? '1' : undefined} value={item[key] === null ? '' : String(item[key])}
@@ -934,7 +934,7 @@ ${body}
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr style={{ background: '#FAFAFA', borderBottom: '1px solid var(--border)' }}>
-                    {['#', 'ประเภท', 'ชั้น', 'หัวราง', 'รหัสสี', 'ชื่อสี', 'กว้าง (ม.)', 'สูง (ม.)', 'จำนวน', 'หน่วย', 'กระดูม', 'หมายเหตุ'].map(h => (
+                    {['#', 'ประเภท', 'ชั้น', 'หัวราง/จีบ', 'ตะขอ', 'รหัสสี', 'ชื่อสี', 'กว้าง (ม.)', 'สูง (ม.)', 'จำนวน', 'หน่วย', 'กระดูม', 'หมายเหตุ'].map(h => (
                       <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 500, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                     <th style={{ padding: '8px 10px', position: 'sticky', right: 0, background: '#FAFAFA', zIndex: 1 }} />
@@ -944,7 +944,7 @@ ${body}
                   {itemsModal.items.map((item, idx) => (
                     <tr key={idx} style={{ borderBottom: '1px solid var(--border)' }}>
                       <td style={{ padding: '6px 10px', color: 'var(--ink-4)', fontWeight: 500, width: 28 }}>{idx + 1}</td>
-                      {([['type', 'text', 100], ['floors', 'number', 44], ['rail_head', 'text', 64], ['color_code', 'text', 60], ['color_name', 'text', 90], ['width', 'number', 56], ['height', 'number', 56], ['quantity', 'number', 50], ['unit', 'text', 46], ['hooks', 'text', 60], ['note', 'text', 90]] as [keyof Item, string, number][]).map(([key, type, w]) => (
+                      {([['type', 'text', 100], ['floors', 'number', 44], ['rail_head', 'text', 64], ['hook_type', 'text', 70], ['color_code', 'text', 60], ['color_name', 'text', 90], ['width', 'number', 56], ['height', 'number', 56], ['quantity', 'number', 50], ['unit', 'text', 46], ['hooks', 'text', 60], ['note', 'text', 90]] as [keyof Item, string, number][]).map(([key, type, w]) => (
                         <td key={key} style={{ padding: '4px 6px' }}>
                           <input type={type} step={type === 'number' ? '0.01' : undefined} value={item[key] === null ? '' : String(item[key])}
                             onChange={e => { const val = key === 'floors' ? (e.target.value === '' ? null : Number(e.target.value)) : e.target.value; updItemsModal(cur => cur.map((it, i) => i === idx ? { ...it, [key]: val } : it)) }}

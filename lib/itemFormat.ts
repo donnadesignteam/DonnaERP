@@ -4,7 +4,8 @@
 export type RawItem = {
   type?: string
   floors?: number | null
-  rail_head?: string
+  rail_head?: string      // หัวราง (กระดุม/วงแหวน) · ผ้าม่านจีบ = จำนวนจีบ เช่น "3จีบ"
+  hook_type?: string      // ชนิดตะขอ (ตะขอสั้น/ตะขอยาว/ตะขอเพดาน) — แยกช่องจากจำนวนจีบ
   eyelet_color?: string   // สีห่วงตาไก่ (เฉพาะม่านตาไก่) เช่น สีขาว สีสัก สีดำ
   fabric_type?: string
   color_code?: string
@@ -64,6 +65,15 @@ export function railKind(type: string): 'รางจีบ' | 'รางลอ�
   return null   // อ่านไม่ออก — ให้ผู้เรียกตัดสินใจเอง ห้ามเดาเป็นรางจีบเงียบๆ
 }
 
+// จำนวนชั้นของราง — ออเดอร์เก่าบางใบชั้นติดอยู่ในชื่อชนิด ("รางม่านจีบ 2 ชั้น") ช่อง floors ว่าง
+// ถ้าไม่เผื่ออ่านจากชื่อด้วย เว็บคำนวณอุปกรณ์รางจะคิดเป็นชั้นเดียว (ราง/หัวปิด/ลูกล้อ ขาดครึ่ง)
+export function railLayers(it: { floors?: number | null; type?: string }): number {
+  const n = Number(it.floors)
+  if (n >= 1 && n <= 3) return n
+  const inName = Number(String(it.type ?? '').match(/(\d+)\s*ชั้น/)?.[1] ?? 0)
+  return inName >= 2 && inName <= 3 ? inName : 1
+}
+
 // แยกกลาง / สไลด์เดี่ยว สำหรับเว็บคำนวณอุปกรณ์ราง — ออเดอร์ที่ไม่ได้ลงข้อมูลคืนค่าว่าง
 // ห้ามเดาเป็น "แยกกลาง" เพราะจำนวนลูกล้อ/สไลด์/ตะขอยู คิดจากค่านี้ (ให้ช่างกดเลือกเองในเว็บราง)
 export function railSplit(text: string): 'แยกกลาง' | 'สไลด์เดี่ยว' | '' {
@@ -77,7 +87,7 @@ export function railSplit(text: string): 'แยกกลาง' | 'สไลด
 // เช็ก == null เท่านั้น: ถ้า AI ยังส่ง "" มาก็ไม่ทับ → ได้ค่าเดียวกันไม่ว่า AI จะตัดหรือส่งว่าง
 // รวมฟิลด์หลัก (type/width/height/quantity/unit) ด้วย — AI ตัดทิ้งได้จริงถ้าต้นฉบับไม่ระบุ
 // (เช่นรางไม่ลงความสูง) ถ้าไม่เติม ช่องในตาราง/ใบออเดอร์จะขึ้น undefined
-const ITEM_EMPTY_FIELDS = ['type', 'rail_head', 'eyelet_color', 'fabric_type', 'color_code', 'color_name',
+const ITEM_EMPTY_FIELDS = ['type', 'rail_head', 'hook_type', 'eyelet_color', 'fabric_type', 'color_code', 'color_name',
   'color_desc', 'width', 'height', 'quantity', 'unit', 'hooks', 'orientation', 'fabric_split',
   'chemical', 'weight_chain', 'pull_side', 'note', 'outsource'] as const
 export function fillItemDefaults(it: RawItem): RawItem {
@@ -88,7 +98,24 @@ export function fillItemDefaults(it: RawItem): RawItem {
   const floorsInName = String(out.type ?? '').match(/(\d+)\s*ชั้น/)
   if (floorsInName && !out.floors) out.floors = Number(floorsInName[1])
   out.type = normalizeItemType(String(out.type ?? ''))
+  // ชนิดตะขอที่ AI ยังเขียนรวมกับจำนวนจีบ ("3จีบ ตะขอยาว") → แยกลงช่องตะขอ
+  // เฉพาะผ้าม่าน — ราง "ตะขอ" คือชื่อหัวราง ห้ามย้าย (เว็บคำนวณอุปกรณ์รางใช้ rail_head)
+  if (!out.hook_type && !String(out.type ?? '').startsWith('ราง')) {
+    const [head, hook] = splitHookType(String(out.rail_head ?? ''))
+    if (hook) { out.rail_head = head; out.hook_type = hook }
+  }
   return out
+}
+
+// แยก "จำนวนจีบ" กับ "ชนิดตะขอ" ที่เคยเก็บรวมช่องเดียว → ['3จีบ', 'ตะขอยาว']
+// ถ้าไม่มีคำว่าตะขอ คืนค่าเดิมทั้งก้อน (เช่น "หัวกระดุม", "วงแหวน")
+export function splitHookType(railHead: string): [string, string] {
+  const t = String(railHead ?? '').trim()
+  const m = t.match(/ตะขอ\s*(?:สั้น|ยาว|เพดาน)?/)
+  if (!m) return [t, '']
+  const hook = m[0].replace(/\s+/g, '')
+  const rest = (t.slice(0, m.index) + ' ' + t.slice((m.index ?? 0) + m[0].length)).replace(/\s+/g, ' ').trim()
+  return [rest, hook]
 }
 
 // ทศนิยมตามที่ลูกค้าลงมา: ปกติ 2 ตำแหน่ง แต่ถ้าลงมา 3 ตำแหน่ง (เช่น 2.845) เก็บ 3 ตำแหน่งเลย
@@ -122,6 +149,7 @@ export function formatItemLines(items: RawItem[] | null): string[] {
     if (it.eyelet_color) parts.push(it.eyelet_color)
     if (it.floors) parts.push(`${it.floors}ชั้น`)
     if (it.rail_head) parts.push(it.rail_head)
+    if (it.hook_type) parts.push(it.hook_type)
     if (it.fabric_type) parts.push(it.fabric_type)
     if (it.color_code) parts.push(it.color_code)
     if (it.color_name) parts.push(it.color_name)
@@ -192,7 +220,7 @@ export function itemBlockLines(item: RawItem): { t: string; rail?: boolean }[] {
   const isRail = (item.type ?? '').startsWith('ราง')
 
   if (isRail) {
-    const typeParts = [item.type, item.floors ? `${item.floors}ชั้น` : '', item.rail_head || '', item.color_name || ''].filter(Boolean)
+    const typeParts = [item.type, item.floors ? `${item.floors}ชั้น` : '', item.rail_head || '', item.hook_type || '', item.color_name || ''].filter(Boolean)
     out.push({ t: typeParts.join(' '), rail: true })
   } else {
     const ft = (item.fabric_type ?? '').trim()
@@ -206,7 +234,7 @@ export function itemBlockLines(item: RawItem): { t: string; rail?: boolean }[] {
         : 'โปร่ง' + typeName                            // ม่านตาไก่ → โปร่งม่านตาไก่
     }
     // สีตาไก่เขียนต่อหลังชื่อชนิด (เช่น "ผ้าม่านตาไก่ สีขาว")
-    const typeParts = [typeName, item.eyelet_color || '', item.floors ? `${item.floors}ชั้น` : '', item.rail_head || ''].filter(Boolean)
+    const typeParts = [typeName, item.eyelet_color || '', item.floors ? `${item.floors}ชั้น` : '', item.rail_head || '', item.hook_type || ''].filter(Boolean)
     out.push({ t: typeParts.join(' ') })
 
     // บรรทัดยี่ห้อ/สี — ไม่แสดงชนิดผ้า (Dimout/ผ้าทึบ ฯลฯ) เพราะช่างรู้จากรหัสสีอยู่แล้ว

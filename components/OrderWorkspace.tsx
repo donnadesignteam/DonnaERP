@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
-import { itemBlockLines, heightText, formatItemLines, railKind, railSplit } from '@/lib/itemFormat'
+import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers } from '@/lib/itemFormat'
 import { railLink } from '@/lib/rail'
 import { OUTSIDE_PLATFORMS, PROD_STATUSES, INSTALL_STATUSES, PROD_STATUS_COLOR, matchQuickTab, effectiveDueDate, type QuickTab } from '@/lib/orderTabs'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
@@ -26,7 +26,8 @@ import QRCode from 'qrcode'
 type Item = {
   type: string
   floors: number | null
-  rail_head: string
+  rail_head: string       // ผ้าม่านจีบ = จำนวนจีบ ("3จีบ") · ราง = หัวราง
+  hook_type?: string      // ชนิดตะขอ (ตะขอสั้น/ยาว/เพดาน) แยกช่องจากจำนวนจีบ
   eyelet_color?: string   // สีห่วงตาไก่ (เฉพาะม่านตาไก่) เช่น สีขาว สีสัก สีดำ
   fabric_type: string
   color_code: string
@@ -114,7 +115,7 @@ type Entry = {
   last_content_at?: string | null
 }
 
-const emptyItem = (): Item => ({ type: '', floors: null, rail_head: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', orientation: '', fabric_split: '', chemical: '', weight_chain: '', pull_side: '', note: '', outsource: '' })
+const emptyItem = (): Item => ({ type: '', floors: null, rail_head: '', hook_type: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', orientation: '', fabric_split: '', chemical: '', weight_chain: '', pull_side: '', note: '', outsource: '' })
 
 // รวมข้อความสั่งนอกจากทุกรายการ → ไว้ลงคอลัมน์สั่งนอกของออเดอร์
 const itemsOutsourceText = (items: Item[]): string =>
@@ -777,7 +778,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       type: railKind(it.type) || 'รางจีบ',
       size: typeof it.width === 'string' && it.width.includes('+') ? it.width.trim() : (Number(it.width) || 0),
       qty: Number(it.quantity) || 1,
-      layers: Number(it.floors) === 2 ? 2 : 1,
+      layers: railLayers(it),   // ช่องชั้นว่าง → อ่านจากชื่อชนิด ("รางม่านจีบ 2 ชั้น")
       color: (it.color_name || '').replace(/^สี/, '') || undefined,
       // ออเดอร์ไม่ได้ลงว่าแยกกลาง/สไลด์เดี่ยว → ส่งค่าว่าง ไม่เดาให้ (donna-rail จะเว้นไว้ให้ช่างกดเลือกเอง)
       split: railSplit(`${it.fabric_split || ''} ${it.note || ''}`),
@@ -1466,6 +1467,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
           type: c[0]?.trim() || '',
           floors: null,
           rail_head: '',
+          hook_type: '',
           eyelet_color: '',
           fabric_type: '',
           color_code: c[1]?.trim() || '',
@@ -4100,7 +4102,7 @@ ${body}
                       style={{ border: 'none', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontSize: 12, padding: 0 }}>ลบ</button>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr 1fr 2fr 2fr 2fr 2fr 2fr', gap: '6px 8px', marginBottom: 6 }}>
-                    {([['ประเภท', 'type', 'text'], ['สีตาไก่', 'eyelet_color', 'text'], ['ชั้น', 'floors', 'number'], ['หัวราง/หัวม่าน', 'rail_head', 'text'], ['ประเภทผ้า', 'fabric_type', 'text'], ['รหัสสี', 'color_code', 'text'], ['ลาย/สไตล์', 'color_name', 'text'], ['สีจริง', 'color_desc', 'text']] as [string, keyof Item, string][]).map(([lbl, key, type]) => (
+                    {([['ประเภท', 'type', 'text'], ['สีตาไก่', 'eyelet_color', 'text'], ['ชั้น', 'floors', 'number'], ['หัวราง/จีบ', 'rail_head', 'text'], ['ตะขอ', 'hook_type', 'text'], ['ประเภทผ้า', 'fabric_type', 'text'], ['รหัสสี', 'color_code', 'text'], ['ลาย/สไตล์', 'color_name', 'text'], ['สีจริง', 'color_desc', 'text']] as [string, keyof Item, string][]).map(([lbl, key, type]) => (
                       <div key={key}>
                         <label style={{ fontSize: 11, color: 'var(--ink-4)', display: 'block', marginBottom: 2 }}>{lbl}</label>
                         <input type={type} step={type === 'number' ? '1' : undefined}
@@ -4294,7 +4296,7 @@ ${body}
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr style={{ background: '#FAFAFA', borderBottom: '1px solid var(--border)' }}>
-                    {['#', 'ประเภท', 'สีตาไก่', 'ชั้น', 'หัวราง/หัวม่าน', 'รหัสสี', 'ชื่อสี', 'กว้าง (ม.)', 'สูง (ม.)', 'จำนวน', 'หน่วย', 'กระดูม', 'ขวางผ้า', 'แบ่งผ้า', 'เคมี', 'โซ่ถ่วง', 'ฝั่งดึง', 'สั่งนอก', 'หมายเหตุ'].map(h => (
+                    {['#', 'ประเภท', 'สีตาไก่', 'ชั้น', 'หัวราง/จีบ', 'ตะขอ', 'รหัสสี', 'ชื่อสี', 'กว้าง (ม.)', 'สูง (ม.)', 'จำนวน', 'หน่วย', 'กระดูม', 'ขวางผ้า', 'แบ่งผ้า', 'เคมี', 'โซ่ถ่วง', 'ฝั่งดึง', 'สั่งนอก', 'หมายเหตุ'].map(h => (
                       <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 500, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                     <th style={{ padding: '8px 10px', position: 'sticky', right: 0, background: '#FAFAFA', zIndex: 1 }} />
@@ -4309,6 +4311,7 @@ ${body}
                         ['eyelet_color', 'text', 64],
                         ['floors', 'number', 44],
                         ['rail_head', 'text', 64],
+                        ['hook_type', 'text', 70],
                         ['color_code', 'text', 60],
                         ['color_name', 'text', 90],
                         ['width', 'text', 56],
