@@ -4051,8 +4051,12 @@ ${body}
               {isInstall && inp('จังหวัด', 'province')}
               {inp('เบอร์โทร', 'phone')}
               {isInstall && inp('ลิงก์โลเคชั่น', 'location_link')}
-              {/* ที่อยู่จัดส่ง — เต็มบรรทัด (ยาวกว่าช่องอื่น) กรอกเองหรือให้ปุ่มแปลงข้อความเติมให้ */}
-              <div style={{ gridColumn: '1 / -1' }}>{inp(isInstall ? 'ที่อยู่หน้างาน' : 'ที่อยู่จัดส่ง', 'address')}</div>
+              {/* ที่อยู่ — เต็มบรรทัด (ยาวกว่าช่องอื่น) กรอกเองหรือให้ปุ่มแปลงข้อความเติมให้
+                  ‼️ ชื่อช่องต้องตรงกับชื่อคอลัมน์ในตารางของแต่ละแท็บ (ดู COLUMN_DEFS):
+                     งานติดตั้ง = ที่อยู่หน้างาน · งานนอก/เคลม = ที่อยู่ · งานแพลตฟอร์ม = ที่อยู่จัดส่งแยก */}
+              <div style={{ gridColumn: '1 / -1' }}>
+                {inp(isInstall ? 'ที่อยู่หน้างาน' : isOutside ? 'ที่อยู่' : 'ที่อยู่จัดส่งแยก', 'address')}
+              </div>
               {!isInstall && !isOutside && (
                 <div style={{ marginBottom: 14 }}>
                   <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>วันและเวลาที่ต้องส่ง</label>
