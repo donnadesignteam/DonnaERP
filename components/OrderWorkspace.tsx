@@ -287,7 +287,8 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
     { id: 'customer', label: 'ลูกค้า' }, { id: 'platform', label: 'แพลตฟอร์ม' },
     { id: 'items', label: 'รายการ' }, { id: 'total', label: 'ยอดทั้งหมด' },
     { id: 'payment', label: 'ชำระ' }, { id: 'paybefore', label: 'ยอดชำระก่อนจัดส่ง' },
-    { id: 'assigned', label: 'ลงออเดอร์' }, { id: 'status', label: 'สถานะงาน' },
+    { id: 'assigned', label: 'ลงออเดอร์' }, { id: 'admin', label: 'แอดมิน' },
+    { id: 'status', label: 'สถานะงาน' },
     { id: 'done', label: 'งานเสร็จ' }, { id: 'shipped', label: 'จัดส่งแล้ว' },
     { id: 'rail', label: 'สถานะราง' },
     { id: 'created', label: 'วันที่สร้าง' }, { id: 'outsource', label: 'สั่งนอก' },
@@ -301,7 +302,8 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
     { id: 'customer', label: 'ลูกค้า' }, { id: 'platform', label: 'แพลตฟอร์ม' },
     { id: 'items', label: 'รายการ' }, { id: 'total', label: 'ยอดทั้งหมด' },
     { id: 'payment', label: 'ชำระ' }, { id: 'paybefore', label: 'ยอดชำระหลังติดตั้ง' },
-    { id: 'assigned', label: 'ลงออเดอร์' }, { id: 'status', label: 'สถานะงาน' },
+    { id: 'assigned', label: 'ลงออเดอร์' }, { id: 'admin', label: 'แอดมิน' },
+    { id: 'status', label: 'สถานะงาน' },
     { id: 'done', label: 'งานเสร็จ' }, { id: 'installed', label: 'ติดตั้ง' },
     { id: 'rail', label: 'สถานะราง' },
     { id: 'created', label: 'วันที่สร้าง' }, { id: 'outsource', label: 'สั่งนอก' },
@@ -2413,6 +2415,9 @@ ${body}
                   </button>
                 </th>
                 )}
+                {showCol('admin') && (
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>แอดมิน</th>
+                )}
                 {showCol('status') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap' }}>
                   <button onClick={e => openOutFilter(e, 'out-status')}
@@ -2703,6 +2708,17 @@ ${body}
                       <select value={r.order_assigned || 'รออัพเดท'} onChange={e => updateField(r.id, 'order_assigned', e.target.value)}
                         style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.order_assigned && r.order_assigned !== 'รออัพเดท' ? 'var(--ink)' : 'var(--ink-4)', fontWeight: r.order_assigned && r.order_assigned !== 'รออัพเดท' ? 600 : 400, padding: 0 }}>
                         {ORDER_ASSIGNED.map(o => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    </td>
+                    )}
+                    {/* แอดมิน — ช่องเดียวกับงานแพลตฟอร์ม (เลือกเองได้ · ระบบทับให้เมื่อแอดมินหลักแก้เนื้อออเดอร์) */}
+                    {showCol('admin') && (
+                    <td style={{ padding: '8px 14px', background: r.admin_name ? undefined : EMPTY_HL }}>
+                      <select value={r.admin_name || ''} onChange={e => updateField(r.id, 'admin_name', e.target.value)}
+                        title="เลือกเองได้ · ระบบจะเปลี่ยนให้เองเมื่อมีแอดมินหลักมาแก้เนื้อออเดอร์"
+                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.admin_name ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 80 }}>
+                        <option value="">—</option>
+                        {ADMINS.map(a => <option key={a} value={a}>{a}</option>)}
                       </select>
                     </td>
                     )}
