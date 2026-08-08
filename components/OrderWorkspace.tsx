@@ -202,7 +202,7 @@ const carrierTrackUrl = (sh: Shipment) =>
 const daysLabel = (d: number) => d < 0 ? `เกิน ${Math.abs(d)} วัน` : d === 0 ? 'ต้องจัดส่งวันนี้' : `${d} วัน`
 const daysColor = (d: number) => d <= 0 ? 'var(--red)' : d <= 10 ? '#eab308' : '#34c759'
 
-const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping_datetime' | 'shipped_at' | 'rail_packed' | 'rail_packed_at' | 'done_at' | 'printed_at' | 'status_history' | 'shipments' | 'outsource_at' | 'address' | 'install_status'> => ({
+const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping_datetime' | 'shipped_at' | 'rail_packed' | 'rail_packed_at' | 'done_at' | 'printed_at' | 'status_history' | 'shipments' | 'outsource_at' | 'install_status'> => ({
   entry_date: new Date().toISOString().split('T')[0],
   deadline: '',
   status: 'อยู่ในกำหนด',
@@ -222,6 +222,7 @@ const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping
   install_time: '9:00',
   province: '',
   phone: '',
+  address: '',
   location_link: '',
   outsource: '',
   notes: '',
@@ -607,7 +608,9 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       installation_date: d.is_installation ? (d.installation_date || null) : null,
       install_time: d.is_installation ? (d.install_time || '9:00') : null,
       province: d.is_installation ? (d.province || null) : null,
-      phone: d.is_installation ? (d.phone || null) : null,
+      // ‼️ ที่อยู่/เบอร์โทร เก็บทุกประเภทงาน (เดิมเบอร์โทรบันทึกเฉพาะงานติดตั้ง ทำให้เบอร์ที่แปลงมาจากข้อความหายตอนบันทึก)
+      phone: d.phone || null,
+      address: d.address || null,
       location_link: d.is_installation ? (d.location_link || null) : null,
       outsource: outsourceVal,
       ...(outsourceVal && outsourceVal !== prevOutsource ? { outsource_at: now } : {}),
@@ -1642,6 +1645,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       if (o.price != null && o.price !== '') set('price', String(o.price))
       if (o.payment_status) set('payment_status', String(o.payment_status))
       if (o.notes) set('notes', String(o.notes))
+      if (o.address) set('address', String(o.address))
+      if (o.phone) set('phone', String(o.phone))
       if (Array.isArray(o.items) && o.items.length) setModalItems(o.items)
     } catch (e: unknown) {
       setOrderParseError(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด')
@@ -4044,8 +4049,10 @@ ${body}
               {inp(isInstall ? 'กำหนดติดตั้ง' : 'กำหนดส่งงาน', 'deadline', 'date')}
               {isInstall && sel('เวลานัด', 'install_time', TIMES)}
               {isInstall && inp('จังหวัด', 'province')}
-              {isInstall && inp('เบอร์โทร', 'phone')}
+              {inp('เบอร์โทร', 'phone')}
               {isInstall && inp('ลิงก์โลเคชั่น', 'location_link')}
+              {/* ที่อยู่จัดส่ง — เต็มบรรทัด (ยาวกว่าช่องอื่น) กรอกเองหรือให้ปุ่มแปลงข้อความเติมให้ */}
+              <div style={{ gridColumn: '1 / -1' }}>{inp(isInstall ? 'ที่อยู่หน้างาน' : 'ที่อยู่จัดส่ง', 'address')}</div>
               {!isInstall && !isOutside && (
                 <div style={{ marginBottom: 14 }}>
                   <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>วันและเวลาที่ต้องส่ง</label>
