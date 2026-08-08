@@ -353,7 +353,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [techFilters, setTechFilters] = useState<string[]>([])
   const [shippingDateFrom, setShippingDateFrom] = useState('')
   const [shippingDateTo, setShippingDateTo] = useState('')
-  const [openFilter, setOpenFilter] = useState<'platform' | 'courier' | 'status' | 'admin' | 'tech' | 'shipping' | 'urgent' | 'install' | 'days' | 'updated' | 'out-days' | 'out-deadline' | 'out-platform' | 'out-payment' | 'out-assigned' | 'out-status' | 'out-done' | 'out-installed' | 'out-updated' | null>(null)
+  const [openFilter, setOpenFilter] = useState<'platform' | 'courier' | 'status' | 'admin' | 'tech' | 'shipping' | 'urgent' | 'install' | 'days' | 'updated' | 'out-days' | 'out-deadline' | 'out-platform' | 'out-payment' | 'out-assigned' | 'out-admin' | 'out-status' | 'out-done' | 'out-installed' | 'out-updated' | null>(null)
   const [daysSort, setDaysSort] = useState<'asc' | 'desc' | null>('asc')
   const [sortOrder, setSortOrder] = useState<string[]>(cached?.sortOrder ?? [])
   const [updatedSort, setUpdatedSort] = useState<'asc' | 'desc' | null>(null)
@@ -364,6 +364,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [outPlatformFilters, setOutPlatformFilters] = useState<string[]>([])
   const [outPaymentFilters, setOutPaymentFilters] = useState<string[]>([])
   const [outAssignedFilters, setOutAssignedFilters] = useState<string[]>([])
+  const [outAdminFilters, setOutAdminFilters] = useState<string[]>([])
   const [outStatusFilters, setOutStatusFilters] = useState<string[]>([])
   const [outDoneFilter, setOutDoneFilter] = useState<boolean | null>(null)
   const [outInstalledFilter, setOutInstalledFilter] = useState<boolean | null>(null)
@@ -1550,6 +1551,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     if (outPlatformFilters.length) rs = rs.filter(r => outPlatformFilters.includes(r.platform ?? ''))
     if (outPaymentFilters.length) rs = rs.filter(r => outPaymentFilters.includes(r.payment_status || 'ยังไม่ชำระ'))
     if (outAssignedFilters.length) rs = rs.filter(r => outAssignedFilters.includes(r.order_assigned || 'รออัพเดท'))
+    if (outAdminFilters.length) rs = rs.filter(r => outAdminFilters.includes(r.admin_name ?? ''))
     if (outStatusFilters.length) rs = rs.filter(r => outStatusFilters.includes(r.order_status ?? ''))
     if (outDoneFilter !== null) rs = rs.filter(r => !!r.is_urgent === outDoneFilter)
     if (outInstalledFilter !== null) rs = rs.filter(r => !!r.is_dropoff === outInstalledFilter)
@@ -2290,6 +2292,16 @@ ${body}
               ))}
             </div>
           )
+          if (openFilter === 'out-admin') return (
+            <div style={{ ...dropStyle, minWidth: 160 }}>
+              {adminNames.map(a => (
+                <label key={a} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: outAdminFilters.includes(a) ? 'var(--blue-bg)' : 'transparent' }}>
+                  <input type="checkbox" checked={outAdminFilters.includes(a)} onChange={() => setOutAdminFilters(toggleArr(outAdminFilters, a))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
+                  {a}
+                </label>
+              ))}
+            </div>
+          )
           if (openFilter === 'out-status') return (
             <div style={{ ...dropStyle, minWidth: 150 }}>
               {PROD_STATUSES.map(s => (
@@ -2416,7 +2428,12 @@ ${body}
                 </th>
                 )}
                 {showCol('admin') && (
-                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>แอดมิน</th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                  <button onClick={e => openOutFilter(e, 'out-admin')}
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outAdminFilters.length ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    แอดมิน{outAdminFilters.length > 0 && ` (${outAdminFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                  </button>
+                </th>
                 )}
                 {showCol('status') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap' }}>
