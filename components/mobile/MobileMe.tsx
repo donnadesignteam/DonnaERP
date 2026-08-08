@@ -274,7 +274,8 @@ export default function MobileMe() {
                   )
                   const key = `${s.order_number}-${s.scanned_at}-${i}`
                   return customer ? (
-                    <button key={key} className="m-card-tap" onClick={() => router.push(`/m/customers?name=${encodeURIComponent(customer)}`)}
+                    // ส่งเลขออเดอร์ไปด้วย → โฟลเดอร์เด้งใบที่เพิ่งสแกนขึ้นบนสุด (ลูกค้าที่สั่งหลายใบจะได้ไม่ต้องไล่หา)
+                    <button key={key} className="m-card-tap" onClick={() => router.push(`/m/customers?name=${encodeURIComponent(customer)}&order=${encodeURIComponent(String(s.order_number))}`)}
                       style={{ ...rowStyle, border: 'none', borderTop: i ? '1px solid var(--border)' : 'none', background: 'transparent', cursor: 'pointer', font: 'inherit', WebkitTapHighlightColor: 'transparent' }}>
                       {body}
                     </button>

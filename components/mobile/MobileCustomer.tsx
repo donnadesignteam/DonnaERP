@@ -10,9 +10,13 @@ import { PROD_STATUS_COLOR } from '@/lib/orderTabs'
 import { INSTALL_STATUS_COLOR } from '@/lib/shopCalendar'
 import { usePullToRefresh, useSheetBack, PullIndicator, CardSkeleton, clamp } from './mobileUi'
 import OrderHistory from '@/components/OrderHistory'
+import { compressImage, uploadPackingFile, deletePackingFile } from '@/lib/packingPhotos'
+import { readStaffSession, type StaffSession } from '@/lib/staffSession'
 
-// โฟลเดอร์ออเดอร์ของลูกค้า เวอร์ชันมือถือ — ดูอย่างเดียว
-// เดสก์ท็อป = app/(admin)/customers (มีลบรูปแพ็คได้ด้วย) · ที่นี่ดึงข้อมูลชุดเดียวกันเป๊ะ
+// โฟลเดอร์ออเดอร์ของลูกค้า เวอร์ชันมือถือ
+// เดสก์ท็อป = app/(admin)/customers · ที่นี่ดึงข้อมูลชุดเดียวกันเป๊ะ
+// ‼️ พนักงานที่ล็อกอินด้วยรหัสตัวเอง เพิ่ม/ลบรูปงานของออเดอร์ได้จากที่นี่ (packing_photos ชุดเดียวกับหน้า /scan)
+//    เข้ามาจากแดชบอร์ด "ของฉัน" (/m/me → งานที่สแกน) โดยไม่ต้องสแกนซ้ำ
 type Shipment = { no: string; carrier: string; status: string; checked_at: string | null }
 type Order = {
   id: string
@@ -44,6 +48,8 @@ export default function MobileCustomer() {
   const params = useSearchParams()
   const router = useRouter()
   const name = params.get('name') ?? ''
+  // ออเดอร์ที่เพิ่งกดมาจากแดชบอร์ด "ของฉัน" (กุญแจเดียวกับ production_scans = เลขออเดอร์ หรือ 'id:<uuid>')
+  const focusKey = params.get('order') ?? ''
   const [orders, setOrders] = useState<Order[]>([])
   const [claims, setClaims] = useState<Claim[]>([])
   const [installs, setInstalls] = useState<Install[]>([])
@@ -53,6 +59,51 @@ export default function MobileCustomer() {
   const [error, setError] = useState('')          // เดิมทิ้ง error ทั้ง 4 query → เน็ตหลุดขึ้น "ไม่พบประวัติ" หลอกผู้ใช้ว่าลูกค้าไม่มีข้อมูล
   const [photo, setPhoto] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)   // ออเดอร์ที่เพิ่งคัดลอก → โชว์ "คัดลอกแล้ว" ชั่วครู่
+  // ── รูปงาน: เพิ่ม/ลบได้เฉพาะคนที่ล็อกอินด้วยรหัสพนักงาน ──
+  const [staff, setStaff] = useState<StaffSession | null>(null)
+  const [busyPhoto, setBusyPhoto] = useState<string | null>(null)  // id ออเดอร์ที่กำลังอัพ / url รูปที่กำลังลบ
+  const [photoErr, setPhotoErr] = useState('')
+
+  // คุกกี้อ่านได้เฉพาะบนเบราว์เซอร์ — อ่านตอน render แรกจะไม่ตรงกับที่ server เรนเดอร์
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { setStaff(readStaffSession()) }, [])
+
+  // เพิ่มรูปเข้าออเดอร์: ย่อรูป → อัพขึ้น R2 → ต่อ URL เข้า packing_photos (ตรรกะเดียวกับหน้า /scan)
+  const addPhoto = async (orderId: string, file: File) => {
+    setBusyPhoto(orderId); setPhotoErr('')
+    try {
+      const small = await compressImage(file)
+      const ext = (small.name.split('.').pop() || 'jpg').toLowerCase()
+      const url = await uploadPackingFile(small, `${orderId}/me-${Date.now()}.${ext}`)
+      const { data: row } = await supabase.from('order_entries').select('packing_photos').eq('id', orderId).single()
+      const cur = Array.isArray(row?.packing_photos) ? row.packing_photos : []
+      const { error: err } = await supabase.from('order_entries')
+        .update({ packing_photos: [...cur, url], updated_at: new Date().toISOString() }).eq('id', orderId)
+      if (err) throw err
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, packing_photos: [...(o.packing_photos ?? []), url] } : o))
+    } catch (e) {
+      setPhotoErr(`เพิ่มรูปไม่สำเร็จ: ${(e as { message?: string })?.message || String(e)}`)
+    }
+    setBusyPhoto(null)
+  }
+
+  // ลบรูป: ลบไฟล์จริง (R2/Supabase ตามที่มา) แล้วเอา URL ออกจาก packing_photos
+  const removePhoto = async (orderId: string, url: string) => {
+    if (!window.confirm('ลบรูปนี้ออกจากออเดอร์?')) return
+    setBusyPhoto(url); setPhotoErr('')
+    try {
+      await deletePackingFile(url)
+      const { data: row } = await supabase.from('order_entries').select('packing_photos').eq('id', orderId).single()
+      const cur = Array.isArray(row?.packing_photos) ? row.packing_photos : []
+      const { error: err } = await supabase.from('order_entries')
+        .update({ packing_photos: cur.filter((u: string) => u !== url), updated_at: new Date().toISOString() }).eq('id', orderId)
+      if (err) throw err
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, packing_photos: (o.packing_photos ?? []).filter(u => u !== url) } : o))
+    } catch (e) {
+      setPhotoErr(`ลบรูปไม่สำเร็จ: ${(e as { message?: string })?.message || String(e)}`)
+    }
+    setBusyPhoto(null)
+  }
 
   // แชร์รายการออเดอร์เข้ากลุ่ม LINE (navigator.share) — มือถือไม่มี share ก็คัดลอกลงคลิปบอร์ดแทน
   const shareOrder = async (o: Order, lines: string[]) => {
@@ -122,6 +173,10 @@ export default function MobileCustomer() {
   useSheetBack(!!photo, () => setPhoto(null))
 
   const total = orders.reduce((s, o) => s + (o.price ?? 0), 0)
+  // ใบที่กดมาจาก "ของฉัน" ขึ้นก่อนเสมอ (ที่เหลือเรียงเดิม)
+  const shownOrders = focusKey
+    ? [...orders].sort((a, b) => Number((b.order_number || `id:${b.id}`) === focusKey) - Number((a.order_number || `id:${a.id}`) === focusKey))
+    : orders
 
   return (
     <div>
@@ -188,11 +243,12 @@ export default function MobileCustomer() {
             <section>
               <h2 style={sectionTitle}>ออเดอร์ <span style={countPill}>{orders.length}</span></h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-                {orders.map(o => {
+                {shownOrders.map(o => {
                   const lines = formatItemLines(o.items)
                   const c = PROD_STATUS_COLOR[o.order_status ?? ''] ?? 'var(--ink-4)'
+                  const focused = !!focusKey && (o.order_number || `id:${o.id}`) === focusKey
                   return (
-                    <div key={o.id} style={cardBox}>
+                    <div key={o.id} style={focused ? { ...cardBox, borderColor: 'var(--blue)' } : cardBox}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
                         <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{o.order_number || 'ไม่มีเลขออเดอร์'}</span>
                         <span style={{ fontSize: 11.5, color: 'var(--ink-4)', flexShrink: 0 }}>{fmtDate(o.entry_date)}</span>
@@ -235,20 +291,38 @@ export default function MobileCustomer() {
                       {/* ใครทำอะไรกับออเดอร์ใบนี้บ้าง (กดเปิดดู) */}
                       <OrderHistory orderId={o.id} compact />
 
-                      {Array.isArray(o.packing_photos) && o.packing_photos.length > 0 && (
-                        <div style={{ display: 'flex', gap: 6, marginTop: 8, overflowX: 'auto' }}>
+                      {/* รูปงานของออเดอร์ — พนักงานที่ล็อกอินด้วยรหัสตัวเองเพิ่ม/ลบได้จากตรงนี้ */}
+                      {((o.packing_photos?.length ?? 0) > 0 || staff) && (
+                        <div style={{ display: 'flex', gap: 6, marginTop: 8, overflowX: 'auto', alignItems: 'center' }}>
                           {/* กดดูรูปเต็มในหน้าเดิม — เดิมเปิดแท็บใหม่ ซึ่งบนแอป PWA = เด้งออกจากแอปไปเลย */}
-                          {o.packing_photos.map(url => (
-                            <button key={url} onClick={() => setPhoto(url)} aria-label="ดูรูปแพ็คเต็ม"
-                              style={{ flexShrink: 0, padding: 0, border: 'none', background: 'transparent', cursor: 'pointer', lineHeight: 0, WebkitTapHighlightColor: 'transparent' }}>
-                              {/* รูปมาจาก R2/Supabase หลายโดเมน — ใช้ img ตรงๆ เหมือนหน้าเดสก์ท็อป ไม่ผ่าน next/image */}
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={url} alt="รูปแพ็ค" loading="lazy" decoding="async"
-                                style={{ width: 62, height: 62, objectFit: 'cover', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)' }} />
-                            </button>
+                          {(o.packing_photos ?? []).map(url => (
+                            <span key={url} style={{ position: 'relative', flexShrink: 0, lineHeight: 0 }}>
+                              <button onClick={() => setPhoto(url)} aria-label="ดูรูปเต็ม"
+                                style={{ padding: 0, border: 'none', background: 'transparent', cursor: 'pointer', lineHeight: 0, WebkitTapHighlightColor: 'transparent' }}>
+                                {/* รูปมาจาก R2/Supabase หลายโดเมน — ใช้ img ตรงๆ เหมือนหน้าเดสก์ท็อป ไม่ผ่าน next/image */}
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={url} alt="รูปงาน" loading="lazy" decoding="async"
+                                  style={{ width: 62, height: 62, objectFit: 'cover', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', opacity: busyPhoto === url ? 0.4 : 1 }} />
+                              </button>
+                              {staff && (
+                                <button onClick={() => removePhoto(o.id, url)} disabled={busyPhoto === url} aria-label="ลบรูปนี้"
+                                  style={{ position: 'absolute', top: -5, right: -5, width: 22, height: 22, borderRadius: '50%', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--red)', fontSize: 12, lineHeight: '20px', padding: 0, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
+                                  ✕
+                                </button>
+                              )}
+                            </span>
                           ))}
+                          {staff && (
+                            <label style={{ flexShrink: 0, width: 62, height: 62, borderRadius: 7, border: '1px dashed var(--border)', background: 'var(--surface)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, cursor: 'pointer', color: 'var(--ink-3)' }}>
+                              <span style={{ fontSize: 18, lineHeight: 1 }}>{busyPhoto === o.id ? '…' : '＋'}</span>
+                              <span style={{ fontSize: 10 }}>{busyPhoto === o.id ? 'กำลังอัพ' : 'เพิ่มรูป'}</span>
+                              <input type="file" accept="image/*" disabled={busyPhoto === o.id} style={{ display: 'none' }}
+                                onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) addPhoto(o.id, f) }} />
+                            </label>
+                          )}
                         </div>
                       )}
+                      {photoErr && <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 6 }}>{photoErr}</div>}
 
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: 9, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
