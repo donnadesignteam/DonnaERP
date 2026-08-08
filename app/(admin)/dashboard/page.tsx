@@ -30,9 +30,9 @@ type Order = {
 
 const OUTSIDE_PLATFORMS = [
   'Facebook','LineOA','Tiktok-Chat','Shopee-Chat','หน้าร้าน',
-  'Lineส่วนตัวยุน','Lineส่วนตัวเฟิร์น','Lineส่วนตัวสู้',
+  'Lineส่วนตัวยุน','Lineส่วนตัวเฟิร์น','Lineส่วนตัวสู้','Lineส่วนตัวน็อต',
   'เคลม:Shopee','เคลม:Lazada','เคลม:Tiktok','เคลม:Facebook','เคลม:LineOA','เคลม:หน้าร้าน',
-  'เคลม:Lineส่วนตัวยุน','เคลม:Lineส่วนตัวเฟิร์น','เคลม:Lineส่วนตัวสู้',
+  'เคลม:Lineส่วนตัวยุน','เคลม:Lineส่วนตัวเฟิร์น','เคลม:Lineส่วนตัวสู้','เคลม:Lineส่วนตัวน็อต',
 ]
 
 function daysRemaining(dateStr: string): number | null {
@@ -249,9 +249,9 @@ export default function DashboardPage() {
   }
 
   const PLATFORMS = ['Tiktok','Tiktok-Chat','Shopee','Shopee-Chat','Lazada','Facebook','LineOA',
-    'Lineส่วนตัวยุน','Lineส่วนตัวสู้','Lineส่วนตัวเฟิร์น','หน้าร้าน',
+    'Lineส่วนตัวยุน','Lineส่วนตัวสู้','Lineส่วนตัวเฟิร์น','Lineส่วนตัวน็อต','หน้าร้าน',
     'เคลม:Shopee','เคลม:Lazada','เคลม:Tiktok','เคลม:Facebook','เคลม:หน้าร้าน',
-    'เคลม:LineOA','เคลม:Lineส่วนตัวยุน','เคลม:Lineส่วนตัวเฟิร์น','เคลม:Lineส่วนตัวสู้']
+    'เคลม:LineOA','เคลม:Lineส่วนตัวยุน','เคลม:Lineส่วนตัวเฟิร์น','เคลม:Lineส่วนตัวสู้','เคลม:Lineส่วนตัวน็อต']
   const platformOptions = PLATFORMS.concat(OUTSIDE_PLATFORMS.filter(p => !PLATFORMS.includes(p)))
   const courierOptions = ['งานติดตั้ง', ...new Set(all.map(r => r.courier).filter(Boolean))] as string[]
 

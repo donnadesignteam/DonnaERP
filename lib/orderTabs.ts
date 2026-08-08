@@ -6,9 +6,9 @@ import { effShipping } from '@/lib/shipping'
 
 export const OUTSIDE_PLATFORMS = [
   'Facebook', 'LineOA', 'Tiktok-Chat', 'Shopee-Chat', 'หน้าร้าน',
-  'Lineส่วนตัวยุน', 'Lineส่วนตัวเฟิร์น', 'Lineส่วนตัวสู้',
+  'Lineส่วนตัวยุน', 'Lineส่วนตัวเฟิร์น', 'Lineส่วนตัวสู้', 'Lineส่วนตัวน็อต',
   'เคลม:Shopee', 'เคลม:Lazada', 'เคลม:Tiktok', 'เคลม:Facebook', 'เคลม:LineOA', 'เคลม:หน้าร้าน',
-  'เคลม:Lineส่วนตัวยุน', 'เคลม:Lineส่วนตัวเฟิร์น', 'เคลม:Lineส่วนตัวสู้',
+  'เคลม:Lineส่วนตัวยุน', 'เคลม:Lineส่วนตัวเฟิร์น', 'เคลม:Lineส่วนตัวสู้', 'เคลม:Lineส่วนตัวน็อต',
 ]
 
 export const PROD_STATUSES = ['รอดำเนินการ', 'ตัดผ้าแล้ว', 'เย็บแล้ว', 'ตรวจสอบแล้ว', 'รีดแล้ว', 'แพ็คแล้ว', 'รอจัดส่ง', 'จัดส่งแล้ว']

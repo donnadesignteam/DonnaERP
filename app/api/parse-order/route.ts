@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
 schema:
 {
   "customer_name": "ชื่อลูกค้า/username (มักอยู่หลังชื่อ platform เช่น 'Shopee: somchai' → somchai) ถ้าไม่มีใส่ null",
-  "platform": "ช่องทาง เลือกที่ตรงที่สุด: Shopee | Tiktok | Lazada | Facebook | LineOA | หน้าร้าน | Lineส่วนตัวยุน | Lineส่วนตัวสู้ | Lineส่วนตัวเฟิร์น (ถ้าไม่มีใส่ null)",
+  "platform": "ช่องทาง เลือกที่ตรงที่สุด: Shopee | Tiktok | Lazada | Facebook | LineOA | หน้าร้าน | Lineส่วนตัวยุน | Lineส่วนตัวสู้ | Lineส่วนตัวเฟิร์น | Lineส่วนตัวน็อต (ถ้าไม่มีใส่ null)",
   "order_number": "เลขออเดอร์ (Shopee 14 ตัวอักษรผสมเลข / Tiktok 18-19 หลัก / Lazada 16 หลัก ถ้าไม่มีใส่ null)",
   "deadline": "กำหนดส่งงาน รูปแบบ YYYY-MM-DD ถ้าระบุชัด ไม่งั้น null",
   "price": ยอดเงินสุดท้ายที่ลูกค้าต้องจ่าย เป็นตัวเลข (มักอยู่หลังเครื่องหมาย = เช่น "=1965บาท" → 1965 ซึ่งรวมค่าส่งแล้ว ถ้ามีแค่ราคาเดียวใช้ราคานั้น) ถ้าไม่มีใส่ null,
