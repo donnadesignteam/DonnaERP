@@ -13,6 +13,7 @@ import { recordAction } from '@/lib/history'
 import { prevOf } from '@/lib/trackedDb'
 import { useStableView } from '@/lib/useStableView'
 import { oeUpdate, instUpdate, instInsert } from '@/lib/adminActor'
+import { createOrderForInstall, orderPatchFromInstall } from '@/lib/installOrderSync'
 
 
 type Installation = {
@@ -50,27 +51,53 @@ const PLATFORMS = ['Tiktok','Tiktok-Chat','Shopee','Shopee-Chat','Lazada','Faceb
 const TIMES = ['8:00','9:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00']
 const ENTERED_BY = ['เก๋','หนูนา','สู้','ยุน']
 const WORK_TYPES = ['งานติดตั้ง','งานวัดหน้างาน','งานแก้']
+// คอลัมน์ "งาน" ในตาราง — เลือกได้แค่ 2 อย่าง (งานแก้ใช้สถานะ "รอแก้งาน" แทน)
+const WORK_TYPE_OPTIONS = ['งานวัดหน้างาน','งานติดตั้ง']
 const ZONES = ['เชียงราย','เชียงใหม่','กทม']
 const TECHS = ['ช่างร้าน','ช่างนอก']
 // โซนที่รู้ชนิดช่างอยู่แล้ว → เติมให้อัตโนมัติ (เชียงราย/เชียงใหม่ เว้นไว้ให้เลือกเอง)
 const TECH_BY_ZONE: Record<string, string> = { 'กทม': 'ช่างนอก' }
-const INST_STATUS = ['วัดหน้างาน','วัดหน้างานแล้ว','ติดตั้ง','ติดตั้งเสร็จ','ติดตั้ง50%','รอแก้']
+const INST_STATUS = ['รอนัดหมาย','นัดหมายแล้ว','วัดหน้างาน','วัดหน้างานแล้ว','ติดตั้ง','ติดตั้งเสร็จ','ติดตั้ง50%','รอแก้']
+
+// สถานะที่เลือกได้ ขึ้นกับลักษณะงานในคอลัมน์ "งาน" — ค่าที่เก็บลงฐานคงของเดิมไว้ (แถวเก่าไม่เพี้ยน)
+const STATUS_BY_WORK: Record<string, string[]> = {
+  'งานวัดหน้างาน': ['รอนัดหมาย', 'นัดหมายแล้ว', 'วัดหน้างานแล้ว'],
+  'งานติดตั้ง': ['รอนัดหมาย', 'ติดตั้งเสร็จ', 'ติดตั้ง50%', 'รอแก้'],
+  'งานแก้': ['รอนัดหมาย', 'รอแก้', 'ติดตั้งเสร็จ'],
+}
+// ป้ายที่โชว์ (ค่าที่เก็บในฐานยังเป็นคำเดิม)
+const STATUS_LABEL: Record<string, string> = { 'ติดตั้ง50%': 'ติดตั้งเสร็จ50%', 'รอแก้': 'รอแก้งาน' }
+// ค่าเดิมของแถวเก่า → สถานะใหม่ที่ความหมายเดียวกัน (ยังไม่ได้ลงมือ = รอนัดหมาย)
+const STATUS_ALIAS: Record<string, string> = { 'ติดตั้ง': 'รอนัดหมาย', 'วัดหน้างาน': 'รอนัดหมาย' }
+const normStatus = (s?: string | null) => STATUS_ALIAS[s ?? ''] ?? (s ?? '')
+const statusLabel = (s: string) => STATUS_LABEL[s] ?? s
+const statusOptions = (workType?: string | null) => STATUS_BY_WORK[workType ?? ''] ?? INST_STATUS
 
 // สถานะตั้งต้นตามลักษณะงาน (ช่องสถานะถูกเอาออกจากฟอร์ม จึงกำหนดอัตโนมัติ)
 const STATUS_BY_TYPE: Record<string, string> = {
-  'งานติดตั้ง': 'ติดตั้ง',
-  'งานวัดหน้างาน': 'วัดหน้างาน',
+  'งานติดตั้ง': 'รอนัดหมาย',
+  'งานวัดหน้างาน': 'รอนัดหมาย',
   'งานแก้': 'รอแก้',
 }
-const INITIAL_STATUSES = ['ติดตั้ง', 'วัดหน้างาน', 'รอแก้']
+const INITIAL_STATUSES = ['ติดตั้ง', 'วัดหน้างาน', 'รอนัดหมาย', 'รอแก้']
 
 const STATUS_COLOR: Record<string, string> = {
+  'รอนัดหมาย': '#8e8e93',
+  'นัดหมายแล้ว': '#5ac8fa',
   'วัดหน้างาน': '#5ac8fa',
   'วัดหน้างานแล้ว': '#30b0c7',
   'ติดตั้ง': '#ff9f0a',
   'ติดตั้งเสร็จ': '#34c759',
   'ติดตั้ง50%': '#bf5af2',
   'รอแก้': 'var(--red)',
+}
+
+// สีของงานที่ยังไม่ลงมือ (รอนัดหมาย/นัดหมายแล้ว) ดูจากลักษณะงาน — ปฏิทินจะยังแยกวัดหน้างาน/ติดตั้งด้วยสีเหมือนเดิม
+const WORK_COLOR: Record<string, string> = { 'งานวัดหน้างาน': '#5ac8fa', 'งานติดตั้ง': '#ff9f0a', 'งานแก้': 'var(--red)' }
+const rowColor = (ins: { installation_status: string; work_type?: string }) => {
+  const s = normStatus(ins.installation_status)
+  if (s === 'รอนัดหมาย' || s === 'นัดหมายแล้ว') return WORK_COLOR[ins.work_type ?? ''] ?? '#8e8e93'
+  return STATUS_COLOR[s] ?? 'var(--ink-3)'
 }
 
 const emptyItem = (): RawItem => ({ type: '', floors: null, rail_head: '', hook_type: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', orientation: '', fabric_split: '', chemical: '', weight_chain: '', pull_side: '', note: '', outsource: '' })
@@ -126,7 +153,7 @@ function Calendar({ year, month, installs, onDayClick }: {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                     {dayInstalls.slice(0, 3).map(ins => {
                       const t = new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
-                      const bg = STATUS_COLOR[ins.installation_status] ?? 'var(--ink-3)'
+                      const bg = rowColor(ins)
                       return (
                         <div key={ins.id} style={{ background: bg + '22', borderLeft: `3px solid ${bg}`, borderRadius: 3, padding: '2px 5px', fontSize: 10, color: bg, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {t} {ins.customer_real_name || ins.customer_id}
@@ -150,7 +177,7 @@ const emptyForm = (): Omit<Installation, 'id' | 'created_at' | 'updated_at' | 's
   customer_real_name: '', province: '', install_zone: '', technician_type: '', phone: '', work_details: '', location_link: '',
   price: 0, notes: '', payment_status: 'รอมัดจำ', appointment_status: 'นัดหมายแล้ว',
   production_status: 'กำลังผลิต', send_to_technician: 'หน้าร้าน',
-  installation_status: 'วัดหน้างาน', entered_by: '', photos: [],
+  installation_status: 'รอนัดหมาย', entered_by: '', photos: [],
 })
 
 export default function InstallationsPage() {
@@ -172,6 +199,7 @@ export default function InstallationsPage() {
   const [bonusZones, setBonusZones] = useState<string[]>([])      // filter ยอดติดตั้งตามโซน — เลือกพร้อมกันได้หลายโซน ([] = ทุกโซน)
   const [bonusTech, setBonusTech] = useState<string | null>(null)  // filter ยอดติดตั้งตามชนิดช่าง (null = ทุกช่าง)
   const [search, setSearch] = useState('')
+  const [nameSugOpen, setNameSugOpen] = useState(false)   // เปิดรายการเดาชื่อลูกค้าในกล่องเพิ่มรายการ
   const [error, setError] = useState('')
   const [pasteText, setPasteText] = useState('')
   const [parsing, setParsing] = useState(false)
@@ -211,7 +239,10 @@ export default function InstallationsPage() {
     let rows = data
     // งานวัดหน้างานที่เลยวันนัดไปแล้ว → เลื่อนสถานะเป็น "วัดหน้างานแล้ว" อัตโนมัติ
     const now = Date.now()
-    const overdue = rows.filter(r => r.installation_status === 'วัดหน้างาน' && r.appointment_datetime && new Date(r.appointment_datetime).getTime() < now)
+    const overdue = rows.filter(r =>
+      (r.installation_status === 'วัดหน้างาน' ||
+        (r.work_type === 'งานวัดหน้างาน' && ['รอนัดหมาย', 'นัดหมายแล้ว'].includes(r.installation_status)))
+      && r.appointment_datetime && new Date(r.appointment_datetime).getTime() < now)
     if (overdue.length) {
       const ids = overdue.map(r => r.id)
       await instUpdate({ installation_status: 'วัดหน้างานแล้ว' }).in('id', ids)
@@ -243,6 +274,7 @@ export default function InstallationsPage() {
     setApptTime('9:00')
     setPasteText('')
     setParseError('')
+    setNameSugOpen(false)
     ph.begin([], null)
     setModal({ mode: 'add', data: emptyForm() })
   }
@@ -314,13 +346,15 @@ export default function InstallationsPage() {
     // ยังไม่เคยใช้รูปกับรายการนี้ → ไม่ต้องส่งคอลัมน์ photos (เว็บทำงานได้ตามปกติแม้ยังไม่ได้รัน SQL เพิ่มคอลัมน์)
     const hadPhotos = !!installs.find(i => i.id === d.id)?.photos?.length
     if (!ph.photos.length && !hadPhotos) delete payload.photos
-    const name = (d.customer_real_name || d.serial_no || '').toString()
+    const name = (d.customer_real_name || d.customer_id || d.serial_no || '').toString()
     let err
+    let savedRow: Installation | null = null
     if (modal.mode === 'add') {
       const res = await instInsert(payload).select().single()
       err = res.error
       if (!err && res.data) {
         const saved = res.data
+        savedRow = saved as Installation
         recordAction({
           label: `เพิ่มงานติดตั้ง ${name}`,
           undo: async () => { await supabase.from('installations').delete().eq('id', saved.id); await load() },
@@ -330,7 +364,11 @@ export default function InstallationsPage() {
     } else {
       const res = await instUpdate(payload).eq('id', d.id)
       err = res.error
-      if (!err) { const orig = installs.find(i => i.id === d.id); trackInst(d.id as string, payload, prevOf(orig ?? {}, payload), `แก้งานติดตั้ง ${name}`) }
+      if (!err) {
+        const orig = installs.find(i => i.id === d.id)
+        savedRow = { ...(orig ?? {}), ...payload } as Installation
+        trackInst(d.id as string, payload, prevOf(orig ?? {}, payload), `แก้งานติดตั้ง ${name}`)
+      }
     }
     setSaving(false)
     if (err) {
@@ -338,6 +376,8 @@ export default function InstallationsPage() {
     } else {
       ph.commit()   // บันทึกผ่านแล้วค่อยลบไฟล์ของรูปที่กดเอาออก (กดยกเลิกกลางทางรูปเดิมจะไม่หาย)
       setModal(null)
+      if (savedRow) await linkOrder(savedRow)   // งานติดตั้ง → สร้างใบออเดอร์ให้ฝ่ายผลิต
+      if (modal.mode === 'edit' && d.id) await pushToOrder(d.id, payload)   // แก้ในปฏิทิน → sync ไปใบออเดอร์
       load()
     }
   }
@@ -351,6 +391,7 @@ export default function InstallationsPage() {
     const { error: err } = await instUpdate({ appointment_datetime: dt, updated_at: now }).eq('id', id)
     if (err) { setError(`บันทึกวันนัดไม่สำเร็จ: ${err.message}`); load() }
     else trackInst(id, { appointment_datetime: dt, updated_at: now }, { appointment_datetime: old?.appointment_datetime ?? null, updated_at: old?.updated_at ?? null }, `แก้วันนัดติดตั้ง ${old?.customer_real_name || ''}`)
+    if (!err) await pushToOrder(id, { appointment_datetime: dt })   // sync ไปใบออเดอร์ที่ผูกไว้
   }
 
   // แปลงข้อความที่วางเป็นรายการสินค้าด้วย AI (endpoint เดียวกับหมวดออเดอร์)
@@ -421,6 +462,7 @@ export default function InstallationsPage() {
     const { error: err } = await instUpdate({ work_details: value, updated_at: now }).eq('id', id)
     if (err) { setError(`บันทึกรายละเอียดงานไม่สำเร็จ: ${err.message}`); load() }
     else trackInst(id, { work_details: value, updated_at: now }, { work_details: old?.work_details ?? null, updated_at: old?.updated_at ?? null }, `แก้รายละเอียดงานติดตั้ง ${old?.customer_real_name || ''}`)
+    if (!err) await pushToOrder(id, { work_details: value })   // sync ไปใบออเดอร์ที่ผูกไว้
   }
 
   const saveNote = async (id: string, value: string) => {
@@ -431,6 +473,7 @@ export default function InstallationsPage() {
     const { error: err } = await instUpdate({ notes: value, updated_at: now }).eq('id', id)
     if (err) { setError(`บันทึกหมายเหตุไม่สำเร็จ: ${err.message}`); load() }
     else trackInst(id, { notes: value, updated_at: now }, { notes: old?.notes ?? null, updated_at: old?.updated_at ?? null }, `แก้หมายเหตุติดตั้ง ${old?.customer_real_name || ''}`)
+    if (!err) await pushToOrder(id, { notes: value })   // sync ไปใบออเดอร์ที่ผูกไว้
   }
 
   const updateStatus = async (id: string, status: string) => {
@@ -440,6 +483,42 @@ export default function InstallationsPage() {
     const { error: err } = await instUpdate({ installation_status: status, updated_at: now }).eq('id', id)
     if (err) { setError(`อัพเดทสถานะไม่สำเร็จ: ${err.message}`); load() }
     else trackInst(id, { installation_status: status, updated_at: now }, { installation_status: old?.installation_status ?? null, updated_at: old?.updated_at ?? null }, `แก้สถานะติดตั้ง ${old?.customer_real_name || ''}`)
+    if (!err) await pushToOrder(id, { installation_status: status })   // sync ไปใบออเดอร์ที่ผูกไว้
+  }
+
+  // คอลัมน์ "งาน" — เปลี่ยนลักษณะงานตรงตาราง สถานะที่ใช้ไม่ได้กับงานใหม่จะรีเซ็ตให้เป็นสถานะตั้งต้น
+  const updateWorkType = async (id: string, wt: string) => {
+    const now = new Date().toISOString()
+    const old = installs.find(i => i.id === id)
+    const cur = normStatus(old?.installation_status)
+    const patch: { work_type: string; updated_at: string; installation_status?: string } = { work_type: wt, updated_at: now }
+    if (!statusOptions(wt).includes(cur)) patch.installation_status = STATUS_BY_TYPE[wt] ?? 'รอนัดหมาย'
+    setInstalls(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i))
+    const { error: err } = await instUpdate(patch).eq('id', id)
+    if (err) { setError(`อัพเดทลักษณะงานไม่สำเร็จ: ${err.message}`); load(); return }
+    trackInst(id, patch, prevOf(old ?? {}, patch), `แก้ลักษณะงานติดตั้ง ${old?.customer_real_name || old?.customer_id || ''}`)
+    if (old) await linkOrder({ ...old, ...patch })
+  }
+
+  // แก้ช่องไหนในปฏิทิน → แก้ช่องเดียวกันในใบออเดอร์ที่ผูกกันไว้ (sync สองทาง)
+  const pushToOrder = async (id: string, patch: Record<string, unknown>) => {
+    const row = installs.find(i => i.id === id)
+    if (!row?.source_order_id) return
+    const orderPatch = orderPatchFromInstall(patch, { ...row, ...patch } as Installation)
+    if (!Object.keys(orderPatch).length) return
+    const { error: err } = await oeUpdate({ ...orderPatch, updated_at: new Date().toISOString() }).eq('id', row.source_order_id)
+    if (err) setError(`อัพเดทใบออเดอร์ที่ผูกไว้ไม่สำเร็จ: ${err.message}`)
+  }
+
+  // เปลี่ยนเป็น "งานติดตั้ง" แล้วยังไม่มีใบออเดอร์ → สร้างใบให้ ฝ่ายผลิตถึงจะเห็นในหมวดออเดอร์
+  const linkOrder = async (ins: Installation) => {
+    if (ins.work_type !== 'งานติดตั้ง' || ins.source_order_id) return
+    const { orderId, error: oErr } = await createOrderForInstall(ins)
+    if (oErr) { setError(`สร้างใบออเดอร์ให้งานติดตั้งไม่สำเร็จ: ${oErr}`); return }
+    if (!orderId) return
+    const { error: lErr } = await instUpdate({ source_order_id: orderId }).eq('id', ins.id)
+    if (lErr) { setError(`ผูกใบออเดอร์กับงานติดตั้งไม่สำเร็จ: ${lErr.message}`); return }
+    setInstalls(prev => prev.map(i => i.id === ins.id ? { ...i, source_order_id: orderId } : i))
   }
 
   const updateZone = async (id: string, zone: string) => {
@@ -546,6 +625,11 @@ export default function InstallationsPage() {
   // ปฏิทินไม่แสดงงานที่ติดตั้งเสร็จแล้ว + filter ตามโซนที่เลือก
   const calendarInstalls = stableInstalls.filter(ins =>
     ins.installation_status !== 'ติดตั้งเสร็จ' && (!zoneFilter || ins.install_zone === zoneFilter)).map(live)
+
+  // รายชื่อลูกค้าที่เคยมีในระบบ — ใช้เดาชื่อตอนพิมพ์ในกล่องเพิ่มรายการ
+  const customerNames = Array.from(new Set(
+    installs.flatMap(i => [i.customer_id, i.customer_real_name]).map(v => (v ?? '').trim()).filter(Boolean)
+  )).sort((a, b) => a.localeCompare(b, 'th'))
 
   const sel = (label: string, key: string, options: string[]) => (
     <div style={{ marginBottom: 12 }}>
@@ -671,14 +755,14 @@ export default function InstallationsPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
-                {['Serial','นัดหมาย','ลูกค้า','รายการ','แพลตฟอร์ม','จังหวัด','โซน','ช่าง','เบอร์','สถานะติดตั้ง','หมายเหตุ','แก้ไขล่าสุด',''].map(h => (
+                {['Serial','นัดหมาย','งาน','ลูกค้า','รายการ','แพลตฟอร์ม','จังหวัด','โซน','ช่าง','เบอร์','สถานะ','หมายเหตุ','แก้ไขล่าสุด',''].map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '12px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {displayed.map(ins => {
-                const bg = STATUS_COLOR[ins.installation_status] ?? 'var(--ink-3)'
+                const bg = rowColor(ins)
                 return (
                   <tr key={ins.id} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--blue)' }}>{ins.serial_no}</td>
@@ -714,6 +798,16 @@ export default function InstallationsPage() {
                           ) : <span style={{ color: 'var(--ink-4)' }}>เลือกวันนัด</span>}
                         </span>
                       )}
+                    </td>
+                    <td style={{ padding: '12px 14px' }}>
+                      {/* งาน — ชิปสีเดียวกับคอลัมน์สถานะของแถวนั้น */}
+                      <select value={ins.work_type || ''} onChange={e => updateWorkType(ins.id, e.target.value)}
+                        style={{ background: bg + '22', color: bg, padding: '3px 8px', borderRadius: 980, fontWeight: 600, fontSize: 11, border: 'none', outline: 'none', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none' }}>
+                        <option value="" style={{ background: '#fff', color: 'var(--ink)' }}>—</option>
+                        {Array.from(new Set([...WORK_TYPE_OPTIONS, ins.work_type].filter(Boolean))).map(w => (
+                          <option key={w} value={w} style={{ background: '#fff', color: 'var(--ink)' }}>{w}</option>
+                        ))}
+                      </select>
                     </td>
                     <td style={{ padding: '12px 14px' }}>
                       {(ins.customer_real_name || ins.customer_id)
@@ -770,9 +864,11 @@ export default function InstallationsPage() {
                     </td>
                     <td style={{ padding: '12px 14px', color: 'var(--ink-3)' }}>{ins.phone || '-'}</td>
                     <td style={{ padding: '12px 14px' }}>
-                      <select value={ins.installation_status} onChange={e => updateStatus(ins.id, e.target.value)}
+                      <select value={normStatus(ins.installation_status)} onChange={e => updateStatus(ins.id, e.target.value)}
                         style={{ background: bg + '22', color: bg, padding: '3px 8px', borderRadius: 980, fontWeight: 600, fontSize: 11, border: 'none', outline: 'none', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none' }}>
-                        {INST_STATUS.map(s => <option key={s} value={s} style={{ background: '#fff', color: 'var(--ink)' }}>{s}</option>)}
+                        {Array.from(new Set([...statusOptions(ins.work_type), normStatus(ins.installation_status)])).map(s => (
+                          <option key={s} value={s} style={{ background: '#fff', color: 'var(--ink)' }}>{statusLabel(s)}</option>
+                        ))}
                       </select>
                     </td>
                     <td style={{ padding: '12px 14px', fontSize: 11, color: 'var(--ink-3)', minWidth: 140, maxWidth: 220 }}>
@@ -974,7 +1070,7 @@ export default function InstallationsPage() {
             {dayModal.items.length === 0 ? (
               <p style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 24 }}>ไม่มีนัดหมาย</p>
             ) : dayModal.items.map(ins => {
-              const bg = STATUS_COLOR[ins.installation_status] ?? 'var(--ink-3)'
+              const bg = rowColor(ins)
               return (
                 <div key={ins.id} style={{ borderLeft: `4px solid ${bg}`, borderRadius: 10, padding: '14px 16px', background: 'var(--bg)', marginBottom: 12 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -988,7 +1084,7 @@ export default function InstallationsPage() {
                   {ins.phone && <div style={{ fontSize: 13, marginTop: 4 }}>📞 {ins.phone}</div>}
                   {ins.location_link && <a href={ins.location_link} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: 'var(--blue)', display: 'block', marginTop: 4 }}>📍 ดูแผนที่</a>}
                   <div style={{ marginTop: 8 }}>
-                    <span style={{ background: bg + '22', color: bg, padding: '2px 8px', borderRadius: 980, fontSize: 11, fontWeight: 600 }}>{ins.installation_status}</span>
+                    <span style={{ background: bg + '22', color: bg, padding: '2px 8px', borderRadius: 980, fontSize: 11, fontWeight: 600 }}>{statusLabel(normStatus(ins.installation_status))}</span>
                   </div>
                 </div>
               )
@@ -1217,8 +1313,39 @@ export default function InstallationsPage() {
               {sel('ลักษณะงาน', 'work_type', WORK_TYPES)}
               {sel('จาก', 'platform', PLATFORMS)}
               {sel('ผู้ลงข้อมูล', 'entered_by', ENTERED_BY)}
-              {inp('ชื่อ ID', 'customer_id')}
-              {inp('ชื่อจริงลูกค้า', 'customer_real_name')}
+              {/* ชื่อลูกค้า — พิมพ์แล้วเดาชื่อจากลูกค้าที่เคยมีในระบบ (ไม่สนตัวพิมพ์เล็ก/ใหญ่) */}
+              {(() => {
+                const val = String(modal.data.customer_id ?? '')
+                const key = val.trim().toLowerCase()
+                const sugs = key
+                  ? customerNames
+                      .filter(n => n.toLowerCase().includes(key) && n.toLowerCase() !== key)
+                      .sort((a, b) => Number(b.toLowerCase().startsWith(key)) - Number(a.toLowerCase().startsWith(key)))
+                      .slice(0, 8)
+                  : []
+                return (
+                  <div style={{ marginBottom: 12, position: 'relative' }}>
+                    <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>ชื่อลูกค้า</label>
+                    <input type="text" autoComplete="off" value={val}
+                      onChange={e => { set('customer_id', e.target.value); setNameSugOpen(true) }}
+                      onFocus={() => setNameSugOpen(true)}
+                      onBlur={() => setTimeout(() => setNameSugOpen(false), 120)}
+                      style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                    {nameSugOpen && sugs.length > 0 && (
+                      <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 7, boxShadow: '0 4px 16px rgba(0,0,0,0.14)', zIndex: 30, maxHeight: 190, overflowY: 'auto', marginTop: 2 }}>
+                        {sugs.map(n => (
+                          <div key={n} onMouseDown={e => { e.preventDefault(); set('customer_id', n); setNameSugOpen(false) }}
+                            style={{ padding: '7px 10px', fontSize: 13, cursor: 'pointer', color: 'var(--ink)' }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = 'var(--bg)' }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = '#fff' }}>
+                            {n}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
               {inp('จังหวัด', 'province')}
               {sel('โซนติดตั้ง', 'install_zone', ZONES)}
               {sel('ช่าง', 'technician_type', TECHS)}

@@ -97,6 +97,7 @@ export default function MobileMe() {
   const [error, setError] = useState('')
   const [allLeaves, setAllLeaves] = useState(false)
   const [allScans, setAllScans] = useState(false)
+  const [scanQuery, setScanQuery] = useState('')   // ค้นหาในรายการงานที่สแกน (เลขออเดอร์/ชื่อลูกค้า/ขั้นตอน)
 
   // คุกกี้อ่านได้เฉพาะบนเบราว์เซอร์ — อ่านตอน render แรกจะไม่ตรงกับที่ server เรนเดอร์ (hydration mismatch)
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -158,7 +159,14 @@ export default function MobileMe() {
   const thisYm = new Date().toISOString().slice(0, 7)
   const scansThisMonth = scans.filter(s => s.scanned_at && ymOf(s.scanned_at) === thisYm).length
   const byStage = STAGE_ORDER.map(st => ({ stage: st, count: scans.filter(s => s.stage === st).length })).filter(s => s.count > 0)
-  const shownScans = allScans ? scans : scans.slice(0, 8)
+  // ค้นจากเลขออเดอร์ ชื่อลูกค้า หรือขั้นตอน (พิมพ์เล็ก/ใหญ่ก็เจอ)
+  const sq = scanQuery.trim().toLowerCase()
+  const foundScans = !sq ? scans : scans.filter(s => {
+    const info = orderInfo[String(s.order_number)]
+    return [String(s.order_number).replace(/^id:/, ''), info?.customer ?? '', s.stage ?? '']
+      .some(v => v.toLowerCase().includes(sq))
+  })
+  const shownScans = allScans || sq ? foundScans : foundScans.slice(0, 8)
   const shownLeaves = allLeaves ? leaves : leaves.slice(0, 6)
 
   return (
@@ -242,8 +250,21 @@ export default function MobileMe() {
                 ))}
               </div>
             )}
+            {scans.length > 0 && (
+              <div style={{ position: 'relative', marginTop: 10 }}>
+                <input value={scanQuery} onChange={e => setScanQuery(e.target.value)}
+                  placeholder="ค้นหา เลขออเดอร์ / ชื่อลูกค้า / ขั้นตอน"
+                  style={{ width: '100%', minHeight: 42, border: '1px solid var(--border)', background: 'var(--surface)', borderRadius: 12, padding: '0 36px 0 13px', fontSize: 13.5, outline: 'none', boxSizing: 'border-box', color: 'var(--ink)' }} />
+                {scanQuery && (
+                  <button onClick={() => setScanQuery('')}
+                    style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', width: 30, height: 30, border: 'none', background: 'transparent', color: 'var(--ink-4)', fontSize: 16, cursor: 'pointer' }}>✕</button>
+                )}
+              </div>
+            )}
             {scans.length === 0 ? (
               <div style={{ ...card, marginTop: 10, textAlign: 'center', color: 'var(--ink-4)', fontSize: 12.5 }}>ยังไม่มีประวัติการสแกน</div>
+            ) : foundScans.length === 0 ? (
+              <div style={{ ...card, marginTop: 10, textAlign: 'center', color: 'var(--ink-4)', fontSize: 12.5 }}>ไม่เจองานที่ตรงกับ “{scanQuery}”</div>
             ) : (
               <div style={{ ...card, marginTop: 10, padding: 0, overflow: 'hidden' }}>
                 {shownScans.map((s, i) => {
@@ -283,11 +304,16 @@ export default function MobileMe() {
                     <div key={key} style={rowStyle}>{body}</div>
                   )
                 })}
-                {scans.length > 8 && (
+                {!sq && foundScans.length > 8 && (
                   <button onClick={() => setAllScans(v => !v)}
                     style={{ width: '100%', minHeight: 40, border: 'none', borderTop: '1px solid var(--border)', background: 'transparent', color: 'var(--blue)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
-                    {allScans ? 'ย่อ' : `ดูทั้งหมด (${scans.length})`}
+                    {allScans ? 'ย่อ' : `ดูทั้งหมด (${foundScans.length})`}
                   </button>
+                )}
+                {sq && (
+                  <div style={{ padding: '8px 13px', borderTop: '1px solid var(--border)', fontSize: 11.5, color: 'var(--ink-4)' }}>
+                    เจอ {foundScans.length} ครั้งที่สแกน
+                  </div>
                 )}
               </div>
             )}

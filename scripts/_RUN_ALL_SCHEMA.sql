@@ -290,6 +290,14 @@ ALTER TABLE order_entries
   ADD COLUMN IF NOT EXISTS deposit NUMERIC DEFAULT NULL,
   ADD COLUMN IF NOT EXISTS order_assigned TEXT DEFAULT 'รออัพเดท';
 
+-- ----- ที่มา: scripts/add_paid_amount.sql -----
+-- ยอดที่ลูกค้าชำระมาแล้ว (คอลัมน์ "ชำระแล้ว") — ยอดที่เหลือคิดจาก ยอดทั้งหมด − ยอดนี้
+ALTER TABLE order_entries ADD COLUMN IF NOT EXISTS paid_amount NUMERIC DEFAULT NULL;
+
+-- ----- ที่มา: scripts/add_claim_deadline.sql -----
+-- กำหนดส่งงานเคลม (หน้าเคลมกรอกเอง) — หมวดออเดอร์ใช้คิด "วันที่เหลือ" ของงานเคลม
+ALTER TABLE claims ADD COLUMN IF NOT EXISTS deadline DATE DEFAULT NULL;
+
 -- ----- ที่มา: scripts/add_printed_at_column.sql -----
 -- เพิ่มคอลัมน์ printed_at เก็บวันเวลาที่ปริ้นใบออเดอร์ล่าสุด (โชว์สีเหลืองข้างปุ่มปริ้นในเมนู ···)
 -- ปลอดภัย additive (IF NOT EXISTS) ไม่กระทบข้อมูลเดิม รันใน Supabase SQL Editor ได้เลย
@@ -1020,6 +1028,8 @@ with need(kind, obj, detail) as (
     ('column','order_entries','province'),   ('column','order_entries','phone'),
     ('column','order_entries','location_link'), ('column','order_entries','payment_status'),
     ('column','order_entries','deposit'),    ('column','order_entries','order_assigned'),
+    ('column','order_entries','paid_amount'),
+    ('column','claims','deadline'),
     ('column','order_entries','is_dropoff'), ('column','order_entries','price'),
     ('column','installations','install_zone'), ('column','installations','updated_at'),
     ('column','installations','source_order_id'), ('column','installations','photos'),

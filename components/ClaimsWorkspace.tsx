@@ -28,6 +28,7 @@ type Shipment = { no: string; carrier: string }
 type Claim = {
   id: string
   claim_date: string | null
+  deadline: string | null      // กำหนดส่งงานเคลม — ใช้คิด "วันที่เหลือ" ในหมวดออเดอร์ด้วย
   channel: string | null
   customer_username: string | null
   original_order_number: string | null
@@ -90,7 +91,7 @@ const STATUS_COLOR = (s: string) => WORKFLOW.find(w => w.key === s)?.color ?? 'v
 
 function emptyClaim(): Claim {
   return {
-    id: '', claim_date: new Date().toISOString().slice(0, 10), channel: '', customer_username: '',
+    id: '', claim_date: new Date().toISOString().slice(0, 10), deadline: null, channel: '', customer_username: '',
     original_order_number: '', claim_type: '', fault: '', cause: '', resolution: '', items: null,
     ship_name: '', ship_address: '', ship_phone: '', return_tracking: '', outbound_tracking: '',
     courier: '', refund_amount: null, ship_back_cost: null, ship_return_cost: null, estimated_price: null,
@@ -225,7 +226,7 @@ export default function ClaimsWorkspace() {
     setSaving(true); setError('')
     const d = modal.data
     const payload: Partial<Claim> = {
-      claim_date: d.claim_date || null, channel: d.channel || null, customer_username: d.customer_username || null,
+      claim_date: d.claim_date || null, deadline: d.deadline || null, channel: d.channel || null, customer_username: d.customer_username || null,
       original_order_number: d.original_order_number || null, claim_type: d.claim_type || null, fault: d.fault || null,
       cause: d.cause || null, resolution: d.resolution || null, items: d.items && d.items.length ? d.items : null,
       ship_name: d.ship_name || null, ship_address: d.ship_address || null, ship_phone: d.ship_phone || null,
@@ -687,7 +688,7 @@ ${body}
                       onChange={e => setSelectedIds(e.target.checked ? new Set(displayed.map(r => r.id)) : new Set())}
                       style={{ cursor: 'pointer', width: 15, height: 15 }} />
                   </th>
-                  {['วันที่', 'แพลตฟอร์ม', 'ลูกค้า', 'ประเภท', 'รายการ', 'ยอดชำระ', 'สถานะ', 'แอดมิน', 'ปิดงาน', 'ชื่อผู้รับ', 'ที่อยู่จัดส่ง', 'จัดส่ง', 'ค่าส่งกลับ', 'ค่าส่งคืน', 'ราคาประเมิน', 'หมายเหตุ', 'แก้ไขล่าสุด', ''].map((h, i) => (
+                  {['วันที่', 'กำหนดส่ง', 'แพลตฟอร์ม', 'ลูกค้า', 'ประเภท', 'รายการ', 'ยอดชำระ', 'สถานะ', 'แอดมิน', 'ปิดงาน', 'ชื่อผู้รับ', 'ที่อยู่จัดส่ง', 'จัดส่ง', 'ค่าส่งกลับ', 'ค่าส่งคืน', 'ราคาประเมิน', 'หมายเหตุ', 'แก้ไขล่าสุด', ''].map((h, i) => (
                     <th key={i} style={{ textAlign: ['ค่าส่งกลับ', 'ค่าส่งคืน', 'ราคาประเมิน'].includes(h) ? 'right' : 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -702,6 +703,12 @@ ${body}
                     </td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', color: 'var(--ink-3)' }}>
                       {r.claim_date ? new Date(r.claim_date).toLocaleDateString('th-TH-u-ca-gregory', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '-'}
+                    </td>
+                    <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
+                      {/* กำหนดส่ง — หมวดออเดอร์เอาไปคิดคอลัมน์ "วันที่เหลือ" */}
+                      <input type="date" value={r.deadline ?? ''}
+                        onChange={e => saveCell(r.id, 'deadline', e.target.value)}
+                        style={{ border: 'none', background: 'transparent', fontSize: 12, outline: 'none', padding: 0, color: r.deadline ? 'var(--ink)' : 'var(--ink-4)', cursor: 'pointer' }} />
                     </td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', color: 'var(--ink)' }}>{r.channel || '-'}</td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
@@ -1023,6 +1030,7 @@ ${body}
               {field('ราคาประเมิน', 'estimated_price', { type: 'number' })}
               {field('พร้อมเพย์ / บัญชี', 'payment_target')}
               {field('สถานะเงิน', 'money_status', { options: MONEY_STATUS })}
+              {field('กำหนดส่ง', 'deadline', { type: 'date' })}
               {field('สถานะเคลม', 'status', { options: WORKFLOW.map(w => w.key) })}
               {field('แอดมินที่รับผิดชอบ', 'admin_name', { options: adminOptions })}
               {field('หมายเหตุ', 'notes', { full: true })}

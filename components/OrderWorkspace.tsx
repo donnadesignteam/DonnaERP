@@ -18,7 +18,7 @@ import ProvinceSelect from '@/components/ProvinceSelect'
 import { syncWorkStatus as syncWorkStatusExact } from '@/lib/workStatusSync'
 import { recordAction } from '@/lib/history'
 import { prevOf } from '@/lib/trackedDb'
-import { stampInsert, oeUpdate, oeInsert, instUpdate, instInsert } from '@/lib/adminActor'
+import { stampInsert, oeUpdate, oeInsert, instUpdate, instInsert, claimUpdate } from '@/lib/adminActor'
 import { useStableView } from '@/lib/useStableView'
 import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
@@ -93,6 +93,7 @@ type Entry = {
   price: number | null
   payment_status: string
   deposit: number | null
+  paid_amount: number | null   // ยอดที่ลูกค้าชำระมาแล้ว (กรอกเอง) — ที่เหลือ = ยอดทั้งหมด − ยอดนี้
   order_assigned: string
   created_at: string
   updated_at: string
@@ -113,7 +114,44 @@ type Entry = {
   actor_name?: string | null
   admin_code?: string | null
   last_content_at?: string | null
+  // แถวที่ดึงมาจากหน้าเคลม (ตาราง claims) — ไม่ใช่ใบออเดอร์จริง แก้ได้เฉพาะสถานะ/งานเสร็จ/จัดส่ง/ปริ้น/หมายเหตุ
+  claim_id?: string | null
 }
+
+// สถานะเคลม ↔ สถานะออเดอร์ (ต่างกันแค่หัวกับท้ายของสายงาน)
+const CLAIM_TO_ORDER_STATUS: Record<string, string> = { 'รอของคืน': 'รอดำเนินการ', 'ส่งแล้ว': 'จัดส่งแล้ว' }
+const ORDER_TO_CLAIM_STATUS: Record<string, string> = { 'รอดำเนินการ': 'รอของคืน', 'จัดส่งแล้ว': 'ส่งแล้ว', 'รอจัดส่ง': 'แพ็คแล้ว', 'รอติดตั้ง': 'แพ็คแล้ว' }
+const isClaimEntry = (r: { claim_id?: string | null }) => !!r.claim_id
+
+// แถวเคลม → หน้าตาแบบใบออเดอร์ (ใช้ตัวกรอง/การเรียง/คอลัมน์ชุดเดียวกับออเดอร์)
+type ClaimSource = {
+  id: string; claim_date: string | null; deadline: string | null; channel: string | null
+  customer_username: string | null; original_order_number: string | null; items: Item[] | null
+  status: string | null; is_urgent: boolean | null; notes: string | null; courier: string | null
+  printed_at: string | null; shipped_at: string | null; admin_name: string | null
+  estimated_price: number | null; created_at?: string | null; updated_at?: string | null
+}
+const claimToEntry = (c: ClaimSource): Entry => ({
+  ...emptyForm(),
+  id: c.id,
+  claim_id: c.id,
+  entry_date: c.claim_date,
+  deadline: c.deadline,
+  platform: `เคลม:${c.channel || 'หน้าร้าน'}`,
+  customer_name: c.customer_username,
+  order_number: c.original_order_number,
+  items: c.items,
+  order_status: CLAIM_TO_ORDER_STATUS[c.status ?? ''] ?? c.status ?? 'รอดำเนินการ',
+  is_urgent: !!c.is_urgent,
+  notes: c.notes,
+  courier: c.courier,
+  printed_at: c.printed_at,
+  shipped_at: c.shipped_at,
+  admin_name: c.admin_name,
+  price: c.estimated_price,
+  created_at: c.created_at ?? '',
+  updated_at: c.updated_at ?? '',
+} as Entry)
 
 const emptyItem = (): Item => ({ type: '', floors: null, rail_head: '', hook_type: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', orientation: '', fabric_split: '', chemical: '', weight_chain: '', pull_side: '', note: '', outsource: '' })
 
@@ -229,6 +267,7 @@ const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping
   price: null,
   payment_status: 'ยังไม่ชำระ',
   deposit: null,
+  paid_amount: null,
   order_assigned: 'รออัพเดท',
 })
 
@@ -286,7 +325,8 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
     { id: 'print', label: 'ปริ้น' },
     { id: 'customer', label: 'ลูกค้า' }, { id: 'platform', label: 'แพลตฟอร์ม' },
     { id: 'items', label: 'รายการ' }, { id: 'total', label: 'ยอดทั้งหมด' },
-    { id: 'payment', label: 'ชำระ' }, { id: 'paybefore', label: 'ยอดชำระก่อนจัดส่ง' },
+    { id: 'payment', label: 'ชำระ' }, { id: 'paid', label: 'ชำระแล้ว' },
+    { id: 'paybefore', label: 'ยอดชำระก่อนจัดส่ง' },
     { id: 'assigned', label: 'ลงออเดอร์' }, { id: 'admin', label: 'แอดมิน' },
     { id: 'status', label: 'สถานะงาน' },
     { id: 'done', label: 'งานเสร็จ' }, { id: 'shipped', label: 'จัดส่งแล้ว' },
@@ -301,7 +341,8 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
     { id: 'print', label: 'ปริ้น' },
     { id: 'customer', label: 'ลูกค้า' }, { id: 'platform', label: 'แพลตฟอร์ม' },
     { id: 'items', label: 'รายการ' }, { id: 'total', label: 'ยอดทั้งหมด' },
-    { id: 'payment', label: 'ชำระ' }, { id: 'paybefore', label: 'ยอดชำระหลังติดตั้ง' },
+    { id: 'payment', label: 'ชำระ' }, { id: 'paid', label: 'ชำระแล้ว' },
+    { id: 'paybefore', label: 'ยอดชำระหลังติดตั้ง' },
     { id: 'assigned', label: 'ลงออเดอร์' }, { id: 'admin', label: 'แอดมิน' },
     { id: 'status', label: 'สถานะงาน' },
     { id: 'done', label: 'งานเสร็จ' }, { id: 'installed', label: 'ติดตั้ง' },
@@ -313,6 +354,9 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
     { id: 'updated', label: 'แก้ไขล่าสุด' },
   ],
 }
+
+// คอลัมน์รายการโชว์ได้ไม่เกินกี่บรรทัด (เกินนี้ขึ้น "+ อีก N รายการ" แทน แถวจะได้ไม่ยืด)
+const ITEM_LINE_MAX = 3
 
 const isClaimRow = (platform: string | null | undefined) => (platform ?? '').startsWith('เคลม:')
 
@@ -412,6 +456,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [installDtEdit, setInstallDtEdit] = useState<{ id: string; date: string; time: string } | null>(null) // จิ้มคอลัมน์วันที่ติดตั้งเพื่อแก้วัน/เวลานัด
   const [printModal, setPrintModal] = useState(false)
   const [printMaxDays, setPrintMaxDays] = useState(3)
+  // id ใบออเดอร์ที่ในปฏิทินไม่ใช่ "งานติดตั้ง" (งานวัดหน้างาน ฯลฯ) — ซ่อนจากหมวดออเดอร์
+  const [nonOrderIds, setNonOrderIds] = useState<Set<string>>(new Set())
   const [quickFilter, setQuickFilter] = useState<'all' | 'platform' | 'outside' | 'install' | 'claim' | 'shipped' | 'cancelled'>('all')
   const [hiddenCols, setHiddenCols] = useState<Record<string, string[]>>(() => {
     if (typeof window === 'undefined') return {}
@@ -482,7 +528,17 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const { data, error: err } = await fetchAllRows<Entry>(() =>
       supabase.from('order_entries').select('*').order('entry_date', { ascending: false, nullsFirst: false }).order('id', { ascending: true }))
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
-    const entries = data
+    // ใบที่ผูกกับปฏิทิน แต่ในปฏิทินไม่ใช่ "งานติดตั้ง" (เช่น งานวัดหน้างาน) → ไม่ต้องโชว์ในหมวดออเดอร์
+    const { data: insts } = await fetchAllRows<{ source_order_id: string | null; work_type: string | null }>(() =>
+      supabase.from('installations').select('source_order_id, work_type').not('source_order_id', 'is', null))
+    setNonOrderIds(new Set(insts.filter(i => i.source_order_id && i.work_type !== 'งานติดตั้ง').map(i => i.source_order_id as string)))
+    // งานเคลมจากหน้าเคลม (ตาราง claims) → โชว์ปนในหมวดออเดอร์ด้วย จะได้เรียงวันที่เหลือรวมกัน
+    const CLAIM_COLS = 'id, claim_date, channel, customer_username, original_order_number, items, status, is_urgent, notes, courier, printed_at, shipped_at, admin_name, estimated_price, created_at, updated_at'
+    let claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(`${CLAIM_COLS}, deadline`))
+    // ยังไม่ได้รัน scripts/add_claim_deadline.sql → ดึงแบบไม่มีคอลัมน์กำหนดส่งไปก่อน (งานเคลมยังโชว์ได้)
+    if (claimRes.error) claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(CLAIM_COLS))
+    const claimEntries = claimRes.data.map(claimToEntry)
+    const entries = scope === 'claims' ? data : [...data, ...claimEntries]
     const order = computeSortOrder(entries, daysSort)
     setPageCache('order_entries', { rows: entries, sortOrder: order })
     setRows(entries)
@@ -620,7 +676,15 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       notes: d.notes || null,
       price: d.price ? Number(d.price) : null,
       payment_status: d.payment_status || 'ยังไม่ชำระ',
-      deposit: d.deposit ? Number(d.deposit) : null,
+      // ชำระแล้ว: กรอกเอง · ไม่กรอกแล้วเลือกมัดจำ50% → ครึ่งหนึ่งของยอดทั้งหมด · ยอดที่เหลือคิดจากยอดนี้
+      ...(() => {
+        const typed = d.paid_amount != null && String(d.paid_amount) !== '' ? Number(d.paid_amount) : null
+        const paid = typed ?? (d.payment_status === 'มัดจำ50%' && d.price ? Number(d.price) / 2 : null)
+        return {
+          deposit: paid != null && d.price ? Math.max(0, Number(d.price) - paid) : (d.deposit ? Number(d.deposit) : null),
+          paid_amount: paid,
+        }
+      })(),
       order_assigned: d.order_assigned || 'รออัพเดท',
       updated_at: now,
     }
@@ -669,8 +733,9 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   }
 
   const del = async (id: string) => {
-    if (!confirm('ลบรายการนี้?')) return
     const row = rows.find(r => r.id === id)
+    if (row && isClaimEntry(row)) { setError('งานเคลมลบได้ที่หน้าเคลม'); return }
+    if (!confirm('ลบรายการนี้?')) return
     // แปะชื่อคนลบก่อน แล้วค่อยลบ — ประวัติจะได้รู้ว่าใครลบ (trigger อ่านจากแถวที่กำลังถูกลบ)
     await oeUpdate({ updated_at: new Date().toISOString() }).eq('id', id)
     const { error: err } = await supabase.from('order_entries').delete().eq('id', id)
@@ -797,8 +862,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   }
 
   const bulkDelete = async () => {
-    if (!confirm(`ลบ ${selectedIds.size} รายการที่เลือก?`)) return
-    const ids = Array.from(selectedIds)
+    const ids = Array.from(selectedIds).filter(id => !rows.some(r => r.id === id && isClaimEntry(r)))
+    if (ids.length < selectedIds.size) setError('งานเคลมลบได้ที่หน้าเคลม — ข้ามให้แล้ว')
+    if (!ids.length) return
+    if (!confirm(`ลบ ${ids.length} รายการที่เลือก?`)) return
     const deleted = rows.filter(r => ids.includes(r.id))   // เก็บแถวที่ลบไว้ย้อนกลับ
     await oeUpdate({ updated_at: new Date().toISOString() }).in('id', ids)   // แปะชื่อคนลบก่อนลบ (ดู del)
     const { error: err } = await supabase.from('order_entries').delete().in('id', ids)
@@ -830,8 +897,27 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   }
 
   // แก้ค่าจริง (DB + sync กระดานงาน + log ประวัติ + state) — ไม่บันทึกกองประวัติ ใช้ซ้ำได้ทั้ง undo/redo
+  // แถวเคลม: แก้ได้เฉพาะช่องที่มีในตาราง claims — ช่องอื่นให้ไปแก้ที่หน้าเคลม
+  const CLAIM_EDITABLE = ['order_status', 'notes', 'courier', 'admin_name', 'deadline', 'printed_at', 'shipped_at', 'is_urgent']
+  const claimFieldPatch = (field: string, value: unknown): Record<string, unknown> | null => {
+    if (!CLAIM_EDITABLE.includes(field)) return null
+    if (field === 'order_status') return { status: ORDER_TO_CLAIM_STATUS[String(value)] ?? value }
+    return { [field]: value }
+  }
+
   const applyField = async (id: string, field: string, value: string | boolean): Promise<boolean> => {
     const now = new Date().toISOString()
+    const claimRow = rows.find(r => r.id === id && isClaimEntry(r))
+    if (claimRow) {
+      const patch = claimFieldPatch(field, value)
+      if (!patch) { setError('ช่องนี้ของงานเคลมแก้ได้ที่หน้าเคลม'); return false }
+      const { error: cErr } = await claimUpdate({ ...patch, updated_at: now }).eq('id', id)
+      if (cErr) { setError(`บันทึกงานเคลมไม่สำเร็จ: ${cErr.message}`); return false }
+      const sy = window.scrollY
+      flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value, updated_at: now } as Entry : r)))
+      window.scrollTo(window.scrollX, sy)
+      return true
+    }
     const { error: err } = await oeUpdate({ [field]: value, updated_at: now }).eq('id', id)
     if (err) return false
     if (field === 'order_status' && typeof value === 'string') {
@@ -886,7 +972,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   // ติ๊กช่องปริ้นเอง: ติ๊ก = บันทึกเวลาปริ้นตอนนี้, เอาติ๊กออก = ล้างค่า (ไม่แตะ updated_at เพราะไม่ใช่การแก้ข้อมูลออเดอร์)
   const togglePrinted = async (id: string, printed: boolean) => {
     const val = printed ? new Date().toISOString() : null
-    const { error: err } = await oeUpdate({ printed_at: val }).eq('id', id)
+    const isClaim = rows.some(r => r.id === id && isClaimEntry(r))
+    const { error: err } = isClaim
+      ? await claimUpdate({ printed_at: val }).eq('id', id)
+      : await oeUpdate({ printed_at: val }).eq('id', id)
     if (!err) setRows(prev => prev.map(r => r.id === id ? { ...r, printed_at: val } : r))
   }
 
@@ -910,6 +999,16 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const toggleDone = async (id: string, checked: boolean) => {
     const row = rows.find(r => r.id === id)
     const now = new Date().toISOString()
+    if (row && isClaimEntry(row)) {
+      // งานเคลม: งานเสร็จ = แพ็คแล้ว (สายงานเคลมไม่มีขั้น "รอจัดส่ง")
+      const st = checked ? 'แพ็คแล้ว' : 'รอของคืน'
+      const { error: cErr } = await claimUpdate({ is_urgent: checked, status: st, updated_at: now }).eq('id', id)
+      if (cErr) { setError(`บันทึกงานเคลมไม่สำเร็จ: ${cErr.message}`); return }
+      const sy = window.scrollY
+      flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, is_urgent: checked, order_status: CLAIM_TO_ORDER_STATUS[st] ?? st, done_at: checked ? now : null, updated_at: now } as Entry : r)))
+      window.scrollTo(window.scrollX, sy)
+      return
+    }
     const updates = checked
       ? { is_urgent: true, order_status: row?.is_installation ? 'รอติดตั้ง' : 'รอจัดส่ง', done_at: now, updated_at: now }
       : { is_urgent: false, order_status: 'รอดำเนินการ', done_at: null, updated_at: now }
@@ -930,6 +1029,15 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const toggleShipped = async (id: string, checked: boolean) => {
     const row = rows.find(r => r.id === id)
     const now = new Date().toISOString()
+    if (row && isClaimEntry(row)) {
+      const st = checked ? 'ส่งแล้ว' : 'แพ็คแล้ว'
+      const { error: cErr } = await claimUpdate({ status: st, shipped_at: checked ? now : null, updated_at: now }).eq('id', id)
+      if (cErr) { setError(`บันทึกงานเคลมไม่สำเร็จ: ${cErr.message}`); return }
+      const sy = window.scrollY
+      flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, order_status: CLAIM_TO_ORDER_STATUS[st] ?? st, shipped_at: checked ? now : null, updated_at: now } as Entry : r)))
+      window.scrollTo(window.scrollX, sy)
+      return
+    }
     const updates = checked
       ? { is_urgent: true, order_status: 'จัดส่งแล้ว', shipped_at: now, updated_at: now }
       : { is_urgent: true, order_status: 'รอจัดส่ง', shipped_at: null, updated_at: now }
@@ -1497,7 +1605,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   }
 
   // ตั้งแต่บรรทัดนี้ถึงจบการเรียงลำดับ ทุกอย่างทำงานบนค่า "ตอนโหลดหน้า" (stable) แถวจึงไม่ขยับตอนแก้
-  const scopedRows = rows.map(stable).filter(r => scope === 'claims' ? isClaimRow(r.platform) : !isClaimRow(r.platform))
+  // หมวดออเดอร์รวมงานเคลมด้วย (แท็บทั้งหมดจะได้เรียงงานเคลม/งานติดตั้งปนกันตามวันที่เหลือ)
+  const scopedRows = rows.map(stable).filter(r => scope === 'claims' ? isClaimRow(r.platform) : true)
 
   const displayedFrozen = scopedRows.filter(r => {
     const matchSearch = (r.customer_name ?? '').toLowerCase().includes(search.toLowerCase()) ||
@@ -1522,7 +1631,9 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const matchIncomplete = !incompleteFilter || (!r.items || r.items.length === 0 || !r.deadline || r.price == null || !r.customer_name || (OUTSIDE_PLATFORMS.includes(r.platform ?? '') && (!r.order_assigned || r.order_assigned === 'รออัพเดท')) || ((OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation) && (!r.payment_status || r.payment_status === 'ยังไม่ชำระ')))
     const matchUnprinted = !unprintedFilter || !r.printed_at
     const matchPrintedPending = !printedPendingFilter || isPrintedPending(r)
-    return matchSearch && matchStatus && matchPlatform && matchCourier && matchAdmin && matchTech && matchUrgent && matchInstall && matchShipping && matchQuick && matchIncomplete && matchUnprinted && matchPrintedPending
+    // งานในปฏิทินที่ยังไม่ใช่งานติดตั้ง (เช่น รอวัดหน้างาน) ไม่ต้องขึ้นในหมวดออเดอร์
+    const matchFromCalendar = !nonOrderIds.has(r.id)
+    return matchSearch && matchStatus && matchPlatform && matchCourier && matchAdmin && matchTech && matchUrgent && matchInstall && matchShipping && matchQuick && matchIncomplete && matchUnprinted && matchPrintedPending && matchFromCalendar
   })
 
   if (updatedSort) {
@@ -1782,6 +1893,16 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const now = new Date().toISOString()
     const row = rows.find(r => r.id === id)
     const oldVal = row ? (row as any)[field] ?? null : null
+    // แถวเคลม: บันทึกลงตาราง claims เฉพาะช่องที่มีจริง (ช่องอื่นบอกให้ไปแก้ที่หน้าเคลม)
+    if (row && isClaimEntry(row)) {
+      const patch = claimFieldPatch(field, val || null)
+      if (!patch) { setError('ช่องนี้ของงานเคลมแก้ได้ที่หน้าเคลม'); setEditCell(null); return }
+      const { error: cErr } = await claimUpdate({ ...patch, updated_at: now }).eq('id', id)
+      if (cErr) setError(`บันทึกงานเคลมไม่สำเร็จ: ${cErr.message}`)
+      else setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: val || null, updated_at: now } as Entry : r))
+      setEditCell(null)
+      return
+    }
     const { error: err } = await oeUpdate({ [field]: val || null, updated_at: now }).eq('id', id)
     if (!err) {
       const sy = window.scrollY
@@ -1845,8 +1966,11 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const handlePaymentStatus = async (r: Entry, val: string) => {
     const now = new Date().toISOString()
     const updates: Record<string, unknown> = { payment_status: val, updated_at: now }
-    if (val === 'มัดจำ50%' && r.price) updates.deposit = r.price / 2
-    else if (val === 'มัดจำ') updates.deposit = null
+    // มัดจำ50% → ลงยอดชำระแล้ว + ยอดที่เหลือให้เลย (ครึ่งหนึ่งของยอดทั้งหมด) · มัดจำธรรมดา = รอกรอกยอดเอง
+    if (val === 'มัดจำ50%' && r.price) { updates.deposit = r.price / 2; updates.paid_amount = r.price / 2 }
+    else if (val === 'มัดจำ') { updates.deposit = null; updates.paid_amount = null }
+    else if (val === 'ชำระครบ' && r.price) { updates.deposit = null; updates.paid_amount = r.price }
+    else if (val === 'ยังไม่ชำระ') { updates.deposit = null; updates.paid_amount = null }
     const { error: err } = await oeUpdate(updates).eq('id', r.id)
     if (!err) {
       const sy = window.scrollY
@@ -1861,10 +1985,13 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const now = new Date().toISOString()
     const row = rows.find(r => r.id === id)
     const oldVal = row ? (row as any)[field] ?? null : null
-    const { error: err } = await oeUpdate({ [field]: num, updated_at: now }).eq('id', id)
+    // กรอก "ชำระแล้ว" → คำนวณยอดที่เหลือ (ชำระก่อนจัดส่ง/หลังติดตั้ง) ให้เลย
+    const extra = field === 'paid_amount' && row?.price != null && num != null
+      ? { deposit: Math.max(0, Number(row.price) - num) } : {}
+    const { error: err } = await oeUpdate({ [field]: num, ...extra, updated_at: now }).eq('id', id)
     if (!err) {
       const sy = window.scrollY
-      flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: num, updated_at: now } as Entry : r)))
+      flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: num, ...extra, updated_at: now } as Entry : r)))
       window.scrollTo(window.scrollX, sy)
       if (oldVal !== num) trackOrderField(id, { [field]: num, updated_at: now }, { [field]: oldVal, updated_at: row?.updated_at ?? null }, `แก้ข้อมูล ${row?.order_number || row?.customer_name || ''}`)
     }
@@ -1874,6 +2001,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   function getPrintRows(maxDays: number) {
     // ปริ้นต้องดูค่าสด ไม่ใช่ค่าตอนโหลดหน้า — ติ๊กงานเสร็จแล้วต้องไม่ติดมาในใบปริ้น
     return scopedRows.map(live).filter(r => {
+      if (isClaimEntry(r)) return false   // ใบงานเคลมปริ้นที่หน้าเคลม (ฟอร์มคนละแบบ)
       if (r.is_urgent) return false
       const es = effShipping(r)
       const d = es ? daysRemaining(es) : null
@@ -2138,7 +2266,7 @@ ${body}
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        {scope === 'orders' && ([['all', 'ทั้งหมด'], ['platform', 'งานแพลตฟอร์ม'], ['outside', 'งานนอก'], ['install', 'งานติดตั้ง'], ['shipped', 'จัดส่งแล้ว'], ['cancelled', 'ยกเลิก']] as [typeof quickFilter, string][]).map(([val, label]) => (
+        {scope === 'orders' && ([['all', 'ทั้งหมด'], ['platform', 'งานแพลตฟอร์ม'], ['outside', 'งานนอก'], ['install', 'งานติดตั้ง'], ['claim', 'งานเคลม'], ['shipped', 'จัดส่งแล้ว'], ['cancelled', 'ยกเลิก']] as [typeof quickFilter, string][]).map(([val, label]) => (
           <button key={val} onClick={() => setQuickFilter(val)}
             style={{ padding: '6px 16px', borderRadius: 20, border: quickFilter === val ? 'none' : '1px solid var(--border)', background: quickFilter === val ? 'var(--blue)' : 'var(--surface)', color: quickFilter === val ? '#fff' : 'var(--ink-3)', fontSize: 13, fontWeight: quickFilter === val ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
             {label}
@@ -2416,6 +2544,9 @@ ${body}
                   </button>
                 </th>
                 )}
+                {showCol('paid') && (
+                <th style={{ textAlign: 'right', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ชำระแล้ว</th>
+                )}
                 {showCol('paybefore') && (
                 <th style={{ textAlign: 'right', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{quickFilter === 'install' ? 'ยอดชำระหลังติดตั้ง' : 'ยอดชำระก่อนจัดส่ง'}</th>
                 )}
@@ -2500,7 +2631,7 @@ ${body}
             <tbody>
               {displayedOut.map(r => {
                 const isEditing = (f: string) => editCell?.id === r.id && editCell.field === f
-                const numCell = (field: 'price' | 'deposit') => {
+                const numCell = (field: 'price' | 'deposit' | 'paid_amount') => {
                   const val = r[field]
                   return isEditing(field) ? (
                     <input type="number" autoFocus value={editCell!.val}
@@ -2632,7 +2763,10 @@ ${body}
                   )
                 }
                 const instStatus = installStatusOf(r)
-                const autoDeposit = r.payment_status === 'มัดจำ50%' && r.price ? r.price / 2 : null
+                // ยอดที่ต้องชำระต่อ: กรอกช่อง "ชำระแล้ว" ไว้ → ยอดทั้งหมด − ยอดที่ชำระแล้ว · ไม่ได้กรอกและเป็นมัดจำ50% → ครึ่งหนึ่งเหมือนเดิม
+                const autoDeposit = r.paid_amount != null && r.price != null
+                  ? Math.max(0, Number(r.price) - Number(r.paid_amount))
+                  : r.payment_status === 'มัดจำ50%' && r.price ? r.price / 2 : null
                 const outDays = r.deadline ? daysRemaining(r.deadline) : null
                 const isDone = r.order_status === 'เสร็จสิ้น'
                 const isCancelled = r.order_status === 'ยกเลิก'
@@ -2692,9 +2826,13 @@ ${body}
                         style={{ border: 'none', background: 'transparent', fontSize: 11, cursor: 'pointer', padding: 0, color: r.items?.length ? 'var(--ink)' : 'var(--ink-4)', textAlign: 'left', display: 'block', width: '100%' }}>
                         {r.items?.length ? (
                           <div>
-                            {formatItemLines(r.items).map((line, i) => (
+                            {/* โชว์ไม่เกิน 3 บรรทัด — รายการเยอะแค่ไหนแถวก็ไม่ยืด (กดเปิดดูรายการเต็มได้) */}
+                            {formatItemLines(r.items).slice(0, ITEM_LINE_MAX).map((line, i) => (
                               <div key={i} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190, lineHeight: '1.6', color: i === 0 ? 'var(--ink)' : 'var(--ink-3)' }}>{line}</div>
                             ))}
+                            {formatItemLines(r.items).length > ITEM_LINE_MAX && (
+                              <div style={{ fontSize: 10, color: 'var(--ink-4)' }}>+ อีก {formatItemLines(r.items).length - ITEM_LINE_MAX} รายการ</div>
+                            )}
                           </div>
                         ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                       </button>
@@ -2709,6 +2847,15 @@ ${body}
                         style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PAYMENT_STATUS_COLOR[r.payment_status] ?? '#f59e0b', padding: 0 }}>
                         {PAYMENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
+                    </td>
+                    )}
+                    {showCol('paid') && (
+                    <td style={{ padding: '8px 14px' }}>
+                      {(!r.payment_status || r.payment_status === 'ยังไม่ชำระ') ? (
+                        <div style={{ textAlign: 'right', color: 'var(--ink-4)' }}>-</div>
+                      ) : r.payment_status === 'ชำระครบ' && r.paid_amount == null ? (
+                        <div style={{ textAlign: 'right', fontWeight: 600, color: '#22c55e' }}>{r.price != null ? Number(r.price).toLocaleString('th-TH') : '—'}</div>
+                      ) : numCell('paid_amount')}
                     </td>
                     )}
                     {showCol('paybefore') && (
@@ -3418,9 +3565,13 @@ ${body}
                         style={{ border: 'none', background: 'transparent', fontSize: 11, cursor: 'pointer', padding: 0, color: r.items?.length ? 'var(--ink)' : 'var(--ink-4)', textAlign: 'left', display: 'block', width: '100%' }}>
                         {r.items?.length ? (
                           <div>
-                            {formatItemLines(r.items).map((line, i) => (
+                            {/* โชว์ไม่เกิน 3 บรรทัด — รายการเยอะแค่ไหนแถวก็ไม่ยืด (กดเปิดดูรายการเต็มได้) */}
+                            {formatItemLines(r.items).slice(0, ITEM_LINE_MAX).map((line, i) => (
                               <div key={i} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 230, lineHeight: '1.6', color: i === 0 ? 'var(--ink)' : 'var(--ink-3)' }}>{line}</div>
                             ))}
+                            {formatItemLines(r.items).length > ITEM_LINE_MAX && (
+                              <div style={{ fontSize: 10, color: 'var(--ink-4)' }}>+ อีก {formatItemLines(r.items).length - ITEM_LINE_MAX} รายการ</div>
+                            )}
                           </div>
                         ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                       </button>
@@ -4195,13 +4346,28 @@ ${body}
                   </div>
                   {(modal.data.payment_status === 'มัดจำ' || modal.data.payment_status === 'มัดจำ50%') && (
                     <div style={{ marginBottom: 14 }}>
-                      <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>ยอดชำระก่อนจัดส่ง (บาท)</label>
+                      <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>ชำระแล้ว (บาท)</label>
                       <input type="number" step="0.01"
-                        value={modal.data.deposit ?? (modal.data.payment_status === 'มัดจำ50%' && modal.data.price ? Number(modal.data.price) / 2 : '')}
-                        onChange={e => set('deposit', e.target.value)}
+                        value={modal.data.paid_amount ?? (modal.data.payment_status === 'มัดจำ50%' && modal.data.price ? Number(modal.data.price) / 2 : '')}
+                        onChange={e => set('paid_amount', e.target.value)}
                         style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
                     </div>
                   )}
+                  {(modal.data.payment_status === 'มัดจำ' || modal.data.payment_status === 'มัดจำ50%') && (() => {
+                    // กรอก "ชำระแล้ว" ไว้ → ช่องนี้คิดให้เอง (ยอดทั้งหมด − ชำระแล้ว) แก้เองไม่ได้
+                    const paid = modal.data.paid_amount ?? (modal.data.payment_status === 'มัดจำ50%' && modal.data.price ? Number(modal.data.price) / 2 : null)
+                    const autoRemain = paid !== null && paid !== undefined && String(paid) !== '' && modal.data.price
+                      ? Math.max(0, Number(modal.data.price) - Number(paid)) : null
+                    return (
+                    <div style={{ marginBottom: 14 }}>
+                      <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>ยอดชำระก่อนจัดส่ง (บาท)</label>
+                      <input type="number" step="0.01" readOnly={autoRemain != null}
+                        value={autoRemain ?? modal.data.deposit ?? (modal.data.payment_status === 'มัดจำ50%' && modal.data.price ? Number(modal.data.price) / 2 : '')}
+                        onChange={e => set('deposit', e.target.value)}
+                        style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box', background: autoRemain != null ? 'var(--bg)' : undefined, color: autoRemain != null ? 'var(--ink-3)' : undefined }} />
+                    </div>
+                    )
+                  })()}
                 </div>
               ) : (
                 <div style={{ marginBottom: 14 }}>
@@ -4247,7 +4413,6 @@ ${body}
               {([
                 ['งานแพลตฟอร์ม', '🛍️', 'Shopee / Tiktok / Lazada', 'platform', {}],
                 ['งานนอก', '💬', 'Facebook / Line / หน้าร้าน', 'outside', {}],
-                ['งานติดตั้ง', '🔨', 'สั่งพร้อมติดตั้ง', 'install', { is_installation: true }],
               ] as [string, string, string, 'platform'|'outside'|'install'|'claim', object][]).map(([label, icon, desc, type, extra]) => (
                 <button key={label} onClick={() => {
                   setAddTypeModal(false)

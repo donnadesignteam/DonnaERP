@@ -40,6 +40,7 @@ export const ORDER_TABS: { id: QuickTab; label: string }[] = [
   { id: 'platform', label: 'งานแพลตฟอร์ม' },
   { id: 'outside', label: 'งานนอก' },
   { id: 'install', label: 'งานติดตั้ง' },
+  { id: 'claim', label: 'งานเคลม' },
   { id: 'shipped', label: 'จัดส่งแล้ว' },
   { id: 'cancelled', label: 'ยกเลิก' },
 ]

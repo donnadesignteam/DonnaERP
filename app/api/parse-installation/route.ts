@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { askClaude } from '@/lib/askClaude'
+import { normalizeThaiDate } from '@/lib/thaiDate'
 
 // เผื่อเวลาให้สะพาน Claude ที่เครื่องร้าน (ช้ากว่ายิง API ตรง)
 export const maxDuration = 60
@@ -50,6 +51,8 @@ ${text}`
 
   try {
     const inst = JSON.parse(jsonMatch[0])
+    // ปีที่แปลงมาอาจเป็น พ.ศ. หรือโดนบวก 543 ซ้ำจนไปปี 3000 กว่า — แก้ให้เป็น ค.ศ. ปีที่เป็นไปได้ ถ้าเพี้ยนเกินไปทิ้งเป็นค่าว่าง
+    if (inst.appointment_date != null) inst.appointment_date = normalizeThaiDate(inst.appointment_date)
     return NextResponse.json({ inst })
   } catch {
     return NextResponse.json({ error: 'JSON ไม่ถูกต้อง', raw }, { status: 500 })

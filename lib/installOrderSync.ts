@@ -1,0 +1,110 @@
+// sync ย้อนทาง: ปฏิทินงานติดตั้ง (installations) → ใบออเดอร์ (order_entries)
+// ‼️ งานติดตั้งลงได้ที่หน้าปฏิทินอย่างเดียว (กล่องเพิ่มรายการในหมวดออเดอร์ไม่มีปุ่มงานติดตั้งแล้ว)
+//    พอคอลัมน์ "งาน" เป็น "งานติดตั้ง" ระบบจะสร้างใบออเดอร์ให้ ฝ่ายผลิตถึงจะเห็นงานในหมวดออเดอร์
+//    ใบที่สร้างแล้วผูกกลับด้วย installations.source_order_id → เปลี่ยนซ้ำจะไม่สร้างใบซ้ำ
+// ทางกลับกัน (ออเดอร์ → ปฏิทิน) อยู่ที่ syncInstallation ใน components/OrderWorkspace.tsx
+
+import { supabase } from '@/lib/supabase'
+import { oeInsert } from '@/lib/adminActor'
+
+export const INSTALL_WORK_TYPE = 'งานติดตั้ง'
+
+// สถานะชำระของปฏิทินคนละชุดกับของออเดอร์ — คำที่ไม่ตรงกันถือว่ายังไม่ชำระ
+const ORDER_PAYMENTS = ['ยังไม่ชำระ', 'มัดจำ', 'มัดจำ50%', 'ชำระครบ']
+
+type InstallRow = {
+  id: string
+  work_type?: string | null
+  source_order_id?: string | null
+  appointment_datetime?: string | null
+  platform?: string | null
+  customer_id?: string | null
+  customer_real_name?: string | null
+  province?: string | null
+  phone?: string | null
+  location_link?: string | null
+  work_details?: string | null
+  notes?: string | null
+  price?: number | null
+  payment_status?: string | null
+  installation_status?: string | null
+  entered_by?: string | null
+}
+
+// สร้างใบออเดอร์ให้งานติดตั้งที่ยังไม่มีใบ — คืน id ของใบใหม่ (null = ไม่ต้องสร้าง/สร้างไม่สำเร็จ)
+export async function createOrderForInstall(ins: InstallRow): Promise<{ orderId: string | null; error?: string }> {
+  if (ins.work_type !== INSTALL_WORK_TYPE) return { orderId: null }
+  if (ins.source_order_id) return { orderId: null }
+
+  // กันซ้ำ: มีใบที่ผูกกับแถวนี้อยู่แล้วในฐาน (source_order_id ในหน่วยความจำอาจเก่า)
+  const { data: cur } = await supabase.from('installations').select('source_order_id').eq('id', ins.id).maybeSingle()
+  if (cur?.source_order_id) return { orderId: cur.source_order_id }
+
+  const dt = ins.appointment_datetime ? new Date(ins.appointment_datetime) : null
+  const date = dt && !isNaN(dt.getTime()) ? `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}` : null
+  const time = dt && !isNaN(dt.getTime()) ? `${dt.getHours()}:${String(dt.getMinutes()).padStart(2, '0')}` : '9:00'
+  const now = new Date().toISOString()
+  const today = now.slice(0, 10)
+  const pay = ORDER_PAYMENTS.includes(ins.payment_status ?? '') ? ins.payment_status : 'ยังไม่ชำระ'
+
+  const { data, error } = await oeInsert({
+    entry_date: today,
+    customer_name: ins.customer_real_name || ins.customer_id || null,
+    platform: ins.platform || null,
+    is_installation: true,
+    deadline: date,
+    installation_date: date,
+    install_time: time,
+    province: ins.province || null,
+    phone: ins.phone || null,
+    location_link: ins.location_link || null,
+    notes: [ins.work_details, ins.notes].map(v => (v ?? '').trim()).filter(Boolean).join(' · ') || null,
+    price: ins.price ?? null,
+    payment_status: pay,
+    order_status: 'รอดำเนินการ',
+    status: 'อยู่ในกำหนด',
+    order_assigned: 'รออัพเดท',
+    admin_name: ins.entered_by || null,
+    updated_at: now,
+  }).select().single()
+
+  if (error) return { orderId: null, error: error.message }
+  return { orderId: (data as { id: string }).id }
+}
+
+// สถานะติดตั้งในปฏิทิน → คอลัมน์ "ติดตั้ง" ของหมวดออเดอร์ (คำที่ไม่มีคู่ = ไม่แตะของเดิม)
+const INSTALL_STATUS_TO_ORDER: Record<string, string> = {
+  'ติดตั้งเสร็จ': 'ติดตั้งแล้ว',
+  'ติดตั้ง50%': 'ติดตั้ง50%',
+}
+
+// แก้อะไรในปฏิทิน → แก้ช่องเดียวกันในใบออเดอร์ที่ผูกกันไว้
+// ‼️ ส่งเฉพาะช่องที่เพิ่งแก้ (patch) ไม่ push ทั้งแถว ไม่งั้นค่าที่ฝั่งออเดอร์แก้ไว้จะโดนของเก่าทับ
+export function orderPatchFromInstall(patch: Record<string, unknown>, merged: InstallRow): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(patch, k)
+
+  if (has('appointment_datetime')) {
+    const dt = merged.appointment_datetime ? new Date(merged.appointment_datetime) : null
+    const ok = dt && !isNaN(dt.getTime())
+    out.deadline = ok ? `${dt!.getFullYear()}-${String(dt!.getMonth() + 1).padStart(2, '0')}-${String(dt!.getDate()).padStart(2, '0')}` : null
+    out.installation_date = out.deadline
+    out.install_time = ok ? `${dt!.getHours()}:${String(dt!.getMinutes()).padStart(2, '0')}` : '9:00'
+  }
+  if (has('price')) out.price = merged.price ?? null
+  if (has('phone')) out.phone = merged.phone || null
+  if (has('province')) out.province = merged.province || null
+  if (has('location_link')) out.location_link = merged.location_link || null
+  if (has('platform')) out.platform = merged.platform || null
+  if (has('customer_id') || has('customer_real_name')) out.customer_name = merged.customer_real_name || merged.customer_id || null
+  if (has('notes') || has('work_details')) {
+    out.notes = [merged.work_details, merged.notes].map(v => (v ?? '').trim()).filter(Boolean).join(' · ') || null
+  }
+  if (has('payment_status') && ORDER_PAYMENTS.includes(merged.payment_status ?? '')) out.payment_status = merged.payment_status
+  if (has('installation_status')) {
+    const mapped = INSTALL_STATUS_TO_ORDER[merged.installation_status ?? '']
+    if (mapped) out.install_status = mapped
+  }
+  return out
+}
+

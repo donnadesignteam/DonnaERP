@@ -41,6 +41,7 @@ export const FIELD_TH: Record<string, string> = {
   order_status: 'สถานะงาน', status: 'สถานะ', deadline: 'กำหนดส่ง',
   shipping_datetime: 'วันส่ง', shipped_at: 'จัดส่งเมื่อ', customer_name: 'ลูกค้า',
   platform: 'แพลตฟอร์ม', notes: 'หมายเหตุ', price: 'ราคา', deposit: 'มัดจำ',
+  paid_amount: 'ชำระแล้ว',
   payment_status: 'การชำระ', is_urgent: 'งานเสร็จ', items: 'รายการสินค้า',
   technician: 'ช่าง', admin_name: 'แอดมิน', courier: 'ขนส่ง', order_number: 'เลขออเดอร์',
   province: 'จังหวัด', phone: 'เบอร์โทร', installation_date: 'วันติดตั้ง',

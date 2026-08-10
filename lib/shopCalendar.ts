@@ -14,6 +14,8 @@ export const LEAVE_STATUS_COLOR: Record<string, string> = {
 
 // สถานะงานติดตั้ง + สี (ให้ตรงกับ app/(admin)/installations)
 export const INSTALL_STATUS_COLOR: Record<string, string> = {
+  'รอนัดหมาย': '#8e8e93',
+  'นัดหมายแล้ว': '#5ac8fa',
   'วัดหน้างาน': '#5ac8fa',
   'วัดหน้างานแล้ว': '#30b0c7',
   'ติดตั้ง': '#ff9f0a',

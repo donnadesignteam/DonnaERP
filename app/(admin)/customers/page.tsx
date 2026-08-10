@@ -102,6 +102,7 @@ type CustomerInstall = {
 }
 
 const INSTALL_STATUS_COLOR: Record<string, string> = {
+  'รอนัดหมาย': '#8e8e93', 'นัดหมายแล้ว': '#5ac8fa',
   'วัดหน้างาน': '#5ac8fa', 'วัดหน้างานแล้ว': '#30b0c7', 'ติดตั้ง': '#ff9f0a',
   'ติดตั้งเสร็จ': '#34c759', 'ติดตั้ง50%': '#bf5af2', 'รอแก้': 'var(--red)',
 }
