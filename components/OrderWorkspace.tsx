@@ -4016,7 +4016,8 @@ ${body}
               </div>
             ) : (
               <div style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
-                {(['form', ...(addType === 'platform' ? ['paste', 'file'] : [])] as ('form'|'paste'|'file')[]).map(t => (
+                {/* งานแพลตฟอร์ม: วาง Copy + Drop ไฟล์ (xlsx/csv) · งานนอก: Drop ไฟล์ = PDF ใบเสนอราคา */}
+                {(['form', ...(addType === 'platform' ? ['paste', 'file'] : addType === 'outside' ? ['file'] : [])] as ('form'|'paste'|'file')[]).map(t => (
                   <button key={t} onClick={() => { setModalTab(t); setPasteRows([]); setIncomeRows([]); setFileParseError('') }}
                     style={{ flex: 1, padding: '16px 0', fontSize: 14, fontWeight: modalTab === t ? 600 : 400, border: 'none', borderBottom: modalTab === t ? '2px solid var(--blue)' : '2px solid transparent', background: 'transparent', cursor: 'pointer', color: modalTab === t ? 'var(--blue)' : 'var(--ink-3)', transition: 'all 0.15s' }}>
                     {t === 'form' ? 'กรอกฟอร์ม' : t === 'paste' ? 'วาง Copy' : 'Drop ไฟล์'}
@@ -4080,7 +4081,38 @@ ${body}
               </div>
             )}
 
-            {modal.mode === 'add' && modalTab === 'file' && incomeRows.length === 0 && (
+            {/* งานนอก: แท็บ Drop ไฟล์ = PDF ใบเสนอราคา (อ่านแล้วกรอกฟอร์มให้ตรวจก่อนบันทึก) */}
+            {modal.mode === 'add' && modalTab === 'file' && addType === 'outside' && (
+              <div>
+                <div
+                  onDragOver={e => { e.preventDefault(); setQuoteDragOver(true) }}
+                  onDragLeave={() => setQuoteDragOver(false)}
+                  onDrop={e => {
+                    e.preventDefault(); setQuoteDragOver(false)
+                    const file = e.dataTransfer.files[0]
+                    if (file) { handleQuotePdf(file); setModalTab('form') }
+                  }}
+                  style={{ border: `2px dashed ${quoteDragOver ? 'var(--blue)' : 'var(--border)'}`, borderRadius: 12, padding: '48px 24px', textAlign: 'center', background: quoteDragOver ? 'var(--blue-bg)' : 'var(--bg)', transition: 'all 0.15s', marginBottom: 16 }}>
+                  <div style={{ fontSize: 36, marginBottom: 12 }}>📄</div>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>{orderParsing ? 'กำลังอ่านใบเสนอราคา…' : 'วางไฟล์ใบเสนอราคาที่นี่'}</div>
+                  <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 20 }}>รองรับ .pdf</div>
+                  <label style={{ display: 'inline-block', padding: '8px 20px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, cursor: 'pointer', background: 'var(--surface)', color: 'var(--ink)' }}>
+                    เลือกไฟล์
+                    <input type="file" accept=".pdf" style={{ display: 'none' }} onChange={e => {
+                      const file = e.target.files?.[0]
+                      if (file) { handleQuotePdf(file); setModalTab('form') }
+                      e.target.value = ''
+                    }} />
+                  </label>
+                </div>
+                {orderParseError && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 10 }}>{orderParseError}</div>}
+                <div style={{ fontSize: 12, color: 'var(--ink-3)', background: 'var(--bg)', borderRadius: 8, padding: '10px 14px' }}>
+                  ระบบอ่านชื่อลูกค้า ที่อยู่ เบอร์ ยอดรวม และรายการทุกจุดติดตั้งมากรอกในแท็บ “กรอกฟอร์ม” ให้ตรวจก่อนกดบันทึก
+                </div>
+              </div>
+            )}
+
+            {modal.mode === 'add' && modalTab === 'file' && addType !== 'outside' && incomeRows.length === 0 && (
               <div>
                 <div
                   onDragOver={e => { e.preventDefault(); setFileDragOver(true) }}
@@ -4246,28 +4278,6 @@ ${body}
                   </button>
                   {orderParseError && <span style={{ color: 'var(--red)', fontSize: 12 }}>{orderParseError}</span>}
                 </div>
-                {/* งานนอก/งานติดตั้ง: ลากไฟล์ PDF ใบเสนอราคามาวาง → ระบบอ่านแล้วกรอกฟอร์มให้ตรวจก่อนบันทึก */}
-                {(addType === 'outside' || addType === 'install') && (
-                  <div
-                    onDragOver={e => { e.preventDefault(); setQuoteDragOver(true) }}
-                    onDragLeave={() => setQuoteDragOver(false)}
-                    onDrop={e => {
-                      e.preventDefault(); setQuoteDragOver(false)
-                      const f = e.dataTransfer.files[0]
-                      if (f) handleQuotePdf(f)
-                    }}
-                    style={{ marginTop: 10, border: `1px dashed ${quoteDragOver ? 'var(--blue)' : 'var(--border)'}`, borderRadius: 8, padding: '12px 14px', textAlign: 'center', background: quoteDragOver ? 'var(--blue-bg)' : 'transparent', transition: 'all 0.15s' }}>
-                    <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>วางไฟล์ PDF ใบเสนอราคาที่นี่ — หรือ </span>
-                    <label style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 600, cursor: 'pointer' }}>
-                      เลือกไฟล์
-                      <input type="file" accept=".pdf" style={{ display: 'none' }} onChange={e => {
-                        const f = e.target.files?.[0]
-                        if (f) handleQuotePdf(f)
-                        e.target.value = ''
-                      }} />
-                    </label>
-                  </div>
-                )}
               </div>
             )}
             {(() => {

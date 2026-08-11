@@ -203,6 +203,7 @@ export default function InstallationsPage() {
   const [error, setError] = useState('')
   const [pasteText, setPasteText] = useState('')
   const [parsing, setParsing] = useState(false)
+  const [quoteDragOver, setQuoteDragOver] = useState(false)   // ลาก PDF ใบเสนอราคามาวางในกล่องเพิ่มรายการติดตั้ง
   const [parseError, setParseError] = useState('')
   const [actionMenu, setActionMenu] = useState<{ id: string; top: number; left: number } | null>(null)
   const [editNote, setEditNote] = useState<{ id: string; value: string } | null>(null)
@@ -293,15 +294,43 @@ export default function InstallationsPage() {
   const closeModal = () => { setModal(null); ph.cancel() }
   const closeItemsModal = () => { setItemsModal(null); setItemsError(''); ph.cancel() }
 
+  // ดรอป PDF ใบเสนอราคา → ดึงข้อความใส่ช่องวางข้อความ แล้วแปลงกรอกฟอร์มให้เลย
+  const handleQuotePdf = async (file: File) => {
+    if (!/\.pdf$/i.test(file.name)) { setParseError('รองรับเฉพาะไฟล์ .pdf'); return }
+    setParsing(true)
+    setParseError('')
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/parse-pdf', { method: 'POST', body: fd })
+      const json = await res.json()
+      if (!res.ok || json.error) throw new Error(json.error || 'อ่านไฟล์ไม่สำเร็จ')
+      setPasteText(json.text)
+      await parseText(json.text)
+    } catch (e) {
+      setParseError(e instanceof Error ? e.message : 'อ่านไฟล์ไม่สำเร็จ')
+    } finally {
+      setParsing(false)
+    }
+  }
+
   const parseFromLine = async () => {
     if (!pasteText.trim()) return
     setParsing(true)
     setParseError('')
     try {
+      await parseText(pasteText)
+    } finally {
+      setParsing(false)
+    }
+  }
+
+  const parseText = async (text: string) => {
+    try {
       const res = await fetch('/api/parse-installation', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text: pasteText }),
+        body: JSON.stringify({ text }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'แปลงข้อมูลไม่สำเร็จ')
@@ -319,8 +348,6 @@ export default function InstallationsPage() {
       if (inst.appointment_time && TIMES.includes(inst.appointment_time)) setApptTime(inst.appointment_time)
     } catch (e) {
       setParseError(e instanceof Error ? e.message : 'แปลงข้อมูลไม่สำเร็จ')
-    } finally {
-      setParsing(false)
     }
   }
 
@@ -1282,6 +1309,28 @@ export default function InstallationsPage() {
                 </div>
                 <textarea value={pasteText} onChange={e => setPasteText(e.target.value)} rows={3}
                   style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+                {/* ลากไฟล์ PDF ใบเสนอราคามาวาง → อ่านข้อความแล้วกรอกฟอร์มให้ตรวจก่อนบันทึก */}
+                <div
+                  onDragOver={e => { e.preventDefault(); setQuoteDragOver(true) }}
+                  onDragLeave={() => setQuoteDragOver(false)}
+                  onDrop={e => {
+                    e.preventDefault(); setQuoteDragOver(false)
+                    const f = e.dataTransfer.files[0]
+                    if (f) handleQuotePdf(f)
+                  }}
+                  style={{ marginTop: 10, border: `2px dashed ${quoteDragOver ? 'var(--blue)' : 'var(--border)'}`, borderRadius: 10, padding: '22px 16px', textAlign: 'center', background: quoteDragOver ? 'var(--blue-bg)' : 'var(--surface)', transition: 'all 0.15s' }}>
+                  <div style={{ fontSize: 26, marginBottom: 6 }}>📄</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>{parsing ? 'กำลังอ่านใบเสนอราคา…' : 'วางไฟล์ใบเสนอราคาที่นี่'}</div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 12 }}>รองรับ .pdf</div>
+                  <label style={{ display: 'inline-block', padding: '6px 16px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12, cursor: 'pointer', background: 'var(--bg)', color: 'var(--ink)' }}>
+                    เลือกไฟล์
+                    <input type="file" accept=".pdf" style={{ display: 'none' }} onChange={e => {
+                      const f = e.target.files?.[0]
+                      if (f) handleQuotePdf(f)
+                      e.target.value = ''
+                    }} />
+                  </label>
+                </div>
                 {parseError && <div style={{ marginTop: 6, fontSize: 12, color: 'var(--red)' }}>{parseError}</div>}
               </div>
             )}
