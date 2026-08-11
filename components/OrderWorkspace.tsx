@@ -8,6 +8,7 @@ import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers } from '@/lib/itemFormat'
 import { railLink } from '@/lib/rail'
+import { TECH_OPTIONS } from '@/lib/techs'
 import { OUTSIDE_PLATFORMS, PROD_STATUSES, INSTALL_STATUSES, PROD_STATUS_COLOR, matchQuickTab, effectiveDueDate, type QuickTab } from '@/lib/orderTabs'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { effShipping } from '@/lib/shipping'
@@ -129,6 +130,7 @@ type ClaimSource = {
   customer_username: string | null; original_order_number: string | null; items: Item[] | null
   status: string | null; is_urgent: boolean | null; notes: string | null; courier: string | null
   printed_at: string | null; shipped_at: string | null; admin_name: string | null
+  technician?: string | null
   estimated_price: number | null; created_at?: string | null; updated_at?: string | null
 }
 const claimToEntry = (c: ClaimSource): Entry => ({
@@ -148,6 +150,7 @@ const claimToEntry = (c: ClaimSource): Entry => ({
   printed_at: c.printed_at,
   shipped_at: c.shipped_at,
   admin_name: c.admin_name,
+  technician: c.technician ?? null,   // ช่างที่ลงไว้ในหน้าเคลม (แก้ที่หน้าเคลม)
   price: c.estimated_price,
   created_at: c.created_at ?? '',
   updated_at: c.updated_at ?? '',
@@ -187,7 +190,7 @@ const COURIERS = [
 // ตัวเลือกในช่องแอดมิน (เลือกเอง) — user กำหนดรายชื่อชุดนี้เอง
 // ‼️ คนละชุดกับ BONUS_ADMINS ใน lib/adminActor.ts (กลุ่มที่ระบบใส่ชื่อให้อัตโนมัติ)
 const ADMINS = ['กาย', 'แพท', 'หนูนา', 'ยุน', 'ส้ม', 'เก๋']
-const TECHS = ['ช่างดอนน่า', 'ช่างพี่ฟอง', 'ช่างเชียงใหม่', 'ช่างกทม', 'ช่างบัวบาน']
+const TECHS = TECH_OPTIONS   // แก้รายชื่อช่างที่ lib/techs.ts (หน้าเคลมใช้ชุดเดียวกัน)
 
 // ไฮไลต์ช่องที่ยังไม่ได้ลงข้อมูล (คอลัมน์แอดมิน/ช่าง) — สีส้มชุดเดียวกับสถานะ "รอดำเนินการ" (#f59e0b ใน PROD_STATUS_COLOR)
 const EMPTY_HL = 'rgba(245,158,11,0.42)'
@@ -534,8 +537,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     setNonOrderIds(new Set(insts.filter(i => i.source_order_id && i.work_type !== 'งานติดตั้ง').map(i => i.source_order_id as string)))
     // งานเคลมจากหน้าเคลม (ตาราง claims) → โชว์ปนในหมวดออเดอร์ด้วย จะได้เรียงวันที่เหลือรวมกัน
     const CLAIM_COLS = 'id, claim_date, channel, customer_username, original_order_number, items, status, is_urgent, notes, courier, printed_at, shipped_at, admin_name, estimated_price, created_at, updated_at'
-    let claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(`${CLAIM_COLS}, deadline`))
-    // ยังไม่ได้รัน scripts/add_claim_deadline.sql → ดึงแบบไม่มีคอลัมน์กำหนดส่งไปก่อน (งานเคลมยังโชว์ได้)
+    let claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(`${CLAIM_COLS}, deadline, technician`))
+    // ยังไม่ได้รัน scripts/add_claim_deadline.sql / add_claim_technician.sql → ดึงแบบไม่มี 2 คอลัมน์นั้นไปก่อน (งานเคลมยังโชว์ได้)
     if (claimRes.error) claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(CLAIM_COLS))
     const claimEntries = claimRes.data.map(claimToEntry)
     const entries = scope === 'claims' ? data : [...data, ...claimEntries]

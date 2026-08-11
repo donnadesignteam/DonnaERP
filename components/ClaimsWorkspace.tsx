@@ -11,6 +11,7 @@ import { tUpdate, prevOf } from '@/lib/trackedDb'
 import { itemBlockLines, railSplit, railLayers, railKind } from '@/lib/itemFormat'
 import QRCode from 'qrcode'
 import { railLink } from '@/lib/rail'
+import { TECH_OPTIONS } from '@/lib/techs'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { fetchEmployeeOptions } from '@/lib/staffDb'
 import { useStableView } from '@/lib/useStableView'
@@ -59,6 +60,7 @@ type Claim = {
   raw_text: string | null
   photos?: InstallPhoto[]     // รูปงานเคลม (ยังไม่ได้รัน migrations/add_claim_photos.sql = ไม่มีคอลัมน์นี้)
   admin_name: string | null   // แอดมินที่รับผิดชอบเคสนี้ — โชว์ใน dashboard พนักงานรายคนด้วย
+  technician: string | null   // ช่างที่รับผิดชอบ (ต้องรัน scripts/add_claim_technician.sql ก่อน)
   closed_by: string | null    // ใครปิดงานเคสนี้ (เลือกชื่อ = ปิดงานแล้ว)
   closed_at: string | null
   created_at?: string
@@ -103,7 +105,7 @@ function emptyClaim(): Claim {
     courier: '', refund_amount: null, ship_back_cost: null, ship_return_cost: null, estimated_price: null,
     money_direction: '', payment_target: '', money_status: '',
     shipments: null, shipped_at: null, printed_at: null,
-    status: 'รอของคืน', is_urgent: false, notes: '', raw_text: '', admin_name: '', closed_by: null, closed_at: null,
+    status: 'รอของคืน', is_urgent: false, notes: '', raw_text: '', admin_name: '', technician: '', closed_by: null, closed_at: null,
   }
 }
 
@@ -241,7 +243,7 @@ export default function ClaimsWorkspace() {
       ship_back_cost: num(d.ship_back_cost), ship_return_cost: num(d.ship_return_cost), estimated_price: num(d.estimated_price),
       money_direction: d.money_direction || null, payment_target: d.payment_target || null, money_status: d.money_status || null,
       status: d.status || 'รอของคืน', is_urgent: !!d.is_urgent, notes: d.notes || null, raw_text: d.raw_text || null,
-      admin_name: d.admin_name || null,
+      admin_name: d.admin_name || null, technician: d.technician || null,
       photos: ph.photos,
       updated_at: new Date().toISOString(),
     }
@@ -707,7 +709,7 @@ ${body}
                       onChange={e => setSelectedIds(e.target.checked ? new Set(displayed.map(r => r.id)) : new Set())}
                       style={{ cursor: 'pointer', width: 15, height: 15 }} />
                   </th>
-                  {['วันที่', 'กำหนดส่ง', 'แพลตฟอร์ม', 'ลูกค้า', 'ประเภท', 'รายการ', 'ยอดชำระ', 'สถานะ', 'แอดมิน', 'ปิดงาน', 'ชื่อผู้รับ', 'ที่อยู่จัดส่ง', 'จัดส่ง', 'ค่าส่งกลับ', 'ค่าส่งคืน', 'ราคาประเมิน', 'หมายเหตุ', 'แก้ไขล่าสุด', ''].map((h, i) => (
+                  {['วันที่', 'กำหนดส่ง', 'แพลตฟอร์ม', 'ลูกค้า', 'ประเภท', 'รายการ', 'ยอดชำระ', 'สถานะ', 'แอดมิน', 'ช่าง', 'ปิดงาน', 'ชื่อผู้รับ', 'ที่อยู่จัดส่ง', 'จัดส่ง', 'ค่าส่งกลับ', 'ค่าส่งคืน', 'ราคาประเมิน', 'หมายเหตุ', 'แก้ไขล่าสุด', ''].map((h, i) => (
                     <th key={i} style={{ textAlign: ['ค่าส่งกลับ', 'ค่าส่งคืน', 'ราคาประเมิน'].includes(h) ? 'right' : 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -786,6 +788,9 @@ ${body}
                     </td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
                       {selectInline(r, 'admin_name', adminOptions)}
+                    </td>
+                    <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
+                      {selectInline(r, 'technician', TECH_OPTIONS)}
                     </td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
                       <input type="checkbox" checked={!!r.closed_at} onChange={e => toggleClosed(r, e.target.checked)}
@@ -1056,6 +1061,7 @@ ${body}
               {field('กำหนดส่ง', 'deadline', { type: 'date' })}
               {field('สถานะเคลม', 'status', { options: WORKFLOW.map(w => w.key) })}
               {field('แอดมินที่รับผิดชอบ', 'admin_name', { options: adminOptions })}
+              {field('ช่างที่รับผิดชอบ', 'technician', { options: TECH_OPTIONS })}
               {field('หมายเหตุ', 'notes', { full: true })}
             </div>
 
