@@ -842,11 +842,17 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       : /flash/.test(courier) ? 'Flash'
       : /j&t|jt/.test(courier) ? 'J&T'
       : 'อื่นๆ'
-    // ชนิดรางดูจากคำในชื่อ (railKind) — ชื่อที่อ่านไม่ออกให้เตือนก่อน ไม่เดาเป็นรางจีบเงียบๆ
-    const unknown = railItemsOf(r).filter(it => !railKind(it.type)).map(it => it.type)
-    if (unknown.length && !confirm(`อ่านชนิดรางไม่ออก: ${unknown.join(', ')}\nจะคิดเป็น "รางจีบ" ให้ — ไปต่อไหม?`)) return
-    const items = railItemsOf(r).map(it => ({
-      type: railKind(it.type) || 'รางจีบ',
+    // ชนิดรางดูจากคำในชื่อ (railKind) — เครื่องคำนวณมีสูตรแค่ รางจีบ/รางลอนเทป/รางตาไก่
+    // ชนิดอื่น (ลอนตะขอ ลอนโซ่ไข่ปลา รางไฟฟ้า) = ยังไม่มีในระบบ → ข้ามรายการนั้น ห้ามเดาชนิดให้
+    const supported = railItemsOf(r).filter(it => railKind(it.type))
+    const unsupported = Array.from(new Set(railItemsOf(r).filter(it => !railKind(it.type)).map(it => it.type)))
+    if (unsupported.length) {
+      const msg = `ยังไม่มีสูตรคำนวณอุปกรณ์ของ: ${unsupported.join(', ')}\n(เครื่องคำนวณมีแค่ รางจีบ / รางลอนเทป / รางตาไก่)`
+      if (!supported.length) { alert(msg + '\n\nออเดอร์นี้ไม่มีรางที่คำนวณได้'); return }
+      if (!confirm(msg + `\n\nจะข้ามรายการนั้นไป แล้วคำนวณเฉพาะราง ${supported.length} รายการที่เหลือ — ไปต่อไหม?`)) return
+    }
+    const items = supported.map(it => ({
+      type: railKind(it.type)!,
       size: typeof it.width === 'string' && it.width.includes('+') ? it.width.trim() : (Number(it.width) || 0),
       qty: Number(it.quantity) || 1,
       layers: railLayers(it),   // ช่องชั้นว่าง → อ่านจากชื่อชนิด ("รางม่านจีบ 2 ชั้น")
