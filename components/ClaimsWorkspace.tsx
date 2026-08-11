@@ -8,7 +8,7 @@ import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { recordAction } from '@/lib/history'
 import { tUpdate, prevOf } from '@/lib/trackedDb'
-import { itemBlockLines, railSplit, railLayers } from '@/lib/itemFormat'
+import { itemBlockLines, railSplit, railLayers, railKind } from '@/lib/itemFormat'
 import QRCode from 'qrcode'
 import { railLink } from '@/lib/rail'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
@@ -423,14 +423,15 @@ ${body}
   const railItemsOf = (r: Claim) => (Array.isArray(r.items) ? r.items : []).filter(it => typeof it.type === 'string' && it.type.startsWith('ราง'))
   const hasRail = (r: Claim) => railItemsOf(r).length > 0
   const openRailCalc = (r: Claim) => {
-    const typeMap: Record<string, string> = { 'รางม่านจีบ': 'รางจีบ', 'รางม่านลอนเทป': 'รางลอนเทป', 'รางม่านตาไก่': 'รางตาไก่' }
     const courier = (r.courier || '').toLowerCase()
     const carrier = /spx|shopee/.test(courier) ? 'Spx'
       : /flash/.test(courier) ? 'Flash'
       : /j&t|jt/.test(courier) ? 'J&T'
       : 'อื่นๆ'
     const items = railItemsOf(r).map(it => ({
-      type: typeMap[it.type] || 'รางจีบ',
+      // ชนิดที่เครื่องคำนวณไม่มีสูตร ส่งชื่อต้นฉบับไป (เว็บรางเปิดเป็นชนิด "อื่นๆ" ให้กรอกของเอง)
+      // ห้าม fallback เป็นรางจีบ — ใบเคลมจะได้อุปกรณ์ผิดชนิดทั้งใบ
+      type: railKind(it.type) || it.type,
       size: typeof it.width === 'string' && it.width.includes('+') ? it.width.trim() : (Number(it.width) || 0),
       qty: Number(it.quantity) || 1,
       layers: railLayers(it),   // ช่องชั้นว่าง → อ่านจากชื่อชนิด ("รางม่านจีบ 2 ชั้น")
