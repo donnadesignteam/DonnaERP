@@ -419,6 +419,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [rowPlatformDropdown, setRowPlatformDropdown] = useState<{id: string; pos: {top: number; left: number}} | null>(null)
   const [modalTab, setModalTab] = useState<'form' | 'paste' | 'file'>('form')
   const [fileDragOver, setFileDragOver] = useState(false)
+  const [quoteDragOver, setQuoteDragOver] = useState(false)   // ลาก PDF ใบเสนอราคามาวางในกล่องเพิ่มงานนอก/ติดตั้ง
   const [fileParseError, setFileParseError] = useState('')
   const [pasteCol1, setPasteCol1] = useState('')
   const [pasteCol2, setPasteCol2] = useState('')
@@ -1752,7 +1753,16 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     if (!orderPasteText.trim()) return
     setOrderParsing(true); setOrderParseError('')
     try {
-      const res = await fetch('/api/parse-order', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: orderPasteText }) })
+      await parseOrderText(orderPasteText)
+    } finally {
+      setOrderParsing(false)
+    }
+  }
+
+  // แปลงข้อความ (จากช่องวางข้อความ หรือจาก PDF ใบเสนอราคา) → กรอกลงฟอร์ม
+  const parseOrderText = async (text: string) => {
+    try {
+      const res = await fetch('/api/parse-order', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) })
       const data = await res.json()
       if (!res.ok || data.error) throw new Error(data.error || 'แปลงไม่สำเร็จ')
       const o = data.order || {}
@@ -1766,6 +1776,23 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       if (o.address) set('address', String(o.address))
       if (o.phone) set('phone', String(o.phone))
       if (Array.isArray(o.items) && o.items.length) setModalItems(o.items)
+    } catch (e: unknown) {
+      setOrderParseError(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด')
+    }
+  }
+
+  // ดรอปไฟล์ PDF ใบเสนอราคา (งานนอก/งานติดตั้ง) → ดึงข้อความออกมาใส่ช่องวางข้อความ แล้วแปลงกรอกฟอร์มให้เลย
+  const handleQuotePdf = async (file: File) => {
+    if (!/\.pdf$/i.test(file.name)) { setOrderParseError('รองรับเฉพาะไฟล์ .pdf'); return }
+    setOrderParsing(true); setOrderParseError('')
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/parse-pdf', { method: 'POST', body: fd })
+      const data = await res.json()
+      if (!res.ok || data.error) throw new Error(data.error || 'อ่านไฟล์ไม่สำเร็จ')
+      setOrderPasteText(data.text)
+      await parseOrderText(data.text)   // แปลงต่อให้เลย (ข้อความยังอยู่ในช่อง กดแปลงซ้ำเองได้)
     } catch (e: unknown) {
       setOrderParseError(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด')
     } finally {
@@ -4219,6 +4246,28 @@ ${body}
                   </button>
                   {orderParseError && <span style={{ color: 'var(--red)', fontSize: 12 }}>{orderParseError}</span>}
                 </div>
+                {/* งานนอก/งานติดตั้ง: ลากไฟล์ PDF ใบเสนอราคามาวาง → ระบบอ่านแล้วกรอกฟอร์มให้ตรวจก่อนบันทึก */}
+                {(addType === 'outside' || addType === 'install') && (
+                  <div
+                    onDragOver={e => { e.preventDefault(); setQuoteDragOver(true) }}
+                    onDragLeave={() => setQuoteDragOver(false)}
+                    onDrop={e => {
+                      e.preventDefault(); setQuoteDragOver(false)
+                      const f = e.dataTransfer.files[0]
+                      if (f) handleQuotePdf(f)
+                    }}
+                    style={{ marginTop: 10, border: `1px dashed ${quoteDragOver ? 'var(--blue)' : 'var(--border)'}`, borderRadius: 8, padding: '12px 14px', textAlign: 'center', background: quoteDragOver ? 'var(--blue-bg)' : 'transparent', transition: 'all 0.15s' }}>
+                    <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>วางไฟล์ PDF ใบเสนอราคาที่นี่ — หรือ </span>
+                    <label style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 600, cursor: 'pointer' }}>
+                      เลือกไฟล์
+                      <input type="file" accept=".pdf" style={{ display: 'none' }} onChange={e => {
+                        const f = e.target.files?.[0]
+                        if (f) handleQuotePdf(f)
+                        e.target.value = ''
+                      }} />
+                    </label>
+                  </div>
+                )}
               </div>
             )}
             {(() => {

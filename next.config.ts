@@ -14,6 +14,8 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(__dirname),
   },
+  // unpdf (อ่านข้อความจาก PDF ใบเสนอราคา) ต้องรันแบบ external ไม่ให้ bundler แตะ ไม่งั้น worker ของ pdfjs พังตอน build
+  serverExternalPackages: ['unpdf'],
   async rewrites() {
     return [
       { source: '/rail', destination: `${RAIL}/` },
