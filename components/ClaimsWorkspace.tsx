@@ -89,6 +89,12 @@ const WORKFLOW: { key: string; color: string }[] = [
 ]
 const STATUS_COLOR = (s: string) => WORKFLOW.find(w => w.key === s)?.color ?? 'var(--ink-3)'
 
+// timestamp → YYYY-MM-DD ตามเวลาเครื่อง (ห้ามใช้ toISOString().slice(0,10) — UTC ทำให้วันเพี้ยนไป 1 วันตอนดึก)
+const ymdLocal = (iso: string) => {
+  const d = new Date(iso)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function emptyClaim(): Claim {
   return {
     id: '', claim_date: new Date().toISOString().slice(0, 10), deadline: null, channel: '', customer_username: '',
@@ -526,6 +532,18 @@ ${body}
     await claimUpdate(updates).eq('id', r.id)
   }
 
+  // แก้วันที่ปิดงาน — closed_at เป็น timestamptz เก็บเวลาเดิมของวันไว้ (แค่ย้ายวัน ไม่รีเซ็ตเป็นเที่ยงคืน)
+  const setClosedDate = async (r: Claim, ymd: string) => {
+    if (!ymd || !r.closed_at) return
+    const old = new Date(r.closed_at)
+    const [y, m, d] = ymd.split('-').map(Number)
+    const next = new Date(old)
+    next.setFullYear(y, m - 1, d)
+    const updates = { closed_at: next.toISOString(), updated_at: new Date().toISOString() }
+    setRows(prev => prev.map(x => x.id === r.id ? ({ ...x, ...updates } as Claim) : x))
+    await claimUpdate(updates).eq('id', r.id)
+  }
+
   const selectInline = (r: Claim, field: keyof Claim, options: string[]) => (
     <select value={String(r[field] ?? '')} onChange={e => saveCell(r.id, field, e.target.value)}
       style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', padding: 0, color: r[field] ? 'var(--ink)' : 'var(--ink-4)', maxWidth: 140 }}>
@@ -702,8 +720,11 @@ ${body}
                         onChange={e => setSelectedIds(prev => { const s = new Set(prev); if (e.target.checked) s.add(r.id); else s.delete(r.id); return s })}
                         style={{ cursor: 'pointer', width: 15, height: 15 }} />
                     </td>
-                    <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', color: 'var(--ink-3)' }}>
-                      {r.claim_date ? new Date(r.claim_date).toLocaleDateString('th-TH-u-ca-gregory', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '-'}
+                    <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
+                      {/* วันที่แจ้งเคลม — แก้ได้ (บางเคสลงระบบย้อนหลัง วันที่ไม่ตรงกับวันที่ลูกค้าแจ้งจริง) */}
+                      <input type="date" value={r.claim_date ?? ''}
+                        onChange={e => saveCell(r.id, 'claim_date', e.target.value)}
+                        style={{ border: 'none', background: 'transparent', fontSize: 12, outline: 'none', padding: 0, color: r.claim_date ? 'var(--ink-3)' : 'var(--ink-4)', cursor: 'pointer' }} />
                     </td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
                       {/* กำหนดส่ง — หมวดออเดอร์เอาไปคิดคอลัมน์ "วันที่เหลือ" */}
@@ -771,9 +792,10 @@ ${body}
                         title={r.closed_at ? 'ปิดงานแล้ว' : 'ติ๊กเพื่อปิดงาน'}
                         style={{ cursor: 'pointer', width: 16, height: 16, accentColor: '#34c759' }} />
                       {r.closed_at && (
-                        <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>
-                          {new Date(r.closed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}
-                        </div>
+                        /* วันที่ปิดงาน — แก้ได้ (ปิดงานย้อนหลังบ่อย) เก็บเวลาเดิมของวันไว้ เปลี่ยนแค่วัน */
+                        <input type="date" value={ymdLocal(r.closed_at)}
+                          onChange={e => setClosedDate(r, e.target.value)}
+                          style={{ border: 'none', background: 'transparent', fontSize: 11, outline: 'none', padding: 0, color: 'var(--ink-4)', cursor: 'pointer', width: 96 }} />
                       )}
                     </td>
                     <td style={{ padding: '8px 14px', minWidth: 110 }}>
