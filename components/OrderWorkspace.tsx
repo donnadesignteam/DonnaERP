@@ -770,16 +770,40 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     push('')
 
     if (r.items && r.items.length > 0) {
-      r.items.forEach((item, idx) => {
-        if (idx > 0) push('')
-        for (const ln of itemBlockLines(item)) push(ln.t, ln.rail)
-        // รายการที่ลงสั่งนอก: ชื่อที่สั่ง + วัน/เดือนที่ลง ต่อท้ายรายการ เช่น "KC 8/7"
+      // รายการที่ลงสั่งนอก: ชื่อที่สั่ง + วัน/เดือนที่ลง ต่อท้ายรายการ เช่น "KC 8/7"
+      const pushOutsource = (item: Item) => {
         const out = (item.outsource ?? '').trim()
         if (out) {
           const dt = r.outsource_at ? new Date(r.outsource_at) : new Date()
           push(`${out} ${dt.getDate()}/${dt.getMonth() + 1}`)
         }
-      })
+      }
+      // งานนอก/งานติดตั้งที่ลงจุดไว้ในช่องหมายเหตุของรายการ (ห้องครัว/โถงหน้าบ้าน…) — พิมพ์แยกหัวข้อตามจุด
+      // เหมือนใบเสนอราคา จะได้รู้ว่ารางชุดไหนคู่กับผ้าผืนไหน · งานแพลตฟอร์มพิมพ์แบบเดิม (หมายเหตุมักเป็น ซ้าย/ขวา ไม่ใช่จุด)
+      const isOutsideOrder = OUTSIDE_PLATFORMS.includes(r.platform ?? '') || !!r.is_installation
+      const noted = r.items.filter(it => (it.note ?? '').trim())
+      const byPoint = isOutsideOrder && noted.length >= 2
+      if (byPoint) {
+        const points: string[] = []
+        for (const it of r.items) {
+          const p = (it.note ?? '').trim()
+          if (!points.includes(p)) points.push(p)
+        }
+        points.forEach((p, gi) => {
+          if (gi > 0) push('')
+          if (p) push(`[${p}]`)
+          r.items!.filter(it => (it.note ?? '').trim() === p).forEach(item => {
+            itemBlockLines(item, { hideNote: true }).forEach((ln, li) => push(li === 0 ? `• ${ln.t}` : `   ${ln.t}`, ln.rail))
+            pushOutsource(item)
+          })
+        })
+      } else {
+        r.items.forEach((item, idx) => {
+          if (idx > 0) push('')
+          for (const ln of itemBlockLines(item)) push(ln.t, ln.rail)
+          pushOutsource(item)
+        })
+      }
     }
 
     push('')

@@ -218,7 +218,8 @@ export function autoTapeHooks(item: RawItem): string {
 }
 
 // คืนบรรทัดของรายการ 1 ชิ้น (พร้อมธง rail = บรรทัดของราง ไว้ทำสีแดง)
-export function itemBlockLines(item: RawItem): { t: string; rail?: boolean }[] {
+// opts.hideNote = ไม่ต้องต่อท้าย "(ห้องครัว)" ท้ายบรรทัดขนาด — ใช้ตอนพิมพ์แบบแยกหัวข้อตามจุด (ชื่อจุดอยู่หัวกลุ่มแล้ว)
+export function itemBlockLines(item: RawItem, opts?: { hideNote?: boolean }): { t: string; rail?: boolean }[] {
   const out: { t: string; rail?: boolean }[] = []
   const isRail = (item.type ?? '').startsWith('ราง')
 
@@ -268,7 +269,8 @@ export function itemBlockLines(item: RawItem): { t: string; rail?: boolean }[] {
     (item.weight_chain ?? '').trim(),
     pullRaw ? (pullRaw.startsWith('ดึง') ? pullRaw : `ดึง${pullRaw}`) : '',
   ].filter(Boolean).map(v => `(${v})`).join(' ')
-  const tail = `${item.quantity} ${item.unit || ''}${extras ? ` ${extras}` : ''}${item.note ? ` (${item.note})` : ''}${hooksStr ? ` ${hooksStr}` : ''}`
+  const noteStr = opts?.hideNote ? '' : (item.note ? ` (${item.note})` : '')
+  const tail = `${item.quantity} ${item.unit || ''}${extras ? ` ${extras}` : ''}${noteStr}${hooksStr ? ` ${hooksStr}` : ''}`
   out.push({ t: dim ? `${dim} = ${tail}` : `= ${tail}`, rail: isRail })
   return out
 }
