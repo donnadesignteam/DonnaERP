@@ -3858,7 +3858,7 @@ ${body}
                   if (cancelled) { updateField(r.id, 'order_status', 'รอดำเนินการ'); return }
                   if (confirm(`ยกเลิกออเดอร์ ${r.order_number || r.customer_name || ''}?\n(ย้ายไปแท็บยกเลิก ไม่ได้ลบทิ้ง)`)) updateField(r.id, 'order_status', 'ยกเลิก')
                 }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: cancelled ? 'var(--ink)' : '#f97316' }}>
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: cancelled ? 'var(--ink)' : 'var(--red)' }}>
                   <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
                     {cancelled
                       ? <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
