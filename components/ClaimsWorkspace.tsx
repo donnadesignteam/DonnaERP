@@ -724,13 +724,15 @@ ${body}
                     </td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
                       {/* วันที่แจ้งเคลม — แก้ได้ (บางเคสลงระบบย้อนหลัง วันที่ไม่ตรงกับวันที่ลูกค้าแจ้งจริง) */}
-                      <input type="date" value={r.claim_date ?? ''}
+                      <input type="date" className="date-inline" value={r.claim_date ?? ''}
+                        onClick={e => e.currentTarget.showPicker?.()}
                         onChange={e => saveCell(r.id, 'claim_date', e.target.value)}
                         style={{ border: 'none', background: 'transparent', fontSize: 12, outline: 'none', padding: 0, color: r.claim_date ? 'var(--ink-3)' : 'var(--ink-4)', cursor: 'pointer' }} />
                     </td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
                       {/* กำหนดส่ง — หมวดออเดอร์เอาไปคิดคอลัมน์ "วันที่เหลือ" */}
-                      <input type="date" value={r.deadline ?? ''}
+                      <input type="date" className="date-inline" value={r.deadline ?? ''}
+                        onClick={e => e.currentTarget.showPicker?.()}
                         onChange={e => saveCell(r.id, 'deadline', e.target.value)}
                         style={{ border: 'none', background: 'transparent', fontSize: 12, outline: 'none', padding: 0, color: r.deadline ? 'var(--ink)' : 'var(--ink-4)', cursor: 'pointer' }} />
                     </td>
@@ -798,7 +800,8 @@ ${body}
                         style={{ cursor: 'pointer', width: 16, height: 16, accentColor: '#34c759' }} />
                       {r.closed_at && (
                         /* วันที่ปิดงาน — แก้ได้ (ปิดงานย้อนหลังบ่อย) เก็บเวลาเดิมของวันไว้ เปลี่ยนแค่วัน */
-                        <input type="date" value={ymdLocal(r.closed_at)}
+                        <input type="date" className="date-inline" value={ymdLocal(r.closed_at)}
+                          onClick={e => e.currentTarget.showPicker?.()}
                           onChange={e => setClosedDate(r, e.target.value)}
                           style={{ border: 'none', background: 'transparent', fontSize: 11, outline: 'none', padding: 0, color: 'var(--ink-4)', cursor: 'pointer', width: 96 }} />
                       )}

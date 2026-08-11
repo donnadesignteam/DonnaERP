@@ -89,3 +89,8 @@ input, select, textarea, button { font-family: inherit; font-size: 14px; }
   .print-area .no-print { display: none !important; }
   @page { size: A4 landscape; margin: 10mm; }
 }
+
+/* ช่องวันที่ในตาราง — ซ่อนไอคอนปฏิทินของเบราว์เซอร์ให้เหลือแค่ตัวเลขวันที่
+   (กดที่ตัวเลขยังเปิดปฏิทินได้ ผ่าน showPicker() ที่ผูกไว้ในคอมโพเนนต์) */
+.date-inline::-webkit-calendar-picker-indicator { display: none; -webkit-appearance: none; }
+.date-inline::-webkit-inner-spin-button { display: none; }
