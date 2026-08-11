@@ -843,16 +843,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       : /j&t|jt/.test(courier) ? 'J&T'
       : 'อื่นๆ'
     // ชนิดรางดูจากคำในชื่อ (railKind) — เครื่องคำนวณมีสูตรแค่ รางจีบ/รางลอนเทป/รางตาไก่
-    // ชนิดอื่น (ลอนตะขอ ลอนโซ่ไข่ปลา รางไฟฟ้า) = ยังไม่มีในระบบ → ข้ามรายการนั้น ห้ามเดาชนิดให้
-    const supported = railItemsOf(r).filter(it => railKind(it.type))
-    const unsupported = Array.from(new Set(railItemsOf(r).filter(it => !railKind(it.type)).map(it => it.type)))
-    if (unsupported.length) {
-      const msg = `ยังไม่มีสูตรคำนวณอุปกรณ์ของ: ${unsupported.join(', ')}\n(เครื่องคำนวณมีแค่ รางจีบ / รางลอนเทป / รางตาไก่)`
-      if (!supported.length) { alert(msg + '\n\nออเดอร์นี้ไม่มีรางที่คำนวณได้'); return }
-      if (!confirm(msg + `\n\nจะข้ามรายการนั้นไป แล้วคำนวณเฉพาะราง ${supported.length} รายการที่เหลือ — ไปต่อไหม?`)) return
-    }
-    const items = supported.map(it => ({
-      type: railKind(it.type)!,
+    // ชนิดอื่น (ลอนตะขอ ลอนโซ่ไข่ปลา รางไฟฟ้า) ส่งชื่อต้นฉบับไป เว็บรางจะเปิดเป็นชนิด "อื่นๆ"
+    // ให้ช่างกรอกของที่ต้องใช้เอง — ห้ามเดาชนิดให้ จะได้อุปกรณ์ผิดทั้งใบ
+    const items = railItemsOf(r).map(it => ({
+      type: railKind(it.type) || it.type,
       size: typeof it.width === 'string' && it.width.includes('+') ? it.width.trim() : (Number(it.width) || 0),
       qty: Number(it.quantity) || 1,
       layers: railLayers(it),   // ช่องชั้นว่าง → อ่านจากชื่อชนิด ("รางม่านจีบ 2 ชั้น")
