@@ -11,6 +11,7 @@ import { EMPLOYEES } from '@/lib/staff'
 import { fetchEmployeeOptions } from '@/lib/staffDb'
 import { recordAction } from '@/lib/history'
 import { tUpdate } from '@/lib/trackedDb'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 type Leave = {
   id: string
@@ -89,6 +90,8 @@ export default function EmployeesPage() {
   const [leaves, setLeaves] = useState<Leave[]>(cached ?? [])
   const [loading, setLoading] = useState(!cached)
   const [error, setError] = useState('')
+  // กล่องยืนยันของเว็บเอง (ไม่ใช้ window.confirm — ดูเหตุผลใน components/ConfirmDialog.tsx)
+  const { ask, confirmDialog } = useConfirm()
   const [year, setYear] = useState(new Date().getFullYear())
   const [month, setMonth] = useState(new Date().getMonth())
   const [modal, setModal] = useState(false)
@@ -238,9 +241,12 @@ export default function EmployeesPage() {
   }
 
   const del = async (id: string) => {
-    if (!confirm('ลบรายการนี้?')) return
+    if (!(await ask('ลบรายการนี้?', { okText: 'ลบ', danger: true }))) return
     const l = leaves.find((x) => x.id === id)
-    await supabase.from('leave_requests').delete().eq('id', id)
+    setError('')
+    // ‼️ ลบไม่สำเร็จต้องฟ้องเสมอ ห้ามเงียบ (ไม่งั้นดูเหมือนกดปุ่มไม่ติด) — และห้ามคืนสิทธิลาให้ทั้งที่ยังลบไม่ออก
+    const { error: delErr } = await supabase.from('leave_requests').delete().eq('id', id)
+    if (delErr) { setError(`ลบไม่สำเร็จ: ${delErr.message}`); return }
     // ย้อนสิทธิลาในตาราง staff กลับ
     if (l) {
       const days = rangeDays(l.leave_date, l.leave_end_date || l.leave_date)
@@ -609,6 +615,9 @@ export default function EmployeesPage() {
           </div>
         </div>
       )}
+
+      {/* กล่องยืนยัน (ลบใบลา) — ต้องอยู่ท้ายสุดเพื่อทับทุกโมดัล */}
+      {confirmDialog}
     </div>
   )
 }

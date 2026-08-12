@@ -13,6 +13,7 @@ import { recordAction } from '@/lib/history'
 import { prevOf } from '@/lib/trackedDb'
 import { useStableView } from '@/lib/useStableView'
 import { oeUpdate, instUpdate, instInsert } from '@/lib/adminActor'
+import { useConfirm } from '@/components/ConfirmDialog'
 import { createOrderForInstall, orderPatchFromInstall } from '@/lib/installOrderSync'
 
 
@@ -201,6 +202,8 @@ export default function InstallationsPage() {
   const [search, setSearch] = useState('')
   const [nameSugOpen, setNameSugOpen] = useState(false)   // เปิดรายการเดาชื่อลูกค้าในกล่องเพิ่มรายการ
   const [error, setError] = useState('')
+  // กล่องยืนยันของเว็บเอง (ไม่ใช้ window.confirm — ดูเหตุผลใน components/ConfirmDialog.tsx)
+  const { ask, confirmDialog } = useConfirm()
   const [pasteText, setPasteText] = useState('')
   const [parsing, setParsing] = useState(false)
   const [quoteDragOver, setQuoteDragOver] = useState(false)   // ลาก PDF ใบเสนอราคามาวางในกล่องเพิ่มรายการติดตั้ง
@@ -572,15 +575,22 @@ export default function InstallationsPage() {
   }
 
   const del = async (id: string) => {
-    if (!confirm('ลบรายการนี้?')) return
+    if (!(await ask('ลบรายการนี้?', { okText: 'ลบ', danger: true }))) return
     const row = installs.find(i => i.id === id)
-    await supabase.from('installations').delete().eq('id', id)
-    if (row) recordAction({
-      label: `ลบงานติดตั้ง ${row.customer_real_name || row.serial_no || ''}`,
-      undo: async () => { await instInsert(row); await load() },
-      redo: async () => { await supabase.from('installations').delete().eq('id', id); await load() },
-    })
-    load()
+    setError('')
+    try {
+      // ‼️ ลบไม่สำเร็จต้องฟ้องเสมอ ห้ามเงียบ (เดิมไม่ได้เช็ค error เลยดูเหมือนกดปุ่มไม่ติด)
+      const { error: err } = await supabase.from('installations').delete().eq('id', id)
+      if (err) { setError(`ลบไม่สำเร็จ: ${err.message}`); return }
+      if (row) recordAction({
+        label: `ลบงานติดตั้ง ${row.customer_real_name || row.serial_no || ''}`,
+        undo: async () => { await instInsert(row); await load() },
+        redo: async () => { await supabase.from('installations').delete().eq('id', id); await load() },
+      })
+      load()
+    } catch (e) {
+      setError(`ลบไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`)
+    }
   }
 
   const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y - 1) } else setMonth(m => m - 1) }
@@ -1427,6 +1437,9 @@ export default function InstallationsPage() {
           {ph.open && ph.panel()}
         </div>
       )}
+
+      {/* กล่องยืนยัน (ลบรายการติดตั้ง) — ต้องอยู่ท้ายสุดเพื่อทับทุกโมดัล */}
+      {confirmDialog}
     </div>
   )
 }

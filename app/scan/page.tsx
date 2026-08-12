@@ -9,6 +9,7 @@ import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { uploadPackingFile, deletePackingFile, compressImage } from '@/lib/packingPhotos'
 import { cutMeters, round2 } from '@/lib/fabricUsage'
 import HubButton from '@/components/HubButton'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 const LS_KEY = 'donna-scan-tech'
 type Tech = { code: string; name: string; stageKey: string }
@@ -96,6 +97,8 @@ function ScanContent() {
   const [msg, setMsg] = useState('')
   const [camState, setCamState] = useState<'idle' | 'starting' | 'on' | 'error'>('idle')
   const [camErr, setCamErr] = useState('')
+  // กล่องยืนยันของเว็บเอง (ไม่ใช้ window.confirm — ดูเหตุผลใน components/ConfirmDialog.tsx)
+  const { ask, confirmDialog } = useConfirm()
 
   // อัพโหลดรูปหลังสแกน (แผนกรีด/แพ็ค/แพ็คราง)
   const [uploading, setUploading] = useState<string | null>(null)
@@ -425,7 +428,8 @@ function ScanContent() {
 
   // ลบรูปออกจากโฟลเดอร์ออเดอร์: ลบไฟล์ (R2/Supabase ตามที่มา) + เอา URL ออกจาก packing_photos
   async function deletePhoto(url: string) {
-    if (!order?.id || !window.confirm('ลบรูปนี้ออกจากออเดอร์?')) return
+    if (!order?.id) return
+    if (!(await ask('ลบรูปนี้ออกจากออเดอร์?', { okText: 'ลบ', danger: true }))) return
     setDelBusy(url); setUploadErr('')
     try {
       await deletePackingFile(url)
@@ -793,6 +797,9 @@ function ScanContent() {
 
         {preview && <PhotoPreview preview={preview} onCancel={cancelPreview} onConfirm={confirmPreview} />}
       </div>
+
+      {/* กล่องยืนยัน (ลบรูป) — ต้องอยู่ท้ายสุดเพื่อทับหน้าพรีวิวรูปเต็มจอ */}
+      {confirmDialog}
     </div>
   )
 }

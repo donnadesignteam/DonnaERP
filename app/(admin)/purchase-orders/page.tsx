@@ -9,6 +9,7 @@ import { recordAction } from '@/lib/history'
 import { tUpdate, prevOf } from '@/lib/trackedDb'
 import { useStableView } from '@/lib/useStableView'
 import { oeUpdate } from '@/lib/adminActor'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 
 type PO = {
@@ -44,6 +45,8 @@ export default function PurchaseOrdersPage() {
   const [saving, setSaving] = useState(false)
   const [filter, setFilter] = useState<'all' | 'รอของ' | 'ของเข้าแล้ว'>('all')
   const [error, setError] = useState('')
+  // กล่องยืนยันของเว็บเอง (ไม่ใช้ window.confirm — ดูเหตุผลใน components/ConfirmDialog.tsx)
+  const { ask, confirmDialog } = useConfirm()
   const [pasteText, setPasteText] = useState('')
   const [parsing, setParsing] = useState(false)
   const [parseError, setParseError] = useState('')
@@ -97,8 +100,9 @@ export default function PurchaseOrdersPage() {
   }
 
   const del = async (id: string) => {
-    if (!confirm('ลบรายการนี้?')) return
+    if (!(await ask('ลบรายการนี้?', { okText: 'ลบ', danger: true }))) return
     const po = rows.find(r => r.id === id)
+    setError('')
     // แถวที่ sync มาจากสั่งนอกในหมวดออเดอร์ → ล้างช่องสั่งนอกของออเดอร์ต้นทางด้วย (ทั้งคอลัมน์และในรายการสินค้า)
     const src = po?.source_order_id
     let srcPrev: Record<string, any> | null = null   // เก็บค่าสั่งนอกเดิมของออเดอร์ต้นทางไว้ย้อนกลับ
@@ -114,7 +118,9 @@ export default function PurchaseOrdersPage() {
         ...(clearItems ? { items: clearItems } : {}),
       }).eq('id', src)
     }
-    await supabase.from('purchase_orders').delete().eq('id', id)
+    // ‼️ ลบไม่สำเร็จต้องฟ้องเสมอ ห้ามเงียบ (ไม่งั้นดูเหมือนกดปุ่มไม่ติด)
+    const { error: delErr } = await supabase.from('purchase_orders').delete().eq('id', id)
+    if (delErr) { setError(`ลบไม่สำเร็จ: ${delErr.message}`); return }
     if (po) recordAction({
       label: `ลบรายการสั่งซื้อ ${po.customer_name || po.supplier || ''}`,
       undo: async () => {
@@ -342,6 +348,9 @@ export default function PurchaseOrdersPage() {
           </div>
         </div>
       )}
+
+      {/* กล่องยืนยัน (ลบรายการสั่งซื้อ) — ต้องอยู่ท้ายสุดเพื่อทับทุกโมดัล */}
+      {confirmDialog}
     </div>
   )
 }

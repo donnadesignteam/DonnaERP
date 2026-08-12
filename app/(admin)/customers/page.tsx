@@ -8,6 +8,7 @@ import { itemBlockLines, type RawItem } from '@/lib/itemFormat'
 import { deletePackingFile } from '@/lib/packingPhotos'
 import { thaiTrackStatus } from '@/lib/trackExtract'
 import OrderHistory from '@/components/OrderHistory'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 type Item = RawItem
 
@@ -129,10 +130,12 @@ function CustomerFolder() {
   const [pos, setPos] = useState<CustomerPO[]>([])
   const [loading, setLoading] = useState(true)
   const [delPhoto, setDelPhoto] = useState<string | null>(null) // URL รูปแพ็คที่กำลังลบ
+  // กล่องยืนยันของเว็บเอง (ไม่ใช้ window.confirm — ดูเหตุผลใน components/ConfirmDialog.tsx)
+  const { ask, confirmDialog } = useConfirm()
 
   // ลบรูปแพ็คออกจากออเดอร์: ลบไฟล์ (R2/Supabase ตามที่มา) + เอา URL ออกจาก packing_photos
   async function deletePackingPhoto(orderId: string, url: string) {
-    if (!window.confirm('ลบรูปนี้ออกจากออเดอร์?')) return
+    if (!(await ask('ลบรูปนี้ออกจากออเดอร์?', { okText: 'ลบ', danger: true }))) return
     setDelPhoto(url)
     try {
       await deletePackingFile(url)
@@ -492,6 +495,9 @@ function CustomerFolder() {
           </div>
         </div>
       )}
+
+      {/* กล่องยืนยัน (ลบรูปแพ็ค) — ต้องอยู่ท้ายสุดเพื่อทับทุกโมดัล */}
+      {confirmDialog}
     </div>
   )
 }

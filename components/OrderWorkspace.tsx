@@ -20,6 +20,7 @@ import { syncWorkStatus as syncWorkStatusExact } from '@/lib/workStatusSync'
 import { recordAction } from '@/lib/history'
 import { prevOf } from '@/lib/trackedDb'
 import { stampInsert, oeUpdate, oeInsert, instUpdate, instInsert, claimUpdate } from '@/lib/adminActor'
+import { useConfirm } from '@/components/ConfirmDialog'
 import { useStableView } from '@/lib/useStableView'
 import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
@@ -392,6 +393,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [search, setSearch] = useState('')
   const [statusFilters, setStatusFilters] = useState<string[]>([])
   const [error, setError] = useState('')
+  // กล่องยืนยันของเว็บเอง (ไม่ใช้ window.confirm — ดูเหตุผลใน components/ConfirmDialog.tsx)
+  const { ask, confirmDialog } = useConfirm()
   const [platformFilters, setPlatformFilters] = useState<string[]>([])
   const [courierFilters, setCourierFilters] = useState<string[]>([])
   const [urgentFilter, setUrgentFilter] = useState<boolean | null>(null)
@@ -739,11 +742,14 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const del = async (id: string) => {
     const row = rows.find(r => r.id === id)
     if (row && isClaimEntry(row)) { setError('งานเคลมลบได้ที่หน้าเคลม'); return }
-    if (!confirm('ลบรายการนี้?')) return
-    // แปะชื่อคนลบก่อน แล้วค่อยลบ — ประวัติจะได้รู้ว่าใครลบ (trigger อ่านจากแถวที่กำลังถูกลบ)
-    await oeUpdate({ updated_at: new Date().toISOString() }).eq('id', id)
-    const { error: err } = await supabase.from('order_entries').delete().eq('id', id)
-    if (!err) {
+    if (!(await ask('ลบรายการนี้?', { okText: 'ลบ', danger: true }))) return
+    setError('')
+    try {
+      // แปะชื่อคนลบก่อน แล้วค่อยลบ — ประวัติจะได้รู้ว่าใครลบ (trigger อ่านจากแถวที่กำลังถูกลบ)
+      await oeUpdate({ updated_at: new Date().toISOString() }).eq('id', id)
+      const { error: err } = await supabase.from('order_entries').delete().eq('id', id)
+      // ‼️ ลบไม่สำเร็จต้องฟ้องเสมอ ห้ามเงียบ — เคยเจอเครื่องเดียวลบไม่ได้แล้วไล่สาเหตุไม่ได้
+      if (err) { setError(`ลบไม่สำเร็จ: ${err.message}`); return }
       setSelectedIds(prev => { const s = new Set(prev); s.delete(id); return s })
       setRows(prev => prev.filter(r => r.id !== id))
       if (row) recordAction({
@@ -751,6 +757,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
         undo: async () => { await supabase.from('order_entries').insert(row); await load() },
         redo: async () => { await supabase.from('order_entries').delete().eq('id', id); await load() },
       })
+    } catch (e) {
+      setError(`ลบไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`)
     }
   }
 
@@ -893,11 +901,12 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const ids = Array.from(selectedIds).filter(id => !rows.some(r => r.id === id && isClaimEntry(r)))
     if (ids.length < selectedIds.size) setError('งานเคลมลบได้ที่หน้าเคลม — ข้ามให้แล้ว')
     if (!ids.length) return
-    if (!confirm(`ลบ ${ids.length} รายการที่เลือก?`)) return
+    if (!(await ask(`ลบ ${ids.length} รายการที่เลือก?`, { okText: 'ลบ', danger: true }))) return
     const deleted = rows.filter(r => ids.includes(r.id))   // เก็บแถวที่ลบไว้ย้อนกลับ
-    await oeUpdate({ updated_at: new Date().toISOString() }).in('id', ids)   // แปะชื่อคนลบก่อนลบ (ดู del)
-    const { error: err } = await supabase.from('order_entries').delete().in('id', ids)
-    if (!err) {
+    try {
+      await oeUpdate({ updated_at: new Date().toISOString() }).in('id', ids)   // แปะชื่อคนลบก่อนลบ (ดู del)
+      const { error: err } = await supabase.from('order_entries').delete().in('id', ids)
+      if (err) { setError(`ลบไม่สำเร็จ: ${err.message}`); return }
       setSelectedIds(new Set())
       setRows(prev => prev.filter(r => !ids.includes(r.id)))
       if (deleted.length) recordAction({
@@ -905,6 +914,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
         undo: async () => { await supabase.from('order_entries').insert(deleted); await load() },
         redo: async () => { await supabase.from('order_entries').delete().in('id', ids); await load() },
       })
+    } catch (e) {
+      setError(`ลบไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`)
     }
   }
 
@@ -3853,10 +3864,10 @@ ${body}
             {!isClaimEntry(r) && (() => {
               const cancelled = r.order_status === 'ยกเลิก'
               return (
-                <button onClick={() => {
+                <button onClick={async () => {
                   setOpenAction(null); setActionRect(null)
                   if (cancelled) { updateField(r.id, 'order_status', 'รอดำเนินการ'); return }
-                  if (confirm(`ยกเลิกออเดอร์ ${r.order_number || r.customer_name || ''}?\n(ย้ายไปแท็บยกเลิก ไม่ได้ลบทิ้ง)`)) updateField(r.id, 'order_status', 'ยกเลิก')
+                  if (await ask(`ยกเลิกออเดอร์ ${r.order_number || r.customer_name || ''}?\n(ย้ายไปแท็บยกเลิก ไม่ได้ลบทิ้ง)`, { okText: 'ยกเลิกออเดอร์', cancelText: 'ไม่ใช่', danger: true })) updateField(r.id, 'order_status', 'ยกเลิก')
                 }}
                   style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: cancelled ? 'var(--ink)' : 'var(--red)' }}>
                   <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
@@ -4723,6 +4734,9 @@ ${body}
           {ph.open && ph.panel()}
         </div>
       )}
+
+      {/* กล่องยืนยัน (ลบ/ยกเลิกออเดอร์) — ต้องอยู่ท้ายสุดเพื่อทับทุกโมดัล */}
+      {confirmDialog}
     </div>
   )
 }

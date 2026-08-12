@@ -7,6 +7,7 @@ import { fetchAllRows } from '@/lib/fetchAll'
 import { tInsert, tUpdate, tDelete, prevOf } from '@/lib/trackedDb'
 import { FABRIC_LOOKUP } from '@/lib/fabrics'
 import { useStableView } from '@/lib/useStableView'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 
 const SHOP_LOOKUP: Record<string, { fabric_code: string; color_name: string; fabric_width: number; fabric_type: string; shop_name: string }> =
@@ -90,6 +91,8 @@ export default function StockPage() {
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
   const [error, setError] = useState('')
+  // กล่องยืนยันของเว็บเอง (ไม่ใช้ window.confirm — ดูเหตุผลใน components/ConfirmDialog.tsx)
+  const { ask, confirmDialog } = useConfirm()
   const [autoFilled, setAutoFilled] = useState(false)
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
   const [menuRect, setMenuRect] = useState<DOMRect | null>(null)
@@ -187,7 +190,7 @@ export default function StockPage() {
   }
 
   const del = async (id: string) => {
-    if (!confirm('ลบรายการนี้?')) return
+    if (!(await ask('ลบรายการนี้?', { okText: 'ลบ', danger: true }))) return
     const row = items.find(i => i.id === id)
     if (!row) return
     try {
@@ -774,6 +777,9 @@ export default function StockPage() {
           </div>
         </div>
       )}
+
+      {/* กล่องยืนยัน (ลบรายการสต็อก) — ต้องอยู่ท้ายสุดเพื่อทับทุกโมดัล */}
+      {confirmDialog}
     </div>
   )
 }

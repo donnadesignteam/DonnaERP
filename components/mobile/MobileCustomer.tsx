@@ -12,6 +12,7 @@ import { usePullToRefresh, useSheetBack, PullIndicator, CardSkeleton, clamp } fr
 import OrderHistory from '@/components/OrderHistory'
 import { compressImage, uploadPackingFile, deletePackingFile } from '@/lib/packingPhotos'
 import { readStaffSession, type StaffSession } from '@/lib/staffSession'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 // โฟลเดอร์ออเดอร์ของลูกค้า เวอร์ชันมือถือ
 // เดสก์ท็อป = app/(admin)/customers · ที่นี่ดึงข้อมูลชุดเดียวกันเป๊ะ
@@ -58,6 +59,8 @@ export default function MobileCustomer() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')          // เดิมทิ้ง error ทั้ง 4 query → เน็ตหลุดขึ้น "ไม่พบประวัติ" หลอกผู้ใช้ว่าลูกค้าไม่มีข้อมูล
   const [photo, setPhoto] = useState<string | null>(null)
+  // กล่องยืนยันของเว็บเอง (ไม่ใช้ window.confirm — ดูเหตุผลใน components/ConfirmDialog.tsx)
+  const { ask, confirmDialog } = useConfirm()
   const [copiedId, setCopiedId] = useState<string | null>(null)   // ออเดอร์ที่เพิ่งคัดลอก → โชว์ "คัดลอกแล้ว" ชั่วครู่
   // ── รูปงาน: เพิ่ม/ลบได้เฉพาะคนที่ล็อกอินด้วยรหัสพนักงาน ──
   const [staff, setStaff] = useState<StaffSession | null>(null)
@@ -89,7 +92,7 @@ export default function MobileCustomer() {
 
   // ลบรูป: ลบไฟล์จริง (R2/Supabase ตามที่มา) แล้วเอา URL ออกจาก packing_photos
   const removePhoto = async (orderId: string, url: string) => {
-    if (!window.confirm('ลบรูปนี้ออกจากออเดอร์?')) return
+    if (!(await ask('ลบรูปนี้ออกจากออเดอร์?', { okText: 'ลบ', danger: true }))) return
     setBusyPhoto(url); setPhotoErr('')
     try {
       await deletePackingFile(url)
@@ -424,6 +427,9 @@ export default function MobileCustomer() {
             style={{ position: 'absolute', top: 'calc(env(safe-area-inset-top) + 12px)', right: 14, width: 40, height: 40, borderRadius: 999, border: 'none', background: 'rgba(255,255,255,0.16)', color: '#fff', fontSize: 20, cursor: 'pointer' }}>×</button>
         </div>
       )}
+
+      {/* กล่องยืนยัน (ลบรูป) — ต้องอยู่ท้ายสุดเพื่อทับรูปเต็มจอ */}
+      {confirmDialog}
     </div>
   )
 }

@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { claimUpdate, claimInsert } from '@/lib/adminActor'
+import { useConfirm } from '@/components/ConfirmDialog'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { recordAction } from '@/lib/history'
@@ -127,6 +128,8 @@ export default function ClaimsWorkspace() {
   const { snapshot, stable, live } = useStableView<Claim>(rows)
   const [loading, setLoading] = useState(!cached)
   const [error, setError] = useState('')
+  // กล่องยืนยันของเว็บเอง (ไม่ใช้ window.confirm — ดูเหตุผลใน components/ConfirmDialog.tsx)
+  const { ask, confirmDialog } = useConfirm()
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<string>('all')
   const [modal, setModal] = useState<{ mode: 'add' | 'edit'; data: Claim } | null>(null)
@@ -287,16 +290,21 @@ export default function ClaimsWorkspace() {
   }
 
   const del = async (id: string) => {
-    if (!confirm('ลบเคสเคลมนี้?')) return
+    if (!(await ask('ลบเคสเคลมนี้?', { okText: 'ลบ', danger: true }))) return
     const row = rows.find(r => r.id === id)
-    const { error: err } = await supabase.from('claims').delete().eq('id', id)
-    if (!err) {
+    setError('')
+    try {
+      const { error: err } = await supabase.from('claims').delete().eq('id', id)
+      // ‼️ ลบไม่สำเร็จต้องฟ้องเสมอ ห้ามเงียบ (เดิมไม่มี else เลยดูเหมือนกดปุ่มไม่ติด)
+      if (err) { setError(`ลบไม่สำเร็จ: ${err.message}`); return }
       setRows(prev => prev.filter(r => r.id !== id))
       if (row) recordAction({
         label: `ลบเคลม ${row.customer_username || row.original_order_number || ''}`,
         undo: async () => { await claimInsert(row); await load() },
         redo: async () => { await supabase.from('claims').delete().eq('id', id); await load() },
       })
+    } catch (e) {
+      setError(`ลบไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`)
     }
   }
 
@@ -1085,6 +1093,9 @@ ${body}
           {ph.open && ph.panel()}
         </div>
       )}
+
+      {/* กล่องยืนยัน (ลบเคส) — ต้องอยู่ท้ายสุดเพื่อทับทุกโมดัล */}
+      {confirmDialog}
     </div>
   )
 }
