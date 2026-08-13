@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { readStaffSession } from '@/lib/staffSession'
+import { forceUpdate } from '@/lib/appUpdate'
+import { usePathname } from 'next/navigation'
 
 // แถบ "มีอัปเดตใหม่" — แก้ปัญหาแอดมินบางคนยังรันโค้ดเก่าค้างอยู่หลายวัน
 // (เปิดแท็บ/แอปทิ้งไว้ไม่เคยรีเฟรช หรือ PWA ยังใช้ไฟล์เก่าใน cache)
@@ -49,6 +51,8 @@ const reportVersion = async (version: string) => {
 }
 
 export default function UpdateBanner() {
+  const pathname = usePathname()
+  const onMobileApp = (pathname ?? '').startsWith('/m')   // แอปมือถือ (มีแถบเมนูล่างจอ)
   const [stale, setStale] = useState(false)
   const [updating, setUpdating] = useState(false)
 
@@ -83,27 +87,17 @@ export default function UpdateBanner() {
 
   const update = async () => {
     setUpdating(true)
-    // ล้างของเก่าให้หมดก่อนโหลดใหม่ ไม่งั้น PWA หยิบไฟล์เดิมใน cache มาใช้ต่อ
-    try {
-      if ('caches' in window) {
-        const keys = await caches.keys()
-        await Promise.all(keys.map(k => caches.delete(k)))
-      }
-      if ('serviceWorker' in navigator) {
-        const regs = await navigator.serviceWorker.getRegistrations()
-        await Promise.all(regs.map(r => r.unregister()))
-      }
-    } catch { /* ล้างไม่ได้ก็ยังโหลดใหม่ให้ */ }
-    location.reload()
+    await forceUpdate()
   }
 
   if (!stale) return null
 
   return (
     <div style={{
-      position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 3000,
+      // แอปมือถือมีแถบเมนูล่างจออยู่แล้ว — ยกแถบขึ้นมาไม่ให้ทับกัน
+      position: 'fixed', left: 0, right: 0, bottom: onMobileApp ? 'calc(78px + env(safe-area-inset-bottom))' : 0, zIndex: 3000,
       background: 'var(--ink, #1f2937)', color: '#fff',
-      padding: '12px 16px calc(12px + env(safe-area-inset-bottom))',
+      padding: onMobileApp ? '12px 16px' : '12px 16px calc(12px + env(safe-area-inset-bottom))',
       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14,
       fontSize: 14, boxShadow: '0 -2px 12px rgba(0,0,0,0.18)',
     }}>

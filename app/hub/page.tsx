@@ -6,6 +6,7 @@ import Image from 'next/image'
 import { RAIL_PATH } from '@/lib/rail'
 import { CALC_PATH } from '@/lib/calc'
 import { readStaffSession, type StaffSession } from '@/lib/staffSession'
+import { forceUpdate } from '@/lib/appUpdate'
 
 // หน้ารวมเครื่องมือของแอป "Donna Design" (start_url ของ PWA ชี้มาที่นี่)
 // เปิดแอปครั้งแรกของรอบ → เด้งเข้าเครื่องมือที่ใช้ล่าสุดให้เลย · กดปุ่มกลับ hub / ปุ่ม back → เห็นหน้านี้ตามปกติ
@@ -128,6 +129,11 @@ function HubContent() {
         <div style={{ textAlign: 'center' }}>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.3px' }}>Donna Design</h1>
           <p style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 3 }}>เลือกเครื่องมือที่จะใช้</p>
+          {/* กดอัปเดตเองได้ตลอด — แอปมือถือรีเฟรชเองไม่ได้เหมือนเบราว์เซอร์ */}
+          <button onClick={forceUpdate}
+            style={{ marginTop: 8, minHeight: 30, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--ink-3)', borderRadius: 999, padding: '0 14px', fontSize: 12, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
+            อัปเดตแอป
+          </button>
         </div>
       </div>
 

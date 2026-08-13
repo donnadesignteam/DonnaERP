@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { fetchStaffOne, hasVacationRight, type Staff } from '@/lib/staffDb'
 import { readStaffSession } from '@/lib/staffSession'
+import { forceUpdate } from '@/lib/appUpdate'
 import { usePullToRefresh, PullIndicator, CardSkeleton } from './mobileUi'
 import MyActivity from '@/components/MyActivity'
 
@@ -175,10 +176,17 @@ export default function MobileMe() {
       <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'var(--bg)', paddingTop: 'env(safe-area-inset-top)', borderBottom: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px' }}>
           <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>ข้อมูลของฉัน</span>
-          <button onClick={logout}
-            style={{ minHeight: 32, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--ink-3)', borderRadius: 999, padding: '0 13px', fontSize: 12.5, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
-            ออกจากระบบ
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {/* กดเองได้ตลอด ไม่ต้องรอแถบแจ้งอัปเดต — แอปมือถือรีเฟรชเองไม่ได้เหมือนเบราว์เซอร์ */}
+            <button onClick={forceUpdate}
+              style={{ minHeight: 32, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--ink-3)', borderRadius: 999, padding: '0 13px', fontSize: 12.5, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
+              อัปเดตแอป
+            </button>
+            <button onClick={logout}
+              style={{ minHeight: 32, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--ink-3)', borderRadius: 999, padding: '0 13px', fontSize: 12.5, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
+              ออกจากระบบ
+            </button>
+          </div>
         </div>
       </div>
 
