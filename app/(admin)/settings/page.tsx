@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import ActivityLog from '@/components/ActivityLog'
+import ClientVersions from '@/components/ClientVersions'
 import { CHANGELOG } from '@/lib/changelog'
 import { readStaffSession } from '@/lib/staffSession'
 import { fetchStaffOne } from '@/lib/staffDb'
@@ -84,6 +85,9 @@ export default function SettingsPage() {
             ))}
           </div>
         </div>
+
+        {/* เวอร์ชันที่แต่ละเครื่องใช้อยู่ — ดูว่าใครยังค้างของเก่า */}
+        <ClientVersions />
 
         {/* ประวัติการแก้ไขทั้งร้าน — อยู่ขวาของการ์ดบัญชี */}
         <div style={{ flex: 1, minWidth: 320 }}>

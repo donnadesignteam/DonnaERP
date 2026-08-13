@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
-import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers } from '@/lib/itemFormat'
+import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, CORE_ITEM_FIELDS } from '@/lib/itemFormat'
 import { railLink } from '@/lib/rail'
 import { TECH_OPTIONS } from '@/lib/techs'
 import { OUTSIDE_PLATFORMS, PROD_STATUSES, INSTALL_STATUSES, PROD_STATUS_COLOR, matchQuickTab, effectiveDueDate, type QuickTab } from '@/lib/orderTabs'
@@ -28,10 +28,15 @@ import QRCode from 'qrcode'
 type Item = {
   type: string
   floors: number | null
-  rail_head: string       // ผ้าม่านจีบ = จำนวนจีบ ("3จีบ") · ราง = หัวราง
+  rail_head: string       // หัวราง (ของรางตาไก่): หัวกระดุม / หัวกลมจุก / หัวกลมเรียบ
+  pleat?: string          // จีบ (ของม่านจีบ): 1จีบ / 2จีบ / 3จีบ
+  rail_color?: string     // สีราง: ลายไม้ / สัก / โอ๊ค / ขาว / ดำ
+  opacity?: string        // ความทึบ (ม่านม้วน): 3% / 1% / Blackout
+  model?: string          // รุ่น: Luxury,P-net (มุ้งจีบ) · ปกติ,RG (มุ้งนิรภัย) · STE,KACEE (มู่ลี่อลูมิเนียม)
+  slat_size?: string      // ขนาดใบ (มู่ลี่): 16mm / 25mm / 35mm / 50mm
   hook_type?: string      // ชนิดตะขอ (ตะขอสั้น/ยาว/เพดาน) แยกช่องจากจำนวนจีบ
-  eyelet_color?: string   // สีห่วงตาไก่ (เฉพาะม่านตาไก่) เช่น สีขาว สีสัก สีดำ
-  fabric_type: string
+  eyelet_color?: string   // สีห่วงตาไก่ (เฉพาะม่านตาไก่): สีขาว สีดำ สีโอ๊ค สีสัก สีเงิน
+  fabric_type: string     // Dimout / Blackout / ลินิน / ผ้าโปร่ง
   color_code: string
   color_name: string
   color_desc: string
@@ -157,7 +162,48 @@ const claimToEntry = (c: ClaimSource): Entry => ({
   updated_at: c.updated_at ?? '',
 } as Entry)
 
-const emptyItem = (): Item => ({ type: '', floors: null, rail_head: '', hook_type: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', orientation: '', fabric_split: '', chemical: '', weight_chain: '', pull_side: '', note: '', outsource: '' })
+// ช่องทั้งหมดของรายการสินค้า [ชื่อคอลัมน์, คีย์, ชนิดช่องกรอก, กว้างในตาราง]
+// ตาราง/ฟอร์มจะโชว์เฉพาะช่องที่เกี่ยวกับสินค้าชนิดนั้น + ช่องที่มีข้อมูลอยู่ (กดปุ่มดูทุกช่องได้)
+const ITEM_FIELDS: [string, keyof Item, string, number][] = [
+  ['ประเภท', 'type', 'text', 110],
+  ['สีตาไก่', 'eyelet_color', 'text', 64],
+  ['ชั้น', 'floors', 'number', 44],
+  ['หัวราง', 'rail_head', 'text', 78],
+  ['จีบ', 'pleat', 'text', 48],
+  ['ตะขอ', 'hook_type', 'text', 70],
+  ['สีราง', 'rail_color', 'text', 58],
+  ['ความทึบ', 'opacity', 'text', 56],
+  ['รุ่น', 'model', 'text', 58],
+  ['ขนาดใบ', 'slat_size', 'text', 54],
+  ['ประเภทผ้า', 'fabric_type', 'text', 76],
+  ['รหัสสี', 'color_code', 'text', 60],
+  ['สีม่าน', 'color_name', 'text', 90],
+  ['สีจริง', 'color_desc', 'text', 80],
+  ['กว้าง (ม.)', 'width', 'text', 56],
+  ['สูง (ม.)', 'height', 'text', 56],
+  ['จำนวน', 'quantity', 'number', 50],
+  ['หน่วย', 'unit', 'text', 46],
+  ['กระดูม', 'hooks', 'text', 60],
+  ['เกินขนาด', 'orientation', 'text', 60],
+  ['แบ่งผ้า', 'fabric_split', 'text', 74],
+  ['เคมี', 'chemical', 'text', 64],
+  ['โซ่ถ่วง', 'weight_chain', 'text', 80],
+  ['ฝั่งดึง', 'pull_side', 'text', 54],
+  ['สั่งนอก', 'outsource', 'text', 90],
+  ['หมายเหตุ', 'note', 'text', 90],
+]
+
+// ช่องที่ต้องโชว์ของรายการหนึ่งชิ้น = ช่องหลัก + ช่องที่มีข้อมูลอยู่จริง (ช่องว่างไม่ต้องขึ้นให้รก)
+const shownFields = (it: Item): Set<string> => {
+  const s = new Set(CORE_ITEM_FIELDS)
+  for (const [, key] of ITEM_FIELDS) {
+    const v = it[key]
+    if (v !== '' && v != null && !(key === 'quantity' && v === 0)) s.add(key as string)
+  }
+  return s
+}
+
+const emptyItem = (): Item => ({ type: '', floors: null, rail_head: '', pleat: '', rail_color: '', opacity: '', model: '', slat_size: '', hook_type: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', orientation: '', fabric_split: '', chemical: '', weight_chain: '', pull_side: '', note: '', outsource: '' })
 
 // รวมข้อความสั่งนอกจากทุกรายการ → ไว้ลงคอลัมน์สั่งนอกของออเดอร์
 const itemsOutsourceText = (items: Item[]): string =>
@@ -445,6 +491,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [itemsPasteText, setItemsPasteText] = useState('')
   const [itemsModalPasteText, setItemsModalPasteText] = useState('')
   const [itemsModalLoading, setItemsModalLoading] = useState(false)
+  const [itemsShowAll, setItemsShowAll] = useState(false)   // ตารางรายการสินค้า: โชว์ทุกช่อง (ปกติโชว์เฉพาะช่องที่เกี่ยวข้อง)
   const [itemsModalError, setItemsModalError] = useState('')
   const [openAction, setOpenAction] = useState<string | null>(null)
   const [actionRect, setActionRect] = useState<DOMRect | null>(null)
@@ -500,6 +547,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [orderParsing, setOrderParsing] = useState(false)
   const [orderParseError, setOrderParseError] = useState('')
   const [formParseLoading, setFormParseLoading] = useState(false)
+  const [formShowAll, setFormShowAll] = useState<number[]>([])   // การ์ดรายการที่กดขอดูทุกช่อง (เก็บเป็น index)
   const [formParseError, setFormParseError] = useState('')
 
   const computeSortOrder = (rs: Entry[], sort: 'asc' | 'desc' | null): string[] => {
@@ -1808,6 +1856,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       if (o.price != null && o.price !== '') set('price', String(o.price))
       if (o.payment_status) set('payment_status', String(o.payment_status))
       if (o.notes) set('notes', String(o.notes))
+      // บริษัทจัดส่งท้ายออเดอร์แพลตฟอร์ม — กรอกให้เฉพาะที่ตรงกับตัวเลือกในระบบ (กันชื่อแปลกๆ ทำให้ช่องว่างเปล่า)
+      if (o.courier && COURIERS.includes(String(o.courier))) set('courier', String(o.courier))
       if (o.address) set('address', String(o.address))
       if (o.phone) set('phone', String(o.phone))
       if (Array.isArray(o.items) && o.items.length) setModalItems(o.items)
@@ -4406,18 +4456,29 @@ ${body}
                   ยังไม่มีรายการ
                 </div>
               )}
-              {modalItems.map((item, idx) => (
+              {modalItems.map((item, idx) => {
+                // โชว์เฉพาะช่องที่เกี่ยวกับสินค้าชนิดนี้ + ช่องที่มีข้อมูลอยู่ (กด "ทุกช่อง" ถ้าต้องกรอกช่องอื่น)
+                const shown = shownFields(item)
+                const fields = formShowAll.includes(idx) ? ITEM_FIELDS : ITEM_FIELDS.filter(([, key]) => shown.has(key as string))
+                const hidden = ITEM_FIELDS.length - fields.length
+                return (
                 <div key={idx} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', marginBottom: 8, background: 'var(--bg)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                     <span style={{ fontSize: 11, color: 'var(--ink-4)', fontWeight: 500 }}>รายการที่ {idx + 1}</span>
-                    <button type="button" onClick={() => setModalItems(prev => prev.filter((_, i) => i !== idx))}
-                      style={{ border: 'none', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontSize: 12, padding: 0 }}>ลบ</button>
+                    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                      <button type="button" onClick={() => setFormShowAll(prev => prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx])}
+                        style={{ border: 'none', background: 'transparent', color: 'var(--ink-3)', cursor: 'pointer', fontSize: 11, padding: 0 }}>
+                        {hidden > 0 ? `ทุกช่อง (+${hidden})` : 'โชว์เฉพาะช่องที่ใช้'}
+                      </button>
+                      <button type="button" onClick={() => setModalItems(prev => prev.filter((_, i) => i !== idx))}
+                        style={{ border: 'none', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontSize: 12, padding: 0 }}>ลบ</button>
+                    </div>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr 1fr 2fr 2fr 2fr 2fr 2fr', gap: '6px 8px', marginBottom: 6 }}>
-                    {([['ประเภท', 'type', 'text'], ['สีตาไก่', 'eyelet_color', 'text'], ['ชั้น', 'floors', 'number'], ['หัวราง/จีบ', 'rail_head', 'text'], ['ตะขอ', 'hook_type', 'text'], ['ประเภทผ้า', 'fabric_type', 'text'], ['รหัสสี', 'color_code', 'text'], ['ลาย/สไตล์', 'color_name', 'text'], ['สีจริง', 'color_desc', 'text']] as [string, keyof Item, string][]).map(([lbl, key, type]) => (
-                      <div key={key}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '6px 8px' }}>
+                    {fields.map(([lbl, key, type]) => (
+                      <div key={key} style={key === 'type' ? { gridColumn: 'span 2' } : undefined}>
                         <label style={{ fontSize: 11, color: 'var(--ink-4)', display: 'block', marginBottom: 2 }}>{lbl}</label>
-                        <input type={type} step={type === 'number' ? '1' : undefined}
+                        <input type={type} step={type === 'number' ? (key === 'floors' ? '1' : '0.01') : undefined}
                           value={item[key] == null ? '' : String(item[key])}
                           onChange={e => {
                             const val = key === 'floors' ? (e.target.value === '' ? null : Number(e.target.value)) : e.target.value
@@ -4427,19 +4488,9 @@ ${body}
                       </div>
                     ))}
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr 2fr', gap: '6px 8px' }}>
-                    {([['กว้าง (ม.)', 'width', 'text'], ['สูง (ม.)', 'height', 'text'], ['จำนวน', 'quantity', 'number'], ['หน่วย', 'unit', 'text'], ['กระดูม', 'hooks', 'text'], ['ขวางผ้า', 'orientation', 'text'], ['แบ่งผ้า', 'fabric_split', 'text'], ['เคมี', 'chemical', 'text'], ['โซ่ถ่วง', 'weight_chain', 'text'], ['ฝั่งดึง', 'pull_side', 'text'], ['สั่งนอก', 'outsource', 'text'], ['หมายเหตุ', 'note', 'text']] as [string, keyof Item, string][]).map(([lbl, key, type]) => (
-                      <div key={key}>
-                        <label style={{ fontSize: 11, color: 'var(--ink-4)', display: 'block', marginBottom: 2 }}>{lbl}</label>
-                        <input type={type} step={type === 'number' ? '0.01' : undefined}
-                          value={item[key] === null ? '' : String(item[key])}
-                          onChange={e => setModalItems(prev => prev.map((it, i) => i === idx ? { ...it, [key]: e.target.value } : it))}
-                          style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 5, padding: '5px 8px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
-                      </div>
-                    ))}
-                  </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
 
             {(() => {
@@ -4617,12 +4668,24 @@ ${body}
               </button>
             </div>
 
-            {/* Editable table */}
+            {/* Editable table — โชว์เฉพาะช่องที่เกี่ยวกับสินค้าในใบนี้ (กด "ทุกช่อง" ถ้าอยากกรอกช่องอื่น) */}
+            {(() => {
+            const shown = itemsModal.items.map(shownFields)
+            const cols = ITEM_FIELDS.filter(([, key]) =>
+              itemsShowAll || shown.length === 0 || shown.some(s => s.has(key as string)))
+            return (
+            <>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+              <button onClick={() => setItemsShowAll(v => !v)}
+                style={{ fontSize: 11, padding: '3px 10px', border: '1px solid var(--border)', borderRadius: 6, background: itemsShowAll ? 'var(--blue-bg)' : 'var(--bg)', color: itemsShowAll ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer' }}>
+                {itemsShowAll ? 'โชว์เฉพาะช่องที่ใช้' : `ทุกช่อง (${ITEM_FIELDS.length - cols.length} ช่องที่ซ่อนอยู่)`}
+              </button>
+            </div>
             <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'auto', marginBottom: 14 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr style={{ background: '#FAFAFA', borderBottom: '1px solid var(--border)' }}>
-                    {['#', 'ประเภท', 'สีตาไก่', 'ชั้น', 'หัวราง/จีบ', 'ตะขอ', 'รหัสสี', 'ชื่อสี', 'กว้าง (ม.)', 'สูง (ม.)', 'จำนวน', 'หน่วย', 'กระดูม', 'ขวางผ้า', 'แบ่งผ้า', 'เคมี', 'โซ่ถ่วง', 'ฝั่งดึง', 'สั่งนอก', 'หมายเหตุ'].map(h => (
+                    {['#', ...cols.map(([lbl]) => lbl)].map(h => (
                       <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 500, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                     <th style={{ padding: '8px 10px', position: 'sticky', right: 0, background: '#FAFAFA', zIndex: 1 }} />
@@ -4632,27 +4695,7 @@ ${body}
                   {itemsModal.items.map((item, idx) => (
                     <tr key={idx} style={{ borderBottom: '1px solid var(--border)' }}>
                       <td style={{ padding: '6px 10px', color: 'var(--ink-4)', fontWeight: 500, width: 28 }}>{idx + 1}</td>
-                      {([
-                        ['type', 'text', 100],
-                        ['eyelet_color', 'text', 64],
-                        ['floors', 'number', 44],
-                        ['rail_head', 'text', 64],
-                        ['hook_type', 'text', 70],
-                        ['color_code', 'text', 60],
-                        ['color_name', 'text', 90],
-                        ['width', 'text', 56],
-                        ['height', 'text', 56],
-                        ['quantity', 'number', 50],
-                        ['unit', 'text', 46],
-                        ['hooks', 'text', 60],
-                        ['orientation', 'text', 60],
-                        ['fabric_split', 'text', 74],
-                        ['chemical', 'text', 64],
-                        ['weight_chain', 'text', 80],
-                        ['pull_side', 'text', 54],
-                        ['outsource', 'text', 90],
-                        ['note', 'text', 90],
-                      ] as [keyof Item, string, number][]).map(([key, type, w]) => (
+                      {cols.map(([, key, type, w]) => (
                         <td key={key} style={{ padding: '4px 6px' }}>
                           <input
                             type={type}
@@ -4676,7 +4719,7 @@ ${body}
                   ))}
                   {itemsModal.items.length === 0 && (
                     <tr>
-                      <td colSpan={19} style={{ padding: '20px', textAlign: 'center', color: 'var(--ink-4)', fontSize: 12 }}>
+                      <td colSpan={cols.length + 2} style={{ padding: '20px', textAlign: 'center', color: 'var(--ink-4)', fontSize: 12 }}>
                         ยังไม่มีรายการ — วางข้อความด้านบนแล้วกดแปลง หรือกดเพิ่มแถว
                       </td>
                     </tr>
@@ -4684,6 +4727,9 @@ ${body}
                 </tbody>
               </table>
             </div>
+            </>
+            )
+            })()}
 
             <button onClick={() => setItemsModal(m => m ? { ...m, items: [...m.items, emptyItem()] } : null)}
               style={{ fontSize: 12, padding: '4px 12px', border: '1px solid var(--blue)', borderRadius: 6, color: 'var(--blue)', background: 'var(--blue-bg)', cursor: 'pointer', marginBottom: 16 }}>

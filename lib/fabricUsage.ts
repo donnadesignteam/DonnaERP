@@ -23,6 +23,7 @@ export type FabricItem = {
   height?: number | string | null
   quantity?: number | string | null
   rail_head?: string | null
+  pleat?: string | null       // จำนวนจีบ (แยกช่องจากหัวราง ตั้งแต่ 13 ส.ค. 69)
   hook_type?: string | null   // ชนิดตะขอ (แยกช่องจากจำนวนจีบ)
   note?: string | null
   unit?: string | null
@@ -157,7 +158,7 @@ export function cutLine(it: FabricItem, i: number, opts?: { isClaim?: boolean })
   const width = num(it.width)
   const qty = Math.max(1, Math.round(num(it.quantity) || 1))
   // ข้อความที่เขียนต่อท้ายชื่อม่านในออเดอร์ (สี/เคมี/จีบ-ตะขอ) — ใช้เดาแบบม่านเมื่อชื่อรายการไม่บอก
-  const hint = [it.color_name, it.color_desc, it.note, it.chemical, it.rail_head, it.hook_type].map(v => String(v ?? ''))
+  const hint = [it.color_name, it.color_desc, it.note, it.chemical, it.rail_head, it.pleat, it.hook_type].map(v => String(v ?? ''))
   const base: CutLine = { i, type: type || '(ไม่ระบุชนิด)', width, qty, rule: '', meters: 0 }
 
   if (!type) return { ...base, skip: true, rule: 'ไม่มีชื่อรายการ' }

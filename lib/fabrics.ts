@@ -97,7 +97,7 @@ export function shortFabricType(fullType: string | undefined | null): string {
   if (!t) return ''
   if (t.includes('SHEER') || t.includes('โปร่ง')) return 'ผ้าโปร่ง'
   if (t.includes('DIMOUT')) return 'Dimout'
-  if (t.includes('BLACKOUT')) return 'ผ้าทึบ'
+  if (t.includes('BLACKOUT')) return 'Blackout'
   return ''
 }
 

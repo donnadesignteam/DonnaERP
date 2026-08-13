@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister'
+import UpdateBanner from '@/components/UpdateBanner'
 
 export const metadata: Metadata = {
   title: 'Donna Design',
@@ -30,6 +31,7 @@ export default function RootLayout({
       </head>
       <body>
         <ServiceWorkerRegister />
+        <UpdateBanner />
         {children}
       </body>
     </html>
