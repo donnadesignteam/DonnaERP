@@ -8,6 +8,7 @@ import { CALC_PATH } from '@/lib/calc'
 import { readStaffSession, type StaffSession } from '@/lib/staffSession'
 import { forceUpdate } from '@/lib/appUpdate'
 
+
 // หน้ารวมเครื่องมือของแอป "Donna Design" (start_url ของ PWA ชี้มาที่นี่)
 // เปิดแอปครั้งแรกของรอบ → เด้งเข้าเครื่องมือที่ใช้ล่าสุดให้เลย · กดปุ่มกลับ hub / ปุ่ม back → เห็นหน้านี้ตามปกติ
 const LAST_APP_KEY = 'donna_last_app'      // localStorage — จำข้ามการปิดแอป
@@ -103,11 +104,20 @@ function HubContent() {
 
   return (
     <div style={{ position: 'relative', minHeight: '100dvh', background: 'var(--bg)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 'calc(32px + env(safe-area-inset-top)) 20px calc(32px + env(safe-area-inset-bottom))', gap: 28 }}>
-      {/* มุมขวาบน — ใครล็อกอินอยู่ กดแล้วเข้าแดชบอร์ดของตัวเอง (/m/me)
+      {/* มุมขวาบน — ปุ่มอัปเดตแอป + ใครล็อกอินอยู่ กดแล้วเข้าแดชบอร์ดของตัวเอง (/m/me)
           ยังไม่ได้เข้าด้วยรหัสพนักงาน (ใช้รหัสรวมของร้าน) → เป็นปุ่มชวนล็อกอินแทน */}
+      <div style={{ position: 'absolute', top: 'calc(env(safe-area-inset-top) + 12px)', right: 14, zIndex: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+      {/* กดอัปเดตเองได้ตลอด ไม่ต้องรอแถบแจ้งอัปเดต — แอปมือถือรีเฟรชเองไม่ได้เหมือนเบราว์เซอร์ */}
+      <button onClick={forceUpdate}
+        style={{
+          minHeight: 40, padding: '0 14px', borderRadius: 999, border: '1px solid var(--border)',
+          background: 'var(--surface)', color: 'var(--ink-3)', fontSize: 13, fontWeight: 600,
+          cursor: 'pointer', boxShadow: 'var(--shadow)', WebkitTapHighlightColor: 'transparent', whiteSpace: 'nowrap',
+        }}>
+        อัปเดตแอป
+      </button>
       <button onClick={() => router.push(me ? '/m/me' : '/login')}
         style={{
-          position: 'absolute', top: 'calc(env(safe-area-inset-top) + 12px)', right: 14, zIndex: 10,
           display: 'flex', alignItems: 'center', gap: 8, minHeight: 40, padding: me ? '5px 13px 5px 5px' : '0 14px',
           borderRadius: 999, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--ink)',
           fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: 'var(--shadow)', WebkitTapHighlightColor: 'transparent',
@@ -122,6 +132,7 @@ function HubContent() {
           <span style={{ color: 'var(--ink-3)' }}>เข้าสู่ระบบพนักงาน</span>
         )}
       </button>
+      </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
         <Image src="/donna-logo.jpg" alt="Donna Design" width={84} height={84} priority
@@ -129,11 +140,6 @@ function HubContent() {
         <div style={{ textAlign: 'center' }}>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.3px' }}>Donna Design</h1>
           <p style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 3 }}>เลือกเครื่องมือที่จะใช้</p>
-          {/* กดอัปเดตเองได้ตลอด — แอปมือถือรีเฟรชเองไม่ได้เหมือนเบราว์เซอร์ */}
-          <button onClick={forceUpdate}
-            style={{ marginTop: 8, minHeight: 30, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--ink-3)', borderRadius: 999, padding: '0 14px', fontSize: 12, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
-            อัปเดตแอป
-          </button>
         </div>
       </div>
 
