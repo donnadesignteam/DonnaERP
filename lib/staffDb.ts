@@ -49,10 +49,48 @@ export function rowToStaff(r: any): Staff {
   }
 }
 
-export async function fetchStaffList(): Promise<Staff[]> {
-  const { data, error } = await supabase.from('staff').select('*').eq('active', true).order('code')
+// includeInactive = true → เอาคนที่ถูกลบ/ลาออกมาด้วย (ใช้ในหน้าพนักงานตอนกดดู "คนที่ลบแล้ว")
+export async function fetchStaffList(includeInactive = false): Promise<Staff[]> {
+  const q = supabase.from('staff').select('*')
+  const { data, error } = await (includeInactive ? q : q.eq('active', true)).order('code')
   if (error) throw error
   return (data || []).map(rowToStaff)
+}
+
+// ── เพิ่ม/ลบพนักงาน (ทำได้เฉพาะคนที่ล็อกอินด้วยรหัสรวมของร้าน — เช็คที่หน้าเว็บ) ──
+export type NewStaff = {
+  code: string; name: string; nickname: string
+  position: string; division: string; start_date: string
+}
+
+export async function createStaff(s: NewStaff): Promise<void> {
+  const { error } = await supabase.from('staff').insert({
+    code: s.code.trim().toUpperCase(),
+    name: s.name.trim() || null,
+    nickname: s.nickname.trim() || null,
+    position: s.position.trim() || null,
+    division: s.division || null,
+    start_date: s.start_date || null,
+    active: true,
+    // สิทธิลาตั้งต้นตามกติการ้าน — พักร้อนเป็น 0 เพราะปีแรกยังไม่มีสิทธิ (แก้เพิ่มได้ในหน้าประวัติรายคน)
+    sick_avail: 30, sick_used: 0, sick_left: 30,
+    personal_avail: 1, personal_full: 0, personal_half: 0, personal_left: 1,
+    vacation_avail: 0, vacation_used: 0, vacation_left: 0,
+    wop_full: 0, wop_half: 0, wop_hours: 0, late: 0,
+  })
+  if (error) throw error
+}
+
+// ลบแบบเก็บข้อมูลไว้ = active:false (หายจากรายชื่อ ล็อกอินไม่ได้ ประวัติลา/ประวัติแก้ไขยังอยู่ครบ)
+export async function setStaffActive(code: string, active: boolean): Promise<void> {
+  const { error } = await supabase.from('staff').update({ active }).eq('code', code.toUpperCase())
+  if (error) throw error
+}
+
+// ลบถาวร = ลบแถวออกจากตาราง staff จริงๆ (กู้ไม่ได้)
+export async function deleteStaff(code: string): Promise<void> {
+  const { error } = await supabase.from('staff').delete().eq('code', code.toUpperCase())
+  if (error) throw error
 }
 
 // รูปแบบเดียวกับ EMPLOYEES (lib/staff.ts) เพื่อใช้แทนในช่องเลือกพนักงาน/เดาชื่อ

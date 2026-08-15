@@ -93,6 +93,10 @@ export default function StaffDetailPage() {
       const s = await fetchStaffOne(code)
       if (!s) { setError('ไม่พบพนักงาน'); setLoading(false); return }
       setEmp(s)
+      // เข้ามาจากเมนู ··· → แก้ไข ในหน้ารายชื่อ = เปิดโหมดแก้ไขให้เลย
+      if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('edit') === '1') {
+        setForm(staffToForm(s)); setEditing(true)
+      }
       const cc = code.toUpperCase()
       const nickname = s.nickname
 
