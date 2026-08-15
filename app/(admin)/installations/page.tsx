@@ -15,6 +15,8 @@ import { useStableView } from '@/lib/useStableView'
 import { oeUpdate, instUpdate, instInsert } from '@/lib/adminActor'
 import { useConfirm } from '@/components/ConfirmDialog'
 import { createOrderForInstall, orderPatchFromInstall } from '@/lib/installOrderSync'
+import { formatOrderLines, linesToHtml, openFormPrintWindow, type PrintLine, type PrintableOrder } from '@/lib/orderPrint'
+import QRCode from 'qrcode'
 
 
 type Installation = {
@@ -593,6 +595,61 @@ export default function InstallationsPage() {
     }
   }
 
+  // ปริ้นใบงาน 1 ใบ (เมนู ··· → ปริ้น) — ใช้ฟอร์มหน้าตาเดียวกับใบปริ้นในหมวดออเดอร์
+  // มีออเดอร์ต้นทาง = ปริ้นใบออเดอร์นั้นตรงๆ (พร้อม QR สแกน) แล้วเติมบรรทัดนัดหมาย/ช่างไว้หัวใบ
+  const printInstall = async (ins: Installation) => {
+    // เปิดหน้าต่างทันทีตอนกดปุ่ม (กัน popup blocker) แล้วค่อยเติมเนื้อหาหลังโหลดออเดอร์เสร็จ
+    const win = window.open('', '_blank', 'width=1200,height=750')
+    if (!win) { setError('เบราว์เซอร์บล็อก popup — โปรดอนุญาต popup เพื่อปริ้น'); return }
+    win.document.write('<!DOCTYPE html><meta charset="UTF-8"><body style="font-family:sans-serif;padding:24px;color:#666">กำลังเตรียมเอกสาร…</body>')
+
+    const dt = ins.appointment_datetime ? new Date(ins.appointment_datetime) : null
+    const apptText = dt
+      ? `${DAYS[(dt.getDay() + 6) % 7]} ${dt.getDate()} ${TH_MONTHS[dt.getMonth()]} ${dt.getFullYear() + 543} ${dt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.`
+      : 'ยังไม่ได้นัดหมาย'
+
+    const head: PrintLine[] = [{ t: `${ins.work_type || 'งานติดตั้ง'}${ins.serial_no ? ` #${ins.serial_no}` : ''} · ${apptText}` }]
+    const techLine = [ins.technician_type, ins.install_zone, ins.province].filter(Boolean).join(' · ')
+    if (techLine) head.push({ t: techLine })
+    head.push({ t: '' })
+
+    let body: PrintLine[] = []
+    let qr: string | undefined
+
+    try {
+      if (ins.source_order_id) {
+        const { data } = await supabase.from('order_entries').select('*').eq('id', ins.source_order_id).maybeSingle()
+        if (data) {
+          body = formatOrderLines(data as PrintableOrder)
+          qr = await QRCode.toDataURL(`${window.location.origin}/scan?id=${data.id}&o=${encodeURIComponent(data.order_number || '')}`, { margin: 1, width: 240 }).catch(() => undefined)
+        }
+      }
+    } catch { /* โหลดออเดอร์ต้นทางไม่ได้ → ใช้ข้อมูลในแถวงานติดตั้งแทน */ }
+
+    // ไม่มีออเดอร์ต้นทาง (หรือโหลดไม่ได้) → ประกอบใบจากข้อมูลในแถวงานติดตั้งเอง หน้าตาเดียวกัน
+    if (body.length === 0) {
+      const push = (t: string) => body.push({ t })
+      const cust = [ins.platform, ins.customer_real_name || ins.customer_id].filter(Boolean).join(': ')
+      if (cust) push(cust)
+      if (ins.phone) push(ins.phone)
+      push('')
+      const items = ins.source_order_id ? (orderItems[ins.source_order_id] ?? []) : []
+      formatItemLines(items).forEach(l => push(l))
+      if (items.length) push('')
+      if (ins.work_details) push(ins.work_details)
+      if (ins.location_link) push(ins.location_link)
+      if (ins.price) push(`ราคา ${Number(ins.price).toLocaleString('th-TH')} บาท${ins.payment_status ? ` (${ins.payment_status})` : ''}`)
+      if (ins.notes) push(`หมายเหตุ: ${ins.notes}`)
+      if (ins.entered_by) { push(''); push(`แอดมิน: ${ins.entered_by}`) }
+    }
+
+    openFormPrintWindow(
+      [{ html: linesToHtml([...head, ...body]), qr }],
+      `${ins.work_type || 'งานติดตั้ง'} ${ins.customer_real_name || ins.customer_id || ''}`,
+      win,
+    )
+  }
+
   const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y - 1) } else setMonth(m => m - 1) }
   const nextMonth = () => { if (month === 11) { setMonth(0); setYear(y => y + 1) } else setMonth(m => m + 1) }
 
@@ -961,6 +1018,8 @@ export default function InstallationsPage() {
                 setActionMenu(null)
               }}
                 style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: '#fff', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>แก้ไข</button>
+              <button onClick={() => { setActionMenu(null); printInstall(ins) }}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', borderTop: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>ปริ้น</button>
               <button onClick={() => { setActionMenu(null); del(ins.id) }}
                 style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', borderTop: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 13, color: 'var(--red)' }}>ลบ</button>
             </div>

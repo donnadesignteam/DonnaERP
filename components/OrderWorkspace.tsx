@@ -23,6 +23,8 @@ import { stampInsert, oeUpdate, oeInsert, instUpdate, instInsert, claimUpdate } 
 import { useConfirm } from '@/components/ConfirmDialog'
 import { useStableView } from '@/lib/useStableView'
 import { TH_MONTHS } from '@/lib/shopCalendar'
+// ข้อความใบออเดอร์ (คัดลอก/ใบปริ้นแบบฟอร์ม) อยู่ใน lib/orderPrint.ts — หน้าปฏิทินติดตั้งใช้ตัวเดียวกัน
+import { formatOrderText, formatOrderHtml } from '@/lib/orderPrint'
 import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
 
@@ -512,6 +514,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [installDtEdit, setInstallDtEdit] = useState<{ id: string; date: string; time: string } | null>(null) // จิ้มคอลัมน์วันที่ติดตั้งเพื่อแก้วัน/เวลานัด
   const [printModal, setPrintModal] = useState(false)
   const [printMaxDays, setPrintMaxDays] = useState(3)
+  const [printScope, setPrintScope] = useState<'tab' | 'days'>('tab')   // ปริ้นตารางตามแท็บที่เปิดอยู่ / ตามวันที่เหลือ
   // id ใบออเดอร์ที่ในปฏิทินไม่ใช่ "งานติดตั้ง" (งานวัดหน้างาน ฯลฯ) — ซ่อนจากหมวดออเดอร์
   const [nonOrderIds, setNonOrderIds] = useState<Set<string>>(new Set())
   const [quickFilter, setQuickFilter] = useState<'all' | 'platform' | 'outside' | 'install' | 'claim' | 'shipped' | 'cancelled'>('all')
@@ -813,104 +816,6 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   }
 
   // สร้างบรรทัดของใบออเดอร์ พร้อมธง rail (บรรทัดของรายการ "ราง")
-  function formatOrderLines(r: Entry): { t: string; rail?: boolean }[] {
-    const lines: { t: string; rail?: boolean }[] = []
-    const push = (t: string, rail = false) => lines.push({ t, rail })
-
-    if (r.entry_date) {
-      push(new Date(r.entry_date).toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' }))
-    }
-
-    const platformLine = [r.platform, r.customer_name].filter(Boolean).join(': ')
-    if (platformLine) push(platformLine)
-    if (r.order_number) push(r.order_number)
-
-    push('')
-
-    if (r.items && r.items.length > 0) {
-      // รายการที่ลงสั่งนอก: ชื่อที่สั่ง + วัน/เดือนที่ลง ต่อท้ายรายการ เช่น "KC 8/7"
-      const pushOutsource = (item: Item) => {
-        const out = (item.outsource ?? '').trim()
-        if (out) {
-          const dt = r.outsource_at ? new Date(r.outsource_at) : new Date()
-          push(`${out} ${dt.getDate()}/${dt.getMonth() + 1}`)
-        }
-      }
-      // งานนอก/งานติดตั้งที่ลงจุดไว้ในช่องหมายเหตุของรายการ (ห้องครัว/โถงหน้าบ้าน…) — พิมพ์แยกหัวข้อตามจุด
-      // เหมือนใบเสนอราคา จะได้รู้ว่ารางชุดไหนคู่กับผ้าผืนไหน · งานแพลตฟอร์มพิมพ์แบบเดิม (หมายเหตุมักเป็น ซ้าย/ขวา ไม่ใช่จุด)
-      const isOutsideOrder = OUTSIDE_PLATFORMS.includes(r.platform ?? '') || !!r.is_installation
-      const noted = r.items.filter(it => (it.note ?? '').trim())
-      const byPoint = isOutsideOrder && noted.length >= 2
-      if (byPoint) {
-        const points: string[] = []
-        for (const it of r.items) {
-          const p = (it.note ?? '').trim()
-          if (!points.includes(p)) points.push(p)
-        }
-        points.forEach((p, gi) => {
-          if (gi > 0) push('')
-          if (p) push(`[${p}]`)
-          r.items!.filter(it => (it.note ?? '').trim() === p).forEach(item => {
-            itemBlockLines(item, { hideNote: true }).forEach((ln, li) => push(li === 0 ? `• ${ln.t}` : `   ${ln.t}`, ln.rail))
-            pushOutsource(item)
-          })
-        })
-      } else {
-        r.items.forEach((item, idx) => {
-          if (idx > 0) push('')
-          for (const ln of itemBlockLines(item)) push(ln.t, ln.rail)
-          pushOutsource(item)
-        })
-      }
-    }
-
-    push('')
-
-    // ‼️ ใช้ effShipping (dropoff +2 + เลี่ยงวันอาทิตย์/วันหยุดร้าน) ให้ตรงกับวันที่ที่โชว์บนหน้าจอ — ห้ามใช้ shipping_datetime ดิบ
-    const effShip = effShipping(r)
-    if (effShip && effShip !== '-') {
-      push(`ส่งก่อน ${effShip}`)
-    }
-    if (r.courier) push(r.courier)
-    if (r.notes) push(`หมายเหตุ: ${r.notes}`)
-
-    // ที่อยู่จัดส่ง — ขึ้นเมื่อมีข้อมูลเท่านั้น
-    // ‼️ คอลัมน์ "ที่อยู่จัดส่งแยก" ของแท็บงานแพลตฟอร์ม = ช่อง address ตัวเดียวกับ "ที่อยู่" ของแท็บอื่น
-    //    (ดู COLUMN_DEFS: platform → ship_address, outside/install → address) เลยครอบคลุมทุกแท็บในที่เดียว
-    const shipAddr = (r.address ?? '').trim()
-    const shipPhone = (r.phone ?? '').trim()
-    if (shipAddr || shipPhone) {
-      push('')
-      push(r.is_installation ? 'ที่อยู่หน้างาน' : 'ที่อยู่จัดส่ง')
-      if (r.customer_name) push(r.customer_name)
-      if (shipPhone) push(shipPhone)
-      if (shipAddr) {
-        const prov = (r.province ?? '').trim()
-        push(prov && !shipAddr.includes(prov) ? `${shipAddr} ${prov}` : shipAddr)
-      }
-    }
-
-    // ชื่อแอดมินต่อท้ายสุด — ขึ้นทั้งตอนคัดลอกและใบปริ้น
-    if (r.admin_name) {
-      push('')
-      push(`แอดมิน: ${r.admin_name}`)
-    }
-
-    return lines
-  }
-
-  function formatOrderText(r: Entry): string {
-    return formatOrderLines(r).map(l => l.t).join('\n')
-  }
-
-  // เวอร์ชัน HTML สำหรับปริ้น: บรรทัดของราง = สีแดง
-  function formatOrderHtml(r: Entry): string {
-    const esc = (v: string) => v.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!))
-    return formatOrderLines(r)
-      .map(l => l.rail ? `<span class="rail">${esc(l.t)}</span>` : esc(l.t))
-      .join('\n')
-  }
-
   const copyOrderText = async (r: Entry) => {
     setOpenAction(null)
     await navigator.clipboard.writeText(formatOrderText(r))
@@ -2292,9 +2197,19 @@ ${body}
     setPrintAsk(list)
   }
 
+  // ชื่อแท็บที่เปิดอยู่ — ใช้เป็นหัวใบปริ้นตาราง
+  const tabLabel = ({ all: 'ทั้งหมด', platform: 'งานแพลตฟอร์ม', outside: 'งานนอก', install: 'งานติดตั้ง', claim: 'งานเคลม', shipped: 'จัดส่งแล้ว', cancelled: 'ยกเลิก' } as Record<string, string>)[quickFilter] || 'ทั้งหมด'
+
   function doPrint() {
-    const toPrint = getPrintRows(printMaxDays)
-    openPrintWindow(toPrint, `ออเดอร์ที่ต้องส่งใน ${printMaxDays} วัน — ${new Date().toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' })}`)
+    const today = new Date().toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' })
+    if (printScope === 'tab') {
+      // ปริ้นตารางตามแท็บ + ตัวกรองที่เปิดอยู่ตอนนี้ (เห็นอะไรบนจอ ได้อย่างนั้น)
+      if (activeDisplayed.length === 0) return
+      const monthPart = month === 'all' ? '' : ` · ${monthLabel(month)}`
+      openPrintWindow(activeDisplayed, `ตารางออเดอร์ — ${tabLabel}${monthPart} (${activeDisplayed.length} รายการ) — ${today}`, 'table')
+    } else {
+      openPrintWindow(getPrintRows(printMaxDays), `ออเดอร์ที่ต้องส่งใน ${printMaxDays} วัน — ${today}`)
+    }
     setPrintModal(false)
   }
 
@@ -4643,19 +4558,33 @@ ${body}
       {printModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: 380, padding: '28px 32px' }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 20 }}>ปริ้นออเดอร์</h3>
-            <div style={{ marginBottom: 20 }}>
-              <label style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600, display: 'block', marginBottom: 10 }}>วันที่เหลือน้อยกว่า</label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <input type="number" min={0} max={99} value={printMaxDays}
-                  onChange={e => setPrintMaxDays(Number(e.target.value))}
-                  style={{ width: 80, border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', fontSize: 20, fontWeight: 700, outline: 'none', textAlign: 'center' }} />
-                <span style={{ fontSize: 14, color: 'var(--ink-3)' }}>วัน</span>
-              </div>
-              {(() => {
-                const count = getPrintRows(printMaxDays).length
-                return <p style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 12 }}>พบ <strong style={{ color: 'var(--ink)' }}>{count}</strong> รายการ จากออเดอร์ทั้งหมด {scopedRows.length} รายการ</p>
-              })()}
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 16 }}>ปริ้นออเดอร์</h3>
+
+            {/* เลือกว่าจะปริ้นอะไร — ตั้งต้นคือตารางของแท็บที่เปิดอยู่ */}
+            <div style={{ display: 'grid', gap: 8, marginBottom: 18 }}>
+              <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', cursor: 'pointer', border: `1px solid ${printScope === 'tab' ? 'var(--blue)' : 'var(--border)'}`, borderRadius: 10, padding: '10px 12px' }}>
+                <input type="radio" checked={printScope === 'tab'} onChange={() => setPrintScope('tab')} style={{ marginTop: 2 }} />
+                <span>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>ตารางที่เห็นอยู่ · {tabLabel}</span>
+                  <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>
+                    {activeDisplayed.length} รายการ (ตามแท็บ + ตัวกรอง{month === 'all' ? '' : ` + ${monthLabel(month)}`})
+                  </span>
+                </span>
+              </label>
+              <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', cursor: 'pointer', border: `1px solid ${printScope === 'days' ? 'var(--blue)' : 'var(--border)'}`, borderRadius: 10, padding: '10px 12px' }}>
+                <input type="radio" checked={printScope === 'days'} onChange={() => setPrintScope('days')} style={{ marginTop: 2 }} />
+                <span style={{ flex: 1 }}>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>เฉพาะงานที่ใกล้ถึงกำหนดส่ง</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                    <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>เหลือน้อยกว่า</span>
+                    <input type="number" min={0} max={99} value={printMaxDays}
+                      onClick={e => { e.stopPropagation(); setPrintScope('days') }}
+                      onChange={e => setPrintMaxDays(Number(e.target.value))}
+                      style={{ width: 62, border: '1px solid var(--border)', borderRadius: 8, padding: '5px 8px', fontSize: 15, fontWeight: 700, outline: 'none', textAlign: 'center' }} />
+                    <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>วัน · {getPrintRows(printMaxDays).length} รายการ</span>
+                  </span>
+                </span>
+              </label>
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => setPrintModal(false)}
