@@ -218,9 +218,17 @@ export default function MobileMe() {
             <div style={sectionTitle}>วันลาคงเหลือ</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <Balance title="ลาป่วย" left={emp.sick.left} avail={emp.sick.avail} used={emp.sick.used} color="var(--blue)" />
-              {/* ทำงานไม่ครบ 365 วัน = ยังไม่มีสิทธิพักร้อน → ไม่โชว์ */}
-              {hasVacationRight(emp.start_date) && (
+              {/* ทำงานไม่ครบ 365 วัน (หรือไม่มีวันเริ่มงาน) = ยังไม่มีสิทธิพักร้อน → ขึ้นว่ายังไม่มีสิทธิ */}
+              {hasVacationRight(emp.start_date) ? (
                 <Balance title="ลาพักร้อน" left={emp.vacation.left} avail={emp.vacation.avail} used={emp.vacation.used} color="var(--green)" />
+              ) : (
+                <div style={card}>
+                  <div style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 600 }}>ลาพักร้อน</div>
+                  <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink-4)', margin: '8px 0 5px' }}>ยังไม่มีสิทธิ</div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+                    {emp.start_date ? 'อายุงานยังไม่ครบ 1 ปี' : 'ยังไม่มีวันเริ่มงานในระบบ'}
+                  </div>
+                </div>
               )}
               <div style={{ gridColumn: '1 / -1' }}>
                 <Balance title="ลากิจ" left={emp.personal.left} avail={emp.personal.avail}

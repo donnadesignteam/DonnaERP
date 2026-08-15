@@ -57,7 +57,8 @@ const START_DATES: Record<string, string> = {
   DN022:'2025-03-02', DN023:'2025-05-21', DN024:'2025-05-28', DN025:'2025-11-02',
   DN026:'2025-08-25', DN027:'2025-08-20', DN028:'2025-09-08', DN029:'2025-09-08',
   DN030:'2025-10-02', DN031:'2025-10-21', DN032:'2025-10-09', DN033:'2026-01-05',
-  DN034:'2026-01-27',
+  DN034:'2026-01-27', DN035:'2026-03-23', DN037:'2026-06-08',
+  // DN036 (ปูน) ยังไม่มีวันเริ่มงาน → ถือว่ายังไม่มีสิทธิลาพักร้อนไปก่อน
 }
 
 // อายุงานเป็นวัน (วันนี้ − วันเริ่มงาน); null = ไม่พบวันเริ่มงาน
@@ -189,7 +190,8 @@ export default function EmployeesPage() {
   const save = async () => {
     // กันลาพักร้อนเมื่อยังไม่มีสิทธิ / เกินจำนวนวันต่อเนื่อง (เผื่อปุ่มถูกข้าม)
     const td = form.employee_code ? tenureDays(form.employee_code) : null
-    if (form.leave_type === 'ลาพักร้อน' && td != null) {
+    if (form.leave_type === 'ลาพักร้อน') {
+      if (td == null) return  // ไม่มีวันเริ่มงานในระบบ = เช็คสิทธิไม่ได้ → ถือว่ายังไม่มีสิทธิ
       const max = vacationMaxDays(td)
       if (max === 0) return
       if (rangeDays(form.leave_date, form.leave_end_date) > max) return
@@ -277,7 +279,7 @@ export default function EmployeesPage() {
   const selTenure = form.employee_code ? tenureDays(form.employee_code) : null
   const selVacMax = selTenure == null ? null : vacationMaxDays(selTenure)
   const selRangeDays = rangeDays(form.leave_date, form.leave_end_date)
-  const vacNoRight = form.leave_type === 'ลาพักร้อน' && selVacMax === 0
+  const vacNoRight = form.leave_type === 'ลาพักร้อน' && (selVacMax === 0 || selTenure == null)
   const vacOverDays = form.leave_type === 'ลาพักร้อน' && selVacMax != null && selVacMax > 0 && selRangeDays > selVacMax
   const vacBlocked = vacNoRight || vacOverDays
 
@@ -575,12 +577,14 @@ export default function EmployeesPage() {
                 <option value="">— เลือก —</option>
                 {['ลาป่วย','ลากิจเต็มวัน','ลากิจครึ่งวัน','ลาพักร้อน','WOPเต็มวัน','WOPครึ่งวัน','WOPรายชั่วโมง','มาสาย'].map(o => <option key={o}>{o}</option>)}
               </select>
-              {form.leave_type === 'ลาพักร้อน' && selTenure != null && (
+              {form.leave_type === 'ลาพักร้อน' && form.employee_code && (
                 <div style={{ marginTop: 8, padding: '9px 13px', borderRadius: 8, fontSize: 12.5, fontWeight: 500,
                   background: vacBlocked ? '#ff375f11' : '#34c75915',
                   border: `1px solid ${vacBlocked ? '#ff375f44' : '#34c75944'}`,
                   color: vacBlocked ? 'var(--red)' : '#1a7f37' }}>
-                  {vacNoRight
+                  {selTenure == null
+                    ? '❌ ไม่พบวันเริ่มงานในระบบ — ยังไม่มีสิทธิลาพักร้อน บันทึกไม่ได้ (ใส่วันเริ่มงานในหมวดพนักงานก่อน)'
+                    : vacNoRight
                     ? `❌ อายุงาน ${tenureText(selTenure)} — ทำงานไม่ครบ 1 ปี ยังไม่มีสิทธิลาพักร้อน บันทึกไม่ได้`
                     : vacOverDays
                     ? `❌ เลือกไว้ ${selRangeDays} วัน — เกินสิทธิลาพักร้อนต่อเนื่อง (ไม่เกิน ${selVacMax} วัน/ครั้ง) บันทึกไม่ได้`

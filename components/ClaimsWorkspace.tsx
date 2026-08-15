@@ -14,6 +14,7 @@ import QRCode from 'qrcode'
 import { railLink } from '@/lib/rail'
 import { TECH_OPTIONS } from '@/lib/techs'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
+import { TH_MONTHS } from '@/lib/shopCalendar'
 import { fetchEmployeeOptions } from '@/lib/staffDb'
 import { useStableView } from '@/lib/useStableView'
 import { useInstallPhotos, photoSaveError, type InstallPhoto } from '@/components/InstallPhotos'
@@ -132,6 +133,7 @@ export default function ClaimsWorkspace() {
   const { ask, confirmDialog } = useConfirm()
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<string>('all')
+  const [month, setMonth] = useState('all')   // 'all' | 'YYYY-MM' | 'none' (ไม่มีวันที่แจ้ง)
   const [modal, setModal] = useState<{ mode: 'add' | 'edit'; data: Claim } | null>(null)
   const [saving, setSaving] = useState(false)
   const [pasteText, setPasteText] = useState('')
@@ -494,8 +496,22 @@ ${body}
     setShipModal({ id: r.id, parcels: [...existing, { no: '', carrier: '', manual: false }] })
   }
 
+  // ── ตัวเลือกเดือน (ยึดวันที่แจ้งเคลม) ──
+  const monthKey = (r: Claim) => (r.claim_date ?? '').slice(0, 7) || 'none'
+  const monthOptions = useMemo(() => {
+    const keys = Array.from(new Set(rows.map(monthKey)))
+    const ym = keys.filter(k => k !== 'none').sort().reverse()
+    return { ym, hasNone: keys.includes('none') }
+  }, [rows])
+  const monthLabel = (k: string) => {
+    if (k === 'none') return 'ไม่ระบุวันที่แจ้ง'
+    const [y, m] = k.split('-')
+    return `${TH_MONTHS[Number(m) - 1]} ${Number(y) + 543}`
+  }
+
   // นับ/กรองบนค่า "ตอนโหลดหน้า" (stable) แล้วคืนค่าสด (live) ก่อนวาด — แถวจึงค้างในแท็บเดิมให้ตรวจทานได้
-  const stableRows = rows.map(stable)
+  // กรองเดือนก่อนนับ → ตัวเลขบนแท็บสถานะตรงกับเดือนที่เลือก
+  const stableRows = rows.map(stable).filter(r => month === 'all' || monthKey(r) === month)
   const counts: Record<string, number> = { all: stableRows.length }
   WORKFLOW.forEach(w => { counts[w.key] = stableRows.filter(r => r.status === w.key).length })
 
@@ -660,7 +676,9 @@ ${body}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px' }}>งานเคลม</h1>
-          <p style={{ fontSize: 14, color: 'var(--ink-3)', marginTop: 4 }}>{rows.length} เคส</p>
+          <p style={{ fontSize: 14, color: 'var(--ink-3)', marginTop: 4 }}>
+            {month === 'all' ? `${rows.length} เคส` : `${stableRows.length} เคส · ${monthLabel(month)} (ทั้งหมด ${rows.length})`}
+          </p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <button onClick={() => requestPrint(selectedIds.size > 0 ? displayed.filter(r => selectedIds.has(r.id)) : displayed)}
@@ -681,9 +699,15 @@ ${body}
         </div>
       )}
 
-      <div style={{ position: 'relative', marginBottom: 12 }}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ลูกค้า / เลขออเดอร์ / สาเหตุ…"
-          style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+          style={{ flex: '1 1 260px', minWidth: 0, border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+        <select value={month} onChange={e => setMonth(e.target.value)} title="เดือนที่แจ้งเคลม"
+          style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontSize: 14, outline: 'none', background: month === 'all' ? 'var(--surface)' : 'var(--blue-bg)', color: 'var(--ink)', fontWeight: month === 'all' ? 400 : 600, cursor: 'pointer', flexShrink: 0 }}>
+          <option value="all">ทุกเดือน</option>
+          {monthOptions.ym.map(k => <option key={k} value={k}>{monthLabel(k)}</option>)}
+          {monthOptions.hasNone && <option value="none">{monthLabel('none')}</option>}
+        </select>
       </div>
 
       {/* Status tabs (workflow) */}

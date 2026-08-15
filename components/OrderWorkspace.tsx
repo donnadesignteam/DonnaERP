@@ -22,6 +22,7 @@ import { prevOf } from '@/lib/trackedDb'
 import { stampInsert, oeUpdate, oeInsert, instUpdate, instInsert, claimUpdate } from '@/lib/adminActor'
 import { useConfirm } from '@/components/ConfirmDialog'
 import { useStableView } from '@/lib/useStableView'
+import { TH_MONTHS } from '@/lib/shopCalendar'
 import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
 
@@ -449,6 +450,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [techFilters, setTechFilters] = useState<string[]>([])
   const [shippingDateFrom, setShippingDateFrom] = useState('')
   const [shippingDateTo, setShippingDateTo] = useState('')
+  const [month, setMonth] = useState('all')   // เดือนของวันที่รับออเดอร์: 'all' | 'YYYY-MM' | 'none'
   const [openFilter, setOpenFilter] = useState<'platform' | 'courier' | 'status' | 'admin' | 'tech' | 'shipping' | 'urgent' | 'install' | 'days' | 'updated' | 'out-days' | 'out-deadline' | 'out-platform' | 'out-payment' | 'out-assigned' | 'out-admin' | 'out-status' | 'out-done' | 'out-installed' | 'out-updated' | null>(null)
   const [daysSort, setDaysSort] = useState<'asc' | 'desc' | null>('asc')
   const [sortOrder, setSortOrder] = useState<string[]>(cached?.sortOrder ?? [])
@@ -1695,7 +1697,20 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   // หมวดออเดอร์รวมงานเคลมด้วย (แท็บทั้งหมดจะได้เรียงงานเคลม/งานติดตั้งปนกันตามวันที่เหลือ)
   const scopedRows = rows.map(stable).filter(r => scope === 'claims' ? isClaimRow(r.platform) : true)
 
+  // ── ตัวเลือกเดือน (ยึดวันที่รับออเดอร์) ──
+  const monthKey = (r: Entry) => (r.entry_date ?? '').slice(0, 7) || 'none'
+  const monthOptions = (() => {
+    const keys = Array.from(new Set(scopedRows.map(monthKey)))
+    return { ym: keys.filter(k => k !== 'none').sort().reverse(), hasNone: keys.includes('none') }
+  })()
+  const monthLabel = (k: string) => {
+    if (k === 'none') return 'ไม่ระบุวันที่รับออเดอร์'
+    const [y, m] = k.split('-')
+    return `${TH_MONTHS[Number(m) - 1]} ${Number(y) + 543}`
+  }
+
   const displayedFrozen = scopedRows.filter(r => {
+    const matchMonth = month === 'all' || monthKey(r) === month
     const matchSearch = (r.customer_name ?? '').toLowerCase().includes(search.toLowerCase()) ||
       (r.order_number ?? '').toLowerCase().includes(search.toLowerCase())
     const matchStatus = statusFilters.length === 0 || statusFilters.includes(r.order_status ?? '')
@@ -1720,7 +1735,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const matchPrintedPending = !printedPendingFilter || isPrintedPending(r)
     // งานในปฏิทินที่ยังไม่ใช่งานติดตั้ง (เช่น รอวัดหน้างาน) ไม่ต้องขึ้นในหมวดออเดอร์
     const matchFromCalendar = !nonOrderIds.has(r.id)
-    return matchSearch && matchStatus && matchPlatform && matchCourier && matchAdmin && matchTech && matchUrgent && matchInstall && matchShipping && matchQuick && matchIncomplete && matchUnprinted && matchPrintedPending && matchFromCalendar
+    return matchMonth && matchSearch && matchStatus && matchPlatform && matchCourier && matchAdmin && matchTech && matchUrgent && matchInstall && matchShipping && matchQuick && matchIncomplete && matchUnprinted && matchPrintedPending && matchFromCalendar
   })
 
   if (updatedSort) {
@@ -2338,7 +2353,11 @@ ${body}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
         <div>
           <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px' }}>{scope === 'claims' ? 'งานเคลม' : 'ออเดอร์'}</h1>
-          <p style={{ fontSize: 14, color: 'var(--ink-3)', marginTop: 4 }}>{scopedRows.length} รายการ</p>
+          <p style={{ fontSize: 14, color: 'var(--ink-3)', marginTop: 4 }}>
+            {month === 'all'
+              ? `${scopedRows.length} รายการ`
+              : `${scopedRows.filter(r => monthKey(r) === month).length} รายการ · ${monthLabel(month)} (ทั้งหมด ${scopedRows.length})`}
+          </p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           {selectedIds.size > 0 && (
@@ -2369,15 +2388,23 @@ ${body}
         </div>
       )}
 
-      <div style={{ position: 'relative', marginBottom: 12 }}>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ชื่อลูกค้า / เลขคำสั่งซื้อ…"
-          style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', paddingRight: search ? 36 : 14, fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
-        {search && (
-          <button onClick={() => setSearch('')}
-            style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'var(--border)', color: 'var(--ink-3)', borderRadius: '50%', width: 20, height: 20, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, padding: 0 }}>
-            ✕
-          </button>
-        )}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: '1 1 260px', minWidth: 0 }}>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ชื่อลูกค้า / เลขคำสั่งซื้อ…"
+            style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', paddingRight: search ? 36 : 14, fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+          {search && (
+            <button onClick={() => setSearch('')}
+              style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'var(--border)', color: 'var(--ink-3)', borderRadius: '50%', width: 20, height: 20, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, padding: 0 }}>
+              ✕
+            </button>
+          )}
+        </div>
+        <select value={month} onChange={e => setMonth(e.target.value)} title="เดือนที่รับออเดอร์"
+          style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontSize: 14, outline: 'none', background: month === 'all' ? 'var(--surface)' : 'var(--blue-bg)', color: 'var(--ink)', fontWeight: month === 'all' ? 400 : 600, cursor: 'pointer', flexShrink: 0 }}>
+          <option value="all">ทุกเดือน</option>
+          {monthOptions.ym.map(k => <option key={k} value={k}>{monthLabel(k)}</option>)}
+          {monthOptions.hasNone && <option value="none">{monthLabel('none')}</option>}
+        </select>
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>

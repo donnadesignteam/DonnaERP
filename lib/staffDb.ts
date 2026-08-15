@@ -19,8 +19,8 @@ export type Staff = {
 }
 
 // ── สิทธิลาพักร้อน ─────────────────────────────────────────────
-// ทำงานไม่ครบ 365 วัน = ยังไม่มีสิทธิลาพักร้อน → ไม่ต้องโชว์ข้อมูลพักร้อนเลย (ทั้งคอมและมือถือ)
-// (ถ้าไม่มีวันเริ่มงานในระบบ = เช็คไม่ได้ → โชว์ตามเดิม)
+// ทำงานไม่ครบ 365 วัน = ยังไม่มีสิทธิลาพักร้อน → ขึ้นว่า "ยังไม่มีสิทธิ" แทนตัวเลข (ทั้งคอมและมือถือ)
+// (ถ้าไม่มีวันเริ่มงานในระบบ = เช็คไม่ได้ → ถือว่ายังไม่มีสิทธิไว้ก่อน กันเลขสิทธิเก่าค้างในฐานข้อมูลโผล่)
 export const VACATION_MIN_DAYS = 365
 
 export function tenureDays(start: string | null): number | null {
@@ -32,7 +32,7 @@ export function tenureDays(start: string | null): number | null {
 
 export function hasVacationRight(start: string | null): boolean {
   const d = tenureDays(start)
-  return d == null ? true : d >= VACATION_MIN_DAYS
+  return d == null ? false : d >= VACATION_MIN_DAYS
 }
 
 // แปลงแถวแบน (คอลัมน์ DB) → โครงสร้างซ้อนที่หน้าเว็บใช้

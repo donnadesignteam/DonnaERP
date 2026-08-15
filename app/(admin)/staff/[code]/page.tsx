@@ -316,8 +316,16 @@ export default function StaffDetailPage() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 14 }}>
                 <BalanceCard title="ลาป่วย คงเหลือ" left={emp.sick.left} avail={emp.sick.avail} used={emp.sick.used} color="#5ac8fa" />
                 <BalanceCard title="ลากิจ คงเหลือ" left={emp.personal.left} avail={emp.personal.avail} used={emp.personal.avail != null && emp.personal.left != null ? emp.personal.avail - emp.personal.left : null} color="#C47E3A" />
-                {hasVacationRight(emp.start_date) && (
+                {hasVacationRight(emp.start_date) ? (
                   <BalanceCard title="ลาพักร้อน คงเหลือ" left={emp.vacation.left} avail={emp.vacation.avail} used={emp.vacation.used} color="#30c759" />
+                ) : (
+                  <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, boxShadow: 'var(--shadow)' }}>
+                    <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 600 }}>ลาพักร้อน</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink-4)', margin: '10px 0 6px' }}>ยังไม่มีสิทธิ</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                      {emp.start_date ? 'อายุงานยังไม่ครบ 1 ปี' : 'ยังไม่มีวันเริ่มงานในระบบ'}
+                    </div>
+                  </div>
                 )}
               </div>
 
