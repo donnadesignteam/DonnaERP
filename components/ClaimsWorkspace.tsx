@@ -815,7 +815,7 @@ ${body}
                       onChange={e => setSelectedIds(e.target.checked ? new Set(displayed.map(r => r.id)) : new Set())}
                       style={{ cursor: 'pointer', width: 15, height: 15 }} />
                   </th>
-                  {['วันที่', 'กำหนดส่ง', 'แพลตฟอร์ม', 'ลูกค้า', 'ประเภท', 'รายการ', 'ยอดชำระ', 'สถานะ', 'แอดมิน', 'ช่าง', 'ผิดโดย', 'วิธีแก้ไข', 'ปิดงาน', 'ชื่อผู้รับ', 'ที่อยู่จัดส่ง', 'จัดส่ง', 'ค่าส่งกลับ', 'ค่าส่งคืน', 'ราคาประเมิน', 'หมายเหตุ', 'แก้ไขล่าสุด', ''].map((h, i) => (
+                  {['วันที่', 'กำหนดส่ง', 'แพลตฟอร์ม', 'ลูกค้า', 'ประเภท', 'ผิดโดย', 'วิธีแก้ไข', 'รายการ', 'ยอดชำระ', 'สถานะ', 'แอดมิน', 'ช่าง', 'ปิดงาน', 'ชื่อผู้รับ', 'ที่อยู่จัดส่ง', 'จัดส่ง', 'ค่าส่งกลับ', 'ค่าส่งคืน', 'ราคาประเมิน', 'หมายเหตุ', 'แก้ไขล่าสุด', ''].map((h, i) => (
                     <th key={i} style={{ textAlign: ['ค่าส่งกลับ', 'ค่าส่งคืน', 'ราคาประเมิน'].includes(h) ? 'right' : 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -856,6 +856,12 @@ ${body}
                     </td>
                     <td style={{ padding: '8px 14px' }}>
                       {selectInline(r, 'claim_type', CLAIM_TYPES)}
+                    </td>
+                    <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', minWidth: 90 }}>
+                      <SearchSelect value={r.fault_by ?? ''} groups={faultByGroups} onPick={v => saveCell(r.id, 'fault_by', v)} />
+                    </td>
+                    <td style={{ padding: '8px 14px', minWidth: 130, maxWidth: 220, whiteSpace: 'normal' }}>
+                      {textCell(r, 'fix_method', { placeholder: '+ วิธีแก้ไข' })}
                     </td>
                     <td style={{ padding: '8px 14px', maxWidth: 320 }}>
                       <div style={{ marginBottom: 4 }}>{textCell(r, 'cause')}</div>
@@ -899,12 +905,6 @@ ${body}
                     </td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
                       {selectInline(r, 'technician', TECH_OPTIONS)}
-                    </td>
-                    <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', minWidth: 90 }}>
-                      <SearchSelect value={r.fault_by ?? ''} groups={faultByGroups} onPick={v => saveCell(r.id, 'fault_by', v)} />
-                    </td>
-                    <td style={{ padding: '8px 14px', minWidth: 130, maxWidth: 220, whiteSpace: 'normal' }}>
-                      {textCell(r, 'fix_method', { placeholder: '+ วิธีแก้ไข' })}
                     </td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
                       <input type="checkbox" checked={!!r.closed_at} onChange={e => toggleClosed(r, e.target.checked)}
