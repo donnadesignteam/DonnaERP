@@ -37,6 +37,8 @@ type Claim = {
   original_order_number: string | null
   claim_type: string | null
   fault: string | null
+  fault_by: string | null      // ผิดโดยใคร — พนักงานร้าน / ช่าง / บริษัทขนส่ง (ต้องรัน sql/add_claim_fault_by.sql ก่อน)
+  fix_method: string | null    // วิธีแก้ไข — พิมพ์เองได้
   cause: string | null
   resolution: string | null
   items: Item[] | null
@@ -79,6 +81,8 @@ const FAULTS = ['ร้าน', 'ลูกค้า', 'ขนส่ง']
 const RESOLUTIONS = ['ส่งใหม่/ส่งเพิ่ม', 'แก้ไข/ผลิตใหม่', 'คืนเงินเต็ม', 'คืนเงินบางส่วน', 'คืนค่าส่ง', 'เก็บค่าแก้+ส่ง', 'เปลี่ยนสินค้า']
 const MONEY_DIR = ['คืนลูกค้า', 'เก็บลูกค้า']
 const MONEY_STATUS = ['รอ', 'โอนแล้ว', 'ชำระแล้ว']
+// ช่างที่ใส่ในช่อง "ผิดโดย" ได้ (คนละชุดกับ TECH_OPTIONS ที่เป็นช่างผู้รับผิดชอบงาน)
+const FAULT_BY_TECHS = ['ช่างพี่ฟอง', 'ช่างบัวบาน', 'ช่างกทม']
 const COURIERS = ['Flash Express', 'J&T Express', 'Kerry', 'ไปรษณีย์ไทย', 'SPX Express']
 
 // สถานะ workflow + สี
@@ -102,7 +106,7 @@ const ymdLocal = (iso: string) => {
 function emptyClaim(): Claim {
   return {
     id: '', claim_date: new Date().toISOString().slice(0, 10), deadline: null, channel: '', customer_username: '',
-    original_order_number: '', claim_type: '', fault: '', cause: '', resolution: '', items: null,
+    original_order_number: '', claim_type: '', fault: '', fault_by: '', fix_method: '', cause: '', resolution: '', items: null,
     ship_name: '', ship_address: '', ship_phone: '', return_tracking: '', outbound_tracking: '',
     courier: '', refund_amount: null, ship_back_cost: null, ship_return_cost: null, estimated_price: null,
     money_direction: '', payment_target: '', money_status: '',
@@ -119,6 +123,59 @@ function itemLine(it: Item): string {
   const dim = w > 0 && h > 0 ? `ก${w}*ส${h}` : w > 0 ? `ก${w}` : ''
   const tail = [dim, it.quantity ? `= ${it.quantity} ${it.unit || ''}`.trim() : '', it.note].filter(Boolean).join(' ')
   return [head, tail].filter(Boolean).join('  ')
+}
+
+// ── ช่องเลือกที่พิมพ์ค้นหาได้ (คอลัมน์ "ผิดโดย" มีทั้งพนักงานร้าน ช่าง และบริษัทขนส่ง รายชื่อยาวเกินกว่าจะเลื่อนหา) ──
+// กล่องรายการวางแบบ fixed อิงตำแหน่งปุ่ม เพราะตารางเลื่อนแนวนอน (overflow) จะตัดกล่องที่วางแบบ absolute
+function SearchSelect({ value, groups, onPick, placeholder = '—' }: {
+  value: string
+  groups: { label: string; items: string[] }[]
+  onPick: (v: string) => void
+  placeholder?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const [rect, setRect] = useState<DOMRect | null>(null)
+  const kw = q.trim().toLowerCase()
+  const filtered = groups
+    .map(g => ({ ...g, items: g.items.filter(i => i.toLowerCase().includes(kw)) }))
+    .filter(g => g.items.length > 0)
+  const close = () => { setOpen(false); setQ('') }
+  const pick = (v: string) => { close(); onPick(v) }
+  return (
+    <>
+      <div onClick={e => { setRect((e.currentTarget as HTMLElement).getBoundingClientRect()); setOpen(true); setQ('') }}
+        title={value || 'เลือก'}
+        style={{ cursor: 'pointer', fontSize: 12, color: value ? 'var(--ink)' : 'var(--ink-4)', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {value || placeholder}
+      </div>
+      {open && rect && (
+        <>
+          <div onClick={close} style={{ position: 'fixed', inset: 0, zIndex: 9998 }} />
+          <div style={{ position: 'fixed', top: Math.max(8, Math.min(rect.bottom + 2, window.innerHeight - 320)), left: Math.max(8, Math.min(rect.left, window.innerWidth - 250)), width: 230, maxHeight: 300, overflowY: 'auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 9999, padding: 6 }}>
+            <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="พิมพ์ค้นหา…"
+              onKeyDown={e => {
+                if (e.key === 'Escape') close()
+                if (e.key === 'Enter' && filtered[0]) pick(filtered[0].items[0])
+              }}
+              style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 8px', fontSize: 12, outline: 'none', boxSizing: 'border-box', marginBottom: 4 }} />
+            <button onClick={() => pick('')}
+              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 12, color: 'var(--ink-4)' }}>— ไม่ระบุ —</button>
+            {filtered.length === 0 && <div style={{ padding: '6px 8px', fontSize: 12, color: 'var(--ink-4)' }}>ไม่พบชื่อนี้</div>}
+            {filtered.map(g => (
+              <div key={g.label}>
+                <div style={{ padding: '6px 8px 2px', fontSize: 10, color: 'var(--ink-4)', fontWeight: 700 }}>{g.label}</div>
+                {g.items.map(o => (
+                  <button key={o} onClick={() => pick(o)}
+                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', border: 'none', borderRadius: 5, background: o === value ? 'var(--blue-bg)' : 'transparent', cursor: 'pointer', fontSize: 12, color: 'var(--ink)', fontWeight: o === value ? 600 : 400 }}>{o}</button>
+                ))}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </>
+  )
 }
 
 export default function ClaimsWorkspace() {
@@ -185,6 +242,21 @@ export default function ClaimsWorkspace() {
     return [...pinned, ...all.filter(n => !pinned.includes(n))]
   }, [staffNames, rows])
 
+  // ตัวเลือกช่อง "ผิดโดย" — พนักงานร้านทุกคน + ช่าง + บริษัทขนส่ง (+ ชื่อเก่าที่เคยบันทึกไว้แต่ไม่มีในลิสต์แล้ว)
+  const faultByGroups = useMemo(() => {
+    const staff = Array.from(new Set(staffNames))
+    const carriers = CARRIER_OPTIONS.filter(c => c !== 'อื่นๆ')
+    const known = new Set([...staff, ...FAULT_BY_TECHS, ...carriers])
+    const used = Array.from(new Set(rows.map(r => r.fault_by).filter((n): n is string => !!n && !known.has(n))))
+    return [
+      { label: 'พนักงานร้าน', items: staff },
+      { label: 'ช่าง', items: FAULT_BY_TECHS },
+      { label: 'ขนส่ง', items: carriers },
+      ...(used.length ? [{ label: 'อื่นๆ', items: used }] : []),
+    ]
+  }, [staffNames, rows])
+  const faultByFlat = useMemo(() => faultByGroups.flatMap(g => g.items), [faultByGroups])
+
   const set = (k: keyof Claim, v: string | boolean | number | null) =>
     setModal(m => m ? { ...m, data: { ...m.data, [k]: v } } : null)
 
@@ -241,6 +313,7 @@ export default function ClaimsWorkspace() {
     const payload: Partial<Claim> = {
       claim_date: d.claim_date || null, deadline: d.deadline || null, channel: d.channel || null, customer_username: d.customer_username || null,
       original_order_number: d.original_order_number || null, claim_type: d.claim_type || null, fault: d.fault || null,
+      fault_by: d.fault_by || null, fix_method: d.fix_method || null,
       cause: d.cause || null, resolution: d.resolution || null, items: d.items && d.items.length ? d.items : null,
       ship_name: d.ship_name || null, ship_address: d.ship_address || null, ship_phone: d.ship_phone || null,
       return_tracking: d.return_tracking || null, outbound_tracking: d.outbound_tracking || null, courier: d.courier || null,
@@ -518,7 +591,8 @@ ${body}
   const displayed = stableRows.filter(r => {
     const q = search.toLowerCase()
     const matchSearch = !q || (r.customer_username ?? '').toLowerCase().includes(q) ||
-      (r.original_order_number ?? '').toLowerCase().includes(q) || (r.cause ?? '').toLowerCase().includes(q)
+      (r.original_order_number ?? '').toLowerCase().includes(q) || (r.cause ?? '').toLowerCase().includes(q) ||
+      (r.fault_by ?? '').toLowerCase().includes(q) || (r.fix_method ?? '').toLowerCase().includes(q)
     const matchTab = tab === 'all' || r.status === tab
     return matchSearch && matchTab
   }).map(live)
@@ -741,7 +815,7 @@ ${body}
                       onChange={e => setSelectedIds(e.target.checked ? new Set(displayed.map(r => r.id)) : new Set())}
                       style={{ cursor: 'pointer', width: 15, height: 15 }} />
                   </th>
-                  {['วันที่', 'กำหนดส่ง', 'แพลตฟอร์ม', 'ลูกค้า', 'ประเภท', 'รายการ', 'ยอดชำระ', 'สถานะ', 'แอดมิน', 'ช่าง', 'ปิดงาน', 'ชื่อผู้รับ', 'ที่อยู่จัดส่ง', 'จัดส่ง', 'ค่าส่งกลับ', 'ค่าส่งคืน', 'ราคาประเมิน', 'หมายเหตุ', 'แก้ไขล่าสุด', ''].map((h, i) => (
+                  {['วันที่', 'กำหนดส่ง', 'แพลตฟอร์ม', 'ลูกค้า', 'ประเภท', 'รายการ', 'ยอดชำระ', 'สถานะ', 'แอดมิน', 'ช่าง', 'ผิดโดย', 'วิธีแก้ไข', 'ปิดงาน', 'ชื่อผู้รับ', 'ที่อยู่จัดส่ง', 'จัดส่ง', 'ค่าส่งกลับ', 'ค่าส่งคืน', 'ราคาประเมิน', 'หมายเหตุ', 'แก้ไขล่าสุด', ''].map((h, i) => (
                     <th key={i} style={{ textAlign: ['ค่าส่งกลับ', 'ค่าส่งคืน', 'ราคาประเมิน'].includes(h) ? 'right' : 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -825,6 +899,12 @@ ${body}
                     </td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
                       {selectInline(r, 'technician', TECH_OPTIONS)}
+                    </td>
+                    <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', minWidth: 90 }}>
+                      <SearchSelect value={r.fault_by ?? ''} groups={faultByGroups} onPick={v => saveCell(r.id, 'fault_by', v)} />
+                    </td>
+                    <td style={{ padding: '8px 14px', minWidth: 130, maxWidth: 220, whiteSpace: 'normal' }}>
+                      {textCell(r, 'fix_method', { placeholder: '+ วิธีแก้ไข' })}
                     </td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
                       <input type="checkbox" checked={!!r.closed_at} onChange={e => toggleClosed(r, e.target.checked)}
@@ -1097,6 +1177,8 @@ ${body}
               {field('สถานะเคลม', 'status', { options: WORKFLOW.map(w => w.key) })}
               {field('แอดมินที่รับผิดชอบ', 'admin_name', { options: adminOptions })}
               {field('ช่างที่รับผิดชอบ', 'technician', { options: TECH_OPTIONS })}
+              {field('ผิดโดย', 'fault_by', { options: faultByFlat })}
+              {field('วิธีแก้ไข', 'fix_method', { full: true })}
               {field('หมายเหตุ', 'notes', { full: true })}
             </div>
 
