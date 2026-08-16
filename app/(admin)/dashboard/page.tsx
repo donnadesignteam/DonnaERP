@@ -448,11 +448,11 @@ export default function DashboardPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
-                  {/* วันที่เหลือ */}
+                  {/* วันผลิตที่เหลือ */}
                   <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
                     <button onClick={() => setOpenColFilter(openColFilter === 'days' ? null : 'days')}
                       style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: daysSort ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
-                      วันที่เหลือ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                      วันผลิตที่เหลือ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                     </button>
                     {openColFilter === 'days' && (
                       <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 20px rgba(0,0,0,0.12)', zIndex: 200, padding: '6px 0', minWidth: 150 }}>

@@ -21,7 +21,7 @@ import { recordAction } from '@/lib/history'
 import { prevOf } from '@/lib/trackedDb'
 import { stampInsert, oeUpdate, oeInsert, instUpdate, instInsert, claimUpdate } from '@/lib/adminActor'
 import { useConfirm } from '@/components/ConfirmDialog'
-import { WORK_TYPE_OPTIONS, statusOptions, statusLabel, normStatus, STATUS_COLOR as INST_STATUS_COLOR } from '@/lib/installMeta'
+import { WORK_TYPE_OPTIONS, ZONES, TECHS as INST_TECHS, TECH_BY_ZONE, statusOptions, statusLabel, normStatus, rowColor as instColor } from '@/lib/installMeta'
 import { orderPatchFromInstall } from '@/lib/installOrderSync'
 import { useStableView } from '@/lib/useStableView'
 import { TH_MONTHS } from '@/lib/shopCalendar'
@@ -142,6 +142,8 @@ type InstMeta = {
   work_type: string | null
   serial_no: string | null
   installation_status: string | null
+  install_zone: string | null
+  technician_type: string | null
 }
 
 type ClaimSource = {
@@ -361,7 +363,7 @@ const ORDER_ASSIGNED = ['รออัพเดท', 'แจ้งลงหน้
 // คอลัมน์ที่ซ่อน/โชว์ได้ ต่อแต่ละแท็บ (คอลัมน์ checkbox เลือกแถว + ··· ซ่อนไม่ได้)
 const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
   all: [
-    { id: 'days', label: 'วันที่เหลือ' }, { id: 'deadline', label: 'ต้องส่งภายใน' },
+    { id: 'days', label: 'วันผลิตที่เหลือ' }, { id: 'deadline', label: 'ต้องส่งภายใน' },
     { id: 'print', label: 'ปริ้น' },
     { id: 'customer', label: 'ลูกค้า' }, { id: 'platform', label: 'แพลตฟอร์ม' },
     { id: 'courier', label: 'บริษัทจัดส่ง' }, { id: 'status', label: 'สถานะงาน' },
@@ -370,7 +372,7 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
     { id: 'notes', label: 'หมายเหตุ' }, { id: 'updated', label: 'แก้ไขล่าสุด' },
   ],
   platform: [
-    { id: 'days', label: 'วันที่เหลือ' }, { id: 'shipping', label: 'ต้องส่งภายใน' },
+    { id: 'days', label: 'วันผลิตที่เหลือ' }, { id: 'shipping', label: 'ต้องส่งภายใน' },
     { id: 'print', label: 'ปริ้น' },
     { id: 'order_number', label: 'เลขคำสั่งซื้อ' }, { id: 'customer', label: 'ลูกค้า' },
     { id: 'price', label: 'ราคาสุทธิ' }, { id: 'items', label: 'รายการ' },
@@ -384,7 +386,7 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
     { id: 'notes', label: 'หมายเหตุ' }, { id: 'updated', label: 'เวลาที่แก้ไข' },
   ],
   outside: [
-    { id: 'days', label: 'วันที่เหลือ' }, { id: 'deadline', label: 'ต้องส่งภายใน' },
+    { id: 'days', label: 'วันผลิตที่เหลือ' }, { id: 'deadline', label: 'ต้องส่งภายใน' },
     { id: 'print', label: 'ปริ้น' },
     { id: 'customer', label: 'ลูกค้า' }, { id: 'platform', label: 'แพลตฟอร์ม' },
     { id: 'items', label: 'รายการ' }, { id: 'total', label: 'ยอดทั้งหมด' },
@@ -400,7 +402,7 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
     { id: 'updated', label: 'แก้ไขล่าสุด' },
   ],
   install: [
-    { id: 'days', label: 'วันที่เหลือ' }, { id: 'serial', label: 'Serial' },
+    { id: 'days', label: 'วันผลิตที่เหลือ' }, { id: 'serial', label: 'Serial' },
     { id: 'deadline', label: 'วันที่นัดหมาย' }, { id: 'work', label: 'งาน' },
     { id: 'print', label: 'ปริ้น' },
     { id: 'customer', label: 'ลูกค้า' }, { id: 'platform', label: 'แพลตฟอร์ม' },
@@ -413,7 +415,7 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
     { id: 'inststatus', label: 'สถานะ' },
     { id: 'rail', label: 'สถานะราง' },
     { id: 'created', label: 'วันที่สร้าง' }, { id: 'outsource', label: 'สั่งนอก' },
-    { id: 'province', label: 'จังหวัด' },
+    { id: 'province', label: 'จังหวัด' }, { id: 'zone', label: 'โซน' }, { id: 'insttech', label: 'ช่าง' },
     { id: 'address', label: 'ที่อยู่' }, { id: 'phone', label: 'เบอร์โทร' }, { id: 'maps', label: 'Maps' },
     { id: 'notes', label: 'หมายเหตุ' },
     { id: 'updated', label: 'แก้ไขล่าสุด' },
@@ -424,6 +426,12 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
 const ITEM_LINE_MAX = 3
 
 const isClaimRow = (platform: string | null | undefined) => (platform ?? '').startsWith('เคลม:')
+
+// 'YYYY-MM-DD' -> 'D/M/YYYY' (ใบปริ้นตาราง — วันกำหนดของงานนอก/ติดตั้ง/เคลมเก็บเป็น date ธรรมดา)
+const thaiDMY = (v: string) => {
+  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  return m ? `${Number(m[3])}/${Number(m[2])}/${m[1]}` : v
+}
 
 // ปริ้นใบงานเกิน 24 ชม. แล้ว แต่สถานะผลิตยังไม่ขยับ (ยังเป็น "รอดำเนินการ")
 const isPrintedPending = (r: Entry) => {
@@ -604,11 +612,12 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
     // ใบที่ผูกกับปฏิทิน แต่ในปฏิทินไม่ใช่ "งานติดตั้ง" (เช่น งานวัดหน้างาน) → ไม่ต้องโชว์ในหมวดออเดอร์
     const { data: insts } = await fetchAllRows<InstMeta & { source_order_id: string | null }>(() =>
-      supabase.from('installations').select('id, source_order_id, work_type, serial_no, installation_status').not('source_order_id', 'is', null))
+      supabase.from('installations').select('id, source_order_id, work_type, serial_no, installation_status, install_zone, technician_type').not('source_order_id', 'is', null))
     setNonOrderIds(new Set(insts.filter(i => i.source_order_id && i.work_type !== 'งานติดตั้ง').map(i => i.source_order_id as string)))
     // แท็บงานติดตั้งเอา Serial/งาน/สถานะ มาโชว์+แก้ได้ตรงตาราง
     setInstMeta(Object.fromEntries(insts.filter(i => i.source_order_id).map(i =>
-      [i.source_order_id as string, { id: i.id, work_type: i.work_type, serial_no: i.serial_no, installation_status: i.installation_status }])))
+      [i.source_order_id as string, { id: i.id, work_type: i.work_type, serial_no: i.serial_no, installation_status: i.installation_status,
+        install_zone: i.install_zone, technician_type: i.technician_type }])))
     // งานเคลมจากหน้าเคลม (ตาราง claims) → โชว์ปนในหมวดออเดอร์ด้วย จะได้เรียงวันที่เหลือรวมกัน
     const CLAIM_COLS = 'id, claim_date, channel, customer_username, original_order_number, items, status, is_urgent, notes, courier, printed_at, shipped_at, admin_name, estimated_price, created_at, updated_at'
     let claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(`${CLAIM_COLS}, deadline, technician`))
@@ -2055,6 +2064,55 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     await saveInstMeta(orderId, patch)
   }
 
+  // ทำซ้ำ (duplicate) — เปิดกล่องเพิ่มรายการที่กรอกค่าจากใบเดิมไว้ให้แล้ว ตรวจ/แก้ก่อนกดบันทึกเป็นใบใหม่
+  // ‼️ ไม่ก๊อป: เลขคำสั่งซื้อ · สถานะงาน/วันที่เสร็จ-จัดส่ง · เลขพัสดุ · เวลาปริ้น · ยอดที่ชำระแล้ว (ของใบเดิมทั้งนั้น)
+  const duplicateRow = (r: Entry) => {
+    setOpenAction(null); setActionRect(null)
+    const type = r.is_installation ? 'install'
+      : OUTSIDE_PLATFORMS.includes(r.platform ?? '') ? 'outside' : 'platform'
+    setAddType(type)
+    setModalTab('form')
+    setModal({ mode: 'add', data: {
+      ...r,
+      id: undefined,
+      order_number: '',
+      entry_date: new Date().toISOString().split('T')[0],
+      order_status: 'รอดำเนินการ',
+      status: 'อยู่ในกำหนด',
+      order_assigned: 'รออัพเดท',
+      is_urgent: false,
+      payment_status: 'ยังไม่ชำระ',
+      paid_amount: null, deposit: null,
+      printed_at: null, shipments: null, done_at: null, shipped_at: null, shipping_datetime: '',
+      rail_packed: false, rail_packed_at: null, install_status: undefined, status_history: null,
+      created_at: undefined, updated_at: undefined,
+    } as Partial<Entry> })
+    ph.begin([], null)
+    setModalItems(Array.isArray(r.items) ? (r.items as Item[]).map(it => ({ ...it })) : [])
+    setItemsPasteText('')
+    setOrderPasteText('')
+    setOrderParseError('')
+  }
+
+  // ช่องเลือกโซน/ช่าง ในแท็บงานติดตั้ง (ค่าอยู่ตาราง installations)
+  const instSelectCell = (orderId: string, ins: InstMeta | undefined, field: 'install_zone' | 'technician_type', opts: string[]) => {
+    if (!ins) return <span style={{ color: 'var(--ink-4)' }}>—</span>
+    const val = ins[field] ?? ''
+    return (
+      <select value={val} onChange={e => {
+        const v = e.target.value
+        const patch: Partial<InstMeta> = { [field]: v || null }
+        // เลือกโซนที่รู้ชนิดช่างอยู่แล้ว → เติมช่างให้เลย (เหมือนหน้าปฏิทิน) ถ้ายังไม่ได้เลือกช่างไว้
+        if (field === 'install_zone' && TECH_BY_ZONE[v] && !ins.technician_type) patch.technician_type = TECH_BY_ZONE[v]
+        saveInstMeta(orderId, patch)
+      }} style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: val ? 600 : 400, color: val ? 'var(--ink-2)' : 'var(--ink-4)', padding: 0 }}>
+        <option value="">—</option>
+        {!!val && !opts.includes(val) && <option value={val}>{val}</option>}
+        {opts.map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+    )
+  }
+
   const handlePaymentStatus = async (r: Entry, val: string) => {
     const now = new Date().toISOString()
     const updates: Record<string, unknown> = { payment_status: val, updated_at: now }
@@ -2146,15 +2204,20 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       : `<h2>${escHtml(title)} (${toPrint.length} รายการ)</h2>
 <table>
 <thead><tr>
-  <th>#</th><th>วันที่เหลือ</th><th>ต้องจัดส่งภายใน</th><th>เลขคำสั่งซื้อ</th><th>ลูกค้า</th><th>ช่างที่รับผิดชอบ</th><th>แพลตฟอร์ม</th><th>สถานะงาน</th><th>บริษัทขนส่ง</th>
+  <th>#</th><th>วันผลิตที่เหลือ</th><th>${quickFilter === 'install' ? 'วันที่นัดหมาย' : 'ต้องจัดส่งภายใน'}</th><th>เลขคำสั่งซื้อ</th><th>ลูกค้า</th><th>ช่างที่รับผิดชอบ</th><th>แพลตฟอร์ม</th><th>สถานะงาน</th><th>บริษัทขนส่ง</th>
 </tr></thead>
 <tbody>
 ${toPrint.map((r, i) => {
-  const es = effShipping(r)
-  const d = es ? daysRemaining(es) : null
+  // งานนอก/งานติดตั้ง/งานเคลม ไม่มี shipping_datetime — ยึดวันกำหนด (deadline) เหมือนที่โชว์ในตาราง
+  const useDeadline = r.is_installation || isClaimEntry(r) || OUTSIDE_PLATFORMS.includes(r.platform ?? '')
+  const dateStr = useDeadline ? (r.deadline || '') : (effShipping(r) || '')
+  const dateText = !dateStr ? '-'
+    : useDeadline ? `${thaiDMY(dateStr)}${r.is_installation && r.install_time ? ` ${r.install_time} น.` : ''}`
+    : dateStr
+  const d = dateStr ? daysRemaining(dateStr) : null
   const cls = d !== null ? (d <= 0 ? 'dr' : d <= 10 ? 'do' : 'dg') : ''
   const dtext = d !== null ? daysLabel(d) : '-'
-  return `<tr><td>${i + 1}</td><td class="${cls}">${dtext}</td><td>${es || '-'}</td><td>${r.order_number || '-'}</td><td>${r.customer_name || '-'}</td><td>${r.technician || '-'}</td><td>${r.platform || '-'}</td><td>${r.order_status || '-'}</td><td>${r.courier || '-'}</td></tr>`
+  return `<tr><td>${i + 1}</td><td class="${cls}">${dtext}</td><td>${dateText}</td><td>${r.order_number || '-'}</td><td>${r.customer_name || '-'}</td><td>${r.technician || '-'}</td><td>${r.platform || '-'}</td><td>${r.order_status || '-'}</td><td>${r.courier || '-'}</td></tr>`
 }).join('\n')}
 </tbody>
 </table>`
@@ -2620,7 +2683,7 @@ ${body}
                 <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap' }}>
                   <button onClick={e => openOutFilter(e, 'out-days')}
                     style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outDaysSort ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
-                    วันที่เหลือ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                    วันผลิตที่เหลือ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                 </th>
                 )}
@@ -2727,6 +2790,12 @@ ${body}
                 )}
                 {quickFilter === 'install' && showCol('province') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>จังหวัด</th>
+                )}
+                {quickFilter === 'install' && showCol('zone') && (
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>โซน</th>
+                )}
+                {quickFilter === 'install' && showCol('insttech') && (
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ช่าง</th>
                 )}
                 {showCol('address') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ที่อยู่</th>
@@ -2932,10 +3001,12 @@ ${body}
                     {quickFilter === 'install' && showCol('work') && (
                     <td style={{ padding: '8px 14px' }}>
                       {ins ? (
+                        // ชิปสีชุดเดียวกับหน้าปฏิทินติดตั้ง (สีตามสถานะของแถวนั้น)
                         <select value={ins.work_type ?? ''} onChange={e => changeInstWork(r.id, e.target.value)}
-                          style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: 'var(--ink-2)', padding: 0 }}>
-                          {!WORK_TYPE_OPTIONS.includes(ins.work_type ?? '') && <option value={ins.work_type ?? ''}>{ins.work_type || '—'}</option>}
-                          {WORK_TYPE_OPTIONS.map(w => <option key={w} value={w}>{w}</option>)}
+                          style={{ background: instColor(ins) + '22', color: instColor(ins), padding: '3px 8px', borderRadius: 980, fontWeight: 600, fontSize: 11, border: 'none', outline: 'none', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none' }}>
+                          {Array.from(new Set([...WORK_TYPE_OPTIONS, ins.work_type].filter(Boolean))).map(w => (
+                            <option key={w} value={w as string} style={{ background: '#fff', color: 'var(--ink)' }}>{w}</option>
+                          ))}
                         </select>
                       ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
@@ -3064,8 +3135,10 @@ ${body}
                     <td style={{ padding: '12px 14px', textAlign: 'center' }}>
                       {ins ? (
                         <select value={normStatus(ins.installation_status)} onChange={e => saveInstMeta(r.id, { installation_status: e.target.value })}
-                          style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: INST_STATUS_COLOR[normStatus(ins.installation_status)] ?? 'var(--ink-4)', padding: 0 }}>
-                          {statusOptions(ins.work_type).map(st => <option key={st} value={st}>{statusLabel(st)}</option>)}
+                          style={{ background: instColor(ins) + '22', color: instColor(ins), padding: '3px 8px', borderRadius: 980, fontWeight: 600, fontSize: 11, border: 'none', outline: 'none', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none' }}>
+                          {Array.from(new Set([...statusOptions(ins.work_type), normStatus(ins.installation_status)])).map(st => (
+                            <option key={st} value={st} style={{ background: '#fff', color: 'var(--ink)' }}>{statusLabel(st)}</option>
+                          ))}
                         </select>
                       ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
@@ -3094,6 +3167,12 @@ ${body}
                     )}
                     {quickFilter === 'install' && showCol('province') && (
                     <td style={{ padding: '8px 14px', minWidth: 100 }}>{provinceCell()}</td>
+                    )}
+                    {quickFilter === 'install' && showCol('zone') && (
+                    <td style={{ padding: '8px 14px' }}>{instSelectCell(r.id, ins, 'install_zone', ZONES)}</td>
+                    )}
+                    {quickFilter === 'install' && showCol('insttech') && (
+                    <td style={{ padding: '8px 14px' }}>{instSelectCell(r.id, ins, 'technician_type', INST_TECHS)}</td>
                     )}
                     {showCol('address') && (
                     <td style={{ padding: '8px 14px', minWidth: 120, maxWidth: 180 }}>{textCell('address', '—')}</td>
@@ -3142,7 +3221,7 @@ ${body}
                 <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
                   <button onClick={() => setOpenAllFilter(openAllFilter === 'days' ? null : 'days')}
                     style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: allDaysSort ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
-                    วันที่เหลือ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                    วันผลิตที่เหลือ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openAllFilter === 'days' && (
                     <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 140 }}>
@@ -3445,7 +3524,7 @@ ${body}
                 <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
                   <button onClick={() => setOpenFilter(openFilter === 'days' ? null : 'days')}
                     style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: daysSort ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
-                    วันที่เหลือ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                    วันผลิตที่เหลือ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openFilter === 'days' && (
                     <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 140 }}>
@@ -3938,6 +4017,14 @@ ${body}
                 สถานะพัสดุ
               </button>
             )}
+            {/* ทำซ้ำ — งานเคลมทำที่หน้าเคลม (แถวเคลมในหมวดออเดอร์เป็นข้อมูลจากตาราง claims) */}
+            {!isClaimEntry(r) && (
+              <button onClick={() => duplicateRow(r)}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)' }}>
+                <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/><path strokeLinecap="round" d="M15.5 13v5M13 15.5h5"/></svg>
+                ทำซ้ำ
+              </button>
+            )}
             <button onClick={() => { setOpenAction(null); setActionRect(null); setModal({ mode: 'edit', data: { ...r, items: null } }); void loadOrderPhotos(r); setModalItems(Array.isArray(r.items) ? [...(r.items as Item[])] : []); setItemsPasteText('') }}
               style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)' }}>
               <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/></svg>
@@ -4157,7 +4244,7 @@ ${body}
             ) : (
               <div style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
                 {/* งานแพลตฟอร์ม: วาง Copy + Drop ไฟล์ (xlsx/csv) · งานนอก: Drop ไฟล์ = PDF ใบเสนอราคา */}
-                {(['form', ...(addType === 'platform' ? ['paste', 'file'] : addType === 'outside' ? ['file'] : [])] as ('form'|'paste'|'file')[]).map(t => (
+                {(['form', ...(addType === 'platform' ? ['paste', 'file'] : (addType === 'outside' || addType === 'install') ? ['file'] : [])] as ('form'|'paste'|'file')[]).map(t => (
                   <button key={t} onClick={() => { setModalTab(t); setPasteRows([]); setIncomeRows([]); setFileParseError('') }}
                     style={{ flex: 1, padding: '16px 0', fontSize: 14, fontWeight: modalTab === t ? 600 : 400, border: 'none', borderBottom: modalTab === t ? '2px solid var(--blue)' : '2px solid transparent', background: 'transparent', cursor: 'pointer', color: modalTab === t ? 'var(--blue)' : 'var(--ink-3)', transition: 'all 0.15s' }}>
                     {t === 'form' ? 'กรอกฟอร์ม' : t === 'paste' ? 'วาง Copy' : 'Drop ไฟล์'}
@@ -4221,8 +4308,8 @@ ${body}
               </div>
             )}
 
-            {/* งานนอก: แท็บ Drop ไฟล์ = PDF ใบเสนอราคา (อ่านแล้วกรอกฟอร์มให้ตรวจก่อนบันทึก) */}
-            {modal.mode === 'add' && modalTab === 'file' && addType === 'outside' && (
+            {/* งานนอก/งานติดตั้ง: แท็บ Drop ไฟล์ = PDF ใบเสนอราคา (อ่านแล้วกรอกฟอร์มให้ตรวจก่อนบันทึก) */}
+            {modal.mode === 'add' && modalTab === 'file' && (addType === 'outside' || addType === 'install') && (
               <div>
                 <div
                   onDragOver={e => { e.preventDefault(); setQuoteDragOver(true) }}
@@ -4252,7 +4339,7 @@ ${body}
               </div>
             )}
 
-            {modal.mode === 'add' && modalTab === 'file' && addType !== 'outside' && incomeRows.length === 0 && (
+            {modal.mode === 'add' && modalTab === 'file' && addType !== 'outside' && addType !== 'install' && incomeRows.length === 0 && (
               <div>
                 <div
                   onDragOver={e => { e.preventDefault(); setFileDragOver(true) }}
@@ -4616,6 +4703,7 @@ ${body}
               {([
                 ['งานแพลตฟอร์ม', '🛍️', 'Shopee / Tiktok / Lazada', 'platform', {}],
                 ['งานนอก', '💬', 'Facebook / Line / หน้าร้าน', 'outside', {}],
+                ['งานติดตั้ง', '🔨', 'สั่งพร้อมติดตั้ง', 'install', { is_installation: true }],
               ] as [string, string, string, 'platform'|'outside'|'install'|'claim', object][]).map(([label, icon, desc, type, extra]) => (
                 <button key={label} onClick={() => {
                   setAddTypeModal(false)

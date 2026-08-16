@@ -265,6 +265,25 @@ export default function ClaimsWorkspace() {
 
   const openAdd = () => { setPasteText(''); setParseError(''); setItemsPaste(''); setItemsParseErr(''); ph.begin([], null); setModal({ mode: 'add', data: emptyClaim() }) }
   const openEdit = (c: Claim) => { setPasteText(c.raw_text ?? ''); setParseError(''); setItemsPaste(''); setItemsParseErr(''); ph.begin(c.photos, c.id); setModal({ mode: 'edit', data: { ...c } }) }
+  // ทำซ้ำ — เปิดกล่องเพิ่มเคสที่กรอกค่าจากเคสเดิมไว้ให้ ตรวจ/แก้ก่อนกดบันทึกเป็นเคสใหม่
+  // ‼️ ไม่ก๊อป: เลขพัสดุ/วันจัดส่ง · เวลาปริ้น · การปิดงาน · รูป (ของเคสเดิมทั้งนั้น)
+  const duplicateClaim = (c: Claim) => {
+    setOpenAction(null); setActionRect(null)
+    setPasteText(''); setParseError(''); setItemsPaste(''); setItemsParseErr('')
+    ph.begin([], null)
+    setModal({ mode: 'add', data: {
+      ...c,
+      id: '',
+      claim_date: new Date().toISOString().slice(0, 10),
+      items: Array.isArray(c.items) ? c.items.map(it => ({ ...it })) : null,
+      shipments: null, shipped_at: null, printed_at: null,
+      return_tracking: '', outbound_tracking: '',
+      status: 'รอของคืน', is_urgent: false,
+      closed_by: null, closed_at: null,
+      photos: undefined, raw_text: '',
+    } })
+  }
+
   const closeModal = () => { setModal(null); ph.cancel() }
 
   // แก้ไขรายการที่เคลม (เก็บเป็น array ใน items jsonb)
@@ -767,22 +786,6 @@ ${body}
         </div>
       )}
 
-      {/* แดชบอร์ดยอดรวม (สไตล์เดียวกับการ์ดในหมวดพนักงาน) — คิดตามตัวกรองที่เปิดอยู่: เดือน/แท็บสถานะ/คำค้น */}
-      {!loading && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 18 }}>
-          {[
-            { label: 'ค่าส่งกลับ (บาท)', value: totals.back.toLocaleString('th-TH', { maximumFractionDigits: 2 }), color: 'var(--ink)' },
-            { label: 'ค่าส่งคืน (บาท)', value: totals.ret.toLocaleString('th-TH', { maximumFractionDigits: 2 }), color: 'var(--ink)' },
-            { label: 'ราคาประเมิน (บาท)', value: totals.est.toLocaleString('th-TH', { maximumFractionDigits: 2 }), color: 'var(--ink)' },
-          ].map(c => (
-            <div key={c.label} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', boxShadow: 'var(--shadow)' }}>
-              <div style={{ fontSize: 26, fontWeight: 700, color: c.color, lineHeight: 1.1 }}>{c.value}</div>
-              <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4 }}>{c.label}</div>
-            </div>
-          ))}
-        </div>
-      )}
-
       <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ลูกค้า / เลขออเดอร์ / สาเหตุ…"
           style={{ flex: '1 1 260px', minWidth: 0, border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
@@ -833,9 +836,14 @@ ${body}
                       onChange={e => setSelectedIds(e.target.checked ? new Set(displayed.map(r => r.id)) : new Set())}
                       style={{ cursor: 'pointer', width: 15, height: 15 }} />
                   </th>
-                  {['วันที่', 'กำหนดส่ง', 'แพลตฟอร์ม', 'ลูกค้า', 'ประเภท', 'ผิดโดย', 'วิธีแก้ไข', 'รายการ', 'ยอดชำระ', 'สถานะ', 'แอดมิน', 'ช่าง', 'ปิดงาน', 'ชื่อผู้รับ', 'ที่อยู่จัดส่ง', 'จัดส่ง', 'ค่าส่งกลับ', 'ค่าส่งคืน', 'ราคาประเมิน', 'หมายเหตุ', 'แก้ไขล่าสุด', ''].map((h, i) => (
-                    <th key={i} style={{ textAlign: ['ค่าส่งกลับ', 'ค่าส่งคืน', 'ราคาประเมิน'].includes(h) ? 'right' : 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
+                  {['วันที่', 'กำหนดส่ง', 'แพลตฟอร์ม', 'ลูกค้า', 'ประเภท', 'ผิดโดย', 'วิธีแก้ไข', 'รายการ', 'ยอดชำระ', 'สถานะ', 'แอดมิน', 'ช่าง', 'ปิดงาน', 'ชื่อผู้รับ', 'ที่อยู่จัดส่ง', 'จัดส่ง', 'ค่าส่งกลับ', 'ค่าส่งคืน', 'ราคาประเมิน', 'หมายเหตุ', 'แก้ไขล่าสุด', ''].map((h, i) => {
+                    // 3 คอลัมน์เงิน โชว์ยอดรวมของเคสที่กรองอยู่ต่อท้ายชื่อคอลัมน์เลย (เดิมเป็นการ์ดแดชบอร์ดข้างบน)
+                    const sum = h === 'ค่าส่งกลับ' ? totals.back : h === 'ค่าส่งคืน' ? totals.ret : h === 'ราคาประเมิน' ? totals.est : null
+                    return (
+                    <th key={i} style={{ textAlign: sum !== null ? 'right' : 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                      {h}{sum !== null && <span style={{ color: 'var(--ink)', fontWeight: 700, marginLeft: 6 }}>{sum.toLocaleString('th-TH', { maximumFractionDigits: 2 })}</span>}
+                    </th>
+                  )})}
                 </tr>
               </thead>
               <tbody>
@@ -1005,6 +1013,11 @@ ${body}
                 จัดส่งแล้ว
               </button>
               <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+              <button onClick={() => duplicateClaim(r)}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)' }}>
+                <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/><path strokeLinecap="round" d="M15.5 13v5M13 15.5h5"/></svg>
+                ทำซ้ำ
+              </button>
               <button onClick={() => { setOpenAction(null); setActionRect(null); openEdit(r) }}
                 style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)' }}>
                 <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/></svg>

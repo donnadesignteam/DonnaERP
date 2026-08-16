@@ -130,6 +130,12 @@ export default function StockPage() {
     setModal({ mode: 'edit', data: { ...item } })
   }
 
+  // ทำซ้ำ — เปิดกล่องเพิ่มรายการที่กรอกค่าจากรายการเดิมไว้ให้ ตรวจ/แก้ก่อนกดบันทึกเป็นรายการใหม่
+  const duplicate = (item: StockItem) => {
+    setAutoFilled(false)
+    setModal({ mode: 'add', data: { ...item, id: undefined } })
+  }
+
   const handleShopCode = (code: string) => {
     const info = SHOP_LOOKUP[code.trim().toUpperCase()]
     if (info) {
@@ -601,6 +607,10 @@ export default function StockPage() {
                 <button onClick={() => { openEdit(item); closeMenu() }}
                   style={{ width: '100%', padding: '10px 16px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', color: 'var(--ink)' }}>
                   แก้ไข
+                </button>
+                <button onClick={() => { duplicate(item); closeMenu() }}
+                  style={{ width: '100%', padding: '10px 16px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', color: 'var(--ink)' }}>
+                  ทำซ้ำ
                 </button>
                 <button onClick={() => { del(item.id); closeMenu() }}
                   style={{ width: '100%', padding: '10px 16px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', color: 'var(--red)' }}>

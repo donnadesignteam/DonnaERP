@@ -15,9 +15,10 @@ import { useStableView } from '@/lib/useStableView'
 import { oeUpdate, instUpdate, instInsert } from '@/lib/adminActor'
 import { useConfirm } from '@/components/ConfirmDialog'
 import { createOrderForInstall, orderPatchFromInstall } from '@/lib/installOrderSync'
-import { formatOrderLines, linesToHtml, openFormPrintWindow, type PrintLine, type PrintableOrder } from '@/lib/orderPrint'
+import { formatOrderLines, linesToHtml, openFormPrintWindow, escPrintHtml, type PrintLine, type PrintableOrder } from '@/lib/orderPrint'
 import QRCode from 'qrcode'
-import { WORK_TYPES, WORK_TYPE_OPTIONS, normStatus, statusLabel, statusOptions, STATUS_COLOR, WORK_COLOR } from '@/lib/installMeta'
+import { WORK_TYPES, WORK_TYPE_OPTIONS, ZONES, TECHS, TECH_BY_ZONE,
+  normStatus, statusLabel, statusOptions, rowColor } from '@/lib/installMeta'
 
 
 type Installation = {
@@ -54,10 +55,6 @@ const PLATFORMS = ['Tiktok','Tiktok-Chat','Shopee','Shopee-Chat','Lazada','Faceb
   'เคลม:LineOA','เคลม:Lineส่วนตัวยุน','เคลม:Lineส่วนตัวสู้','เคลม:Lineส่วนตัวเฟิร์น','เคลม:Lineส่วนตัวน็อต']
 const TIMES = ['8:00','9:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00']
 const ENTERED_BY = ['เก๋','หนูนา','สู้','ยุน']
-const ZONES = ['เชียงราย','เชียงใหม่','กทม']
-const TECHS = ['ช่างร้าน','ช่างนอก','ช่างกทม','ช่างบัวบาน']
-// โซนที่รู้ชนิดช่างอยู่แล้ว → เติมให้อัตโนมัติ (เชียงราย/เชียงใหม่ เว้นไว้ให้เลือกเอง)
-const TECH_BY_ZONE: Record<string, string> = { 'กทม': 'ช่างนอก' }
 
 // สถานะตั้งต้นตามลักษณะงาน (ช่องสถานะถูกเอาออกจากฟอร์ม จึงกำหนดอัตโนมัติ)
 const STATUS_BY_TYPE: Record<string, string> = {
@@ -67,11 +64,6 @@ const STATUS_BY_TYPE: Record<string, string> = {
 }
 const INITIAL_STATUSES = ['ติดตั้ง', 'วัดหน้างาน', 'รอนัดหมาย', 'รอแก้']
 
-const rowColor = (ins: { installation_status: string; work_type?: string }) => {
-  const s = normStatus(ins.installation_status)
-  if (s === 'รอนัดหมาย' || s === 'นัดหมายแล้ว') return WORK_COLOR[ins.work_type ?? ''] ?? '#8e8e93'
-  return STATUS_COLOR[s] ?? 'var(--ink-3)'
-}
 
 const emptyItem = (): RawItem => ({ type: '', floors: null, rail_head: '', hook_type: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', orientation: '', fabric_split: '', chemical: '', weight_chain: '', pull_side: '', note: '', outsource: '' })
 
@@ -168,7 +160,7 @@ export default function InstallationsPage() {
   const [apptDate, setApptDate] = useState('')
   const [apptTime, setApptTime] = useState('9:00')
   const [listFilter, setListFilter] = useState<'all' | string>('all')
-  const [zoneFilter, setZoneFilter] = useState<string | null>(null)  // โซนติดตั้ง — ชิปชุดเดียวคุมทั้งปฏิทินและรายการด้านล่าง
+  const [zoneFilter, setZoneFilter] = useState<string[]>([])  // โซนติดตั้ง — ชิปชุดเดียวคุมทั้งปฏิทินและรายการด้านล่าง (กดได้หลายโซน · [] = ทุกโซน)
   const [bonusZones, setBonusZones] = useState<string[]>([])      // filter ยอดติดตั้งตามโซน — เลือกพร้อมกันได้หลายโซน ([] = ทุกโซน)
   const [bonusTech, setBonusTech] = useState<string | null>(null)  // filter ยอดติดตั้งตามชนิดช่าง (null = ทุกช่าง)
   const [search, setSearch] = useState('')
@@ -178,6 +170,7 @@ export default function InstallationsPage() {
   const { ask, confirmDialog } = useConfirm()
   const [pasteText, setPasteText] = useState('')
   const [parsing, setParsing] = useState(false)
+  const [printAsk, setPrintAsk] = useState(false)   // ป๊อปอัปถามก่อนปริ้น: ตารางรายการ / ปฏิทิน
   const [quoteDragOver, setQuoteDragOver] = useState(false)   // ลาก PDF ใบเสนอราคามาวางในกล่องเพิ่มรายการติดตั้ง
   const [parseError, setParseError] = useState('')
   const [actionMenu, setActionMenu] = useState<{ id: string; top: number; left: number } | null>(null)
@@ -204,7 +197,7 @@ export default function InstallationsPage() {
   }, [])
   // สรุปงานติดตั้ง — ข้อความอัพเดตงานล่วงหน้าไว้ส่งไลน์ทีมช่าง (แก้ในกล่องก่อนคัดลอกได้)
   const [summaryModal, setSummaryModal] = useState(false)
-  const [summaryZone, setSummaryZone] = useState<string | null>(null)
+  const [summaryZone, setSummaryZone] = useState<string[]>([])
   const [summaryText, setSummaryText] = useState('')
   const [summaryCopied, setSummaryCopied] = useState(false)
 
@@ -253,6 +246,21 @@ export default function InstallationsPage() {
     setNameSugOpen(false)
     ph.begin([], null)
     setModal({ mode: 'add', data: emptyForm() })
+  }
+
+  // ทำซ้ำ — เปิดกล่องเพิ่มรายการที่กรอกค่าจากงานเดิมไว้ให้ ตรวจ/แก้ก่อนกดบันทึกเป็นงานใหม่
+  // ‼️ ไม่ก๊อป: Serial (รันใหม่ตอนบันทึก) · ใบออเดอร์ที่ผูกไว้ (source_order_id) · รูปหน้างาน
+  const duplicateInstall = (ins: Installation) => {
+    setActionMenu(null)
+    setApptDate(ins.appointment_datetime?.split('T')[0] ?? '')
+    setApptTime(ins.appointment_datetime ? new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : '9:00')
+    setPasteText('')
+    setParseError('')
+    setNameSugOpen(false)
+    ph.begin([], null)
+    // ตัด id/serial/เวลาสร้างของงานเดิมออก (payload ตอนบันทึกใช้ spread ทั้งก้อน)
+    const { id: _id, serial_no: _s, created_at: _c, updated_at: _u, ...rest } = ins
+    setModal({ mode: 'add', data: { ...emptyForm(), ...rest, source_order_id: null, photos: [], installation_status: STATUS_BY_TYPE[ins.work_type] ?? 'รอนัดหมาย' } })
   }
 
   const set = (k: string, v: string | number) => setModal(m => {
@@ -565,6 +573,46 @@ export default function InstallationsPage() {
     }
   }
 
+  // ปริ้นตารางรายการ (แบบเดียวกับปุ่มปริ้น "ตารางที่เห็นอยู่" ในหมวดออเดอร์) — ตามเดือน/โซน/คำค้นที่กรองอยู่
+  const printTable = () => {
+    const toPrint = displayed
+    if (toPrint.length === 0) { setError('ไม่มีรายการให้ปริ้น'); return }
+    const win = window.open('', '_blank', 'width=1200,height=750')
+    if (!win) { setError('เบราว์เซอร์บล็อก popup — โปรดอนุญาต popup เพื่อปริ้น'); return }
+    const esc = (v: unknown) => escPrintHtml(String(v ?? ''))
+    const monthTitle = listFilter === 'all' ? 'ทุกเดือน' : listFilter
+    const title = `งานติดตั้ง — ${monthTitle}${zoneFilter.length ? ` · โซน${zoneFilter.join(' + ')}` : ''}`
+    const rowsHtml = toPrint.map((ins, i) => {
+      const dt = ins.appointment_datetime ? new Date(ins.appointment_datetime) : null
+      const appt = dt && !isNaN(dt.getTime())
+        ? `${String(dt.getDate()).padStart(2, '0')}/${dt.getMonth() + 1}/${dt.getFullYear()} ${dt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`
+        : '-'
+      const items = ins.source_order_id ? (orderItems[ins.source_order_id] ?? []) : []
+      const itemText = formatItemLines(items).join('<br>') || '-'
+      return `<tr><td>${i + 1}</td><td>${esc(ins.serial_no)}</td><td>${esc(appt)}</td><td>${esc(ins.work_type)}</td>`
+        + `<td>${esc(ins.customer_real_name || ins.customer_id)}</td><td>${itemText}</td><td>${esc(ins.platform)}</td>`
+        + `<td>${esc(ins.province)}</td><td>${esc(ins.install_zone)}</td><td>${esc(ins.technician_type)}</td>`
+        + `<td>${esc(ins.phone)}</td><td>${esc(statusLabel(normStatus(ins.installation_status)))}</td><td>${esc(ins.notes)}</td></tr>`
+    }).join('')
+    win.document.write(`<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><title>ปริ้นงานติดตั้ง</title><style>
+      * { box-sizing: border-box; }
+      body { font-family: 'Sarabun', 'Noto Sans Thai', sans-serif; font-size: 12px; color: #000; margin: 0; padding: 16px; }
+      h2 { font-size: 14px; margin-bottom: 10px; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { border: 1px solid #aaa; padding: 5px 8px; text-align: left; vertical-align: top; }
+      th { background: #f0f0f0; font-weight: 700; white-space: nowrap; }
+      @page { margin: 0; }
+      @media print { body { padding: 10mm; } .toolbar { display: none !important; } }
+      .toolbar { position: fixed; top: 10px; right: 10px; background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 8px 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.18); z-index: 99; }
+      .toolbar button { padding: 8px 20px; border-radius: 8px; border: none; background: #1a1a1a; color: #fff; cursor: pointer; font-size: 14px; font-weight: 700; font-family: inherit; }
+    </style></head><body>
+    <div class="toolbar"><button onclick="window.print()">ปริ้น</button></div>
+    <h2>${esc(title)} (${toPrint.length} รายการ)</h2>
+    <table><thead><tr><th>#</th><th>Serial</th><th>นัดหมาย</th><th>งาน</th><th>ลูกค้า</th><th>รายการ</th><th>แพลตฟอร์ม</th><th>จังหวัด</th><th>โซน</th><th>ช่าง</th><th>เบอร์</th><th>สถานะ</th><th>หมายเหตุ</th></tr></thead>
+    <tbody>${rowsHtml}</tbody></table></body></html>`)
+    win.document.close()
+  }
+
   // ปริ้นใบงาน 1 ใบ (เมนู ··· → ปริ้น) — ใช้ฟอร์มหน้าตาเดียวกับใบปริ้นในหมวดออเดอร์
   // มีออเดอร์ต้นทาง = ปริ้นใบออเดอร์นั้นตรงๆ (พร้อม QR สแกน) แล้วเติมบรรทัดนัดหมาย/ช่างไว้หัวใบ
   const printInstall = async (ins: Installation) => {
@@ -624,7 +672,7 @@ export default function InstallationsPage() {
   const nextMonth = () => { if (month === 11) { setMonth(0); setYear(y => y + 1) } else setMonth(m => m + 1) }
 
   // ── สรุปงานติดตั้ง: รวมงานที่ยังไม่เสร็จตั้งแต่วันนี้เป็นต้นไป จัดกลุ่มรายวัน ตามฟอร์แมตที่ทีมใช้ส่งไลน์ ──
-  const buildInstallSummary = (zone: string | null): string => {
+  const buildInstallSummary = (zones: string[]): string => {
     const TH_DAYS = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์']
     const DIVIDER = '______________________________________________'
     const today = new Date(); today.setHours(0, 0, 0, 0)
@@ -632,12 +680,12 @@ export default function InstallationsPage() {
       .filter(ins => {
         if (!ins.appointment_datetime) return false
         if (ins.installation_status === 'ติดตั้งเสร็จ' || ins.installation_status === 'วัดหน้างานแล้ว') return false
-        if (zone && ins.install_zone !== zone) return false
+        if (zones.length && !zones.includes(ins.install_zone)) return false
         return new Date(ins.appointment_datetime) >= today
       })
       .sort((a, b) => new Date(a.appointment_datetime).getTime() - new Date(b.appointment_datetime).getTime())
 
-    const lines: string[] = ['🔥อัพเดตงานติดตั้ง+วัดหน้างาน🔥', `           #${zone || 'ทุกโซน'}`]
+    const lines: string[] = ['🔥อัพเดตงานติดตั้ง+วัดหน้างาน🔥', `           #${zones.length ? zones.join(' #') : 'ทุกโซน'}`]
     let curDay = ''
     upcoming.forEach(ins => {
       const d = new Date(ins.appointment_datetime)
@@ -679,7 +727,7 @@ export default function InstallationsPage() {
     const d = new Date(ins.appointment_datetime)
     return d.getMonth() === Number(listFilter.split('-')[1]) - 1 && d.getFullYear() === Number(listFilter.split('-')[0])
   })
-  const byZone = zoneFilter ? byMonth.filter(ins => ins.install_zone === zoneFilter) : byMonth
+  const byZone = zoneFilter.length ? byMonth.filter(ins => zoneFilter.includes(ins.install_zone)) : byMonth
   const q = search.trim().toLowerCase()
   const displayed = (!q ? byZone : byZone.filter(ins =>
     [ins.serial_no, ins.customer_real_name, ins.customer_id, ins.platform, ins.province, ins.install_zone, ins.phone, ins.installation_status, ins.notes]
@@ -688,7 +736,7 @@ export default function InstallationsPage() {
 
   // ปฏิทินไม่แสดงงานที่ติดตั้งเสร็จแล้ว + filter ตามโซนที่เลือก
   const calendarInstalls = stableInstalls.filter(ins =>
-    ins.installation_status !== 'ติดตั้งเสร็จ' && (!zoneFilter || ins.install_zone === zoneFilter)).map(live)
+    ins.installation_status !== 'ติดตั้งเสร็จ' && (!zoneFilter.length || zoneFilter.includes(ins.install_zone))).map(live)
 
   // รายชื่อลูกค้าที่เคยมีในระบบ — ใช้เดาชื่อตอนพิมพ์ในกล่องเพิ่มรายการ
   const customerNames = Array.from(new Set(
@@ -727,13 +775,9 @@ export default function InstallationsPage() {
             style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border-2)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
             สรุปงานติดตั้ง
           </button>
-          <button onClick={() => window.print()}
+          <button onClick={() => setPrintAsk(true)}
             style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border-2)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-            🖨️ ปริ้นปฏิทิน
-          </button>
-          <button onClick={openAdd}
-            style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,122,255,0.3)' }}>
-            + เพิ่มรายการ
+            🖨️ ปริ้น
           </button>
         </div>
       </div>
@@ -778,12 +822,18 @@ export default function InstallationsPage() {
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         {/* เลือกโซนติดตั้ง — ชิปชุดนี้ชุดเดียว คุมทั้งปฏิทินด้านบนและตารางรายการด้านล่าง */}
         <div className="no-print" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {([['ทุกโซน', null], ...ZONES.map(z => [z, z] as [string, string])] as [string, string | null][]).map(([label, val]) => {
-            const n = val ? byMonth.filter(i => i.install_zone === val).length : byMonth.length
+          {/* กดได้หลายโซนพร้อมกัน (กดซ้ำเพื่อเอาออก) · ไม่เลือกเลย = ทุกโซน */}
+          <button onClick={() => setZoneFilter([])}
+            style={{ padding: '5px 12px', borderRadius: 980, border: zoneFilter.length === 0 ? 'none' : '1px solid var(--border)', background: zoneFilter.length === 0 ? 'var(--blue)' : '#fff', color: zoneFilter.length === 0 ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: zoneFilter.length === 0 ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            ทุกโซน <span style={{ opacity: 0.75 }}>{byMonth.length}</span>
+          </button>
+          {ZONES.map(z => {
+            const on = zoneFilter.includes(z)
+            const n = byMonth.filter(i => i.install_zone === z).length
             return (
-              <button key={label} onClick={() => setZoneFilter(val)}
-                style={{ padding: '5px 12px', borderRadius: 980, border: zoneFilter === val ? 'none' : '1px solid var(--border)', background: zoneFilter === val ? 'var(--blue)' : '#fff', color: zoneFilter === val ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: zoneFilter === val ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                {label} <span style={{ opacity: 0.75 }}>{n}</span>
+              <button key={z} onClick={() => setZoneFilter(prev => on ? prev.filter(v => v !== z) : [...prev, z])}
+                style={{ padding: '5px 12px', borderRadius: 980, border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--blue)' : '#fff', color: on ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: on ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                {on ? '✓ ' : ''}{z} <span style={{ opacity: 0.75 }}>{n}</span>
               </button>
             )
           })}
@@ -972,6 +1022,29 @@ export default function InstallationsPage() {
         )}
       </div>
 
+      {/* ปริ้น — เลือกก่อนว่าจะเอาตารางรายการหรือปฏิทิน */}
+      {printAsk && (
+        <div onClick={() => setPrintAsk(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 24 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 26, width: '100%', maxWidth: 380 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 14 }}>ปริ้นอะไร</h3>
+            <div style={{ display: 'grid', gap: 10 }}>
+              <button onClick={() => { setPrintAsk(false); printTable() }}
+                style={{ display: 'block', width: '100%', textAlign: 'left', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', background: 'var(--bg)', cursor: 'pointer' }}>
+                <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>ตารางรายการ</span>
+                <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>{displayed.length} รายการ (ตามเดือน{zoneFilter.length ? ` + โซน${zoneFilter.join(' + ')}` : ''}{search.trim() ? ' + คำค้น' : ''})</span>
+              </button>
+              <button onClick={() => { setPrintAsk(false); setTimeout(() => window.print(), 50) }}
+                style={{ display: 'block', width: '100%', textAlign: 'left', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', background: 'var(--bg)', cursor: 'pointer' }}>
+                <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>ปฏิทิน</span>
+                <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>ปฏิทินเดือนที่เปิดอยู่บนหน้าจอ</span>
+              </button>
+            </div>
+            <button onClick={() => setPrintAsk(false)}
+              style={{ marginTop: 14, width: '100%', padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontSize: 14, color: 'var(--ink-3)' }}>ยกเลิก</button>
+          </div>
+        </div>
+      )}
+
       {/* Action menu (···) */}
       {actionMenu && (() => {
         const ins = installs.find(i => i.id === actionMenu.id)
@@ -988,6 +1061,8 @@ export default function InstallationsPage() {
                 setActionMenu(null)
               }}
                 style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: '#fff', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>แก้ไข</button>
+              <button onClick={() => duplicateInstall(ins)}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', borderTop: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>ทำซ้ำ</button>
               <button onClick={() => { setActionMenu(null); printInstall(ins) }}
                 style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', borderTop: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>ปริ้น</button>
               <button onClick={() => { setActionMenu(null); del(ins.id) }}
@@ -1175,12 +1250,22 @@ export default function InstallationsPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 10 }}>
               <h2 style={{ fontSize: 17, fontWeight: 700 }}>สรุปงานติดตั้ง</h2>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {([['ทุกโซน', null], ...ZONES.map(z => [z, z] as [string, string])] as [string, string | null][]).map(([label, val]) => (
-                  <button key={label} onClick={() => { setSummaryZone(val); setSummaryText(buildInstallSummary(val)); setSummaryCopied(false) }}
-                    style={{ padding: '5px 12px', borderRadius: 980, border: summaryZone === val ? 'none' : '1px solid var(--border)', background: summaryZone === val ? 'var(--blue)' : '#fff', color: summaryZone === val ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: summaryZone === val ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                    {label}
-                  </button>
-                ))}
+                <button onClick={() => { setSummaryZone([]); setSummaryText(buildInstallSummary([])); setSummaryCopied(false) }}
+                  style={{ padding: '5px 12px', borderRadius: 980, border: summaryZone.length === 0 ? 'none' : '1px solid var(--border)', background: summaryZone.length === 0 ? 'var(--blue)' : '#fff', color: summaryZone.length === 0 ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: summaryZone.length === 0 ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  ทุกโซน
+                </button>
+                {ZONES.map(z => {
+                  const on = summaryZone.includes(z)
+                  return (
+                    <button key={z} onClick={() => {
+                      const next = on ? summaryZone.filter(v => v !== z) : [...summaryZone, z]
+                      setSummaryZone(next); setSummaryText(buildInstallSummary(next)); setSummaryCopied(false)
+                    }}
+                      style={{ padding: '5px 12px', borderRadius: 980, border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--blue)' : '#fff', color: on ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: on ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      {on ? '✓ ' : ''}{z}
+                    </button>
+                  )
+                })}
               </div>
             </div>
             <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 10 }}>รวมงานที่ยังไม่เสร็จตั้งแต่วันนี้เป็นต้นไป — แก้ข้อความในกล่องได้ก่อนกดคัดลอก</p>

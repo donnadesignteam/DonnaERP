@@ -5,6 +5,11 @@ export const WORK_TYPES = ['งานติดตั้ง', 'งานวัด
 // คอลัมน์ "งาน" ในตาราง — เลือกได้แค่ 2 อย่าง (งานแก้ใช้สถานะ "รอแก้งาน" แทน)
 export const WORK_TYPE_OPTIONS = ['งานวัดหน้างาน', 'งานติดตั้ง']
 
+export const ZONES = ['เชียงราย', 'เชียงใหม่', 'กทม']
+export const TECHS = ['ช่างร้าน', 'ช่างนอก', 'ช่างกทม', 'ช่างบัวบาน']
+// โซนที่รู้ชนิดช่างอยู่แล้ว → เติมให้อัตโนมัติ (เชียงราย/เชียงใหม่ เว้นไว้ให้เลือกเอง)
+export const TECH_BY_ZONE: Record<string, string> = { 'กทม': 'ช่างนอก' }
+
 export const INST_STATUS = ['รอนัดหมาย', 'นัดหมายแล้ว', 'วัดหน้างาน', 'วัดหน้างานแล้ว', 'ติดตั้ง', 'ติดตั้งเสร็จ', 'ติดตั้ง50%', 'รอแก้']
 
 // สถานะที่เลือกได้ ขึ้นกับลักษณะงานในคอลัมน์ "งาน" — ค่าที่เก็บลงฐานคงของเดิมไว้ (แถวเก่าไม่เพี้ยน)
@@ -35,3 +40,10 @@ export const STATUS_COLOR: Record<string, string> = {
 
 // สีของงานที่ยังไม่ลงมือ (รอนัดหมาย/นัดหมายแล้ว) ดูจากลักษณะงาน
 export const WORK_COLOR: Record<string, string> = { 'งานวัดหน้างาน': '#5ac8fa', 'งานติดตั้ง': '#ff9f0a', 'งานแก้': 'var(--red)' }
+
+// สีประจำแถวงานติดตั้ง — ยังไม่ลงมือ (รอนัดหมาย/นัดหมายแล้ว) ดูจากลักษณะงาน · ที่เหลือดูจากสถานะ
+export const rowColor = (ins: { installation_status?: string | null; work_type?: string | null }) => {
+  const s = normStatus(ins.installation_status)
+  if (s === 'รอนัดหมาย' || s === 'นัดหมายแล้ว') return WORK_COLOR[ins.work_type ?? ''] ?? '#8e8e93'
+  return STATUS_COLOR[s] ?? 'var(--ink-3)'
+}
