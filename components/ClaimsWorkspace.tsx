@@ -597,6 +597,19 @@ ${body}
     return matchSearch && matchTab
   }).map(live)
 
+  // ยอดรวมค่าส่งกลับ / ค่าส่งคืน / ราคาประเมิน — คิดจากเคสที่กรองอยู่ตอนนี้ (เดือน + แท็บสถานะ + คำค้น)
+  const totals = useMemo(() => {
+    const sum = (f: 'ship_back_cost' | 'ship_return_cost' | 'estimated_price') =>
+      displayed.reduce((acc, r) => acc + (Number(r[f]) || 0), 0)
+    const count = (f: 'ship_back_cost' | 'ship_return_cost' | 'estimated_price') =>
+      displayed.filter(r => Number(r[f]) > 0).length
+    return {
+      back: sum('ship_back_cost'), backN: count('ship_back_cost'),
+      ret: sum('ship_return_cost'), retN: count('ship_return_cost'),
+      est: sum('estimated_price'), estN: count('estimated_price'),
+    }
+  }, [displayed])
+
   // ── inline-edit ในตาราง (กดที่ช่องแล้วแก้ได้เลย เหมือนหมวดออเดอร์) ──
   const isEditing = (id: string, f: string) => editCell?.id === id && editCell.field === f
   const saveCell = async (id: string, field: keyof Claim, val: string, numeric = false) => {
@@ -746,30 +759,27 @@ ${body}
   )
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <div>
-          <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px' }}>งานเคลม</h1>
-          <p style={{ fontSize: 14, color: 'var(--ink-3)', marginTop: 4 }}>
-            {month === 'all' ? `${rows.length} เคส` : `${stableRows.length} เคส · ${monthLabel(month)} (ทั้งหมด ${rows.length})`}
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <button onClick={() => requestPrint(selectedIds.size > 0 ? displayed.filter(r => selectedIds.has(r.id)) : displayed)}
-            style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-            🖨️ ปริ้น{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
-          </button>
-          <button onClick={openAdd}
-            style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(196,126,58,0.3)' }}>
-            + เพิ่มเคลม
-          </button>
-        </div>
-      </div>
-
+    <div style={{ marginTop: -16 }}>
       {error && (
         <div style={{ background: '#ff375f11', border: '1px solid #ff375f44', borderRadius: 10, padding: '12px 16px', marginBottom: 16, color: 'var(--red)', fontSize: 13, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <span>{error}</span>
           <button onClick={() => setError('')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--red)', fontSize: 16, flexShrink: 0 }}>✕</button>
+        </div>
+      )}
+
+      {/* แดชบอร์ดยอดรวม (สไตล์เดียวกับการ์ดในหมวดพนักงาน) — คิดตามตัวกรองที่เปิดอยู่: เดือน/แท็บสถานะ/คำค้น */}
+      {!loading && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 18 }}>
+          {[
+            { label: 'ค่าส่งกลับ (บาท)', value: totals.back.toLocaleString('th-TH', { maximumFractionDigits: 2 }), color: 'var(--ink)' },
+            { label: 'ค่าส่งคืน (บาท)', value: totals.ret.toLocaleString('th-TH', { maximumFractionDigits: 2 }), color: 'var(--ink)' },
+            { label: 'ราคาประเมิน (บาท)', value: totals.est.toLocaleString('th-TH', { maximumFractionDigits: 2 }), color: 'var(--ink)' },
+          ].map(c => (
+            <div key={c.label} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', boxShadow: 'var(--shadow)' }}>
+              <div style={{ fontSize: 26, fontWeight: 700, color: c.color, lineHeight: 1.1 }}>{c.value}</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4 }}>{c.label}</div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -782,6 +792,14 @@ ${body}
           {monthOptions.ym.map(k => <option key={k} value={k}>{monthLabel(k)}</option>)}
           {monthOptions.hasNone && <option value="none">{monthLabel('none')}</option>}
         </select>
+        <button onClick={() => requestPrint(selectedIds.size > 0 ? displayed.filter(r => selectedIds.has(r.id)) : displayed)}
+          style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}>
+          🖨️ ปริ้น{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+        </button>
+        <button onClick={openAdd}
+          style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(196,126,58,0.3)', flexShrink: 0 }}>
+          + เพิ่มเคลม
+        </button>
       </div>
 
       {/* Status tabs (workflow) */}
