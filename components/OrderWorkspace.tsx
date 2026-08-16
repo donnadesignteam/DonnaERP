@@ -21,6 +21,8 @@ import { recordAction } from '@/lib/history'
 import { prevOf } from '@/lib/trackedDb'
 import { stampInsert, oeUpdate, oeInsert, instUpdate, instInsert, claimUpdate } from '@/lib/adminActor'
 import { useConfirm } from '@/components/ConfirmDialog'
+import { WORK_TYPE_OPTIONS, statusOptions, statusLabel, normStatus, STATUS_COLOR as INST_STATUS_COLOR } from '@/lib/installMeta'
+import { orderPatchFromInstall } from '@/lib/installOrderSync'
 import { useStableView } from '@/lib/useStableView'
 import { TH_MONTHS } from '@/lib/shopCalendar'
 // ข้อความใบออเดอร์ (คัดลอก/ใบปริ้นแบบฟอร์ม) อยู่ใน lib/orderPrint.ts — หน้าปฏิทินติดตั้งใช้ตัวเดียวกัน
@@ -134,6 +136,14 @@ const ORDER_TO_CLAIM_STATUS: Record<string, string> = { 'รอดำเนิ�
 const isClaimEntry = (r: { claim_id?: string | null }) => !!r.claim_id
 
 // แถวเคลม → หน้าตาแบบใบออเดอร์ (ใช้ตัวกรอง/การเรียง/คอลัมน์ชุดเดียวกับออเดอร์)
+// แถวในปฏิทินติดตั้งที่ผูกกับใบออเดอร์ (เอามาโชว์ในแท็บงานติดตั้ง)
+type InstMeta = {
+  id: string
+  work_type: string | null
+  serial_no: string | null
+  installation_status: string | null
+}
+
 type ClaimSource = {
   id: string; claim_date: string | null; deadline: string | null; channel: string | null
   customer_username: string | null; original_order_number: string | null; items: Item[] | null
@@ -390,7 +400,8 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
     { id: 'updated', label: 'แก้ไขล่าสุด' },
   ],
   install: [
-    { id: 'days', label: 'วันที่เหลือ' }, { id: 'deadline', label: 'วันที่ติดตั้ง' },
+    { id: 'days', label: 'วันที่เหลือ' }, { id: 'serial', label: 'Serial' },
+    { id: 'deadline', label: 'วันที่นัดหมาย' }, { id: 'work', label: 'งาน' },
     { id: 'print', label: 'ปริ้น' },
     { id: 'customer', label: 'ลูกค้า' }, { id: 'platform', label: 'แพลตฟอร์ม' },
     { id: 'items', label: 'รายการ' }, { id: 'total', label: 'ยอดทั้งหมด' },
@@ -399,6 +410,7 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
     { id: 'assigned', label: 'ลงออเดอร์' }, { id: 'admin', label: 'แอดมิน' },
     { id: 'status', label: 'สถานะงาน' },
     { id: 'done', label: 'งานเสร็จ' }, { id: 'installed', label: 'ติดตั้ง' },
+    { id: 'inststatus', label: 'สถานะ' },
     { id: 'rail', label: 'สถานะราง' },
     { id: 'created', label: 'วันที่สร้าง' }, { id: 'outsource', label: 'สั่งนอก' },
     { id: 'province', label: 'จังหวัด' },
@@ -517,6 +529,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [printScope, setPrintScope] = useState<'tab' | 'days'>('tab')   // ปริ้นตารางตามแท็บที่เปิดอยู่ / ตามวันที่เหลือ
   // id ใบออเดอร์ที่ในปฏิทินไม่ใช่ "งานติดตั้ง" (งานวัดหน้างาน ฯลฯ) — ซ่อนจากหมวดออเดอร์
   const [nonOrderIds, setNonOrderIds] = useState<Set<string>>(new Set())
+  // ข้อมูลจากปฏิทินติดตั้ง (installations) ของใบออเดอร์ที่ผูกกันไว้ — orderId → แถวติดตั้ง
+  const [instMeta, setInstMeta] = useState<Record<string, InstMeta>>({})
   const [quickFilter, setQuickFilter] = useState<'all' | 'platform' | 'outside' | 'install' | 'claim' | 'shipped' | 'cancelled'>('all')
   const [hiddenCols, setHiddenCols] = useState<Record<string, string[]>>(() => {
     if (typeof window === 'undefined') return {}
@@ -589,9 +603,12 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       supabase.from('order_entries').select('*').order('entry_date', { ascending: false, nullsFirst: false }).order('id', { ascending: true }))
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
     // ใบที่ผูกกับปฏิทิน แต่ในปฏิทินไม่ใช่ "งานติดตั้ง" (เช่น งานวัดหน้างาน) → ไม่ต้องโชว์ในหมวดออเดอร์
-    const { data: insts } = await fetchAllRows<{ source_order_id: string | null; work_type: string | null }>(() =>
-      supabase.from('installations').select('source_order_id, work_type').not('source_order_id', 'is', null))
+    const { data: insts } = await fetchAllRows<InstMeta & { source_order_id: string | null }>(() =>
+      supabase.from('installations').select('id, source_order_id, work_type, serial_no, installation_status').not('source_order_id', 'is', null))
     setNonOrderIds(new Set(insts.filter(i => i.source_order_id && i.work_type !== 'งานติดตั้ง').map(i => i.source_order_id as string)))
+    // แท็บงานติดตั้งเอา Serial/งาน/สถานะ มาโชว์+แก้ได้ตรงตาราง
+    setInstMeta(Object.fromEntries(insts.filter(i => i.source_order_id).map(i =>
+      [i.source_order_id as string, { id: i.id, work_type: i.work_type, serial_no: i.serial_no, installation_status: i.installation_status }])))
     // งานเคลมจากหน้าเคลม (ตาราง claims) → โชว์ปนในหมวดออเดอร์ด้วย จะได้เรียงวันที่เหลือรวมกัน
     const CLAIM_COLS = 'id, claim_date, channel, customer_username, original_order_number, items, status, is_urgent, notes, courier, printed_at, shipped_at, admin_name, estimated_price, created_at, updated_at'
     let claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(`${CLAIM_COLS}, deadline, technician`))
@@ -1998,6 +2015,46 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     }
   }
 
+  // แก้ "งาน"/"สถานะ" ในแท็บงานติดตั้ง → เขียนกลับตาราง installations แล้ว sync ค่าที่ใบออเดอร์ใช้ร่วมกัน
+  const saveInstMeta = async (orderId: string, patch: Partial<InstMeta>) => {
+    const cur = instMeta[orderId]
+    if (!cur) return
+    const now = new Date().toISOString()
+    const { error: err } = await instUpdate({ ...patch, updated_at: now }).eq('id', cur.id)
+    if (err) { setError(`บันทึกไม่สำเร็จ: ${err.message}`); return }
+    const merged = { ...cur, ...patch }
+    setInstMeta(prev => ({ ...prev, [orderId]: merged }))
+    // งานที่ไม่ใช่ "งานติดตั้ง" ไม่โชว์ในหมวดออเดอร์ (แถวจะหายไปอยู่ในปฏิทินอย่างเดียว)
+    setNonOrderIds(prev => {
+      const next = new Set(prev)
+      if (merged.work_type !== 'งานติดตั้ง') next.add(orderId); else next.delete(orderId)
+      return next
+    })
+    const orderPatch = orderPatchFromInstall(patch as Record<string, unknown>, { ...merged, id: cur.id })
+    if (Object.keys(orderPatch).length) {
+      orderPatch.updated_at = now
+      const { error: e2 } = await oeUpdate(orderPatch).eq('id', orderId)
+      if (!e2) {
+        const sy = window.scrollY
+        flushSync(() => setRows(prev => prev.map(row => row.id === orderId ? { ...row, ...orderPatch } as Entry : row)))
+        window.scrollTo(window.scrollX, sy)
+      }
+    }
+  }
+
+  // เปลี่ยนคอลัมน์ "งาน" — ไม่ใช่งานติดตั้งแล้ว แถวจะหายจากหมวดออเดอร์ (ไปอยู่ในปฏิทินติดตั้งอย่างเดียว) จึงถามก่อน
+  const changeInstWork = async (orderId: string, val: string) => {
+    const cur = instMeta[orderId]
+    if (!cur || val === cur.work_type) return
+    if (val !== 'งานติดตั้ง' && !(await ask(`เปลี่ยนเป็น "${val}"?
+แถวนี้จะหายจากหมวดออเดอร์ ไปดูต่อได้ที่ปฏิทินงานติดตั้ง`, { okText: 'เปลี่ยน' }))) return
+    // สถานะเดิมอาจไม่มีในลิสต์ของงานใหม่ → ปรับให้เป็นตัวแรกของงานนั้น
+    const opts = statusOptions(val)
+    const patch: Partial<InstMeta> = { work_type: val }
+    if (!opts.includes(normStatus(cur.installation_status))) patch.installation_status = opts[0]
+    await saveInstMeta(orderId, patch)
+  }
+
   const handlePaymentStatus = async (r: Entry, val: string) => {
     const now = new Date().toISOString()
     const updates: Record<string, unknown> = { payment_status: val, updated_at: now }
@@ -2567,13 +2624,19 @@ ${body}
                   </button>
                 </th>
                 )}
+                {quickFilter === 'install' && showCol('serial') && (
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>Serial</th>
+                )}
                 {showCol('deadline') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap' }}>
                   <button onClick={e => openOutFilter(e, 'out-deadline')}
                     style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: (outDeadlineFrom || outDeadlineTo) ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
-                    {quickFilter === 'install' ? 'วันที่ติดตั้ง' : 'ต้องส่งภายใน'} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                    {quickFilter === 'install' ? 'วันที่นัดหมาย' : 'ต้องส่งภายใน'} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                 </th>
+                )}
+                {quickFilter === 'install' && showCol('work') && (
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>งาน</th>
                 )}
                 {showCol('print') && printHeader()}
                 {showCol('customer') && (
@@ -2649,6 +2712,9 @@ ${body}
                       ติดตั้ง <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                     </button>
                   </th>
+                )}
+                {quickFilter === 'install' && showCol('inststatus') && (
+                  <th style={{ textAlign: 'center', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>สถานะ</th>
                 )}
                 {showCol('rail') && (
                 <th style={{ textAlign: 'center', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>สถานะราง</th>
@@ -2820,6 +2886,7 @@ ${body}
                   )
                 }
                 const instStatus = installStatusOf(r)
+                const ins = instMeta[r.id]   // แถวปฏิทินติดตั้งที่ผูกกับใบนี้ (แท็บงานติดตั้ง)
                 // ยอดที่ต้องชำระต่อ: กรอกช่อง "ชำระแล้ว" ไว้ → ยอดทั้งหมด − ยอดที่ชำระแล้ว · ไม่ได้กรอกและเป็นมัดจำ50% → ครึ่งหนึ่งเหมือนเดิม
                 const autoDeposit = r.paid_amount != null && r.price != null
                   ? Math.max(0, Number(r.price) - Number(r.paid_amount))
@@ -2848,6 +2915,11 @@ ${body}
                       ) : <span style={{ color: 'var(--ink-4)' }}>รอกำหนด</span>}
                     </td>
                     )}
+                    {quickFilter === 'install' && showCol('serial') && (
+                    <td style={{ padding: '8px 14px', fontWeight: 700, color: 'var(--blue)', whiteSpace: 'nowrap' }}>
+                      {ins?.serial_no || <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>—</span>}
+                    </td>
+                    )}
                     {showCol('deadline') && (
                     <td style={{ padding: '8px 14px' }}>
                       {isCancelled ? <span style={{ color: 'var(--ink-4)' }}>-</span>
@@ -2855,6 +2927,17 @@ ${body}
                         : (quickFilter === 'install' && instStatus === 'ติดตั้งแล้ว') ? <span style={{ fontWeight: 700, color: '#22c55e' }}>ติดตั้งแล้ว</span>
                         : quickFilter === 'install' ? installDtCell()
                         : dateCell('deadline')}
+                    </td>
+                    )}
+                    {quickFilter === 'install' && showCol('work') && (
+                    <td style={{ padding: '8px 14px' }}>
+                      {ins ? (
+                        <select value={ins.work_type ?? ''} onChange={e => changeInstWork(r.id, e.target.value)}
+                          style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: 'var(--ink-2)', padding: 0 }}>
+                          {!WORK_TYPE_OPTIONS.includes(ins.work_type ?? '') && <option value={ins.work_type ?? ''}>{ins.work_type || '—'}</option>}
+                          {WORK_TYPE_OPTIONS.map(w => <option key={w} value={w}>{w}</option>)}
+                        </select>
+                      ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
                     )}
                     {showCol('print') && printCell(r)}
@@ -2976,6 +3059,16 @@ ${body}
                           {INSTALL_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
                       </td>
+                    )}
+                    {quickFilter === 'install' && showCol('inststatus') && (
+                    <td style={{ padding: '12px 14px', textAlign: 'center' }}>
+                      {ins ? (
+                        <select value={normStatus(ins.installation_status)} onChange={e => saveInstMeta(r.id, { installation_status: e.target.value })}
+                          style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: INST_STATUS_COLOR[normStatus(ins.installation_status)] ?? 'var(--ink-4)', padding: 0 }}>
+                          {statusOptions(ins.work_type).map(st => <option key={st} value={st}>{statusLabel(st)}</option>)}
+                        </select>
+                      ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
+                    </td>
                     )}
                     {showCol('rail') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>

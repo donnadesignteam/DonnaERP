@@ -17,6 +17,7 @@ import { useConfirm } from '@/components/ConfirmDialog'
 import { createOrderForInstall, orderPatchFromInstall } from '@/lib/installOrderSync'
 import { formatOrderLines, linesToHtml, openFormPrintWindow, type PrintLine, type PrintableOrder } from '@/lib/orderPrint'
 import QRCode from 'qrcode'
+import { WORK_TYPES, WORK_TYPE_OPTIONS, normStatus, statusLabel, statusOptions, STATUS_COLOR, WORK_COLOR } from '@/lib/installMeta'
 
 
 type Installation = {
@@ -53,28 +54,10 @@ const PLATFORMS = ['Tiktok','Tiktok-Chat','Shopee','Shopee-Chat','Lazada','Faceb
   'เคลม:LineOA','เคลม:Lineส่วนตัวยุน','เคลม:Lineส่วนตัวสู้','เคลม:Lineส่วนตัวเฟิร์น','เคลม:Lineส่วนตัวน็อต']
 const TIMES = ['8:00','9:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00']
 const ENTERED_BY = ['เก๋','หนูนา','สู้','ยุน']
-const WORK_TYPES = ['งานติดตั้ง','งานวัดหน้างาน','งานแก้']
-// คอลัมน์ "งาน" ในตาราง — เลือกได้แค่ 2 อย่าง (งานแก้ใช้สถานะ "รอแก้งาน" แทน)
-const WORK_TYPE_OPTIONS = ['งานวัดหน้างาน','งานติดตั้ง']
 const ZONES = ['เชียงราย','เชียงใหม่','กทม']
 const TECHS = ['ช่างร้าน','ช่างนอก','ช่างกทม','ช่างบัวบาน']
 // โซนที่รู้ชนิดช่างอยู่แล้ว → เติมให้อัตโนมัติ (เชียงราย/เชียงใหม่ เว้นไว้ให้เลือกเอง)
 const TECH_BY_ZONE: Record<string, string> = { 'กทม': 'ช่างนอก' }
-const INST_STATUS = ['รอนัดหมาย','นัดหมายแล้ว','วัดหน้างาน','วัดหน้างานแล้ว','ติดตั้ง','ติดตั้งเสร็จ','ติดตั้ง50%','รอแก้']
-
-// สถานะที่เลือกได้ ขึ้นกับลักษณะงานในคอลัมน์ "งาน" — ค่าที่เก็บลงฐานคงของเดิมไว้ (แถวเก่าไม่เพี้ยน)
-const STATUS_BY_WORK: Record<string, string[]> = {
-  'งานวัดหน้างาน': ['รอนัดหมาย', 'นัดหมายแล้ว', 'วัดหน้างานแล้ว'],
-  'งานติดตั้ง': ['รอนัดหมาย', 'ติดตั้งเสร็จ', 'ติดตั้ง50%', 'รอแก้'],
-  'งานแก้': ['รอนัดหมาย', 'รอแก้', 'ติดตั้งเสร็จ'],
-}
-// ป้ายที่โชว์ (ค่าที่เก็บในฐานยังเป็นคำเดิม)
-const STATUS_LABEL: Record<string, string> = { 'ติดตั้ง50%': 'ติดตั้งเสร็จ50%', 'รอแก้': 'รอแก้งาน' }
-// ค่าเดิมของแถวเก่า → สถานะใหม่ที่ความหมายเดียวกัน (ยังไม่ได้ลงมือ = รอนัดหมาย)
-const STATUS_ALIAS: Record<string, string> = { 'ติดตั้ง': 'รอนัดหมาย', 'วัดหน้างาน': 'รอนัดหมาย' }
-const normStatus = (s?: string | null) => STATUS_ALIAS[s ?? ''] ?? (s ?? '')
-const statusLabel = (s: string) => STATUS_LABEL[s] ?? s
-const statusOptions = (workType?: string | null) => STATUS_BY_WORK[workType ?? ''] ?? INST_STATUS
 
 // สถานะตั้งต้นตามลักษณะงาน (ช่องสถานะถูกเอาออกจากฟอร์ม จึงกำหนดอัตโนมัติ)
 const STATUS_BY_TYPE: Record<string, string> = {
@@ -84,19 +67,6 @@ const STATUS_BY_TYPE: Record<string, string> = {
 }
 const INITIAL_STATUSES = ['ติดตั้ง', 'วัดหน้างาน', 'รอนัดหมาย', 'รอแก้']
 
-const STATUS_COLOR: Record<string, string> = {
-  'รอนัดหมาย': '#8e8e93',
-  'นัดหมายแล้ว': '#5ac8fa',
-  'วัดหน้างาน': '#5ac8fa',
-  'วัดหน้างานแล้ว': '#30b0c7',
-  'ติดตั้ง': '#ff9f0a',
-  'ติดตั้งเสร็จ': '#34c759',
-  'ติดตั้ง50%': '#bf5af2',
-  'รอแก้': 'var(--red)',
-}
-
-// สีของงานที่ยังไม่ลงมือ (รอนัดหมาย/นัดหมายแล้ว) ดูจากลักษณะงาน — ปฏิทินจะยังแยกวัดหน้างาน/ติดตั้งด้วยสีเหมือนเดิม
-const WORK_COLOR: Record<string, string> = { 'งานวัดหน้างาน': '#5ac8fa', 'งานติดตั้ง': '#ff9f0a', 'งานแก้': 'var(--red)' }
 const rowColor = (ins: { installation_status: string; work_type?: string }) => {
   const s = normStatus(ins.installation_status)
   if (s === 'รอนัดหมาย' || s === 'นัดหมายแล้ว') return WORK_COLOR[ins.work_type ?? ''] ?? '#8e8e93'
