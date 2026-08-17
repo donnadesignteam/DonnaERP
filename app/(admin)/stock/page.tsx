@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import AnchoredMenu from '@/components/AnchoredMenu'
 import { supabase } from '@/lib/supabase'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { fetchAllRows } from '@/lib/fetchAll'
@@ -592,7 +593,7 @@ export default function StockPage() {
         const item = filtered.find(i => i.id === menuOpen)
         if (!item) return null
         return (
-          <div style={{ position: 'fixed', top: menuRect.bottom + 2, right: window.innerWidth - menuRect.right, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 9999, minWidth: 130, overflow: 'hidden' }}>
+          <AnchoredMenu rect={menuRect} style={{ borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', padding: 0 }}>
             <button onClick={() => { if (quickFilter === 'waiting') setArrivalModal({ item, rolls: '', meters: '' }); else toggleOrdered(item); closeMenu() }}
               style={{ width: '100%', padding: '10px 16px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', color: 'var(--ink)' }}>
               {quickFilter === 'waiting' ? 'ของเข้า' : item.ordered_at ? 'ยกเลิกรอของเข้า' : 'รอของเข้า'}
@@ -618,7 +619,7 @@ export default function StockPage() {
                 </button>
               </>
             )}
-          </div>
+          </AnchoredMenu>
         )
       })()}
 
