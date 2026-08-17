@@ -11,6 +11,7 @@ import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { isOwnerLogin, claimUpdate } from '@/lib/adminActor'
 import StaffTabs from '@/components/StaffTabs'
+import Link from 'next/link'
 
 type ClaimRow = {
   id: string
@@ -192,7 +193,11 @@ export default function StaffClaimsPage() {
                           <td style={{ ...td, paddingLeft: 28, color: 'var(--ink-4)' }}>↳</td>
                           <td style={{ ...td, whiteSpace: 'nowrap' }}>{thaiDate(c.claim_date)}</td>
                           <td style={{ ...td, fontFamily: 'monospace', fontSize: 12 }}>{c.original_order_number || '—'}</td>
-                          <td style={td}>{c.customer_username || '—'}</td>
+                          <td style={td}>
+                            {c.customer_username
+                              ? <Link href={`/customers?name=${encodeURIComponent(c.customer_username)}`} title="เปิดโฟลเดอร์ออเดอร์" style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>{c.customer_username}</Link>
+                              : '—'}
+                          </td>
                           <td style={td}>{c.claim_type || '—'}</td>
                           <td style={td}>{c.fault || '—'}</td>
                           <td style={td}>{c.fix_method || '—'}</td>
