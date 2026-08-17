@@ -417,7 +417,8 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
     { id: 'inststatus', label: 'สถานะ' },
     { id: 'rail', label: 'สถานะราง' },
     { id: 'created', label: 'วันที่สร้าง' }, { id: 'outsource', label: 'สั่งนอก' },
-    { id: 'province', label: 'จังหวัด' }, { id: 'zone', label: 'โซน' }, { id: 'insttech', label: 'ช่าง' },
+    { id: 'province', label: 'จังหวัด' }, { id: 'zone', label: 'โซน' },
+    { id: 'insttech', label: 'ช่างติดตั้ง' }, { id: 'tech', label: 'ช่างเย็บ' },
     { id: 'address', label: 'ที่อยู่' }, { id: 'phone', label: 'เบอร์โทร' }, { id: 'maps', label: 'Maps' },
     { id: 'notes', label: 'หมายเหตุ' },
     { id: 'updated', label: 'แก้ไขล่าสุด' },
@@ -2878,7 +2879,10 @@ ${body}
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>โซน</th>
                 )}
                 {quickFilter === 'install' && showCol('insttech') && (
-                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ช่าง</th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ช่างติดตั้ง</th>
+                )}
+                {quickFilter === 'install' && showCol('tech') && (
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ช่างเย็บ</th>
                 )}
                 {showCol('address') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ที่อยู่</th>
@@ -3256,6 +3260,17 @@ ${body}
                     )}
                     {quickFilter === 'install' && showCol('insttech') && (
                     <td style={{ padding: '8px 14px' }}>{instSelectCell(r.id, ins, 'technician_type', INST_TECHS)}</td>
+                    )}
+                    {/* ช่างเย็บ = ช่อง technician ของใบออเดอร์ (ตัวเลือกชุดเดียวกับคอลัมน์ "ช่าง" ในงานแพลตฟอร์ม)
+                        คนละช่องกับ "ช่างติดตั้ง" ที่อยู่ในตาราง installations */}
+                    {quickFilter === 'install' && showCol('tech') && (
+                    <td style={{ padding: '8px 14px', background: r.technician ? undefined : EMPTY_HL }}>
+                      <select value={r.technician || ''} onChange={e => updateField(r.id, 'technician', e.target.value)}
+                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.technician ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 100 }}>
+                        <option value="">—</option>
+                        {TECHS.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </td>
                     )}
                     {showCol('address') && (
                     <td style={{ padding: '8px 14px', minWidth: 120, maxWidth: 180 }}>{textCell('address', '—')}</td>
