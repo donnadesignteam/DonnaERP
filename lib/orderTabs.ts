@@ -11,6 +11,9 @@ export const OUTSIDE_PLATFORMS = [
   'เคลม:Lineส่วนตัวยุน', 'เคลม:Lineส่วนตัวเฟิร์น', 'เคลม:Lineส่วนตัวสู้', 'เคลม:Lineส่วนตัวน็อต',
 ]
 
+// แพลตฟอร์มมาร์เก็ตเพลส (แท็บ "งานแพลตฟอร์ม") — คนละชุดกับ OUTSIDE_PLATFORMS
+export const PLATFORM_NAMES = ['Shopee', 'Tiktok', 'Lazada']
+
 export const PROD_STATUSES = ['รอดำเนินการ', 'ตัดผ้าแล้ว', 'เย็บแล้ว', 'ตรวจสอบแล้ว', 'รีดแล้ว', 'แพ็คแล้ว', 'รอจัดส่ง', 'จัดส่งแล้ว']
 export const INSTALL_STATUSES = ['รอดำเนินการ', 'ตัดผ้าแล้ว', 'เย็บแล้ว', 'ตรวจสอบแล้ว', 'รีดแล้ว', 'แพ็คแล้ว', 'รอติดตั้ง']
 
@@ -89,7 +92,7 @@ export function matchQuickTab(r: TabRow, tab: QuickTab): boolean {
     : tab === 'claim' ? isClaim
     : (isShipped || isCancelled) ? false
     : tab === 'all' ? true
-    : tab === 'platform' ? (!isClaim && (p === 'Shopee' || p === 'Tiktok' || p === 'Lazada'))
+    : tab === 'platform' ? (!isClaim && PLATFORM_NAMES.includes(p))
     : tab === 'outside' ? (!isClaim && OUTSIDE_PLATFORMS.includes(p) && !r.is_installation)
     : r.is_installation === true
 }

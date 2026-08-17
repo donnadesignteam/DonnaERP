@@ -9,7 +9,7 @@ import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, CORE_ITEM_FIELDS } from '@/lib/itemFormat'
 import { railLink } from '@/lib/rail'
 import { TECH_OPTIONS } from '@/lib/techs'
-import { OUTSIDE_PLATFORMS, PROD_STATUSES, INSTALL_STATUSES, PROD_STATUS_COLOR, matchQuickTab, effectiveDueDate, type QuickTab } from '@/lib/orderTabs'
+import { OUTSIDE_PLATFORMS, PLATFORM_NAMES, PROD_STATUSES, INSTALL_STATUSES, PROD_STATUS_COLOR, matchQuickTab, effectiveDueDate, type QuickTab } from '@/lib/orderTabs'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { effShipping } from '@/lib/shipping'
 import { thaiTrackStatus } from '@/lib/trackExtract'
@@ -92,6 +92,7 @@ type Entry = {
   courier: string
   is_installation: boolean
   is_dropoff: boolean
+  dropoff_at?: string | null   // เวลาที่กด Drop-off (ต้องรัน sql/add_dropoff_at.sql) — ใช้จับใบที่ดรอปแล้วเกิน 24 ชม. แต่ยังไม่ติ๊กจัดส่ง
   installation_date: string
   install_time: string
   province: string
@@ -442,6 +443,36 @@ const isPrintedPending = (r: Entry) => {
   return Date.now() - t >= 24 * 60 * 60 * 1000
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000
+const olderThanADay = (v: string | null | undefined) => {
+  if (!v) return false
+  const t = new Date(v).getTime()
+  return !Number.isNaN(t) && Date.now() - t >= DAY_MS
+}
+
+// กด Drop-off ไปเกิน 24 ชม. แล้ว แต่ยังไม่ได้ติ๊กจัดส่ง (ของหลุดอยู่กับขนส่ง/ยังไม่ได้เอาไปส่งจริง)
+// ‼️ is_dropoff ถูกใช้ซ้ำเป็นธง "ติดตั้งแล้ว" ของงานติดตั้ง → นับเฉพาะใบขายที่ไม่ใช่งานติดตั้ง/งานเคลม
+// ‼️ dropoff_at ว่าง (ใบเก่าก่อนมีคอลัมน์นี้) → ถอยไปใช้ updated_at เพื่อให้ใบเก่ายังเตือนได้
+const isDropoffPending = (r: Entry) => {
+  if (!r.is_dropoff || r.is_installation || isClaimEntry(r)) return false
+  if (r.order_status === 'จัดส่งแล้ว' || r.order_status === 'ยกเลิก') return false
+  if (r.shipped_at) return false
+  return olderThanADay(r.dropoff_at || r.updated_at)
+}
+
+// งานแพลตฟอร์มที่ค้างสถานะเดิมมาเกิน 24 ชม. — เวลาอ้างจากประวัติสถานะล่าสุด (status_history)
+// ใบที่ยังไม่เคยขยับสถานะเลย ใช้ updated_at/created_at แทน
+const statusSince = (r: Entry) => {
+  const h = Array.isArray(r.status_history) ? r.status_history : []
+  return h.length ? h[h.length - 1]?.at : (r.updated_at || r.created_at)
+}
+const isStatusStale = (r: Entry) => {
+  if (r.is_installation || isClaimEntry(r)) return false
+  if (!PLATFORM_NAMES.includes(r.platform ?? '')) return false
+  if (r.order_status === 'จัดส่งแล้ว' || r.order_status === 'ยกเลิก') return false
+  return olderThanADay(statusSince(r))
+}
+
 // สถานะติดตั้ง: แถวเก่าที่ติ๊ก checkbox ไว้ (is_dropoff) ให้ถือเป็น "ติดตั้งแล้ว"
 const installStatusOf = (r: Entry) => r.install_status || (r.is_dropoff ? 'ติดตั้งแล้ว' : '')
 const INSTALL_STATUS_OPTIONS = ['ติดตั้งแล้ว', 'ติดตั้ง50%']
@@ -559,6 +590,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [incompleteFilter, setIncompleteFilter] = useState(false)
   const [unprintedFilter, setUnprintedFilter] = useState(false)
   const [printedPendingFilter, setPrintedPendingFilter] = useState(false)
+  const [dropoffPendingFilter, setDropoffPendingFilter] = useState(false)
+  const [statusStaleFilter, setStatusStaleFilter] = useState(false)
   const [allDaysSort, setAllDaysSort] = useState<'asc' | 'desc' | null>('asc')
   const [allUpdatedSort, setAllUpdatedSort] = useState<'asc' | 'desc' | null>(null)
   const [allDeadlineFrom, setAllDeadlineFrom] = useState('')
@@ -941,7 +974,11 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       window.scrollTo(window.scrollX, sy)
       return true
     }
-    const { error: err } = await oeUpdate({ [field]: value, updated_at: now }).eq('id', id)
+    // ติ๊ก Drop-off = ประทับเวลาไว้ด้วย (ใช้จับใบที่ดรอปแล้วเกิน 24 ชม. แต่ยังไม่ติ๊กจัดส่ง) · ติ๊กออก = ล้างเวลา
+    const extra = field === 'is_dropoff' ? { dropoff_at: value ? now : null } : {}
+    let { error: err } = await oeUpdate({ [field]: value, ...extra, updated_at: now }).eq('id', id)
+    // ยังไม่ได้รัน sql/add_dropoff_at.sql → ลองใหม่แบบไม่มีคอลัมน์ใหม่ ไม่ให้ติ๊ก Drop-off พังทั้งช่อง
+    if (err && field === 'is_dropoff') ({ error: err } = await oeUpdate({ [field]: value, updated_at: now }).eq('id', id))
     if (err) return false
     if (field === 'order_status' && typeof value === 'string') {
       const row = rows.find(r => r.id === id)
@@ -951,7 +988,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       }
     }
     const sy = window.scrollY
-    flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value, updated_at: now } as Entry : r)))
+    flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value, ...extra, updated_at: now } as Entry : r)))
     window.scrollTo(window.scrollX, sy)
     return true
   }
@@ -1514,6 +1551,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
         shipped_at: delivered ? (toShippedIso(r.shippedDate) || new Date().toISOString()) : null,
         is_installation: false,
         is_dropoff: r.isDropoff,
+        dropoff_at: r.isDropoff ? new Date().toISOString() : null,
         admin_name: null, technician: null,
         customer_name: r.customerName || null,
         courier: r.courier || null,
@@ -1526,7 +1564,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       const existing = rows.find(row => row.order_number === r.orderNumber)
       if (!existing) continue
       const now = new Date().toISOString()
-      const { error: err } = await oeUpdate({ is_dropoff: true, updated_at: now }).eq('id', existing.id)
+      let { error: err } = await oeUpdate({ is_dropoff: true, dropoff_at: now, updated_at: now }).eq('id', existing.id)
+      if (err) ({ error: err } = await oeUpdate({ is_dropoff: true, updated_at: now }).eq('id', existing.id))   // เผื่อยังไม่ได้รัน sql/add_dropoff_at.sql
       if (!err) updatedIds.push(existing.id)
     }
 
@@ -1572,7 +1611,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
 
     let insertedRows: Entry[] = []
     if (insertPayload.length > 0) {
-      const res = await supabase.from('order_entries').insert(insertPayload.map(p => stampInsert(p))).select()
+      let res = await supabase.from('order_entries').insert(insertPayload.map(p => stampInsert(p))).select()
+      // เผื่อยังไม่ได้รัน sql/add_dropoff_at.sql → ตัดคอลัมน์ใหม่ออกแล้วบันทึกใหม่ ไม่ให้อัพไฟล์ Shopee พังทั้งชุด
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      if (res.error) res = await supabase.from('order_entries').insert(insertPayload.map(({ dropoff_at, ...p }) => stampInsert(p))).select()
       if (res.error) { setPasteSaving(false); setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
       insertedRows = res.data as Entry[]
     }
@@ -1583,7 +1625,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       ...prev.map(r => {
         const shipped = shippedApplied.get(r.id)
         const cancelled = cancelApplied.get(r.id)
-        const dropoff = updatedIds.includes(r.id) ? { is_dropoff: true } : null
+        const dropoff = updatedIds.includes(r.id) ? { is_dropoff: true, dropoff_at: new Date().toISOString() } : null
         return (shipped || cancelled || dropoff) ? { ...r, ...dropoff, ...shipped, ...cancelled } as Entry : r
       }),
     ])
@@ -1667,9 +1709,11 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const matchIncomplete = !incompleteFilter || (!r.items || r.items.length === 0 || !r.deadline || r.price == null || !r.customer_name || (OUTSIDE_PLATFORMS.includes(r.platform ?? '') && (!r.order_assigned || r.order_assigned === 'รออัพเดท')) || ((OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation) && (!r.payment_status || r.payment_status === 'ยังไม่ชำระ')))
     const matchUnprinted = !unprintedFilter || !r.printed_at
     const matchPrintedPending = !printedPendingFilter || isPrintedPending(r)
+    const matchDropoffPending = !dropoffPendingFilter || isDropoffPending(r)
+    const matchStatusStale = !statusStaleFilter || isStatusStale(r)
     // งานในปฏิทินที่ยังไม่ใช่งานติดตั้ง (เช่น รอวัดหน้างาน) ไม่ต้องขึ้นในหมวดออเดอร์
     const matchFromCalendar = !nonOrderIds.has(r.id)
-    return matchMonth && matchSearch && matchStatus && matchPlatform && matchCourier && matchAdmin && matchTech && matchUrgent && matchInstall && matchShipping && matchQuick && matchIncomplete && matchUnprinted && matchPrintedPending && matchFromCalendar
+    return matchMonth && matchSearch && matchStatus && matchPlatform && matchCourier && matchAdmin && matchTech && matchUrgent && matchInstall && matchShipping && matchQuick && matchIncomplete && matchUnprinted && matchPrintedPending && matchDropoffPending && matchStatusStale && matchFromCalendar
   })
 
   if (updatedSort) {
@@ -2503,6 +2547,34 @@ ${body}
               ปริ้นแล้วแต่ยังไม่ดำเนินการ
               <span style={{ background: printedPendingFilter ? 'rgba(255,255,255,0.3)' : '#3b82f622', color: printedPendingFilter ? '#fff' : '#3b82f6', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
                 {printedPendingCount}
+              </span>
+            </button>
+          )
+        })()}
+        {(() => {
+          const dropoffPendingCount = scopedRows.filter(r => matchQuickTab(r, quickFilter as QuickTab) && isDropoffPending(r)).length
+          if (dropoffPendingCount === 0) return null
+          return (
+            <button onClick={() => setDropoffPendingFilter(f => !f)}
+              title="กด Drop-off ไปเกิน 24 ชม. แล้ว แต่ยังไม่ได้ติ๊กจัดส่ง (รวมใบที่อัพเดท Drop จากไฟล์ Shopee)"
+              style={{ padding: '6px 14px', borderRadius: 20, border: dropoffPendingFilter ? 'none' : '1px solid var(--border)', background: dropoffPendingFilter ? '#f97316' : 'var(--surface)', color: dropoffPendingFilter ? '#fff' : '#f97316', fontSize: 13, fontWeight: dropoffPendingFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+              กด Drop-off แล้วแต่ยังไม่ได้ส่ง
+              <span style={{ background: dropoffPendingFilter ? 'rgba(255,255,255,0.3)' : '#f9731622', color: dropoffPendingFilter ? '#fff' : '#f97316', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
+                {dropoffPendingCount}
+              </span>
+            </button>
+          )
+        })()}
+        {(() => {
+          const statusStaleCount = scopedRows.filter(r => matchQuickTab(r, quickFilter as QuickTab) && isStatusStale(r)).length
+          if (statusStaleCount === 0) return null
+          return (
+            <button onClick={() => setStatusStaleFilter(f => !f)}
+              title="งานแพลตฟอร์มที่ค้างสถานะเดิมมาเกิน 24 ชม."
+              style={{ padding: '6px 14px', borderRadius: 20, border: statusStaleFilter ? 'none' : '1px solid var(--border)', background: statusStaleFilter ? '#a855f7' : 'var(--surface)', color: statusStaleFilter ? '#fff' : '#a855f7', fontSize: 13, fontWeight: statusStaleFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+              สถานะไม่อัพเดท
+              <span style={{ background: statusStaleFilter ? 'rgba(255,255,255,0.3)' : '#a855f722', color: statusStaleFilter ? '#fff' : '#a855f7', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
+                {statusStaleCount}
               </span>
             </button>
           )
