@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
-import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, CORE_ITEM_FIELDS } from '@/lib/itemFormat'
+import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, CORE_ITEM_FIELDS } from '@/lib/itemFormat'
 import { railLink } from '@/lib/rail'
 import { TECH_OPTIONS } from '@/lib/techs'
 import { OUTSIDE_PLATFORMS, PROD_STATUSES, INSTALL_STATUSES, PROD_STATUS_COLOR, matchQuickTab, effectiveDueDate, type QuickTab } from '@/lib/orderTabs'
@@ -852,7 +852,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   // ===== เชื่อมกับเว็บคำนวณอุปกรณ์ราง (donna-rail) =====
   const railItemsOf = (r: Entry) => (Array.isArray(r.items) ? r.items : []).filter(it => typeof it.type === 'string' && it.type.startsWith('ราง'))
   const hasRail = (r: Entry) => railItemsOf(r).length > 0
-  const openRailCalc = (r: Entry) => {
+  const openRailCalc = async (r: Entry) => {
+    // เว็บรางข้ามรายการที่ไม่มีขนาดเงียบๆ → ต้องเตือนก่อน ไม่งั้นบิลขาดไปทั้งรายการโดยไม่มีใครรู้
+    const issues = railIssues(railItemsOf(r))
+    if (issues.length && !(await ask(`ข้อมูลรางไม่ครบ ${issues.length} รายการ:\n\n${issues.map(t => `• ${t}`).join('\n')}\n\nเปิดเว็บคำนวณรางต่อเลยไหม?`, { okText: 'เปิดต่อ' }))) return
     const courier = (r.courier || '').toLowerCase()
     const carrier = r.is_installation ? 'ติดตั้ง'
       : /spx|shopee/.test(courier) ? 'Spx'
@@ -867,7 +870,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       size: typeof it.width === 'string' && it.width.includes('+') ? it.width.trim() : (Number(it.width) || 0),
       qty: Number(it.quantity) || 1,
       layers: railLayers(it),   // ช่องชั้นว่าง → อ่านจากชื่อชนิด ("รางม่านจีบ 2 ชั้น")
-      color: (it.color_name || '').replace(/^สี/, '') || undefined,
+      color: normalizeRailColor(it.rail_color || it.color_name || '') || undefined,   // แปลงคำมาตรฐานก่อนส่ง ('สักลายไม้' = ลายไม้ ไม่ใช่สัก)
       // ออเดอร์ไม่ได้ลงว่าแยกกลาง/สไลด์เดี่ยว → ส่งค่าว่าง ไม่เดาให้ (donna-rail จะเว้นไว้ให้ช่างกดเลือกเอง)
       split: railSplit(`${it.fabric_split || ''} ${it.note || ''}`),
       head: it.rail_head || undefined,

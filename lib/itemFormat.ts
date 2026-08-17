@@ -141,14 +141,17 @@ export function normalizeRailHead(v: string): string {
 }
 
 // สีราง — ไม้อ่อน/ลายไม้/จุกลายไม้ คือสีเดียวกัน
+// ‼️ "สักลายไม้" (แอดมินพิมพ์บ่อย) = ลายไม้ ไม่ใช่สัก → เช็ก "ลายไม้" ก่อน "สัก" เสมอ
+// ‼️ ตัดวรรณยุกต์/ไม้ไต่คู้ก่อนเทียบ กันพิมพ์วรรณยุกต์ผิดตำแหน่ง เช่น "สักลายไม่้" ที่เคยหลุดเป็น "สัก"
 export function normalizeRailColor(v: string): string {
   const t = String(v ?? '').replace(/\s*สี\s*/g, '').replace(/\s+/g, ' ').trim()
   if (!t) return ''
-  if (/ไม้อ่อน|ลายไม้|เมเปิ้ล/.test(t)) return 'ลายไม้'
-  if (/โอ๊ค|โอ๊ก|โอ๊ต/.test(t)) return 'โอ๊ค'
-  if (/สัก/.test(t)) return 'สัก'
-  if (/ขาว/.test(t)) return 'ขาว'
-  if (/ดำ/.test(t)) return 'ดำ'
+  const k = t.replace(/[็-๎]/g, '')   // ลายไม่้ → ลายไม · เมเปิ้ล → เมเปิล · โอ๊ค → โอค
+  if (/ไมออน|ลายไม|เมเปิล|เมเปล/.test(k)) return 'ลายไม้'
+  if (/โอค|โอก|โอต/.test(k)) return 'โอ๊ค'
+  if (/สัก/.test(k)) return 'สัก'
+  if (/ขาว/.test(k)) return 'ขาว'
+  if (/ดำ/.test(k)) return 'ดำ'
   return t
 }
 
@@ -225,6 +228,28 @@ export function railSplit(text: string): 'แยกกลาง' | 'สไลด
   if (/สไลด์|เดี่ยว/.test(t)) return 'สไลด์เดี่ยว'
   if (/แยกกลาง|แยก\s*กลาง/.test(t)) return 'แยกกลาง'
   return ''
+}
+
+// ขนาดกว้างที่ส่งให้เว็บคำนวณราง — "1.10+3.10" (รางต่อท่อน) ส่งเป็นข้อความ นอกนั้นเป็นตัวเลข
+export function railSize(width: unknown): string | number {
+  return typeof width === 'string' && width.includes('+') ? width.trim() : (Number(width) || 0)
+}
+
+// หัวรางพวกนี้เป็นของ "รางตาไก่" เท่านั้น — ถ้าชนิดเขียนแค่ "ราง" แต่มีหัวราง = กรอกชนิดไม่ครบ
+const TAIKAI_HEAD = /กระด(ู|ุ)ม|กลม\s*จุก|กลม\s*เรียบ|จุก/
+
+// เตือนก่อนเปิดเว็บคำนวณราง — เว็บรางจะ "ข้ามเงียบๆ" รายการที่ไม่มีขนาด
+// (เคยทำให้บิลขาดไปทั้งรายการโดยไม่มีใครรู้) และเปิดชนิดกำกวมเป็น "อื่นๆ" ให้กรอกเอง
+export function railIssues(items: RawItem[]): string[] {
+  const out: string[] = []
+  for (const it of items) {
+    const name = String(it.type ?? '')
+    const sizeN = String(railSize(it.width)).split('+').reduce((a, x) => a + (Number(x) || 0), 0)
+    const kind = railKind(name)
+    if (!(sizeN > 0) && kind) out.push(`${name} — ไม่มีขนาดกว้าง จะตกหล่นจากบิลราง`)
+    if (!kind && TAIKAI_HEAD.test(String(it.rail_head ?? ''))) out.push(`${name} (หัวราง${it.rail_head}) — ชนิดไม่ชัด น่าจะเป็นรางตาไก่ จะเปิดเป็น "อื่นๆ" ให้กรอกเอง`)
+  }
+  return out
 }
 
 // เติมฟิลด์ที่ AI ตัดทิ้งตอนค่าว่างกลับให้ครบ (ประหยัด output token แต่ผลลัพธ์เหมือนเดิม)

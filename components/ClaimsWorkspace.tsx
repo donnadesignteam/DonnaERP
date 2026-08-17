@@ -9,7 +9,7 @@ import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { recordAction } from '@/lib/history'
 import { tUpdate, prevOf } from '@/lib/trackedDb'
-import { itemBlockLines, railSplit, railLayers, railKind } from '@/lib/itemFormat'
+import { itemBlockLines, railSplit, railLayers, railKind, railIssues, normalizeRailColor } from '@/lib/itemFormat'
 import QRCode from 'qrcode'
 import { railLink } from '@/lib/rail'
 import { TECH_OPTIONS } from '@/lib/techs'
@@ -21,6 +21,7 @@ import { useInstallPhotos, photoSaveError, type InstallPhoto } from '@/component
 
 type Item = {
   type: string; floors: number | null; rail_head: string; hook_type?: string; fabric_type: string
+  rail_color?: string     // สีราง — ต้องมี ไม่งั้นปุ่มคำนวณรางส่งสีไปไม่ได้ (ตกไปใช้ default ลายไม้)
   color_code: string; color_name: string; color_desc: string
   width: number | string; height: number | string; quantity: number | string
   unit: string; hooks: string; note: string
@@ -532,7 +533,10 @@ ${body}
   // ===== เชื่อมกับเว็บคำนวณอุปกรณ์ราง (donna-rail) — เหมือนหมวดออเดอร์ =====
   const railItemsOf = (r: Claim) => (Array.isArray(r.items) ? r.items : []).filter(it => typeof it.type === 'string' && it.type.startsWith('ราง'))
   const hasRail = (r: Claim) => railItemsOf(r).length > 0
-  const openRailCalc = (r: Claim) => {
+  const openRailCalc = async (r: Claim) => {
+    // เว็บรางข้ามรายการที่ไม่มีขนาดเงียบๆ → ต้องเตือนก่อน ไม่งั้นบิลขาดไปทั้งรายการโดยไม่มีใครรู้
+    const issues = railIssues(railItemsOf(r))
+    if (issues.length && !(await ask(`ข้อมูลรางไม่ครบ ${issues.length} รายการ:\n\n${issues.map(t => `• ${t}`).join('\n')}\n\nเปิดเว็บคำนวณรางต่อเลยไหม?`, { okText: 'เปิดต่อ' }))) return
     const courier = (r.courier || '').toLowerCase()
     const carrier = /spx|shopee/.test(courier) ? 'Spx'
       : /flash/.test(courier) ? 'Flash'
@@ -545,7 +549,7 @@ ${body}
       size: typeof it.width === 'string' && it.width.includes('+') ? it.width.trim() : (Number(it.width) || 0),
       qty: Number(it.quantity) || 1,
       layers: railLayers(it),   // ช่องชั้นว่าง → อ่านจากชื่อชนิด ("รางม่านจีบ 2 ชั้น")
-      color: (it.color_name || '').replace(/^สี/, '') || undefined,
+      color: normalizeRailColor(it.rail_color || it.color_name || '') || undefined,   // แปลงคำมาตรฐานก่อนส่ง ('สักลายไม้' = ลายไม้ ไม่ใช่สัก)
       // ออเดอร์ไม่ได้ลงว่าแยกกลาง/สไลด์เดี่ยว → ส่งค่าว่าง ไม่เดาให้ (donna-rail จะเว้นไว้ให้ช่างกดเลือกเอง)
       split: railSplit(it.note || ''),
       head: it.rail_head || undefined,
