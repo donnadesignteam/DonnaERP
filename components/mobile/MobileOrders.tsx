@@ -84,8 +84,8 @@ export default function MobileOrders() {
   const displayed = useMemo(() => {
     const q = search.trim().toLowerCase()
     const list = rows.filter(r => {
-      if (!matchQuickTab(r, tab)) return false
-      if (!q) return true
+      // พิมพ์ค้นหา = ข้ามตัวกรองแท็บ ค้นเจอทุกแถบรวมจัดส่งแล้ว/ยกเลิก (เหมือนหน้าเดสก์ท็อป)
+      if (!q) return matchQuickTab(r, tab)
       return (r.customer_name ?? '').toLowerCase().includes(q)
         || (r.order_number ?? '').toLowerCase().includes(q)
         || (r.phone ?? '').toLowerCase().includes(q)

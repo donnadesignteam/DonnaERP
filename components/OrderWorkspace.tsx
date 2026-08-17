@@ -1686,6 +1686,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     return `${TH_MONTHS[Number(m) - 1]} ${Number(y) + 543}`
   }
 
+  const searching = search.trim().length > 0
   const displayedFrozen = scopedRows.filter(r => {
     const matchMonth = month === 'all' || monthKey(r) === month
     const matchSearch = (r.customer_name ?? '').toLowerCase().includes(search.toLowerCase()) ||
@@ -1706,7 +1707,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       return true
     })()
     // จัดส่งแล้ว/ยกเลิก → ย้ายไปอยู่หมวดของตัวเองหมวดเดียว หายจากหมวดอื่นทั้งหมด (ตรรกะอยู่ใน lib/orderTabs.ts)
-    const matchQuick = matchQuickTab(r, quickFilter as QuickTab)
+    // ‼️ กำลังพิมพ์ค้นหา = ข้ามตัวกรองแท็บ ค้นเจอทุกแถบรวมจัดส่งแล้ว/ยกเลิก (ไม่ต้องเดาว่าใบอยู่แท็บไหน)
+    const matchQuick = searching || matchQuickTab(r, quickFilter as QuickTab)
     const matchIncomplete = !incompleteFilter || (!r.items || r.items.length === 0 || !r.deadline || r.price == null || !r.customer_name || (OUTSIDE_PLATFORMS.includes(r.platform ?? '') && (!r.order_assigned || r.order_assigned === 'รออัพเดท')) || ((OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation) && (!r.payment_status || r.payment_status === 'ยังไม่ชำระ')))
     const matchUnprinted = !unprintedFilter || !r.printed_at
     const matchPrintedPending = !printedPendingFilter || isPrintedPending(r)
@@ -2497,6 +2499,11 @@ ${body}
             {label}
           </button>
         ))}
+        {searching && (
+          <span style={{ fontSize: 12, color: 'var(--ink-3)', whiteSpace: 'nowrap' }} title="กำลังค้นหา = ไม่สนแท็บ ค้นเจอทุกแถบรวมจัดส่งแล้ว/ยกเลิก">
+            ค้นหาทุกแถบอยู่
+          </span>
+        )}
         <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px' }} />
         {(() => {
           const incompleteCount = scopedRows.filter(r => {

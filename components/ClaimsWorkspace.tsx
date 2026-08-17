@@ -617,7 +617,8 @@ ${body}
     const matchSearch = !q || (r.customer_username ?? '').toLowerCase().includes(q) ||
       (r.original_order_number ?? '').toLowerCase().includes(q) || (r.cause ?? '').toLowerCase().includes(q) ||
       (r.fault_by ?? '').toLowerCase().includes(q) || (r.fix_method ?? '').toLowerCase().includes(q)
-    const matchTab = tab === 'all' || r.status === tab
+    // พิมพ์ค้นหา = ข้ามตัวกรองแท็บ ค้นเจอทุกแถบ (เหมือนหมวดออเดอร์)
+    const matchTab = !!q || tab === 'all' || r.status === tab
     return matchSearch && matchTab
   }).map(live)
 
