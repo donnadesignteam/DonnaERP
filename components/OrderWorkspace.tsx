@@ -22,6 +22,7 @@ import { prevOf } from '@/lib/trackedDb'
 import { stampInsert, oeUpdate, oeInsert, instUpdate, instInsert, claimUpdate } from '@/lib/adminActor'
 import { useConfirm } from '@/components/ConfirmDialog'
 import AnchoredMenu from '@/components/AnchoredMenu'
+import { usePrintColumns, PrintColumnPicker, printTableHtml, type PrintCol } from '@/components/PrintColumnPicker'
 import { WORK_TYPE_OPTIONS, ZONES, TECHS as INST_TECHS, TECH_BY_ZONE, statusOptions, statusLabel, normStatus, rowColor as instColor } from '@/lib/installMeta'
 import { orderPatchFromInstall } from '@/lib/installOrderSync'
 import { useStableView } from '@/lib/useStableView'
@@ -568,6 +569,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [printModal, setPrintModal] = useState(false)
   const [printMaxDays, setPrintMaxDays] = useState(3)
   const [printScope, setPrintScope] = useState<'tab' | 'days'>('tab')   // ปริ้นตารางตามแท็บที่เปิดอยู่ / ตามวันที่เหลือ
+  const [printColStep, setPrintColStep] = useState(false)   // กดปริ้นแบบตารางแล้ว → ขั้นถัดไปคือเลือกคอลัมน์
+  const [printModalCols, setPrintModalCols] = useState(false)   // ป๊อปอัปปริ้นตาราง — ขั้นเลือกคอลัมน์
   // id ใบออเดอร์ที่ในปฏิทินไม่ใช่ "งานติดตั้ง" (งานวัดหน้างาน ฯลฯ) — ซ่อนจากหมวดออเดอร์
   const [nonOrderIds, setNonOrderIds] = useState<Set<string>>(new Set())
   // ข้อมูลจากปฏิทินติดตั้ง (installations) ของใบออเดอร์ที่ผูกกันไว้ — orderId → แถวติดตั้ง
@@ -581,6 +584,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const colTabKey = (quickFilter === 'claim' || quickFilter === 'shipped' || quickFilter === 'cancelled') ? 'all' : quickFilter
   const tabHidden = hiddenCols[colTabKey] ?? []
   const showCol = (id: string) => !tabHidden.includes(id)
+  const printCols = usePrintColumns(`${scope}-${colTabKey}`)   // เลือกคอลัมน์ที่จะเอาลงใบปริ้นแบบตาราง (จำแยกตามแท็บ)
   const toggleCol = (id: string) => setHiddenCols(prev => {
     const cur = prev[colTabKey] ?? []
     const next = cur.includes(id) ? cur.filter(c => c !== id) : [...cur, id]
@@ -2222,6 +2226,99 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     })
   }
 
+  // คอลัมน์ของใบปริ้นแบบตาราง — ชุดเดียวกับคอลัมน์บนหน้าจอของแท็บนั้น (COLUMN_DEFS) ติ๊กเลือกได้ในป๊อปอัปปริ้น
+  const printColDefs = (): PrintCol<Entry>[] => {
+    const esc = (v: unknown) => String(v ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!))
+    const dOnly = (v?: string | null) => v ? new Date(v).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''
+    const stamp = (v?: string | null) => v
+      ? `${new Date(v).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} ${new Date(v).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`
+      : ''
+    const money = (v: number | null | undefined) => v != null ? Number(v).toLocaleString('th-TH') : '-'
+    // วันกำหนดที่แท็บนั้นยึด — แพลตฟอร์ม=วันต้องส่ง · ทั้งหมด=effectiveDueDate · งานนอก/ติดตั้ง=deadline
+    const effOf = (r: Entry) => colTabKey === 'platform' ? effShipping(r)
+      : colTabKey === 'all' ? effectiveDueDate(r)
+      : (r.deadline || '')
+    const daysOf = (r: Entry) => { const d = effOf(r); return d ? daysRemaining(d) : null }
+
+    const cellById: Record<string, (r: Entry) => string> = {
+      days: r => {
+        if (r.order_status === 'ยกเลิก') return 'ยกเลิก'
+        if (r.order_status === 'จัดส่งแล้ว') return 'งานเสร็จแล้ว'
+        if (r.is_urgent) return 'งานเสร็จ'
+        if (r.order_status === 'เสร็จสิ้น') return 'เสร็จสิ้น'
+        const d = daysOf(r)
+        if (d === null) return 'รอกำหนด'
+        return d === 0 && colTabKey === 'install' ? 'ต้องติดตั้งวันนี้' : daysLabel(d)
+      },
+      serial: r => esc(instMeta[r.id]?.serial_no || '-'),
+      deadline: r => {
+        if (r.order_status === 'จัดส่งแล้ว') return 'จัดส่งแล้ว'
+        if (colTabKey === 'install') {
+          if (installStatusOf(r) === 'ติดตั้งแล้ว') return 'ติดตั้งแล้ว'
+          if (!r.deadline) return 'รอนัดหมาย'
+          return esc(`${dOnly(r.deadline)}${r.install_time ? ` ${r.install_time} น.` : ''}`)
+        }
+        if (colTabKey === 'all' && !(OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation)) return esc(effShipping(r) || 'รอกำหนด')
+        return esc(dOnly(r.deadline) || 'รอกำหนด')
+      },
+      shipping: r => r.order_status === 'จัดส่งแล้ว' ? 'จัดส่งแล้ว' : esc(effShipping(r) || '-'),
+      work: r => esc(instMeta[r.id]?.work_type || '-'),
+      order_number: r => esc(r.order_number || '-'),
+      customer: r => esc(r.customer_name || '-'),
+      platform: r => esc(r.platform || '-'),
+      courier: r => r.is_installation && colTabKey === 'all' ? 'งานติดตั้ง' : esc(r.courier || '-'),
+      price: r => r.price ? esc(`${money(r.price)} ฿${r.net_income != null ? ` (รับจริง ${money(r.net_income)})` : ''}`) : '-',
+      total: r => money(r.price),
+      items: r => formatItemLines(r.items ?? []).map(l => esc(l)).join('<br>') || '-',
+      payment: r => esc(r.payment_status || 'ยังไม่ชำระ'),
+      paid: r => (!r.payment_status || r.payment_status === 'ยังไม่ชำระ') ? '-'
+        : r.payment_status === 'ชำระครบ' && r.paid_amount == null ? money(r.price)
+        : money(r.paid_amount),
+      paybefore: r => {
+        if (r.payment_status === 'ชำระครบ' || !r.payment_status || r.payment_status === 'ยังไม่ชำระ') return '-'
+        const auto = r.paid_amount != null && r.price != null ? Math.max(0, Number(r.price) - Number(r.paid_amount))
+          : r.payment_status === 'มัดจำ50%' && r.price ? r.price / 2 : null
+        return auto != null ? money(auto) : money(r.deposit)
+      },
+      assigned: r => esc(r.order_assigned || 'รออัพเดท'),
+      admin: r => esc(r.admin_name || '-'),
+      tech: r => esc(r.technician || '-'),
+      status: r => esc(r.order_status || '-'),
+      dropoff: r => r.is_dropoff ? '✓' : '-',
+      done: r => r.is_urgent ? esc(`✓ ${stamp(r.done_at)}`.trim()) : '-',
+      shipped: r => r.order_status === 'จัดส่งแล้ว' ? esc(`✓ ${stamp(r.shipped_at)}`.trim()) : '-',
+      installed: r => esc(installStatusOf(r) || '-'),
+      inststatus: r => { const ins = instMeta[r.id]; return ins ? esc(statusLabel(normStatus(ins.installation_status))) : '-' },
+      rail: r => !hasRail(r) ? '-' : r.rail_packed ? esc(`✓ ${stamp(r.rail_packed_at)}`.trim()) : 'ยังไม่แพ็ค',
+      created: r => esc(dOnly(r.entry_date) || '-'),
+      outsource: r => esc(r.outsource || '-'),
+      province: r => esc(r.province || '-'),
+      zone: r => esc(instMeta[r.id]?.install_zone || '-'),
+      insttech: r => esc(instMeta[r.id]?.technician_type || '-'),
+      address: r => esc(r.address || '-'),
+      ship_address: r => esc(r.address || '-'),
+      phone: r => esc(r.phone || '-'),
+      maps: r => esc(r.location_link || '-'),
+      pay_date: r => esc(dOnly(r.entry_date) || 'ยังไม่ชำระ'),
+      ship_date: r => esc(dOnly(r.deadline) || '-'),
+      notes: r => esc(r.notes || '-'),
+      updated: r => esc(stamp(r.updated_at) || '-'),
+    }
+
+    // คอลัมน์ที่ติ๊กมาให้ตั้งแต่แรก = ชุดเดิมของใบปริ้นตาราง ที่เหลือเลือกเพิ่มเองได้
+    const DEFAULT_ON = ['days', 'deadline', 'shipping', 'order_number', 'customer', 'tech', 'platform', 'status', 'courier']
+    // คอลัมน์ "ปริ้น" เป็นปุ่มบนหน้าจอ ไม่มีความหมายบนกระดาษ
+    return (COLUMN_DEFS[colTabKey] ?? []).filter(c => c.id !== 'print' && cellById[c.id]).map(c => ({
+      key: c.id,
+      label: c.label,
+      off: !DEFAULT_ON.includes(c.id),
+      cell: cellById[c.id],
+      cls: c.id === 'days' ? (r: Entry) => { const d = daysOf(r); return d === null ? '' : d <= 0 ? 'dr' : d <= 10 ? 'do' : 'dg' } : undefined,
+    }))
+  }
+  const printColsOn = printColDefs().filter(c => printCols.isOn(c)).length   // ติ๊กไว้กี่คอลัมน์ (0 = ห้ามปริ้น ใบจะว่าง)
+
+
   async function openPrintWindow(toPrint: Entry[], title: string, mode: 'auto' | 'table' | 'form' = 'auto') {
     const escHtml = (v: unknown) => String(v ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!))
 
@@ -2253,25 +2350,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const body = asForm
       ? toPrint.map((r, i) => `<div class="order"><pre class="copy" contenteditable="true" spellcheck="false" data-id="${r.id}">${formatOrderHtml(r)}</pre>${qrs[i] ? `<div class="qr-box"><img class="qr" src="${qrs[i]}"/></div>` : ''}</div>`).join('')
       : `<h2>${escHtml(title)} (${toPrint.length} รายการ)</h2>
-<table>
-<thead><tr>
-  <th>#</th><th>วันผลิตที่เหลือ</th><th>${quickFilter === 'install' ? 'วันที่นัดหมาย' : 'ต้องจัดส่งภายใน'}</th><th>เลขคำสั่งซื้อ</th><th>ลูกค้า</th><th>ช่างที่รับผิดชอบ</th><th>แพลตฟอร์ม</th><th>สถานะงาน</th><th>บริษัทขนส่ง</th>
-</tr></thead>
-<tbody>
-${toPrint.map((r, i) => {
-  // งานนอก/งานติดตั้ง/งานเคลม ไม่มี shipping_datetime — ยึดวันกำหนด (deadline) เหมือนที่โชว์ในตาราง
-  const useDeadline = r.is_installation || isClaimEntry(r) || OUTSIDE_PLATFORMS.includes(r.platform ?? '')
-  const dateStr = useDeadline ? (r.deadline || '') : (effShipping(r) || '')
-  const dateText = !dateStr ? '-'
-    : useDeadline ? `${thaiDMY(dateStr)}${r.is_installation && r.install_time ? ` ${r.install_time} น.` : ''}`
-    : dateStr
-  const d = dateStr ? daysRemaining(dateStr) : null
-  const cls = d !== null ? (d <= 0 ? 'dr' : d <= 10 ? 'do' : 'dg') : ''
-  const dtext = d !== null ? daysLabel(d) : '-'
-  return `<tr><td>${i + 1}</td><td class="${cls}">${dtext}</td><td>${dateText}</td><td>${r.order_number || '-'}</td><td>${r.customer_name || '-'}</td><td>${r.technician || '-'}</td><td>${r.platform || '-'}</td><td>${r.order_status || '-'}</td><td>${r.courier || '-'}</td></tr>`
-}).join('\n')}
-</tbody>
-</table>`
+${printTableHtml(toPrint, printCols.pick(printColDefs()))}`
 
     const html = `<!DOCTYPE html>
 <html lang="th">
@@ -2365,6 +2444,7 @@ ${body}
   const requestPrint = (list: Entry[]) => {
     if (list.length === 0) return
     if (list.length === 1) { openPrintWindow(list, printTitle(list)); return }
+    setPrintColStep(false)
     setPrintAsk(list)
   }
 
@@ -2455,7 +2535,7 @@ ${body}
           <button onClick={() => {
               if (selectedIds.size > 0) {
                 requestPrint(rows.filter(r => selectedIds.has(r.id)))
-              } else { setPrintModal(true) }
+              } else { setPrintModalCols(false); setPrintModal(true) }
             }}
             style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
             🖨️ ปริ้น{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
@@ -4306,22 +4386,38 @@ ${body}
 
       {/* ถามรูปแบบการปริ้น เมื่อเลือกหลายรายการ */}
       {printAsk && (
-        <div onClick={() => setPrintAsk(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 24 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 24, width: '100%', maxWidth: 380 }}>
+        <div onClick={() => { setPrintAsk(null); setPrintColStep(false) }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 24 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 24, width: '100%', maxWidth: printColStep ? 460 : 380 }}>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>ปริ้น {printAsk.length} รายการ</h3>
-            <p style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 20 }}>เลือกรูปแบบการปริ้น</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <button onClick={() => { const l = printAsk; setPrintAsk(null); openPrintWindow(l, printTitle(l), 'table') }}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: 'var(--ink)', textAlign: 'left' }}>
-                📋 ปริ้นแบบตาราง<span style={{ fontWeight: 400, color: 'var(--ink-3)', fontSize: 12 }}>— สรุปรวมในหน้าเดียว</span>
-              </button>
-              <button onClick={() => { const l = printAsk; setPrintAsk(null); openPrintWindow(l, printTitle(l), 'form') }}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: 'var(--ink)', textAlign: 'left' }}>
-                🧾 ปริ้นแบบออเดอร์<span style={{ fontWeight: 400, color: 'var(--ink-3)', fontSize: 12 }}>— ฟอร์มแยกใบ/แผ่น</span>
-              </button>
-            </div>
-            <button onClick={() => setPrintAsk(null)}
-              style={{ width: '100%', marginTop: 16, padding: '9px', borderRadius: 10, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, color: 'var(--ink-3)' }}>ยกเลิก</button>
+            {printColStep ? (
+              /* ขั้นที่ 2 (เลือกตารางแล้ว) — เลือกคอลัมน์ที่จะเอาลงใบ */
+              <>
+                <p style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 14 }}>เลือกคอลัมน์ที่จะเอาลงตาราง</p>
+                <PrintColumnPicker cols={printColDefs()} state={printCols} />
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={() => setPrintColStep(false)}
+                    style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14, color: 'var(--ink-3)' }}>ย้อนกลับ</button>
+                  <button disabled={printColsOn === 0} onClick={() => { const l = printAsk; setPrintAsk(null); setPrintColStep(false); openPrintWindow(l, printTitle(l), 'table') }}
+                    style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: printColsOn === 0 ? 'var(--border)' : 'var(--blue)', color: '#fff', cursor: printColsOn === 0 ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 600 }}>🖨️ ปริ้นตาราง</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 20 }}>เลือกรูปแบบการปริ้น</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <button onClick={() => setPrintColStep(true)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: 'var(--ink)', textAlign: 'left' }}>
+                    📋 ปริ้นแบบตาราง<span style={{ fontWeight: 400, color: 'var(--ink-3)', fontSize: 12 }}>— สรุปรวมในหน้าเดียว</span>
+                  </button>
+                  <button onClick={() => { const l = printAsk; setPrintAsk(null); openPrintWindow(l, printTitle(l), 'form') }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: 'var(--ink)', textAlign: 'left' }}>
+                    🧾 ปริ้นแบบออเดอร์<span style={{ fontWeight: 400, color: 'var(--ink-3)', fontSize: 12 }}>— ฟอร์มแยกใบ/แผ่น</span>
+                  </button>
+                </div>
+                <button onClick={() => setPrintAsk(null)}
+                  style={{ width: '100%', marginTop: 16, padding: '9px', borderRadius: 10, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, color: 'var(--ink-3)' }}>ยกเลิก</button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -4836,41 +4932,56 @@ ${body}
       {/* Print modal */}
       {printModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: 380, padding: '28px 32px' }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 16 }}>ปริ้นออเดอร์</h3>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: printModalCols ? 460 : 380, padding: '28px 32px' }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 16 }}>ปริ้นออเดอร์{printModalCols ? ' — เลือกคอลัมน์' : ''}</h3>
 
-            {/* เลือกว่าจะปริ้นอะไร — ตั้งต้นคือตารางของแท็บที่เปิดอยู่ */}
-            <div style={{ display: 'grid', gap: 8, marginBottom: 18 }}>
-              <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', cursor: 'pointer', border: `1px solid ${printScope === 'tab' ? 'var(--blue)' : 'var(--border)'}`, borderRadius: 10, padding: '10px 12px' }}>
-                <input type="radio" checked={printScope === 'tab'} onChange={() => setPrintScope('tab')} style={{ marginTop: 2 }} />
-                <span>
-                  <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>ตารางที่เห็นอยู่ · {tabLabel}</span>
-                  <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>
-                    {activeDisplayed.length} รายการ (ตามแท็บ + ตัวกรอง{month === 'all' ? '' : ` + ${monthLabel(month)}`})
+            {printModalCols ? (
+              /* ขั้นที่ 2 — เลือกคอลัมน์ที่จะเอาลงตาราง */
+              <>
+                <PrintColumnPicker cols={printColDefs()} state={printCols} />
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={() => setPrintModalCols(false)}
+                    style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14, color: 'var(--ink-3)' }}>ย้อนกลับ</button>
+                  <button disabled={printColsOn === 0} onClick={() => { setPrintModalCols(false); doPrint() }}
+                    style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: printColsOn === 0 ? 'var(--border)' : 'var(--blue)', color: '#fff', cursor: printColsOn === 0 ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 600 }}>🖨️ ปริ้น</button>
+                </div>
+              </>
+            ) : (
+              <>
+              {/* เลือกว่าจะปริ้นอะไร — ตั้งต้นคือตารางของแท็บที่เปิดอยู่ */}
+              <div style={{ display: 'grid', gap: 8, marginBottom: 18 }}>
+                <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', cursor: 'pointer', border: `1px solid ${printScope === 'tab' ? 'var(--blue)' : 'var(--border)'}`, borderRadius: 10, padding: '10px 12px' }}>
+                  <input type="radio" checked={printScope === 'tab'} onChange={() => setPrintScope('tab')} style={{ marginTop: 2 }} />
+                  <span>
+                    <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>ตารางที่เห็นอยู่ · {tabLabel}</span>
+                    <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>
+                      {activeDisplayed.length} รายการ (ตามแท็บ + ตัวกรอง{month === 'all' ? '' : ` + ${monthLabel(month)}`})
+                    </span>
                   </span>
-                </span>
-              </label>
-              <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', cursor: 'pointer', border: `1px solid ${printScope === 'days' ? 'var(--blue)' : 'var(--border)'}`, borderRadius: 10, padding: '10px 12px' }}>
-                <input type="radio" checked={printScope === 'days'} onChange={() => setPrintScope('days')} style={{ marginTop: 2 }} />
-                <span style={{ flex: 1 }}>
-                  <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>เฉพาะงานที่ใกล้ถึงกำหนดส่ง</span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-                    <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>เหลือน้อยกว่า</span>
-                    <input type="number" min={0} max={99} value={printMaxDays}
-                      onClick={e => { e.stopPropagation(); setPrintScope('days') }}
-                      onChange={e => setPrintMaxDays(Number(e.target.value))}
-                      style={{ width: 62, border: '1px solid var(--border)', borderRadius: 8, padding: '5px 8px', fontSize: 15, fontWeight: 700, outline: 'none', textAlign: 'center' }} />
-                    <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>วัน · {getPrintRows(printMaxDays).length} รายการ</span>
+                </label>
+                <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', cursor: 'pointer', border: `1px solid ${printScope === 'days' ? 'var(--blue)' : 'var(--border)'}`, borderRadius: 10, padding: '10px 12px' }}>
+                  <input type="radio" checked={printScope === 'days'} onChange={() => setPrintScope('days')} style={{ marginTop: 2 }} />
+                  <span style={{ flex: 1 }}>
+                    <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>เฉพาะงานที่ใกล้ถึงกำหนดส่ง</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                      <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>เหลือน้อยกว่า</span>
+                      <input type="number" min={0} max={99} value={printMaxDays}
+                        onClick={e => { e.stopPropagation(); setPrintScope('days') }}
+                        onChange={e => setPrintMaxDays(Number(e.target.value))}
+                        style={{ width: 62, border: '1px solid var(--border)', borderRadius: 8, padding: '5px 8px', fontSize: 15, fontWeight: 700, outline: 'none', textAlign: 'center' }} />
+                      <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>วัน · {getPrintRows(printMaxDays).length} รายการ</span>
+                    </span>
                   </span>
-                </span>
-              </label>
-            </div>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setPrintModal(false)}
-                style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ยกเลิก</button>
-              <button onClick={doPrint}
-                style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>🖨️ ปริ้น</button>
-            </div>
+                </label>
+              </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={() => { setPrintModal(false); setPrintModalCols(false) }}
+                    style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ยกเลิก</button>
+                  <button onClick={() => setPrintModalCols(true)}
+                    style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>ถัดไป · เลือกคอลัมน์</button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

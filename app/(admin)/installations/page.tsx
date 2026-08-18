@@ -14,6 +14,7 @@ import { prevOf } from '@/lib/trackedDb'
 import { useStableView } from '@/lib/useStableView'
 import { oeUpdate, instUpdate, instInsert } from '@/lib/adminActor'
 import { useConfirm } from '@/components/ConfirmDialog'
+import { usePrintColumns, PrintColumnPicker, printTableHtml, type PrintCol } from '@/components/PrintColumnPicker'
 import { createOrderForInstall, orderPatchFromInstall } from '@/lib/installOrderSync'
 import { formatOrderLines, linesToHtml, openFormPrintWindow, escPrintHtml, type PrintLine, type PrintableOrder } from '@/lib/orderPrint'
 import QRCode from 'qrcode'
@@ -171,6 +172,8 @@ export default function InstallationsPage() {
   const [pasteText, setPasteText] = useState('')
   const [parsing, setParsing] = useState(false)
   const [printAsk, setPrintAsk] = useState(false)   // ป๊อปอัปถามก่อนปริ้น: ตารางรายการ / ปฏิทิน
+  const printCols = usePrintColumns('installations')   // เลือกคอลัมน์ที่จะเอาลงใบปริ้นตารางรายการ
+  const [printColStep, setPrintColStep] = useState(false)   // กดตารางรายการแล้ว → ขั้นถัดไปคือเลือกคอลัมน์
   const [quoteDragOver, setQuoteDragOver] = useState(false)   // ลาก PDF ใบเสนอราคามาวางในกล่องเพิ่มรายการติดตั้ง
   const [parseError, setParseError] = useState('')
   const [actionMenu, setActionMenu] = useState<{ id: string; top: number; left: number } | null>(null)
@@ -574,6 +577,38 @@ export default function InstallationsPage() {
   }
 
   // ปริ้นตารางรายการ (แบบเดียวกับปุ่มปริ้น "ตารางที่เห็นอยู่" ในหมวดออเดอร์) — ตามเดือน/โซน/คำค้นที่กรองอยู่
+  // คอลัมน์ของใบปริ้นตารางรายการ — ชุดเดียวกับคอลัมน์บนหน้าจอ (off: true = ไม่ติ๊กมาให้ตั้งแต่แรก)
+  const printColDefs = (): PrintCol<Installation>[] => {
+    const esc = (v: unknown) => escPrintHtml(String(v ?? ''))
+    return [
+      { key: 'serial', label: 'Serial', cell: r => esc(r.serial_no) },
+      { key: 'appt', label: 'นัดหมาย', cell: r => {
+          const dt = r.appointment_datetime ? new Date(r.appointment_datetime) : null
+          return dt && !isNaN(dt.getTime())
+            ? esc(`${String(dt.getDate()).padStart(2, '0')}/${dt.getMonth() + 1}/${dt.getFullYear()} ${dt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`)
+            : '-'
+        } },
+      { key: 'work_type', label: 'งาน', cell: r => esc(r.work_type) },
+      { key: 'customer', label: 'ลูกค้า', cell: r => esc(r.customer_real_name || r.customer_id) },
+      { key: 'items', label: 'รายการ', cell: r => formatItemLines(r.source_order_id ? (orderItems[r.source_order_id] ?? []) : []).join('<br>') || '-' },
+      { key: 'platform', label: 'แพลตฟอร์ม', cell: r => esc(r.platform) },
+      { key: 'province', label: 'จังหวัด', cell: r => esc(r.province) },
+      { key: 'zone', label: 'โซน', cell: r => esc(r.install_zone) },
+      { key: 'tech', label: 'ช่าง', cell: r => esc(r.technician_type) },
+      { key: 'phone', label: 'เบอร์', cell: r => esc(r.phone) },
+      { key: 'status', label: 'สถานะ', cell: r => esc(statusLabel(normStatus(r.installation_status))) },
+      { key: 'notes', label: 'หมายเหตุ', cell: r => esc(r.notes) },
+      { key: 'work_details', label: 'รายละเอียดงาน', off: true, cell: r => esc(r.work_details) },
+      { key: 'maps', label: 'Maps', off: true, cell: r => esc(r.location_link) },
+      { key: 'price', label: 'ราคา', off: true, cell: r => r.price != null ? esc(Number(r.price).toLocaleString('th-TH')) : '-' },
+      { key: 'updated', label: 'แก้ไขล่าสุด', off: true, cell: r => r.updated_at
+          ? esc(`${new Date(r.updated_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} ${new Date(r.updated_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`)
+          : '-' },
+    ]
+  }
+
+  const printColsOn = printColDefs().filter(c => printCols.isOn(c)).length   // ติ๊กไว้กี่คอลัมน์ (0 = ห้ามปริ้น ใบจะว่าง)
+
   const printTable = () => {
     const toPrint = displayed
     if (toPrint.length === 0) { setError('ไม่มีรายการให้ปริ้น'); return }
@@ -582,18 +617,7 @@ export default function InstallationsPage() {
     const esc = (v: unknown) => escPrintHtml(String(v ?? ''))
     const monthTitle = listFilter === 'all' ? 'ทุกเดือน' : listFilter
     const title = `งานติดตั้ง — ${monthTitle}${zoneFilter.length ? ` · โซน${zoneFilter.join(' + ')}` : ''}`
-    const rowsHtml = toPrint.map((ins, i) => {
-      const dt = ins.appointment_datetime ? new Date(ins.appointment_datetime) : null
-      const appt = dt && !isNaN(dt.getTime())
-        ? `${String(dt.getDate()).padStart(2, '0')}/${dt.getMonth() + 1}/${dt.getFullYear()} ${dt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`
-        : '-'
-      const items = ins.source_order_id ? (orderItems[ins.source_order_id] ?? []) : []
-      const itemText = formatItemLines(items).join('<br>') || '-'
-      return `<tr><td>${i + 1}</td><td>${esc(ins.serial_no)}</td><td>${esc(appt)}</td><td>${esc(ins.work_type)}</td>`
-        + `<td>${esc(ins.customer_real_name || ins.customer_id)}</td><td>${itemText}</td><td>${esc(ins.platform)}</td>`
-        + `<td>${esc(ins.province)}</td><td>${esc(ins.install_zone)}</td><td>${esc(ins.technician_type)}</td>`
-        + `<td>${esc(ins.phone)}</td><td>${esc(statusLabel(normStatus(ins.installation_status)))}</td><td>${esc(ins.notes)}</td></tr>`
-    }).join('')
+    const tableHtml = printTableHtml(toPrint, printCols.pick(printColDefs()))
     win.document.write(`<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><title>ปริ้นงานติดตั้ง</title><style>
       * { box-sizing: border-box; }
       body { font-family: 'Sarabun', 'Noto Sans Thai', sans-serif; font-size: 12px; color: #000; margin: 0; padding: 16px; }
@@ -608,8 +632,7 @@ export default function InstallationsPage() {
     </style></head><body>
     <div class="toolbar"><button onclick="window.print()">ปริ้น</button></div>
     <h2>${esc(title)} (${toPrint.length} รายการ)</h2>
-    <table><thead><tr><th>#</th><th>Serial</th><th>นัดหมาย</th><th>งาน</th><th>ลูกค้า</th><th>รายการ</th><th>แพลตฟอร์ม</th><th>จังหวัด</th><th>โซน</th><th>ช่าง</th><th>เบอร์</th><th>สถานะ</th><th>หมายเหตุ</th></tr></thead>
-    <tbody>${rowsHtml}</tbody></table></body></html>`)
+    ${tableHtml}</body></html>`)
     win.document.close()
   }
 
@@ -775,7 +798,7 @@ export default function InstallationsPage() {
             style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border-2)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
             สรุปงานติดตั้ง
           </button>
-          <button onClick={() => setPrintAsk(true)}
+          <button onClick={() => { setPrintColStep(false); setPrintAsk(true) }}
             style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border-2)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
             🖨️ ปริ้น
           </button>
@@ -1024,23 +1047,39 @@ export default function InstallationsPage() {
 
       {/* ปริ้น — เลือกก่อนว่าจะเอาตารางรายการหรือปฏิทิน */}
       {printAsk && (
-        <div onClick={() => setPrintAsk(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 24 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 26, width: '100%', maxWidth: 380 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 14 }}>ปริ้นอะไร</h3>
-            <div style={{ display: 'grid', gap: 10 }}>
-              <button onClick={() => { setPrintAsk(false); printTable() }}
-                style={{ display: 'block', width: '100%', textAlign: 'left', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', background: 'var(--bg)', cursor: 'pointer' }}>
-                <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>ตารางรายการ</span>
-                <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>{displayed.length} รายการ (ตามเดือน{zoneFilter.length ? ` + โซน${zoneFilter.join(' + ')}` : ''}{search.trim() ? ' + คำค้น' : ''})</span>
-              </button>
-              <button onClick={() => { setPrintAsk(false); setTimeout(() => window.print(), 50) }}
-                style={{ display: 'block', width: '100%', textAlign: 'left', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', background: 'var(--bg)', cursor: 'pointer' }}>
-                <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>ปฏิทิน</span>
-                <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>ปฏิทินเดือนที่เปิดอยู่บนหน้าจอ</span>
-              </button>
-            </div>
-            <button onClick={() => setPrintAsk(false)}
-              style={{ marginTop: 14, width: '100%', padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontSize: 14, color: 'var(--ink-3)' }}>ยกเลิก</button>
+        <div onClick={() => { setPrintAsk(false); setPrintColStep(false) }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 24 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 26, width: '100%', maxWidth: printColStep ? 460 : 380 }}>
+            {printColStep ? (
+              /* ขั้นที่ 2 (เลือกตารางรายการแล้ว) — เลือกคอลัมน์ที่จะเอาลงตาราง */
+              <>
+                <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 14 }}>เลือกคอลัมน์ที่จะเอาลงตาราง</h3>
+                <PrintColumnPicker cols={printColDefs()} state={printCols} />
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={() => setPrintColStep(false)}
+                    style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14, color: 'var(--ink-3)' }}>ย้อนกลับ</button>
+                  <button disabled={printColsOn === 0} onClick={() => { setPrintAsk(false); setPrintColStep(false); printTable() }}
+                    style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: printColsOn === 0 ? 'var(--border)' : 'var(--blue)', color: '#fff', cursor: printColsOn === 0 ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 600 }}>🖨 ปริ้นตาราง</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 14 }}>ปริ้นอะไร</h3>
+                <div style={{ display: 'grid', gap: 10 }}>
+                  <button onClick={() => setPrintColStep(true)}
+                    style={{ display: 'block', width: '100%', textAlign: 'left', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', background: 'var(--bg)', cursor: 'pointer' }}>
+                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>ตารางรายการ</span>
+                    <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>{displayed.length} รายการ (ตามเดือน{zoneFilter.length ? ` + โซน${zoneFilter.join(' + ')}` : ''}{search.trim() ? ' + คำค้น' : ''})</span>
+                  </button>
+                  <button onClick={() => { setPrintAsk(false); setTimeout(() => window.print(), 50) }}
+                    style={{ display: 'block', width: '100%', textAlign: 'left', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', background: 'var(--bg)', cursor: 'pointer' }}>
+                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>ปฏิทิน</span>
+                    <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>ปฏิทินเดือนที่เปิดอยู่บนหน้าจอ</span>
+                  </button>
+                </div>
+                <button onClick={() => setPrintAsk(false)}
+                  style={{ marginTop: 14, width: '100%', padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontSize: 14, color: 'var(--ink-3)' }}>ยกเลิก</button>
+              </>
+            )}
           </div>
         </div>
       )}

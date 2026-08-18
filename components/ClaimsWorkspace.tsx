@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { claimUpdate, claimInsert } from '@/lib/adminActor'
 import { useConfirm } from '@/components/ConfirmDialog'
 import AnchoredMenu from '@/components/AnchoredMenu'
+import { usePrintColumns, PrintColumnPicker, printTableHtml, type PrintCol } from '@/components/PrintColumnPicker'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { recordAction } from '@/lib/history'
@@ -206,6 +207,8 @@ export default function ClaimsWorkspace() {
   const [itemsParsing, setItemsParsing] = useState(false)
   const [itemsParseErr, setItemsParseErr] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const printCols = usePrintColumns('claims')   // เลือกคอลัมน์ที่จะเอาลงใบปริ้นแบบตาราง
+  const [printColStep, setPrintColStep] = useState(false)   // กดตารางสรุปแล้ว → ขั้นถัดไปคือเลือกคอลัมน์
   const [printAsk, setPrintAsk] = useState<Claim[] | null>(null)   // ปริ้นหลายใบ → ถามก่อนว่าตาราง/ฟอร์ม
   const [shipModal, setShipModal] = useState<{ id: string; parcels: { no: string; carrier: string; manual: boolean }[] } | null>(null)
   const [staffNames, setStaffNames] = useState<string[]>(ADMINS_FALLBACK)
@@ -444,6 +447,44 @@ export default function ClaimsWorkspace() {
 
   // ปริ้น: หน้าต่างใหม่ + ปุ่มปริ้นในหน้านั้น (แก้ข้อความในใบก่อนปริ้นได้)
   // ใบแบบฟอร์มมี QR ให้ทีมผลิตสแกนเดินสถานะงานเคลม (/scan?c=<id> → RPC claim_scan_advance ใน sql/claim_scan.sql)
+  // คอลัมน์ของใบปริ้นแบบตาราง — ชุดเดียวกับคอลัมน์บนหน้าจอ (off: true = ไม่ติ๊กมาให้ตั้งแต่แรก)
+  const printColDefs = (): PrintCol<Claim>[] => {
+    const esc = (v: unknown) => String(v ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!))
+    const dOnly = (v?: string | null) => v ? new Date(v).toLocaleDateString('th-TH-u-ca-gregory', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '-'
+    const stamp = (v?: string | null) => v
+      ? `${new Date(v).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} ${new Date(v).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`
+      : '-'
+    const money = (v: number | null | undefined) => v != null ? Number(v).toLocaleString('th-TH') : '-'
+    return [
+      { key: 'claim_date', label: 'วันที่', cell: r => esc(dOnly(r.claim_date)) },
+      { key: 'deadline', label: 'กำหนดส่ง', off: true, cell: r => esc(dOnly(r.deadline)) },
+      { key: 'channel', label: 'แพลตฟอร์ม', cell: r => esc(r.channel || '-') },
+      { key: 'customer', label: 'ลูกค้า', cell: r => esc(r.customer_username || '-') },
+      { key: 'original_order', label: 'ออเดอร์เดิม', cell: r => esc(r.original_order_number || '-') },
+      { key: 'claim_type', label: 'ประเภท', cell: r => esc(r.claim_type || '-') },
+      { key: 'fault_by', label: 'ผิดโดย', off: true, cell: r => esc(r.fault_by || '-') },
+      { key: 'fix_method', label: 'วิธีแก้ไข', off: true, cell: r => esc(r.fix_method || '-') },
+      { key: 'cause', label: 'สาเหตุ', cell: r => esc(r.cause || '-') },
+      { key: 'items', label: 'รายการ', off: true, cell: r => (r.items ?? []).map(it => esc(`• ${itemLine(it)}`)).join('<br>') || '-' },
+      { key: 'refund', label: 'ยอดชำระ', off: true, cell: r => r.refund_amount != null
+          ? esc(`${r.money_direction === 'เก็บลูกค้า' ? '+' : '−'}${money(r.refund_amount)}${r.money_status ? ` (${r.money_status})` : ''}`)
+          : '-' },
+      { key: 'status', label: 'สถานะ', cell: r => esc(r.status || '-') },
+      { key: 'admin', label: 'แอดมิน', off: true, cell: r => esc(r.admin_name || '-') },
+      { key: 'technician', label: 'ช่าง', off: true, cell: r => esc(r.technician || '-') },
+      { key: 'closed', label: 'ปิดงาน', off: true, cell: r => r.closed_by || r.closed_at ? esc(`${r.closed_by || ''} ${r.closed_at ? dOnly(r.closed_at) : ''}`.trim()) : '-' },
+      { key: 'ship_name', label: 'ชื่อผู้รับ', cell: r => esc(r.ship_name || '-') },
+      { key: 'ship_address', label: 'ที่อยู่จัดส่ง', cell: r => esc(r.ship_address || '-') },
+      { key: 'courier', label: 'ขนส่ง', cell: r => esc(r.courier || '-') },
+      { key: 'shipped', label: 'จัดส่ง', off: true, cell: r => r.shipped_at ? esc(`✓ ${stamp(r.shipped_at)}`) : '-' },
+      { key: 'ship_back_cost', label: 'ค่าส่งกลับ', off: true, cell: r => money(r.ship_back_cost) },
+      { key: 'ship_return_cost', label: 'ค่าส่งคืน', off: true, cell: r => money(r.ship_return_cost) },
+      { key: 'estimated_price', label: 'ราคาประเมิน', off: true, cell: r => money(r.estimated_price) },
+      { key: 'notes', label: 'หมายเหตุ', off: true, cell: r => esc(r.notes || '-') },
+      { key: 'updated', label: 'แก้ไขล่าสุด', off: true, cell: r => esc(stamp(r.updated_at)) },
+    ]
+  }
+
   async function openPrintWindow(toPrint: Claim[], title: string, mode: 'auto' | 'table' | 'form' = 'auto') {
     const escHtml = (v: unknown) => String(v ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!))
     const asForm = mode === 'form' || (mode === 'auto' && toPrint.length === 1)
@@ -471,14 +512,7 @@ export default function ClaimsWorkspace() {
     const body = asForm
       ? toPrint.map((r, i) => `<div class="order"><pre class="copy">${formatClaimHtml(r)}</pre>${qrs[i] ? `<div class="qr-box"><img class="qr" src="${qrs[i]}"/><div class="qr-cap">สแกนเดินสถานะงานเคลม</div></div>` : ''}</div>`).join('')
       : `<h2>${escHtml(title)} (${toPrint.length} รายการ)</h2>
-<table>
-<thead><tr>
-  <th>#</th><th>วันที่</th><th>แพลตฟอร์ม</th><th>ลูกค้า</th><th>ออเดอร์เดิม</th><th>ประเภทเคลม</th><th>สาเหตุ</th><th>ชื่อผู้รับ</th><th>ที่อยู่จัดส่ง</th><th>ขนส่ง</th><th>สถานะ</th>
-</tr></thead>
-<tbody>
-${toPrint.map((r, i) => `<tr><td>${i + 1}</td><td>${r.claim_date ? escHtml(new Date(r.claim_date).toLocaleDateString('th-TH-u-ca-gregory', { day: '2-digit', month: '2-digit', year: '2-digit' })) : '-'}</td><td>${escHtml(r.channel || '-')}</td><td>${escHtml(r.customer_username || '-')}</td><td>${escHtml(r.original_order_number || '-')}</td><td>${escHtml(r.claim_type || '-')}</td><td>${escHtml(r.cause || '-')}</td><td>${escHtml(r.ship_name || '-')}</td><td>${escHtml(r.ship_address || '-')}</td><td>${escHtml(r.courier || '-')}</td><td>${escHtml(r.status || '-')}</td></tr>`).join('\n')}
-</tbody>
-</table>`
+${printTableHtml(toPrint, printCols.pick(printColDefs()))}`
 
     const html = `<!DOCTYPE html>
 <html lang="th">
@@ -524,10 +558,13 @@ ${body}
     win.document.open(); win.document.write(html); win.document.close(); win.focus()
   }
 
+  const printColsOn = printColDefs().filter(c => printCols.isOn(c)).length   // ติ๊กไว้กี่คอลัมน์ (0 = ห้ามปริ้น ใบจะว่าง)
+
   const printTitle = (list: Claim[]) => `ใบเคลม ${list.length} รายการ — ${new Date().toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' })}`
   const requestPrint = (list: Claim[]) => {
     if (list.length === 0) return
     if (list.length === 1) { void openPrintWindow(list, printTitle(list)); return }
+    setPrintColStep(false)
     setPrintAsk(list)
   }
 
@@ -1042,20 +1079,36 @@ ${body}
 
       {/* ปริ้นหลายใบ → ถามก่อนว่าตารางสรุปหรือฟอร์มรายใบ (เหมือนหมวดออเดอร์) */}
       {printAsk && (
-        <div onClick={() => setPrintAsk(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 24 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 24, width: '100%', maxWidth: 380 }}>
+        <div onClick={() => { setPrintAsk(null); setPrintColStep(false) }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 24 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 24, width: '100%', maxWidth: printColStep ? 460 : 380 }}>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>ปริ้น {printAsk.length} รายการ</h3>
-            <p style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 16 }}>เลือกรูปแบบเอกสาร</p>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => { const l = printAsk; setPrintAsk(null); void openPrintWindow(l, printTitle(l), 'table') }}
-                style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
-                ตารางสรุป
-              </button>
-              <button onClick={() => { const l = printAsk; setPrintAsk(null); void openPrintWindow(l, printTitle(l), 'form') }}
-                style={{ flex: 1, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#fff' }}>
-                ฟอร์มรายใบ
-              </button>
-            </div>
+            {printColStep ? (
+              /* ขั้นที่ 2 (เลือกตารางสรุปแล้ว) — เลือกคอลัมน์ที่จะเอาลงตาราง */
+              <>
+                <p style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 14 }}>เลือกคอลัมน์ที่จะเอาลงตาราง</p>
+                <PrintColumnPicker cols={printColDefs()} state={printCols} />
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={() => setPrintColStep(false)}
+                    style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 13, color: 'var(--ink-3)' }}>ย้อนกลับ</button>
+                  <button disabled={printColsOn === 0} onClick={() => { const l = printAsk; setPrintAsk(null); setPrintColStep(false); void openPrintWindow(l, printTitle(l), 'table') }}
+                    style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: printColsOn === 0 ? 'var(--border)' : 'var(--blue)', cursor: printColsOn === 0 ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 700, color: '#fff' }}>🖨 ปริ้นตาราง</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 16 }}>เลือกรูปแบบเอกสาร</p>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={() => setPrintColStep(true)}
+                    style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+                    ตารางสรุป
+                  </button>
+                  <button onClick={() => { const l = printAsk; setPrintAsk(null); void openPrintWindow(l, printTitle(l), 'form') }}
+                    style={{ flex: 1, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#fff' }}>
+                    ฟอร์มรายใบ
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
