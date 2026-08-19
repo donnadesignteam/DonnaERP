@@ -282,47 +282,6 @@ export default function MobileMe() {
               {miniStat('WOP ชม.', n(emp.wop.hours))}
             </div>
 
-            {/* งานเคลมที่ถูกลงชื่อในช่อง "ผิดโดย" — ขึ้นเฉพาะคนที่มีเคส */}
-            {claims.length > 0 && (
-              <>
-                <div style={sectionTitle}>งานเคลมที่ฉันถูกลงชื่อว่าผิด</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-                  {miniStat('ทั้งหมด', String(claims.length))}
-                  {miniStat('รอตรวจสอบ', String(claimStat.pending), CLAIM_REVIEW_COLOR[CLAIM_PENDING])}
-                  {miniStat('ผิดจริง', String(claimStat.guilty), 'var(--red)')}
-                </div>
-                <div style={{ ...card, marginTop: 10, padding: 0, overflow: 'hidden' }}>
-                  {shownClaims.map((c, i) => {
-                    const cur = c.fault_review || CLAIM_PENDING
-                    return (
-                      <div key={c.id} style={{ padding: '10px 13px', borderTop: i ? '1px solid var(--border)' : 'none' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {fmtDate(c.claim_date)}{c.customer_username ? ` · ${c.customer_username}` : ''}
-                          </span>
-                          <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: CLAIM_REVIEW_COLOR[cur] ?? 'var(--ink-3)' }}>{cur}</span>
-                        </div>
-                        <div style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 3 }}>
-                          {[c.original_order_number, c.claim_type].filter(Boolean).join(' · ') || '—'}
-                        </div>
-                        {(c.fault || c.fix_method) && (
-                          <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4, lineHeight: 1.55 }}>
-                            {c.fault ? `สาเหตุ: ${c.fault}` : ''}{c.fault && c.fix_method ? ' · ' : ''}{c.fix_method ? `วิธีแก้ไข: ${c.fix_method}` : ''}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                  {claims.length > 5 && (
-                    <button onClick={() => setAllClaims(v => !v)}
-                      style={{ width: '100%', minHeight: 40, border: 'none', borderTop: '1px solid var(--border)', background: 'transparent', color: 'var(--blue)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
-                      {allClaims ? 'ย่อ' : `ดูทั้งหมด (${claims.length})`}
-                    </button>
-                  )}
-                </div>
-              </>
-            )}
-
             <div style={sectionTitle}>งานที่ฉันสแกน</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               {miniStat('ทั้งหมด (ครั้ง)', String(scans.length), 'var(--blue)')}
@@ -403,6 +362,47 @@ export default function MobileMe() {
                   </div>
                 )}
               </div>
+            )}
+
+            {/* งานเคลมที่ถูกลงชื่อในช่อง "ผิดโดย" — ขึ้นเฉพาะคนที่มีเคส */}
+            {claims.length > 0 && (
+              <>
+                <div style={sectionTitle}>งานที่ทำผิด</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                  {miniStat('ทั้งหมด', String(claims.length))}
+                  {miniStat('รอตรวจสอบ', String(claimStat.pending), CLAIM_REVIEW_COLOR[CLAIM_PENDING])}
+                  {miniStat('ผิดจริง', String(claimStat.guilty), 'var(--red)')}
+                </div>
+                <div style={{ ...card, marginTop: 10, padding: 0, overflow: 'hidden' }}>
+                  {shownClaims.map((c, i) => {
+                    const cur = c.fault_review || CLAIM_PENDING
+                    return (
+                      <div key={c.id} style={{ padding: '10px 13px', borderTop: i ? '1px solid var(--border)' : 'none' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {fmtDate(c.claim_date)}{c.customer_username ? ` · ${c.customer_username}` : ''}
+                          </span>
+                          <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: CLAIM_REVIEW_COLOR[cur] ?? 'var(--ink-3)' }}>{cur}</span>
+                        </div>
+                        <div style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 3 }}>
+                          {[c.original_order_number, c.claim_type].filter(Boolean).join(' · ') || '—'}
+                        </div>
+                        {(c.fault || c.fix_method) && (
+                          <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4, lineHeight: 1.55 }}>
+                            {c.fault ? `สาเหตุ: ${c.fault}` : ''}{c.fault && c.fix_method ? ' · ' : ''}{c.fix_method ? `วิธีแก้ไข: ${c.fix_method}` : ''}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                  {claims.length > 5 && (
+                    <button onClick={() => setAllClaims(v => !v)}
+                      style={{ width: '100%', minHeight: 40, border: 'none', borderTop: '1px solid var(--border)', background: 'transparent', color: 'var(--blue)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+                      {allClaims ? 'ย่อ' : `ดูทั้งหมด (${claims.length})`}
+                    </button>
+                  )}
+                </div>
+              </>
             )}
 
             {/* ประวัติการแก้ไขของตัวเองเท่านั้น (คนอื่นไม่เห็นของเรา) */}
