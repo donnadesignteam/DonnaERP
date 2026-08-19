@@ -566,19 +566,16 @@ export default function MobileMe() {
 
       {appeal && (
         <div onClick={() => !appealSaving && setAppeal(null)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 200, display: 'flex', alignItems: 'flex-end' }}>
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(env(safe-area-inset-top) + 14px) 14px calc(env(safe-area-inset-bottom) + 14px)', boxSizing: 'border-box' }}>
+          {/* กล่องกลางจอ + สูงเกินจอแล้วเลื่อนในกล่องเอง — กันหลุดขอบจอตอนคีย์บอร์ดเด้งขึ้นมา */}
           <div onClick={e => e.stopPropagation()}
-            style={{ background: 'var(--surface)', width: '100%', borderRadius: '16px 16px 0 0', padding: '16px 16px calc(env(safe-area-inset-bottom) + 16px)', boxSizing: 'border-box' }}>
+            style={{ background: 'var(--surface)', width: '100%', maxWidth: 420, maxHeight: '100%', overflowY: 'auto', borderRadius: 16, padding: 16, boxSizing: 'border-box' }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>ยื่นอุทธรณ์</div>
-            <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 5, lineHeight: 1.6 }}>
-              เขียนเหตุผลว่าทำไมคิดว่าไม่ได้ผิด — ผู้จัดการจะเห็นข้อความนี้แล้วตรวจสอบให้อีกครั้ง
-            </div>
             <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 7 }}>
               เคส {fmtDate(appeal.claim.claim_date)}{appeal.claim.customer_username ? ` · ${appeal.claim.customer_username}` : ''}
               {appeal.claim.original_order_number ? ` · ${appeal.claim.original_order_number}` : ''}
             </div>
             <textarea value={appeal.text} onChange={e => setAppeal(a => a ? { ...a, text: e.target.value } : null)} rows={4} autoFocus
-              placeholder="เช่น วันนั้นไม่ได้เป็นคนตัดใบนี้ / ลูกค้าแจ้งขนาดมาผิดตั้งแต่ต้น"
               style={{ width: '100%', marginTop: 10, border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 12, padding: '10px 12px', fontSize: 13.5, lineHeight: 1.6, outline: 'none', boxSizing: 'border-box', color: 'var(--ink)', resize: 'none', font: 'inherit' }} />
             {appealError && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 7, lineHeight: 1.55 }}>{appealError}</div>}
             <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
