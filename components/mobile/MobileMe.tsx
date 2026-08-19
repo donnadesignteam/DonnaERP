@@ -17,6 +17,35 @@ type Leave = { date: string | null; time: string | null; type: string | null; re
 type ScanRow = { order_number: string; stage: string | null; scanned_at: string | null }
 type OrderRow = { id: string; order_number: string | null; customer_name: string | null; order_status: string | null }
 type OrderInfo = { customer: string | null; status: string | null }
+type ClaimFault = {
+  id: string
+  claim_date: string | null
+  original_order_number: string | null
+  customer_username: string | null
+  claim_type: string | null
+  fault: string | null
+  fix_method: string | null
+  fault_review: string | null
+}
+
+// สถานะผลตรวจสอบเคสที่ถูกลงชื่อว่า "ผิดโดย" คนนี้ — พนักงานเห็นอย่างเดียว เปลี่ยนได้เฉพาะบัญชีร้าน (/staff/claims)
+const CLAIM_PENDING = 'รอตรวจสอบ'
+const CLAIM_REVIEW_COLOR: Record<string, string> = {
+  [CLAIM_PENDING]: '#f59e0b',
+  'ตรวจสอบแล้วไม่พบความผิด': 'var(--green)',
+  'ตรวจสอบแล้วผิดจริง': 'var(--red)',
+}
+
+// เคสเคลมที่ช่อง "ผิดโดย" เป็นชื่อของคนนี้ (ชื่อในช่องนั้นเก็บเป็น ชื่อเล่น หรือ ชื่อจริง — เทียบทั้งสองแบบ)
+async function fetchMyFaultClaims(names: string[]): Promise<ClaimFault[]> {
+  if (!names.length) return []
+  const COLS = 'id, claim_date, original_order_number, customer_username, claim_type, fault, fix_method'
+  // ยังไม่ได้รัน sql/add_claim_fault_review.sql → ดึงแบบไม่มีคอลัมน์ผลตรวจสอบ จะได้เห็นเคสก่อน
+  let r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(`${COLS}, fault_review`).in('fault_by', names))
+  if (r.error) r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(COLS).in('fault_by', names))
+  if (r.error) return []
+  return [...((r.data as ClaimFault[]) ?? [])].sort((a, b) => (b.claim_date ?? '').localeCompare(a.claim_date ?? ''))
+}
 
 const STAGE_ORDER = ['ตัด', 'เย็บ', 'ผู้ช่วยช่าง', 'รีด', 'แพ็ค', 'แพ็คราง', 'จัดส่งแล้ว']
 const STATUS_COLOR: Record<string, string> = { 'อนุมัติ': 'var(--green)', 'ใบลาเรียบร้อย': 'var(--green)', 'ไม่อนุมัติ': 'var(--red)' }
@@ -97,6 +126,8 @@ export default function MobileMe() {
   const [error, setError] = useState('')
   const [allLeaves, setAllLeaves] = useState(false)
   const [allScans, setAllScans] = useState(false)
+  const [claims, setClaims] = useState<ClaimFault[]>([])   // เคลมที่ถูกลงชื่อว่าผิดโดยฉัน
+  const [allClaims, setAllClaims] = useState(false)
   const [scanQuery, setScanQuery] = useState('')   // ค้นหาในรายการงานที่สแกน (เลขออเดอร์/ชื่อลูกค้า/ขั้นตอน)
 
   // คุกกี้อ่านได้เฉพาะบนเบราว์เซอร์ — อ่านตอน render แรกจะไม่ตรงกับที่ server เรนเดอร์ (hydration mismatch)
@@ -112,12 +143,14 @@ export default function MobileMe() {
       const s = await fetchStaffOne(code)
       if (!s) { setError('ไม่พบข้อมูลพนักงานรหัสนี้'); setLoading(false); return }
       setEmp(s)
-      const [lv, sc] = await Promise.all([
+      const [lv, sc, cl] = await Promise.all([
         supabase.from('leave_requests').select('leave_date, leave_time, leave_type, reason, leave_status')
           .eq('employee_code', code).order('leave_date', { ascending: false }),
         fetchAllRows<ScanRow>(() => supabase.from('production_scans').select('order_number, stage, scanned_at')
           .eq('tech_code', code).order('scanned_at', { ascending: false })),
+        fetchMyFaultClaims([s.nickname, s.name].map(v => (v ?? '').trim()).filter(Boolean)),
       ])
+      setClaims(cl)
       setLeaves((lv.data ?? []).map(l => ({ date: l.leave_date, time: l.leave_time, type: l.leave_type, reason: l.reason, status: l.leave_status })))
       // ทิ้งแถวขยะเก่าที่เก็บ URL ไว้ในช่องเลขออเดอร์ (เหมือนหน้า /staff/[code])
       const rows = ((sc.data as ScanRow[]) ?? []).filter(x => x.order_number && !String(x.order_number).startsWith('http'))
@@ -168,6 +201,11 @@ export default function MobileMe() {
   })
   const shownScans = allScans || sq ? foundScans : foundScans.slice(0, 8)
   const shownLeaves = allLeaves ? leaves : leaves.slice(0, 6)
+  const claimStat = {
+    pending: claims.filter(c => !c.fault_review).length,
+    guilty: claims.filter(c => c.fault_review === 'ตรวจสอบแล้วผิดจริง').length,
+  }
+  const shownClaims = allClaims ? claims : claims.slice(0, 5)
 
   return (
     <div>
@@ -243,6 +281,47 @@ export default function MobileMe() {
               {miniStat('WOP ครึ่งวัน', n(emp.wop.half))}
               {miniStat('WOP ชม.', n(emp.wop.hours))}
             </div>
+
+            {/* งานเคลมที่ถูกลงชื่อในช่อง "ผิดโดย" — ขึ้นเฉพาะคนที่มีเคส */}
+            {claims.length > 0 && (
+              <>
+                <div style={sectionTitle}>งานเคลมที่ฉันถูกลงชื่อว่าผิด</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                  {miniStat('ทั้งหมด', String(claims.length))}
+                  {miniStat('รอตรวจสอบ', String(claimStat.pending), CLAIM_REVIEW_COLOR[CLAIM_PENDING])}
+                  {miniStat('ผิดจริง', String(claimStat.guilty), 'var(--red)')}
+                </div>
+                <div style={{ ...card, marginTop: 10, padding: 0, overflow: 'hidden' }}>
+                  {shownClaims.map((c, i) => {
+                    const cur = c.fault_review || CLAIM_PENDING
+                    return (
+                      <div key={c.id} style={{ padding: '10px 13px', borderTop: i ? '1px solid var(--border)' : 'none' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {fmtDate(c.claim_date)}{c.customer_username ? ` · ${c.customer_username}` : ''}
+                          </span>
+                          <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: CLAIM_REVIEW_COLOR[cur] ?? 'var(--ink-3)' }}>{cur}</span>
+                        </div>
+                        <div style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 3 }}>
+                          {[c.original_order_number, c.claim_type].filter(Boolean).join(' · ') || '—'}
+                        </div>
+                        {(c.fault || c.fix_method) && (
+                          <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4, lineHeight: 1.55 }}>
+                            {c.fault ? `สาเหตุ: ${c.fault}` : ''}{c.fault && c.fix_method ? ' · ' : ''}{c.fix_method ? `วิธีแก้ไข: ${c.fix_method}` : ''}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                  {claims.length > 5 && (
+                    <button onClick={() => setAllClaims(v => !v)}
+                      style={{ width: '100%', minHeight: 40, border: 'none', borderTop: '1px solid var(--border)', background: 'transparent', color: 'var(--blue)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+                      {allClaims ? 'ย่อ' : `ดูทั้งหมด (${claims.length})`}
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
 
             <div style={sectionTitle}>งานที่ฉันสแกน</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
