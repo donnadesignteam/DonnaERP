@@ -196,19 +196,6 @@ export default function MobileMe() {
 
   const sec = (key: string) => ({ open: !!open[key], onToggle: () => setOpen(o => ({ ...o, [key]: !o[key] })) })
 
-  // ‼️ คีย์บอร์ดมือถือเด้งขึ้นมา = จอที่มองเห็นจริงเล็กลง แต่ position:fixed ยังอ้างจอเต็มใบ
-  //    กล่องยื่นอุทธรณ์เลยไปอยู่ใต้คีย์บอร์ด (หลุดขอบจอ) → เกาะขนาด/ตำแหน่งจาก visualViewport แทน
-  const [vv, setVv] = useState<{ top: number; height: number } | null>(null)
-  useEffect(() => {
-    const v = typeof window === 'undefined' ? null : window.visualViewport
-    if (!appeal || !v) return
-    const on = () => setVv({ top: v.offsetTop, height: v.height })
-    on()
-    v.addEventListener('resize', on)
-    v.addEventListener('scroll', on)
-    return () => { v.removeEventListener('resize', on); v.removeEventListener('scroll', on) }
-  }, [appeal])
-
   const { pull, refreshing, refresh } = usePullToRefresh(load)
 
   // ยื่น/แก้ข้อความอุทธรณ์ของเคสนั้น — ผู้จัดการจะเห็นในหน้า หมวดพนักงาน → งานเคลม แล้วตัดสินผลตรวจสอบต่อ
@@ -498,8 +485,9 @@ export default function MobileMe() {
                               {c.fault ? `สาเหตุ: ${c.fault}` : ''}{c.fault && c.fix_method ? ' · ' : ''}{c.fix_method ? `วิธีแก้ไข: ${c.fix_method}` : ''}
                             </div>
                           )}
-                          {/* ยื่นอุทธรณ์ให้ผู้จัดการตรวจซ้ำ — ยื่นแล้วยังกดแก้ข้อความได้ */}
-                          {c.fault_appeal ? (
+                          {/* ยื่นอุทธรณ์ให้ผู้จัดการตรวจซ้ำ — ยื่นแล้วยังกดแก้ข้อความได้
+                              ‼️ ฟอร์มกางในแถวเลย ไม่ใช้กล่องลอย (fixed) เพราะคีย์บอร์ดมือถือเด้งแล้วกล่องลอยหลุดขอบจอ */}
+                          {c.fault_appeal && appeal?.claim.id !== c.id && (
                             <div style={{ marginTop: 8, background: 'var(--blue-bg)', borderRadius: 10, padding: '8px 10px' }}>
                               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--blue)' }}>
                                 ยื่นอุทธรณ์แล้ว{c.fault_appeal_at ? ` · ${fmtDate(c.fault_appeal_at)}` : ''} · รอผู้จัดการตรวจ
@@ -510,11 +498,30 @@ export default function MobileMe() {
                                 แก้ข้อความ
                               </button>
                             </div>
-                          ) : (
+                          )}
+                          {!c.fault_appeal && appeal?.claim.id !== c.id && (
                             <button onClick={() => { setAppealError(''); setAppeal({ claim: c, text: '' }) }}
                               style={{ marginTop: 9, minHeight: 36, border: '1px solid var(--blue)', background: 'transparent', color: 'var(--blue)', borderRadius: 10, padding: '0 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
                               ยื่นอุทธรณ์
                             </button>
+                          )}
+                          {appeal?.claim.id === c.id && (
+                            <div style={{ marginTop: 9 }}>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--blue)' }}>ยื่นอุทธรณ์</div>
+                              <textarea value={appeal.text} onChange={e => setAppeal(a => a ? { ...a, text: e.target.value } : null)} rows={4}
+                                style={{ width: '100%', marginTop: 6, border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 12, padding: '10px 12px', fontSize: 13.5, lineHeight: 1.6, outline: 'none', boxSizing: 'border-box', color: 'var(--ink)', resize: 'none', font: 'inherit' }} />
+                              {appealError && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 6, lineHeight: 1.55 }}>{appealError}</div>}
+                              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                                <button onClick={() => { setAppeal(null); setAppealError('') }} disabled={appealSaving}
+                                  style={{ flex: 1, minHeight: 40, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--ink-3)', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                                  ยกเลิก
+                                </button>
+                                <button onClick={sendAppeal} disabled={appealSaving}
+                                  style={{ flex: 1.4, minHeight: 40, border: 'none', background: 'var(--blue)', color: '#fff', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: appealSaving ? 0.6 : 1 }}>
+                                  {appealSaving ? 'กำลังส่ง…' : 'ส่งให้ผู้จัดการ'}
+                                </button>
+                              </div>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -577,33 +584,6 @@ export default function MobileMe() {
         )}
       </div>
 
-      {appeal && (
-        <div onClick={() => !appealSaving && setAppeal(null)}
-          style={{ position: 'fixed', left: 0, width: '100%', top: vv ? vv.top : 0, height: vv ? vv.height : '100dvh', background: 'rgba(0,0,0,.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12, boxSizing: 'border-box' }}>
-          {/* กล่องกลางจอ + สูงเกินจอแล้วเลื่อนในกล่องเอง — กันหลุดขอบจอตอนคีย์บอร์ดเด้งขึ้นมา */}
-          <div onClick={e => e.stopPropagation()}
-            style={{ background: 'var(--surface)', width: '100%', maxWidth: 420, maxHeight: '100%', overflowY: 'auto', borderRadius: 16, padding: 16, boxSizing: 'border-box' }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>ยื่นอุทธรณ์</div>
-            <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 7 }}>
-              เคส {fmtDate(appeal.claim.claim_date)}{appeal.claim.customer_username ? ` · ${appeal.claim.customer_username}` : ''}
-              {appeal.claim.original_order_number ? ` · ${appeal.claim.original_order_number}` : ''}
-            </div>
-            <textarea value={appeal.text} onChange={e => setAppeal(a => a ? { ...a, text: e.target.value } : null)} rows={4}
-              style={{ width: '100%', marginTop: 10, border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 12, padding: '10px 12px', fontSize: 13.5, lineHeight: 1.6, outline: 'none', boxSizing: 'border-box', color: 'var(--ink)', resize: 'none', font: 'inherit' }} />
-            {appealError && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 7, lineHeight: 1.55 }}>{appealError}</div>}
-            <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-              <button onClick={() => setAppeal(null)} disabled={appealSaving}
-                style={{ flex: 1, minHeight: 44, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--ink-3)', borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-                ยกเลิก
-              </button>
-              <button onClick={sendAppeal} disabled={appealSaving}
-                style={{ flex: 1.4, minHeight: 44, border: 'none', background: 'var(--blue)', color: '#fff', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: appealSaving ? 0.6 : 1 }}>
-                {appealSaving ? 'กำลังส่ง…' : 'ส่งให้ผู้จัดการ'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
