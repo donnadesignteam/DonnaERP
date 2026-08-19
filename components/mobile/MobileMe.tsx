@@ -108,6 +108,27 @@ function Balance({ title, left, avail, used, color }: { title: string; left: num
   )
 }
 
+// หัวข้อพับได้ — ทุกหัวข้อในหน้านี้ปิดไว้ก่อน (user สั่ง) กดที่หัวข้อถึงจะกางออกมา
+// เนื้อในเรนเดอร์ตอนกางเท่านั้น → ประวัติการแก้ไขจะไม่ยิงคิวรีถ้าไม่ได้เปิด
+function Section({ title, badge, open, onToggle, children }: {
+  title: string; badge?: string; open: boolean; onToggle: () => void; children: React.ReactNode
+}) {
+  return (
+    <>
+      <button onClick={onToggle}
+        style={{ ...sectionTitle, display: 'flex', alignItems: 'center', gap: 7, width: '100%', border: 'none', background: 'transparent', padding: 0, textAlign: 'left', cursor: 'pointer', font: 'inherit', fontSize: 13, fontWeight: 700, color: 'var(--ink-3)', WebkitTapHighlightColor: 'transparent' }}>
+        <svg width="13" height="13" fill="none" stroke="var(--ink-4)" strokeWidth="2.2" viewBox="0 0 24 24"
+          style={{ flexShrink: 0, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+        </svg>
+        <span>{title}</span>
+        {badge && <span style={{ fontWeight: 600, color: 'var(--ink-4)', fontSize: 11.5 }}>{badge}</span>}
+      </button>
+      {open && <div>{children}</div>}
+    </>
+  )
+}
+
 const miniStat = (label: string, value: string, color = 'var(--ink)') => (
   <div key={label} style={{ ...card, padding: 12, textAlign: 'center' }}>
     <div style={{ fontSize: 20, fontWeight: 700, color }}>{value}</div>
@@ -128,7 +149,7 @@ export default function MobileMe() {
   const [allScans, setAllScans] = useState(false)
   const [claims, setClaims] = useState<ClaimFault[]>([])   // เคลมที่ถูกลงชื่อว่าผิดโดยฉัน
   const [allClaims, setAllClaims] = useState(false)
-  const [showActivity, setShowActivity] = useState(false)   // ประวัติการแก้ไข = พับไว้ก่อน กดถึงจะโหลด/โชว์
+  const [open, setOpen] = useState<Record<string, boolean>>({})   // หัวข้อที่กางอยู่ — ค่าเริ่มต้น = ปิดหมด
   const [scanQuery, setScanQuery] = useState('')   // ค้นหาในรายการงานที่สแกน (เลขออเดอร์/ชื่อลูกค้า/ขั้นตอน)
 
   // คุกกี้อ่านได้เฉพาะบนเบราว์เซอร์ — อ่านตอน render แรกจะไม่ตรงกับที่ server เรนเดอร์ (hydration mismatch)
@@ -165,6 +186,8 @@ export default function MobileMe() {
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { if (code) { setLoading(true); load() } }, [code, load])
+
+  const sec = (key: string) => ({ open: !!open[key], onToggle: () => setOpen(o => ({ ...o, [key]: !o[key] })) })
 
   const { pull, refreshing, refresh } = usePullToRefresh(load)
 
@@ -254,7 +277,7 @@ export default function MobileMe() {
               </div>
             )}
 
-            <div style={sectionTitle}>วันลาคงเหลือ</div>
+            <Section title="วันลาคงเหลือ" {...sec('leave')}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <Balance title="ลาป่วย" left={emp.sick.left} avail={emp.sick.avail} used={emp.sick.used} color="var(--blue)" />
               {/* ทำงานไม่ครบ 365 วัน (หรือไม่มีวันเริ่มงาน) = ยังไม่มีสิทธิพักร้อน → ขึ้นว่ายังไม่มีสิทธิ */}
@@ -274,16 +297,18 @@ export default function MobileMe() {
                   used={(emp.personal.full ?? 0) + (emp.personal.half ?? 0) * 0.5} color="#8B5CF6" />
               </div>
             </div>
+            </Section>
 
-            <div style={sectionTitle}>สถิติอื่น</div>
+            <Section title="สถิติอื่น" {...sec('stat')}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
               {miniStat('มาสาย', n(emp.late), (emp.late ?? 0) > 0 ? 'var(--red)' : 'var(--ink)')}
               {miniStat('WOP เต็มวัน', n(emp.wop.full))}
               {miniStat('WOP ครึ่งวัน', n(emp.wop.half))}
               {miniStat('WOP ชม.', n(emp.wop.hours))}
             </div>
+            </Section>
 
-            <div style={sectionTitle}>งานที่ฉันสแกน</div>
+            <Section title="งานที่ฉันสแกน" {...sec('scan')} badge={`${scans.length} ครั้ง`}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               {miniStat('ทั้งหมด (ครั้ง)', String(scans.length), 'var(--blue)')}
               {miniStat('เดือนนี้', String(scansThisMonth), 'var(--blue)')}
@@ -364,11 +389,12 @@ export default function MobileMe() {
                 )}
               </div>
             )}
+            </Section>
 
             {/* งานเคลมที่ถูกลงชื่อในช่อง "ผิดโดย" — ขึ้นเฉพาะคนที่มีเคส */}
             {claims.length > 0 && (
               <>
-                <div style={sectionTitle}>งานที่ทำผิด</div>
+                <Section title="งานที่ทำผิด" {...sec('fault')} badge={`${claims.length} เคส${claimStat.pending ? ` · รอตรวจสอบ ${claimStat.pending}` : ''}`}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
                   {miniStat('ทั้งหมด', String(claims.length))}
                   {miniStat('รอตรวจสอบ', String(claimStat.pending), CLAIM_REVIEW_COLOR[CLAIM_PENDING])}
@@ -403,25 +429,17 @@ export default function MobileMe() {
                     </button>
                   )}
                 </div>
+                </Section>
               </>
             )}
-
-            {/* ประวัติการแก้ไขของตัวเองเท่านั้น (คนอื่นไม่เห็นของเรา) — พับไว้ กดหัวข้อถึงจะโชว์ (ยาว + ไม่ได้ดูทุกวัน) */}
-            <button onClick={() => setShowActivity(v => !v)}
-              style={{ ...sectionTitle, display: 'flex', alignItems: 'center', gap: 6, width: '100%', border: 'none', background: 'transparent', padding: 0, textAlign: 'left', cursor: 'pointer', font: 'inherit', fontSize: 13, fontWeight: 700, WebkitTapHighlightColor: 'transparent' }}>
-              <span>ประวัติการแก้ไขของฉัน</span>
-              <svg width="13" height="13" fill="none" stroke="var(--ink-4)" strokeWidth="2.2" viewBox="0 0 24 24"
-                style={{ transform: showActivity ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-              </svg>
-            </button>
-            {showActivity && (
+            {/* ประวัติการแก้ไขของตัวเองเท่านั้น (คนอื่นไม่เห็นของเรา) */}
+            <Section title="ประวัติการแก้ไขของฉัน" {...sec('activity')}>
               <div style={{ ...card, padding: '2px 13px 13px' }}>
                 <MyActivity code={code} mobile />
               </div>
-            )}
+            </Section>
 
-            <div style={sectionTitle}>ประวัติการลา</div>
+            <Section title="ประวัติการลา" {...sec('leaves')} badge={`${leaves.length} ครั้ง`}>
             {leaves.length === 0 ? (
               <div style={{ ...card, textAlign: 'center', color: 'var(--ink-4)', fontSize: 12.5 }}>ยังไม่มีประวัติการลา</div>
             ) : (
@@ -449,6 +467,8 @@ export default function MobileMe() {
                 )}
               </div>
             )}
+            </Section>
+
           </>
         )}
       </div>
