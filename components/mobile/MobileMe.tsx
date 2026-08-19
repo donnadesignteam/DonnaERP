@@ -128,6 +128,7 @@ export default function MobileMe() {
   const [allScans, setAllScans] = useState(false)
   const [claims, setClaims] = useState<ClaimFault[]>([])   // เคลมที่ถูกลงชื่อว่าผิดโดยฉัน
   const [allClaims, setAllClaims] = useState(false)
+  const [showActivity, setShowActivity] = useState(false)   // ประวัติการแก้ไข = พับไว้ก่อน กดถึงจะโหลด/โชว์
   const [scanQuery, setScanQuery] = useState('')   // ค้นหาในรายการงานที่สแกน (เลขออเดอร์/ชื่อลูกค้า/ขั้นตอน)
 
   // คุกกี้อ่านได้เฉพาะบนเบราว์เซอร์ — อ่านตอน render แรกจะไม่ตรงกับที่ server เรนเดอร์ (hydration mismatch)
@@ -405,11 +406,20 @@ export default function MobileMe() {
               </>
             )}
 
-            {/* ประวัติการแก้ไขของตัวเองเท่านั้น (คนอื่นไม่เห็นของเรา) */}
-            <div style={sectionTitle}>ประวัติการแก้ไขของฉัน</div>
-            <div style={{ ...card, padding: '2px 13px 13px' }}>
-              <MyActivity code={code} mobile />
-            </div>
+            {/* ประวัติการแก้ไขของตัวเองเท่านั้น (คนอื่นไม่เห็นของเรา) — พับไว้ กดหัวข้อถึงจะโชว์ (ยาว + ไม่ได้ดูทุกวัน) */}
+            <button onClick={() => setShowActivity(v => !v)}
+              style={{ ...sectionTitle, display: 'flex', alignItems: 'center', gap: 6, width: '100%', border: 'none', background: 'transparent', padding: 0, textAlign: 'left', cursor: 'pointer', font: 'inherit', fontSize: 13, fontWeight: 700, WebkitTapHighlightColor: 'transparent' }}>
+              <span>ประวัติการแก้ไขของฉัน</span>
+              <svg width="13" height="13" fill="none" stroke="var(--ink-4)" strokeWidth="2.2" viewBox="0 0 24 24"
+                style={{ transform: showActivity ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+              </svg>
+            </button>
+            {showActivity && (
+              <div style={{ ...card, padding: '2px 13px 13px' }}>
+                <MyActivity code={code} mobile />
+              </div>
+            )}
 
             <div style={sectionTitle}>ประวัติการลา</div>
             {leaves.length === 0 ? (
