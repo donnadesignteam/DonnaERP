@@ -26,6 +26,8 @@ type ClaimFault = {
   fault: string | null
   fix_method: string | null
   fault_review: string | null
+  fault_appeal: string | null        // ข้อความอุทธรณ์ที่พนักงานยื่นเอง (ต้องรัน sql/add_claim_fault_appeal.sql)
+  fault_appeal_at: string | null
 }
 
 // สถานะผลตรวจสอบเคสที่ถูกลงชื่อว่า "ผิดโดย" คนนี้ — พนักงานเห็นอย่างเดียว เปลี่ยนได้เฉพาะบัญชีร้าน (/staff/claims)
@@ -40,8 +42,9 @@ const CLAIM_REVIEW_COLOR: Record<string, string> = {
 async function fetchMyFaultClaims(names: string[]): Promise<ClaimFault[]> {
   if (!names.length) return []
   const COLS = 'id, claim_date, original_order_number, customer_username, claim_type, fault, fix_method'
-  // ยังไม่ได้รัน sql/add_claim_fault_review.sql → ดึงแบบไม่มีคอลัมน์ผลตรวจสอบ จะได้เห็นเคสก่อน
-  let r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(`${COLS}, fault_review`).in('fault_by', names))
+  // ยังไม่ได้รัน sql/add_claim_fault_appeal.sql / add_claim_fault_review.sql → ถอยไปดึงแบบไม่มีคอลัมน์ใหม่ จะได้เห็นเคสก่อน
+  let r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(`${COLS}, fault_review, fault_appeal, fault_appeal_at`).in('fault_by', names))
+  if (r.error) r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(`${COLS}, fault_review`).in('fault_by', names))
   if (r.error) r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(COLS).in('fault_by', names))
   if (r.error) return []
   return [...((r.data as ClaimFault[]) ?? [])].sort((a, b) => (b.claim_date ?? '').localeCompare(a.claim_date ?? ''))
@@ -150,6 +153,9 @@ export default function MobileMe() {
   const [claims, setClaims] = useState<ClaimFault[]>([])   // เคลมที่ถูกลงชื่อว่าผิดโดยฉัน
   const [allClaims, setAllClaims] = useState(false)
   const [claimQuery, setClaimQuery] = useState('')   // ค้นหาในงานที่ทำผิด (ลูกค้า/เลขออเดอร์/ประเภท/สาเหตุ/วิธีแก้ไข/สถานะ)
+  const [appeal, setAppeal] = useState<{ claim: ClaimFault; text: string } | null>(null)   // กล่องยื่นอุทธรณ์
+  const [appealSaving, setAppealSaving] = useState(false)
+  const [appealError, setAppealError] = useState('')
   const [open, setOpen] = useState<Record<string, boolean>>({})   // หัวข้อที่กางอยู่ — ค่าเริ่มต้น = ปิดหมด
   const [scanQuery, setScanQuery] = useState('')   // ค้นหาในรายการงานที่สแกน (เลขออเดอร์/ชื่อลูกค้า/ขั้นตอน)
 
@@ -191,6 +197,26 @@ export default function MobileMe() {
   const sec = (key: string) => ({ open: !!open[key], onToggle: () => setOpen(o => ({ ...o, [key]: !o[key] })) })
 
   const { pull, refreshing, refresh } = usePullToRefresh(load)
+
+  // ยื่น/แก้ข้อความอุทธรณ์ของเคสนั้น — ผู้จัดการจะเห็นในหน้า หมวดพนักงาน → งานเคลม แล้วตัดสินผลตรวจสอบต่อ
+  const sendAppeal = async () => {
+    if (!appeal) return
+    const text = appeal.text.trim()
+    if (!text) { setAppealError('พิมพ์เหตุผลก่อนส่ง'); return }
+    setAppealSaving(true)
+    setAppealError('')
+    const at = new Date().toISOString()
+    const { error: err } = await supabase.from('claims')
+      .update({ fault_appeal: text, fault_appeal_at: at, fault_appeal_by: emp?.nickname || emp?.name || code })
+      .eq('id', appeal.claim.id)
+    setAppealSaving(false)
+    if (err) {
+      setAppealError(/fault_appeal/.test(err.message) ? 'ยังไม่ได้รัน sql/add_claim_fault_appeal.sql — บอกแอดมินให้รันก่อน' : `ส่งไม่สำเร็จ: ${err.message}`)
+      return
+    }
+    setClaims(prev => prev.map(c => c.id === appeal.claim.id ? { ...c, fault_appeal: text, fault_appeal_at: at } : c))
+    setAppeal(null)
+  }
 
   const logout = async () => {
     await fetch('/api/logout', { method: 'POST' }).catch(() => {})
@@ -421,22 +447,63 @@ export default function MobileMe() {
                 <div style={{ ...card, marginTop: 10, padding: 0, overflow: 'hidden' }}>
                   {shownClaims.map((c, i) => {
                     const cur = c.fault_review || CLAIM_PENDING
-                    return (
-                      <div key={c.id} style={{ padding: '10px 13px', borderTop: i ? '1px solid var(--border)' : 'none' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {fmtDate(c.claim_date)}{c.customer_username ? ` · ${c.customer_username}` : ''}
-                          </span>
-                          <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: CLAIM_REVIEW_COLOR[cur] ?? 'var(--ink-3)' }}>{cur}</span>
-                        </div>
-                        <div style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 3 }}>
-                          {[c.original_order_number, c.claim_type].filter(Boolean).join(' · ') || '—'}
-                        </div>
-                        {(c.fault || c.fix_method) && (
-                          <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4, lineHeight: 1.55 }}>
-                            {c.fault ? `สาเหตุ: ${c.fault}` : ''}{c.fault && c.fix_method ? ' · ' : ''}{c.fix_method ? `วิธีแก้ไข: ${c.fix_method}` : ''}
+                    const customer = c.customer_username || ''
+                    // หัวแถว — มีชื่อลูกค้าถึงจะกดเข้าโฟลเดอร์ออเดอร์ได้ (โฟลเดอร์ค้นด้วยชื่อลูกค้า) เหมือนรายการงานที่สแกน
+                    const head = (
+                      <>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {fmtDate(c.claim_date)}{customer ? ` · ${customer}` : ''}
                           </div>
+                          <div style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 3 }}>
+                            {[c.original_order_number, c.claim_type].filter(Boolean).join(' · ') || '—'}
+                          </div>
+                        </div>
+                        <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: CLAIM_REVIEW_COLOR[cur] ?? 'var(--ink-3)' }}>{cur}</span>
+                        {customer && (
+                          <svg width="15" height="15" fill="none" stroke="var(--ink-4)" strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                          </svg>
                         )}
+                      </>
+                    )
+                    const rowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '10px 13px' }
+                    return (
+                      <div key={c.id} style={{ borderTop: i ? '1px solid var(--border)' : 'none' }}>
+                        {customer ? (
+                          <button className="m-card-tap"
+                            onClick={() => router.push(`/m/customers?name=${encodeURIComponent(customer)}${c.original_order_number ? `&order=${encodeURIComponent(c.original_order_number)}` : ''}`)}
+                            style={{ ...rowStyle, border: 'none', background: 'transparent', cursor: 'pointer', font: 'inherit', WebkitTapHighlightColor: 'transparent' }}>
+                            {head}
+                          </button>
+                        ) : (
+                          <div style={rowStyle}>{head}</div>
+                        )}
+                        <div style={{ padding: '0 13px 11px' }}>
+                          {(c.fault || c.fix_method) && (
+                            <div style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.55 }}>
+                              {c.fault ? `สาเหตุ: ${c.fault}` : ''}{c.fault && c.fix_method ? ' · ' : ''}{c.fix_method ? `วิธีแก้ไข: ${c.fix_method}` : ''}
+                            </div>
+                          )}
+                          {/* ยื่นอุทธรณ์ให้ผู้จัดการตรวจซ้ำ — ยื่นแล้วยังกดแก้ข้อความได้ */}
+                          {c.fault_appeal ? (
+                            <div style={{ marginTop: 8, background: 'var(--blue-bg)', borderRadius: 10, padding: '8px 10px' }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--blue)' }}>
+                                ยื่นอุทธรณ์แล้ว{c.fault_appeal_at ? ` · ${fmtDate(c.fault_appeal_at)}` : ''} · รอผู้จัดการตรวจ
+                              </div>
+                              <div style={{ fontSize: 12, color: 'var(--ink)', marginTop: 3, lineHeight: 1.55 }}>{c.fault_appeal}</div>
+                              <button onClick={() => { setAppealError(''); setAppeal({ claim: c, text: c.fault_appeal ?? '' }) }}
+                                style={{ marginTop: 6, border: 'none', background: 'transparent', color: 'var(--blue)', fontSize: 12, fontWeight: 600, padding: 0, cursor: 'pointer' }}>
+                                แก้ข้อความ
+                              </button>
+                            </div>
+                          ) : (
+                            <button onClick={() => { setAppealError(''); setAppeal({ claim: c, text: '' }) }}
+                              style={{ marginTop: 9, minHeight: 36, border: '1px solid var(--blue)', background: 'transparent', color: 'var(--blue)', borderRadius: 10, padding: '0 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
+                              ยื่นอุทธรณ์
+                            </button>
+                          )}
+                        </div>
                       </div>
                     )
                   })}
@@ -496,6 +563,37 @@ export default function MobileMe() {
           </>
         )}
       </div>
+
+      {appeal && (
+        <div onClick={() => !appealSaving && setAppeal(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 200, display: 'flex', alignItems: 'flex-end' }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: 'var(--surface)', width: '100%', borderRadius: '16px 16px 0 0', padding: '16px 16px calc(env(safe-area-inset-bottom) + 16px)', boxSizing: 'border-box' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>ยื่นอุทธรณ์</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 5, lineHeight: 1.6 }}>
+              เขียนเหตุผลว่าทำไมคิดว่าไม่ได้ผิด — ผู้จัดการจะเห็นข้อความนี้แล้วตรวจสอบให้อีกครั้ง
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 7 }}>
+              เคส {fmtDate(appeal.claim.claim_date)}{appeal.claim.customer_username ? ` · ${appeal.claim.customer_username}` : ''}
+              {appeal.claim.original_order_number ? ` · ${appeal.claim.original_order_number}` : ''}
+            </div>
+            <textarea value={appeal.text} onChange={e => setAppeal(a => a ? { ...a, text: e.target.value } : null)} rows={4} autoFocus
+              placeholder="เช่น วันนั้นไม่ได้เป็นคนตัดใบนี้ / ลูกค้าแจ้งขนาดมาผิดตั้งแต่ต้น"
+              style={{ width: '100%', marginTop: 10, border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 12, padding: '10px 12px', fontSize: 13.5, lineHeight: 1.6, outline: 'none', boxSizing: 'border-box', color: 'var(--ink)', resize: 'none', font: 'inherit' }} />
+            {appealError && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 7, lineHeight: 1.55 }}>{appealError}</div>}
+            <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+              <button onClick={() => setAppeal(null)} disabled={appealSaving}
+                style={{ flex: 1, minHeight: 44, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--ink-3)', borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                ยกเลิก
+              </button>
+              <button onClick={sendAppeal} disabled={appealSaving}
+                style={{ flex: 1.4, minHeight: 44, border: 'none', background: 'var(--blue)', color: '#fff', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: appealSaving ? 0.6 : 1 }}>
+                {appealSaving ? 'กำลังส่ง…' : 'ส่งให้ผู้จัดการ'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

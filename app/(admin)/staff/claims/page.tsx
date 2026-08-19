@@ -23,6 +23,9 @@ type ClaimRow = {
   fault_by: string | null
   fix_method: string | null
   fault_review: string | null
+  fault_appeal: string | null        // ข้อความอุทธรณ์ที่พนักงานยื่นจากแอปมือถือ (sql/add_claim_fault_appeal.sql)
+  fault_appeal_at: string | null
+  fault_appeal_by: string | null
 }
 
 // บริษัทขนส่งไม่ใช่พนักงาน — หน้านี้รวมเฉพาะคน (ชุดเดียวกับกลุ่ม "ขนส่ง" ในหน้าเคลม)
@@ -61,13 +64,20 @@ export default function StaffClaimsPage() {
   const [search, setSearch] = useState('')
   const [owner, setOwner] = useState<boolean | null>(null)   // null = ยังไม่รู้ (กัน hydration ไม่ตรง)
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setOwner(isOwnerLogin()) }, [])
 
   useEffect(() => {
     ;(async () => {
       const COLS = 'id, claim_date, original_order_number, customer_username, claim_type, fault, fault_by, fix_method'
       let r = await fetchAllRows<ClaimRow>(() => supabase.from('claims')
-        .select(`${COLS}, fault_review`).order('id', { ascending: false }))
+        .select(`${COLS}, fault_review, fault_appeal, fault_appeal_at, fault_appeal_by`).order('id', { ascending: false }))
+      // ยังไม่ได้รัน sql/add_claim_fault_appeal.sql → ถอยไปดึงแบบไม่มีคอลัมน์อุทธรณ์
+      if (r.error) {
+        r = await fetchAllRows<ClaimRow>(() => supabase.from('claims')
+          .select(`${COLS}, fault_review`).order('id', { ascending: false }))
+        if (!r.error) setError('ยังไม่ได้รัน sql/add_claim_fault_appeal.sql — จะยังไม่เห็นเรื่องที่พนักงานยื่นอุทธรณ์')
+      }
       // ยังไม่ได้รัน sql/add_claim_fault_review.sql → ดึงแบบไม่มีคอลัมน์ใหม่ จะได้เห็นรายชื่อก่อน
       if (r.error) {
         r = await fetchAllRows<ClaimRow>(() => supabase.from('claims').select(COLS).order('id', { ascending: false }))
@@ -109,6 +119,7 @@ export default function StaffClaimsPage() {
         list: [...list].sort((a, b) => (b.claim_date ?? '').localeCompare(a.claim_date ?? '')),
         pending: list.filter(c => !c.fault_review).length,
         guilty: list.filter(c => c.fault_review === 'ตรวจสอบแล้วผิดจริง').length,
+        appeal: list.filter(c => (c.fault_appeal ?? '').trim()).length,
       }))
       .sort((a, b) => b.list.length - a.list.length || a.name.localeCompare(b.name, 'th'))
   }, [rows, search])
@@ -118,6 +129,7 @@ export default function StaffClaimsPage() {
     cases: groups.reduce((s, g) => s + g.list.length, 0),
     pending: groups.reduce((s, g) => s + g.pending, 0),
     guilty: groups.reduce((s, g) => s + g.guilty, 0),
+    appeal: groups.reduce((s, g) => s + g.appeal, 0),
   }), [groups])
 
   if (owner === false) {
@@ -148,6 +160,7 @@ export default function StaffClaimsPage() {
         <Tile label="เคสทั้งหมด" value={String(totals.cases)} color="var(--ink)" />
         <Tile label="รอตรวจสอบ" value={String(totals.pending)} color={REVIEW_COLOR[PENDING]} />
         <Tile label="ตรวจแล้วผิดจริง" value={String(totals.guilty)} color={REVIEW_COLOR['ตรวจสอบแล้วผิดจริง']} />
+        <Tile label="ยื่นอุทธรณ์" value={String(totals.appeal)} color="var(--blue)" />
       </div>
 
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหาชื่อพนักงาน…"
@@ -172,6 +185,7 @@ export default function StaffClaimsPage() {
                   <th style={th}>ประเภท</th>
                   <th style={th}>สาเหตุ</th>
                   <th style={th}>วิธีแก้ไข</th>
+                  <th style={{ ...th, minWidth: 200 }}>อุทธรณ์ของพนักงาน</th>
                   <th style={{ ...th, width: 210 }}>สถานะ</th>
                 </tr>
               </thead>
@@ -179,11 +193,12 @@ export default function StaffClaimsPage() {
                 {groups.map(g => (
                   <Fragment key={g.name}>
                     <tr style={{ background: 'var(--bg)' }}>
-                      <td style={{ ...td, fontWeight: 700 }} colSpan={8}>
+                      <td style={{ ...td, fontWeight: 700 }} colSpan={9}>
                         {g.name}
                         <span style={{ fontWeight: 400, color: 'var(--ink-4)', fontSize: 12 }}> · {g.list.length} เคส</span>
                         {g.pending > 0 && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: REVIEW_COLOR[PENDING], background: '#f59e0b22', borderRadius: 10, padding: '1px 8px' }}>รอตรวจสอบ {g.pending}</span>}
                         {g.guilty > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: REVIEW_COLOR['ตรวจสอบแล้วผิดจริง'], background: '#ef444422', borderRadius: 10, padding: '1px 8px' }}>ผิดจริง {g.guilty}</span>}
+                        {g.appeal > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: '#2563eb', background: '#2563eb22', borderRadius: 10, padding: '1px 8px' }}>ยื่นอุทธรณ์ {g.appeal}</span>}
                       </td>
                     </tr>
                     {g.list.map(c => {
@@ -201,6 +216,16 @@ export default function StaffClaimsPage() {
                           <td style={td}>{c.claim_type || '—'}</td>
                           <td style={td}>{c.fault || '—'}</td>
                           <td style={td}>{c.fix_method || '—'}</td>
+                          <td style={{ ...td, maxWidth: 320 }}>
+                            {(c.fault_appeal ?? '').trim() ? (
+                              <div style={{ background: '#2563eb11', border: '1px solid #2563eb44', borderRadius: 8, padding: '6px 9px' }}>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: '#2563eb' }}>
+                                  {[c.fault_appeal_by, thaiDate(c.fault_appeal_at)].filter(v => v && v !== '—').join(' · ') || 'ยื่นอุทธรณ์'}
+                                </div>
+                                <div style={{ fontSize: 12.5, color: 'var(--ink)', marginTop: 2, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{c.fault_appeal}</div>
+                              </div>
+                            ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
+                          </td>
                           <td style={td}>
                             <select value={cur} onChange={e => setReview(c.id, e.target.value)}
                               style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '5px 8px', fontSize: 12, outline: 'none', cursor: 'pointer', fontWeight: 600, color: REVIEW_COLOR[cur] ?? 'var(--ink)', background: 'var(--surface)', maxWidth: 200 }}>
