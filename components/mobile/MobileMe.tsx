@@ -196,6 +196,19 @@ export default function MobileMe() {
 
   const sec = (key: string) => ({ open: !!open[key], onToggle: () => setOpen(o => ({ ...o, [key]: !o[key] })) })
 
+  // ‼️ คีย์บอร์ดมือถือเด้งขึ้นมา = จอที่มองเห็นจริงเล็กลง แต่ position:fixed ยังอ้างจอเต็มใบ
+  //    กล่องยื่นอุทธรณ์เลยไปอยู่ใต้คีย์บอร์ด (หลุดขอบจอ) → เกาะขนาด/ตำแหน่งจาก visualViewport แทน
+  const [vv, setVv] = useState<{ top: number; height: number } | null>(null)
+  useEffect(() => {
+    const v = typeof window === 'undefined' ? null : window.visualViewport
+    if (!appeal || !v) return
+    const on = () => setVv({ top: v.offsetTop, height: v.height })
+    on()
+    v.addEventListener('resize', on)
+    v.addEventListener('scroll', on)
+    return () => { v.removeEventListener('resize', on); v.removeEventListener('scroll', on) }
+  }, [appeal])
+
   const { pull, refreshing, refresh } = usePullToRefresh(load)
 
   // ยื่น/แก้ข้อความอุทธรณ์ของเคสนั้น — ผู้จัดการจะเห็นในหน้า หมวดพนักงาน → งานเคลม แล้วตัดสินผลตรวจสอบต่อ
@@ -566,7 +579,7 @@ export default function MobileMe() {
 
       {appeal && (
         <div onClick={() => !appealSaving && setAppeal(null)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(env(safe-area-inset-top) + 14px) 14px calc(env(safe-area-inset-bottom) + 14px)', boxSizing: 'border-box' }}>
+          style={{ position: 'fixed', left: 0, width: '100%', top: vv ? vv.top : 0, height: vv ? vv.height : '100dvh', background: 'rgba(0,0,0,.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12, boxSizing: 'border-box' }}>
           {/* กล่องกลางจอ + สูงเกินจอแล้วเลื่อนในกล่องเอง — กันหลุดขอบจอตอนคีย์บอร์ดเด้งขึ้นมา */}
           <div onClick={e => e.stopPropagation()}
             style={{ background: 'var(--surface)', width: '100%', maxWidth: 420, maxHeight: '100%', overflowY: 'auto', borderRadius: 16, padding: 16, boxSizing: 'border-box' }}>
@@ -575,7 +588,7 @@ export default function MobileMe() {
               เคส {fmtDate(appeal.claim.claim_date)}{appeal.claim.customer_username ? ` · ${appeal.claim.customer_username}` : ''}
               {appeal.claim.original_order_number ? ` · ${appeal.claim.original_order_number}` : ''}
             </div>
-            <textarea value={appeal.text} onChange={e => setAppeal(a => a ? { ...a, text: e.target.value } : null)} rows={4} autoFocus
+            <textarea value={appeal.text} onChange={e => setAppeal(a => a ? { ...a, text: e.target.value } : null)} rows={4}
               style={{ width: '100%', marginTop: 10, border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 12, padding: '10px 12px', fontSize: 13.5, lineHeight: 1.6, outline: 'none', boxSizing: 'border-box', color: 'var(--ink)', resize: 'none', font: 'inherit' }} />
             {appealError && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 7, lineHeight: 1.55 }}>{appealError}</div>}
             <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
