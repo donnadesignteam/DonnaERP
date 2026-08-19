@@ -149,6 +149,7 @@ export default function MobileMe() {
   const [allScans, setAllScans] = useState(false)
   const [claims, setClaims] = useState<ClaimFault[]>([])   // เคลมที่ถูกลงชื่อว่าผิดโดยฉัน
   const [allClaims, setAllClaims] = useState(false)
+  const [claimQuery, setClaimQuery] = useState('')   // ค้นหาในงานที่ทำผิด (ลูกค้า/เลขออเดอร์/ประเภท/สาเหตุ/วิธีแก้ไข/สถานะ)
   const [open, setOpen] = useState<Record<string, boolean>>({})   // หัวข้อที่กางอยู่ — ค่าเริ่มต้น = ปิดหมด
   const [scanQuery, setScanQuery] = useState('')   // ค้นหาในรายการงานที่สแกน (เลขออเดอร์/ชื่อลูกค้า/ขั้นตอน)
 
@@ -229,7 +230,12 @@ export default function MobileMe() {
     pending: claims.filter(c => !c.fault_review).length,
     guilty: claims.filter(c => c.fault_review === 'ตรวจสอบแล้วผิดจริง').length,
   }
-  const shownClaims = allClaims ? claims : claims.slice(0, 5)
+  // ค้นในงานที่ทำผิด — ชื่อลูกค้า เลขออเดอร์ ประเภท สาเหตุ วิธีแก้ไข หรือสถานะผลตรวจสอบ
+  const cq = claimQuery.trim().toLowerCase()
+  const foundClaims = !cq ? claims : claims.filter(c =>
+    [c.customer_username, c.original_order_number, c.claim_type, c.fault, c.fix_method, c.fault_review || CLAIM_PENDING, fmtDate(c.claim_date)]
+      .some(v => (v ?? '').toLowerCase().includes(cq)))
+  const shownClaims = allClaims || cq ? foundClaims : foundClaims.slice(0, 5)
 
   return (
     <div>
@@ -400,6 +406,18 @@ export default function MobileMe() {
                   {miniStat('รอตรวจสอบ', String(claimStat.pending), CLAIM_REVIEW_COLOR[CLAIM_PENDING])}
                   {miniStat('ผิดจริง', String(claimStat.guilty), 'var(--red)')}
                 </div>
+                <div style={{ position: 'relative', marginTop: 10 }}>
+                  <input value={claimQuery} onChange={e => setClaimQuery(e.target.value)}
+                    placeholder="ค้นหา ลูกค้า / เลขออเดอร์ / สาเหตุ / สถานะ"
+                    style={{ width: '100%', minHeight: 42, border: '1px solid var(--border)', background: 'var(--surface)', borderRadius: 12, padding: '0 36px 0 13px', fontSize: 13.5, outline: 'none', boxSizing: 'border-box', color: 'var(--ink)' }} />
+                  {claimQuery && (
+                    <button onClick={() => setClaimQuery('')}
+                      style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', width: 30, height: 30, border: 'none', background: 'transparent', color: 'var(--ink-4)', fontSize: 16, cursor: 'pointer' }}>✕</button>
+                  )}
+                </div>
+                {foundClaims.length === 0 ? (
+                  <div style={{ ...card, marginTop: 10, textAlign: 'center', color: 'var(--ink-4)', fontSize: 12.5 }}>ไม่เจอเคสที่ตรงกับ “{claimQuery}”</div>
+                ) : (
                 <div style={{ ...card, marginTop: 10, padding: 0, overflow: 'hidden' }}>
                   {shownClaims.map((c, i) => {
                     const cur = c.fault_review || CLAIM_PENDING
@@ -422,13 +440,19 @@ export default function MobileMe() {
                       </div>
                     )
                   })}
-                  {claims.length > 5 && (
+                  {!cq && foundClaims.length > 5 && (
                     <button onClick={() => setAllClaims(v => !v)}
                       style={{ width: '100%', minHeight: 40, border: 'none', borderTop: '1px solid var(--border)', background: 'transparent', color: 'var(--blue)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
-                      {allClaims ? 'ย่อ' : `ดูทั้งหมด (${claims.length})`}
+                      {allClaims ? 'ย่อ' : `ดูทั้งหมด (${foundClaims.length})`}
                     </button>
                   )}
+                  {cq && (
+                    <div style={{ padding: '8px 13px', borderTop: '1px solid var(--border)', fontSize: 11.5, color: 'var(--ink-4)' }}>
+                      เจอ {foundClaims.length} เคส
+                    </div>
+                  )}
                 </div>
+                )}
                 </Section>
               </>
             )}
