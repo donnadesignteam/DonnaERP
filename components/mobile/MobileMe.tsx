@@ -95,7 +95,7 @@ async function fetchOrderInfo(rows: ScanRow[]): Promise<Record<string, OrderInfo
 
 const card: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 14, boxShadow: 'var(--shadow)' }
 const fieldLabel: React.CSSProperties = { fontSize: 11.5, color: 'var(--ink-3)', display: 'block', marginBottom: 4, fontWeight: 600 }
-const fieldInput: React.CSSProperties = { width: '100%', maxWidth: '100%', minWidth: 0, minHeight: 40, border: '1px solid var(--border)', borderRadius: 10, padding: '9px 11px', fontSize: 16, background: 'var(--bg)', color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }
+const fieldInput: React.CSSProperties = { display: 'block', width: '100%', maxWidth: '100%', minWidth: 0, minHeight: 40, WebkitAppearance: 'none', appearance: 'none', textAlign: 'left', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 11px', fontSize: 16, background: 'var(--bg)', color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }
 const leaveBtn: React.CSSProperties = { width: '100%', minHeight: 44, borderRadius: 12, border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }
 const sectionTitle: React.CSSProperties = { fontSize: 13, fontWeight: 700, color: 'var(--ink-3)', margin: '22px 0 10px' }
 
@@ -706,20 +706,15 @@ export default function MobileMe() {
                 style={{ minWidth: 32, minHeight: 32, border: 'none', background: 'transparent', color: 'var(--ink-3)', fontSize: 20, lineHeight: 1, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>×</button>
             </div>
             <div style={{ overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch',
-              padding: '14px 16px calc(env(safe-area-inset-bottom) + 16px)' }}>
+              padding: '14px 16px calc(env(safe-area-inset-bottom) + 16px)', boxSizing: 'border-box', width: '100%' }}>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10 }}>
-                <div style={{ minWidth: 0 }}>
-                  <label style={fieldLabel}>วันที่เริ่มลา</label>
-                  <input type="date" value={leaveForm.leave_date} style={fieldInput}
-                    onChange={e => { const v = e.target.value; setLeaveForm(f => f && ({ ...f, leave_date: v, leave_end_date: (!f.leave_end_date || f.leave_end_date < v) ? v : f.leave_end_date })) }} />
-                </div>
-                <div style={{ minWidth: 0 }}>
-                  <label style={fieldLabel}>วันที่สิ้นสุด</label>
-                  <input type="date" value={leaveForm.leave_end_date} min={leaveForm.leave_date} style={fieldInput}
-                    onChange={e => setLeaveForm(f => f && ({ ...f, leave_end_date: e.target.value }))} />
-                </div>
-              </div>
+              <label style={fieldLabel}>วันที่เริ่มลา</label>
+              <input type="date" value={leaveForm.leave_date} style={fieldInput}
+                onChange={e => { const v = e.target.value; setLeaveForm(f => f && ({ ...f, leave_date: v, leave_end_date: (!f.leave_end_date || f.leave_end_date < v) ? v : f.leave_end_date })) }} />
+
+              <label style={{ ...fieldLabel, marginTop: 10 }}>วันที่สิ้นสุด</label>
+              <input type="date" value={leaveForm.leave_end_date} min={leaveForm.leave_date} style={fieldInput}
+                onChange={e => setLeaveForm(f => f && ({ ...f, leave_end_date: e.target.value }))} />
 
               <label style={{ ...fieldLabel, marginTop: 10 }}>เวลา</label>
               <input type="time" value={leaveForm.leave_time} style={fieldInput}
@@ -732,7 +727,7 @@ export default function MobileMe() {
               )}
 
               <label style={{ ...fieldLabel, marginTop: 10 }}>ประเภทของการลา</label>
-              <select value={leaveForm.leave_type} style={fieldInput}
+              <select value={leaveForm.leave_type} style={{ ...fieldInput, WebkitAppearance: 'menulist', appearance: 'menulist' }}
                 onChange={e => setLeaveForm(f => f && ({ ...f, leave_type: e.target.value }))}>
                 <option value="">— เลือก —</option>
                 {LEAVE_TYPES.map(o => <option key={o}>{o}</option>)}
@@ -748,7 +743,7 @@ export default function MobileMe() {
                 onChange={e => setLeaveForm(f => f && ({ ...f, reason: e.target.value }))} />
 
               <label style={{ ...fieldLabel, marginTop: 10 }}>ใบรับรองแพทย์ (ไม่บังคับ)</label>
-              <input type="file" accept="image/*,application/pdf" style={{ ...fieldInput, padding: 8 }}
+              <input type="file" accept="image/*,application/pdf" style={{ ...fieldInput, padding: 8, WebkitAppearance: 'textfield', appearance: 'auto' }}
                 onChange={e => setCertFile(e.target.files?.[0] ?? null)} />
 
               {leaveError && (
