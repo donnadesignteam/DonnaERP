@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
-import { fetchStaffOne, hasVacationRight, type Staff } from '@/lib/staffDb'
+import { fetchStaffOne, hasVacationRight, tenureDays, type Staff } from '@/lib/staffDb'
+import { LEAVE_TYPES, rangeDays, vacationMaxDays } from '@/lib/leave'
 import { readStaffSession } from '@/lib/staffSession'
 import { usePullToRefresh, PullIndicator, CardSkeleton } from './mobileUi'
 import MyActivity from '@/components/MyActivity'
@@ -14,6 +15,7 @@ import MyActivity from '@/components/MyActivity'
 // (ออเดอร์/ยอดขาย/โบนัส) ออกตามที่ user เลือก — เหลือ วันลา · งานที่ตัวเองสแกน · มาสาย/WOP/ใบเตือน
 
 type Leave = { date: string | null; time: string | null; type: string | null; reason: string | null; status: string | null }
+type LeaveForm = { leave_date: string; leave_end_date: string; leave_time: string; leave_type: string; reason: string }
 type ScanRow = { order_number: string; stage: string | null; scanned_at: string | null }
 type OrderRow = { id: string; order_number: string | null; customer_name: string | null; order_status: string | null }
 type OrderInfo = { customer: string | null; status: string | null }
@@ -92,6 +94,9 @@ async function fetchOrderInfo(rows: ScanRow[]): Promise<Record<string, OrderInfo
 }
 
 const card: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 14, boxShadow: 'var(--shadow)' }
+const fieldLabel: React.CSSProperties = { fontSize: 11.5, color: 'var(--ink-3)', display: 'block', marginBottom: 4, fontWeight: 600 }
+const fieldInput: React.CSSProperties = { width: '100%', minHeight: 40, border: '1px solid var(--border)', borderRadius: 10, padding: '8px 11px', fontSize: 13.5, background: 'var(--bg)', color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }
+const leaveBtn: React.CSSProperties = { width: '100%', minHeight: 44, borderRadius: 12, border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }
 const sectionTitle: React.CSSProperties = { fontSize: 13, fontWeight: 700, color: 'var(--ink-3)', margin: '22px 0 10px' }
 
 function Balance({ title, left, avail, used, color }: { title: string; left: number | null; avail: number | null; used: number | null; color: string }) {
@@ -158,6 +163,13 @@ export default function MobileMe() {
   const [appealError, setAppealError] = useState('')
   const [open, setOpen] = useState<Record<string, boolean>>({})   // หัวข้อที่กางอยู่ — ค่าเริ่มต้น = ปิดหมด
   const [scanQuery, setScanQuery] = useState('')   // ค้นหาในรายการงานที่สแกน (เลขออเดอร์/ชื่อลูกค้า/ขั้นตอน)
+  // ── ฟอร์มแจ้งลาของตัวเอง (กางอยู่ในหัวข้อ "วันลาคงเหลือ") ──
+  const EMPTY_FORM: LeaveForm = { leave_date: '', leave_end_date: '', leave_time: '08:00', leave_type: '', reason: '' }
+  const [leaveForm, setLeaveForm] = useState<LeaveForm | null>(null)   // null = ยังไม่กดปุ่มแจ้งลา
+  const [leaveSaving, setLeaveSaving] = useState(false)
+  const [leaveError, setLeaveError] = useState('')
+  const [leaveDone, setLeaveDone] = useState('')
+  const [certFile, setCertFile] = useState<File | null>(null)   // ใบรับรองแพทย์ (ไม่บังคับ)
 
   // คุกกี้อ่านได้เฉพาะบนเบราว์เซอร์ — อ่านตอน render แรกจะไม่ตรงกับที่ server เรนเดอร์ (hydration mismatch)
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -198,6 +210,9 @@ export default function MobileMe() {
 
   const { pull, refreshing, refresh } = usePullToRefresh(load)
 
+  // สิทธิลาพักร้อนของคนนี้ — 0 = ยังไม่มีสิทธิ (อายุงานไม่ครบ 1 ปี หรือไม่มีวันเริ่มงานในระบบ)
+  const vacMax = (() => { const d = emp ? tenureDays(emp.start_date) : null; return d == null ? 0 : vacationMaxDays(d) })()
+
   // ยื่น/แก้ข้อความอุทธรณ์ของเคสนั้น — ผู้จัดการจะเห็นในหน้า หมวดพนักงาน → งานเคลม แล้วตัดสินผลตรวจสอบต่อ
   const sendAppeal = async () => {
     if (!appeal) return
@@ -216,6 +231,59 @@ export default function MobileMe() {
     }
     setClaims(prev => prev.map(c => c.id === appeal.claim.id ? { ...c, fault_appeal: text, fault_appeal_at: at } : c))
     setAppeal(null)
+  }
+
+  // ── ส่งใบลาของตัวเอง ──────────────────────────────────────────
+  // ยื่นแล้วขึ้นสถานะ "รออนุมัติ" เฉยๆ ยังไม่ตัดสิทธิวันลา — ผู้จัดการกดอนุมัติที่ปฏิทินพนักงานถึงจะหัก
+  const sendLeave = async () => {
+    if (!leaveForm || !emp) return
+    const f = leaveForm
+    const days = rangeDays(f.leave_date, f.leave_end_date || f.leave_date)
+    if (!f.leave_date) { setLeaveError('เลือกวันที่เริ่มลาก่อน'); return }
+    if (!f.leave_type) { setLeaveError('เลือกประเภทของการลาก่อน'); return }
+    if (!days) { setLeaveError('วันสิ้นสุดต้องไม่อยู่ก่อนวันเริ่มลา'); return }
+    if (f.leave_type === 'ลาพักร้อน') {
+      if (!vacMax) { setLeaveError('ยังไม่มีสิทธิลาพักร้อน (อายุงานไม่ครบ 1 ปี)'); return }
+      if (days > vacMax) { setLeaveError(`ลาพักร้อนต่อเนื่องได้ไม่เกิน ${vacMax} วัน/ครั้ง`); return }
+    }
+    setLeaveSaving(true)
+    setLeaveError('')
+    let certUrl: string | null = null
+    if (certFile) {
+      const ext = (certFile.name.split('.').pop() || 'jpg').toLowerCase()
+      const path = `${emp.code}/${Date.now()}.${ext}`
+      const up = await supabase.storage.from('medical-certs').upload(path, certFile, { upsert: true })
+      if (up.error) { setLeaveSaving(false); setLeaveError(`แนบใบรับรองแพทย์ไม่สำเร็จ: ${up.error.message}`); return }
+      certUrl = supabase.storage.from('medical-certs').getPublicUrl(path).data.publicUrl
+    }
+    const { error: err } = await supabase.from('leave_requests').insert({
+      employee_code: emp.code,
+      employee_name: emp.name,
+      employee_nickname: emp.nickname,
+      department: emp.division,
+      leave_date: f.leave_date,
+      leave_end_date: f.leave_end_date || f.leave_date,
+      leave_time: f.leave_time,
+      leave_type: f.leave_type,
+      reason: f.reason,
+      leave_status: 'รออนุมัติ',
+      supervisor_approval: 'รออนุมัติ',
+      hr_approval: 'รออนุมัติ',
+      medical_cert_url: certUrl,
+      quota_applied: false,   // ยังไม่หักสิทธิ — หักตอนอนุมัติที่ปฏิทินพนักงาน
+    })
+    setLeaveSaving(false)
+    if (err) {
+      setLeaveError(/quota_applied/.test(err.message)
+        ? 'ยังไม่ได้รัน sql/add_leave_quota_applied.sql — บอกแอดมินให้รันก่อน'
+        : `ส่งไม่สำเร็จ: ${err.message}`)
+      return
+    }
+    setLeaveForm(null)
+    setCertFile(null)
+    setLeaveDone('ส่งใบลาแล้ว รอหัวหน้า/HR อนุมัติ')
+    setOpen(o => ({ ...o, leaves: true }))
+    load()
   }
 
   const logout = async () => {
@@ -329,6 +397,82 @@ export default function MobileMe() {
                   used={(emp.personal.full ?? 0) + (emp.personal.half ?? 0) * 0.5} color="#8B5CF6" />
               </div>
             </div>
+
+            {/* แจ้งลาเอง — ฟอร์มกางอยู่ในหน้าเลย (ไม่ใช้กล่องลอย คีย์บอร์ดเด้งแล้วไม่หลุดขอบจอ) */}
+            {leaveDone && !leaveForm && (
+              <div style={{ ...card, marginTop: 10, background: 'var(--green-bg, #34c75915)', borderColor: 'var(--green)', color: 'var(--green)', fontSize: 12.5, fontWeight: 600 }}>
+                {leaveDone}
+              </div>
+            )}
+            {!leaveForm ? (
+              <button onClick={() => { setLeaveForm(EMPTY_FORM); setLeaveError(''); setLeaveDone('') }}
+                style={{ ...leaveBtn, marginTop: 10, background: 'var(--blue)', color: '#fff', border: 'none' }}>
+                + แจ้งลา
+              </button>
+            ) : (
+              <div style={{ ...card, marginTop: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 12 }}>แจ้งลา</div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div>
+                    <label style={fieldLabel}>วันที่เริ่มลา</label>
+                    <input type="date" value={leaveForm.leave_date} style={fieldInput}
+                      onChange={e => { const v = e.target.value; setLeaveForm(f => f && ({ ...f, leave_date: v, leave_end_date: (!f.leave_end_date || f.leave_end_date < v) ? v : f.leave_end_date })) }} />
+                  </div>
+                  <div>
+                    <label style={fieldLabel}>วันที่สิ้นสุด</label>
+                    <input type="date" value={leaveForm.leave_end_date} min={leaveForm.leave_date} style={fieldInput}
+                      onChange={e => setLeaveForm(f => f && ({ ...f, leave_end_date: e.target.value }))} />
+                  </div>
+                </div>
+
+                <label style={{ ...fieldLabel, marginTop: 10 }}>เวลา</label>
+                <input type="time" value={leaveForm.leave_time} style={fieldInput}
+                  onChange={e => setLeaveForm(f => f && ({ ...f, leave_time: e.target.value }))} />
+
+                {rangeDays(leaveForm.leave_date, leaveForm.leave_end_date) > 1 && (
+                  <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 6 }}>
+                    รวม <strong style={{ color: 'var(--ink)' }}>{rangeDays(leaveForm.leave_date, leaveForm.leave_end_date)} วัน</strong>
+                  </div>
+                )}
+
+                <label style={{ ...fieldLabel, marginTop: 10 }}>ประเภทของการลา</label>
+                <select value={leaveForm.leave_type} style={fieldInput}
+                  onChange={e => setLeaveForm(f => f && ({ ...f, leave_type: e.target.value }))}>
+                  <option value="">— เลือก —</option>
+                  {LEAVE_TYPES.map(o => <option key={o}>{o}</option>)}
+                </select>
+                {leaveForm.leave_type === 'ลาพักร้อน' && (
+                  <div style={{ marginTop: 6, fontSize: 11.5, fontWeight: 600, color: vacMax ? 'var(--green)' : 'var(--red)' }}>
+                    {vacMax ? `ลาต่อเนื่องได้ไม่เกิน ${vacMax} วัน/ครั้ง` : 'ยังไม่มีสิทธิลาพักร้อน (อายุงานไม่ครบ 1 ปี)'}
+                  </div>
+                )}
+
+                <label style={{ ...fieldLabel, marginTop: 10 }}>เหตุผล</label>
+                <textarea value={leaveForm.reason} rows={2} style={{ ...fieldInput, resize: 'none', lineHeight: 1.5 }}
+                  onChange={e => setLeaveForm(f => f && ({ ...f, reason: e.target.value }))} />
+
+                <label style={{ ...fieldLabel, marginTop: 10 }}>ใบรับรองแพทย์ (ไม่บังคับ)</label>
+                <input type="file" accept="image/*,application/pdf" style={{ ...fieldInput, padding: 8 }}
+                  onChange={e => setCertFile(e.target.files?.[0] ?? null)} />
+
+                {leaveError && (
+                  <div style={{ marginTop: 10, fontSize: 12.5, color: 'var(--red)', fontWeight: 600 }}>{leaveError}</div>
+                )}
+
+                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                  <button onClick={() => { setLeaveForm(null); setCertFile(null); setLeaveError('') }} disabled={leaveSaving}
+                    style={{ ...leaveBtn, flex: 1, background: 'var(--surface)', color: 'var(--ink-3)' }}>ยกเลิก</button>
+                  <button onClick={sendLeave} disabled={leaveSaving}
+                    style={{ ...leaveBtn, flex: 2, background: 'var(--blue)', color: '#fff', border: 'none', opacity: leaveSaving ? 0.6 : 1 }}>
+                    {leaveSaving ? 'กำลังส่ง…' : 'ส่งใบลา'}
+                  </button>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 8, lineHeight: 1.5 }}>
+                  ส่งแล้วขึ้นสถานะ &quot;รออนุมัติ&quot; · วันลาคงเหลือจะหักหลังหัวหน้า/HR อนุมัติ
+                </div>
+              </div>
+            )}
             </Section>
 
             <Section title="สถิติอื่น" {...sec('stat')}>

@@ -12,6 +12,7 @@ import { fetchEmployeeOptions } from '@/lib/staffDb'
 import { recordAction } from '@/lib/history'
 import { tUpdate } from '@/lib/trackedDb'
 import { useConfirm } from '@/components/ConfirmDialog'
+import { LEAVE_TYPES, rangeDays, vacationMaxDays, applyLeaveToStaff, isQuotaApplied, isApproved } from '@/lib/leave'
 
 type Leave = {
   id: string
@@ -28,6 +29,7 @@ type Leave = {
   supervisor_approval: string
   hr_approval: string
   medical_cert_url: string | null
+  quota_applied?: boolean | null   // false = ใบที่พนักงานแจ้งเองจากมือถือ ยังไม่หักสิทธิจนกว่าจะอนุมัติ
   created_at: string
 }
 
@@ -37,14 +39,6 @@ type Leave = {
 
 function toYMD(y: number, m: number, d: number) {
   return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-}
-
-// จำนวนวันแบบนับรวมหัวท้าย (เช่น 23→25 = 3 วัน); คืน 0 ถ้าข้อมูลไม่ครบ/วันสิ้นสุดก่อนวันเริ่ม
-function rangeDays(start: string, end: string): number {
-  if (!start) return 0
-  const e = end || start
-  const diff = Math.round((new Date(e + 'T00:00:00').getTime() - new Date(start + 'T00:00:00').getTime()) / 86400000)
-  return diff < 0 ? 0 : diff + 1
 }
 
 // วันเริ่มงานพนักงาน (จาก Google Sheet Master_Data คอลัมน์ G) — ใช้คำนวณอายุงาน
@@ -66,17 +60,6 @@ function tenureDays(code: string): number | null {
   const s = START_DATES[code]
   if (!s) return null
   return Math.floor((Date.now() - new Date(s + 'T00:00:00').getTime()) / 86400000)
-}
-
-// เงื่อนไขลาพักร้อน: คืนจำนวนวันต่อเนื่องสูงสุดต่อครั้ง (0 = ยังไม่มีสิทธิ)
-// ยึดตามสูตรใน Google Sheet 'ชีทบันทึกการลา' คอลัมน์ H (อายุงาน = วันยื่นลา − วันเริ่มงาน):
-//   ≤365 ไม่มีสิทธิ (ไม่ครบ 1 ปี) · ≤730 ไม่เกิน 3 · ≤1095 ไม่เกิน 4 · มากกว่านั้น 6
-// (ในชีท >1460 คืนค่าว่าง ซึ่งดูเป็นบั๊ก — ที่นี่ให้ >1095 ได้ 6 ตามเจตนา ไม่ปล่อยว่าง)
-function vacationMaxDays(days: number): number {
-  if (days <= 365) return 0
-  if (days <= 730) return 3
-  if (days <= 1095) return 4
-  return 6
 }
 
 // ข้อความอายุงาน เช่น "4 ปี 28 วัน"
@@ -161,32 +144,6 @@ export default function EmployeesPage() {
     return supabase.storage.from('medical-certs').getPublicUrl(path).data.publicUrl
   }
 
-  // ผลของการลาแต่ละประเภทต่อช่องสิทธิลาในตาราง staff (จะคูณด้วย sign ตอนเพิ่ม/ลบ)
-  const leaveEffect = (type: string, days: number): Record<string, number> => {
-    switch (type) {
-      case 'ลาป่วย':       return { sick_used: days, sick_left: -days }
-      case 'ลากิจเต็มวัน': return { personal_full: days, personal_left: -days }
-      case 'ลากิจครึ่งวัน': return { personal_half: 1, personal_left: -0.5 }
-      case 'ลาพักร้อน':    return { vacation_used: days, vacation_left: -days }
-      case 'WOPเต็มวัน':    return { wop_full: 1 }
-      case 'WOPครึ่งวัน':   return { wop_half: 1 }
-      case 'WOPรายชั่วโมง': return { wop_hours: 1 }
-      case 'มาสาย':        return { late: 1 }
-      default: return {}
-    }
-  }
-
-  // อัปเดตสิทธิลาในตาราง staff ตามการลา (sign=1 เพิ่ม, sign=-1 ลบ/ย้อนกลับ)
-  const applyLeaveToStaff = async (code: string, type: string, days: number, sign: 1 | -1) => {
-    const delta = leaveEffect(type, days)
-    if (!code || !Object.keys(delta).length) return
-    const { data: s, error } = await supabase.from('staff').select('*').eq('code', code.toUpperCase()).maybeSingle()
-    if (error || !s) return  // ยังไม่ได้ migrate ตาราง staff → ข้ามไป ไม่ให้พัง
-    const patch: Record<string, number> = {}
-    for (const [k, v] of Object.entries(delta)) patch[k] = (Number((s as Record<string, unknown>)[k] ?? 0)) + sign * v
-    await supabase.from('staff').update(patch).eq('code', code.toUpperCase())
-  }
-
   const save = async () => {
     // กันลาพักร้อนเมื่อยังไม่มีสิทธิ / เกินจำนวนวันต่อเนื่อง (เผื่อปุ่มถูกข้าม)
     const td = form.employee_code ? tenureDays(form.employee_code) : null
@@ -213,9 +170,16 @@ export default function EmployeesPage() {
       supervisor_approval: 'รออนุมัติ',
       hr_approval: 'รออนุมัติ',
       medical_cert_url: certUrl,
+      quota_applied: true,   // ลงจากคอม = หักสิทธิทันทีตอนบันทึก (พนักงานแจ้งเองจากมือถือถึงจะเป็น false)
     }
     const days = rangeDays(form.leave_date, form.leave_end_date || form.leave_date)
-    const { data: inserted } = await supabase.from('leave_requests').insert(payload).select().single()
+    let { data: inserted } = await supabase.from('leave_requests').insert(payload).select().single()
+    // ยังไม่ได้รัน sql/add_leave_quota_applied.sql → ลงใหม่แบบไม่มีคอลัมน์นั้น (ของเดิมหักสิทธิทันทีอยู่แล้ว)
+    if (!inserted) {
+      const legacy: Record<string, unknown> = { ...payload }
+      delete legacy.quota_applied
+      inserted = (await supabase.from('leave_requests').insert(legacy).select().single()).data
+    }
     // อัปเดตสิทธิลาในหน้าพนักงาน (staff) ให้ตรงกัน
     await applyLeaveToStaff(form.employee_code, form.leave_type, days, 1)
     if (inserted) {
@@ -249,10 +213,10 @@ export default function EmployeesPage() {
     // ‼️ ลบไม่สำเร็จต้องฟ้องเสมอ ห้ามเงียบ (ไม่งั้นดูเหมือนกดปุ่มไม่ติด) — และห้ามคืนสิทธิลาให้ทั้งที่ยังลบไม่ออก
     const { error: delErr } = await supabase.from('leave_requests').delete().eq('id', id)
     if (delErr) { setError(`ลบไม่สำเร็จ: ${delErr.message}`); return }
-    // ย้อนสิทธิลาในตาราง staff กลับ
+    // ย้อนสิทธิลาในตาราง staff กลับ (เฉพาะใบที่หักสิทธิไปแล้ว — ใบที่พนักงานแจ้งเองแล้วยังไม่อนุมัติ ยังไม่เคยหัก)
     if (l) {
       const days = rangeDays(l.leave_date, l.leave_end_date || l.leave_date)
-      await applyLeaveToStaff(l.employee_code, l.leave_type, days, -1)
+      if (isQuotaApplied(l)) await applyLeaveToStaff(l.employee_code, l.leave_type, days, -1)
       recordAction({
         label: `ลบใบลา ${l.employee_nickname || ''}`,
         undo: async () => { await supabase.from('leave_requests').insert(l); await applyLeaveToStaff(l.employee_code, l.leave_type, days, 1); await load() },
@@ -265,6 +229,12 @@ export default function EmployeesPage() {
   const updateLeave = async (id: string, field: string, val: string) => {
     const old = leaves.find((x) => x.id === id)
     await tUpdate('leave_requests', id, { [field]: val }, { [field]: old ? (old as any)[field] ?? null : null }, `แก้ใบลา ${old?.employee_nickname || ''}`, load)
+    // ใบที่พนักงานแจ้งเองจากมือถือยังไม่หักสิทธิ — พออนุมัติ (หัวหน้าหรือ HR คนใดคนหนึ่ง) ค่อยหักให้ครั้งเดียว
+    if (old && !isQuotaApplied(old) && isApproved({ ...old, [field]: val })) {
+      const days = rangeDays(old.leave_date, old.leave_end_date || old.leave_date)
+      await applyLeaveToStaff(old.employee_code, old.leave_type, days, 1)
+      await supabase.from('leave_requests').update({ quota_applied: true }).eq('id', id)
+    }
     load()
   }
 
@@ -575,7 +545,7 @@ export default function EmployeesPage() {
               <select value={form.leave_type} onChange={e => setF('leave_type', e.target.value)}
                 style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none' }}>
                 <option value="">— เลือก —</option>
-                {['ลาป่วย','ลากิจเต็มวัน','ลากิจครึ่งวัน','ลาพักร้อน','WOPเต็มวัน','WOPครึ่งวัน','WOPรายชั่วโมง','มาสาย'].map(o => <option key={o}>{o}</option>)}
+                {LEAVE_TYPES.map(o => <option key={o}>{o}</option>)}
               </select>
               {form.leave_type === 'ลาพักร้อน' && form.employee_code && (
                 <div style={{ marginTop: 8, padding: '9px 13px', borderRadius: 8, fontSize: 12.5, fontWeight: 500,
