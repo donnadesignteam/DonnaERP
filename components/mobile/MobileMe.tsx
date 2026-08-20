@@ -95,9 +95,25 @@ async function fetchOrderInfo(rows: ScanRow[]): Promise<Record<string, OrderInfo
 
 const card: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 14, boxShadow: 'var(--shadow)' }
 const fieldLabel: React.CSSProperties = { fontSize: 11.5, color: 'var(--ink-3)', display: 'block', marginBottom: 4, fontWeight: 600 }
-const fieldInput: React.CSSProperties = { width: '100%', minHeight: 40, border: '1px solid var(--border)', borderRadius: 10, padding: '8px 11px', fontSize: 13.5, background: 'var(--bg)', color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }
+const fieldInput: React.CSSProperties = { width: '100%', minHeight: 40, border: '1px solid var(--border)', borderRadius: 10, padding: '9px 11px', fontSize: 16, background: 'var(--bg)', color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }
 const leaveBtn: React.CSSProperties = { width: '100%', minHeight: 44, borderRadius: 12, border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }
 const sectionTitle: React.CSSProperties = { fontSize: 13, fontWeight: 700, color: 'var(--ink-3)', margin: '22px 0 10px' }
+
+// พื้นที่จอที่มองเห็นจริง (คีย์บอร์ดเด้งขึ้นมาแล้วเหลือเท่าไหร่) — ใช้กำหนดขนาดป๊อปอัปให้ไม่หลุดจอ
+// visualViewport = มาตรฐานที่มือถือทุกตัวรองรับ; ไม่มีก็ถอยไปใช้ความสูงจอเต็ม
+function useVisualViewport() {
+  const [box, setBox] = useState<{ h: number; top: number } | null>(null)
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    const onChange = () => setBox({ h: vv.height, top: vv.offsetTop })
+    onChange()
+    vv.addEventListener('resize', onChange)
+    vv.addEventListener('scroll', onChange)
+    return () => { vv.removeEventListener('resize', onChange); vv.removeEventListener('scroll', onChange) }
+  }, [])
+  return box
+}
 
 function Balance({ title, left, avail, used, color }: { title: string; left: number | null; avail: number | null; used: number | null; color: string }) {
   const pct = avail && avail > 0 && used != null ? Math.min(100, Math.round((used / avail) * 100)) : 0
@@ -209,6 +225,16 @@ export default function MobileMe() {
   const sec = (key: string) => ({ open: !!open[key], onToggle: () => setOpen(o => ({ ...o, [key]: !o[key] })) })
 
   const { pull, refreshing, refresh } = usePullToRefresh(load)
+  const vv = useVisualViewport()
+  const closeLeave = () => { setLeaveForm(null); setCertFile(null); setLeaveError('') }
+
+  // ป๊อปอัปเปิดอยู่ = ล็อกไม่ให้หน้าข้างหลังเลื่อนตาม (กันจอกระตุกตอนเลื่อนในกล่อง)
+  useEffect(() => {
+    if (!leaveForm) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
+  }, [leaveForm])
 
   // สิทธิลาพักร้อนของคนนี้ — 0 = ยังไม่มีสิทธิ (อายุงานไม่ครบ 1 ปี หรือไม่มีวันเริ่มงานในระบบ)
   const vacMax = (() => { const d = emp ? tenureDays(emp.start_date) : null; return d == null ? 0 : vacationMaxDays(d) })()
@@ -398,81 +424,16 @@ export default function MobileMe() {
               </div>
             </div>
 
-            {/* แจ้งลาเอง — ฟอร์มกางอยู่ในหน้าเลย (ไม่ใช้กล่องลอย คีย์บอร์ดเด้งแล้วไม่หลุดขอบจอ) */}
+            {/* แจ้งลาเอง — กดแล้วเด้งป๊อปอัปขึ้นมาจากล่างจอ (ตัวฟอร์มอยู่ท้ายไฟล์) */}
             {leaveDone && !leaveForm && (
-              <div style={{ ...card, marginTop: 10, background: 'var(--green-bg, #34c75915)', borderColor: 'var(--green)', color: 'var(--green)', fontSize: 12.5, fontWeight: 600 }}>
+              <div style={{ ...card, marginTop: 10, background: '#34c75915', borderColor: 'var(--green)', color: 'var(--green)', fontSize: 12.5, fontWeight: 600 }}>
                 {leaveDone}
               </div>
             )}
-            {!leaveForm ? (
-              <button onClick={() => { setLeaveForm(EMPTY_FORM); setLeaveError(''); setLeaveDone('') }}
-                style={{ ...leaveBtn, marginTop: 10, background: 'var(--blue)', color: '#fff', border: 'none' }}>
-                + แจ้งลา
-              </button>
-            ) : (
-              <div style={{ ...card, marginTop: 10 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 12 }}>แจ้งลา</div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <div>
-                    <label style={fieldLabel}>วันที่เริ่มลา</label>
-                    <input type="date" value={leaveForm.leave_date} style={fieldInput}
-                      onChange={e => { const v = e.target.value; setLeaveForm(f => f && ({ ...f, leave_date: v, leave_end_date: (!f.leave_end_date || f.leave_end_date < v) ? v : f.leave_end_date })) }} />
-                  </div>
-                  <div>
-                    <label style={fieldLabel}>วันที่สิ้นสุด</label>
-                    <input type="date" value={leaveForm.leave_end_date} min={leaveForm.leave_date} style={fieldInput}
-                      onChange={e => setLeaveForm(f => f && ({ ...f, leave_end_date: e.target.value }))} />
-                  </div>
-                </div>
-
-                <label style={{ ...fieldLabel, marginTop: 10 }}>เวลา</label>
-                <input type="time" value={leaveForm.leave_time} style={fieldInput}
-                  onChange={e => setLeaveForm(f => f && ({ ...f, leave_time: e.target.value }))} />
-
-                {rangeDays(leaveForm.leave_date, leaveForm.leave_end_date) > 1 && (
-                  <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 6 }}>
-                    รวม <strong style={{ color: 'var(--ink)' }}>{rangeDays(leaveForm.leave_date, leaveForm.leave_end_date)} วัน</strong>
-                  </div>
-                )}
-
-                <label style={{ ...fieldLabel, marginTop: 10 }}>ประเภทของการลา</label>
-                <select value={leaveForm.leave_type} style={fieldInput}
-                  onChange={e => setLeaveForm(f => f && ({ ...f, leave_type: e.target.value }))}>
-                  <option value="">— เลือก —</option>
-                  {LEAVE_TYPES.map(o => <option key={o}>{o}</option>)}
-                </select>
-                {leaveForm.leave_type === 'ลาพักร้อน' && (
-                  <div style={{ marginTop: 6, fontSize: 11.5, fontWeight: 600, color: vacMax ? 'var(--green)' : 'var(--red)' }}>
-                    {vacMax ? `ลาต่อเนื่องได้ไม่เกิน ${vacMax} วัน/ครั้ง` : 'ยังไม่มีสิทธิลาพักร้อน (อายุงานไม่ครบ 1 ปี)'}
-                  </div>
-                )}
-
-                <label style={{ ...fieldLabel, marginTop: 10 }}>เหตุผล</label>
-                <textarea value={leaveForm.reason} rows={2} style={{ ...fieldInput, resize: 'none', lineHeight: 1.5 }}
-                  onChange={e => setLeaveForm(f => f && ({ ...f, reason: e.target.value }))} />
-
-                <label style={{ ...fieldLabel, marginTop: 10 }}>ใบรับรองแพทย์ (ไม่บังคับ)</label>
-                <input type="file" accept="image/*,application/pdf" style={{ ...fieldInput, padding: 8 }}
-                  onChange={e => setCertFile(e.target.files?.[0] ?? null)} />
-
-                {leaveError && (
-                  <div style={{ marginTop: 10, fontSize: 12.5, color: 'var(--red)', fontWeight: 600 }}>{leaveError}</div>
-                )}
-
-                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                  <button onClick={() => { setLeaveForm(null); setCertFile(null); setLeaveError('') }} disabled={leaveSaving}
-                    style={{ ...leaveBtn, flex: 1, background: 'var(--surface)', color: 'var(--ink-3)' }}>ยกเลิก</button>
-                  <button onClick={sendLeave} disabled={leaveSaving}
-                    style={{ ...leaveBtn, flex: 2, background: 'var(--blue)', color: '#fff', border: 'none', opacity: leaveSaving ? 0.6 : 1 }}>
-                    {leaveSaving ? 'กำลังส่ง…' : 'ส่งใบลา'}
-                  </button>
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 8, lineHeight: 1.5 }}>
-                  ส่งแล้วขึ้นสถานะ &quot;รออนุมัติ&quot; · วันลาคงเหลือจะหักหลังหัวหน้า/HR อนุมัติ
-                </div>
-              </div>
-            )}
+            <button onClick={() => { setLeaveForm(EMPTY_FORM); setLeaveError(''); setLeaveDone('') }}
+              style={{ ...leaveBtn, marginTop: 10, background: 'var(--blue)', color: '#fff', border: 'none' }}>
+              + แจ้งลา
+            </button>
             </Section>
 
             <Section title="สถิติอื่น" {...sec('stat')}>
@@ -727,6 +688,88 @@ export default function MobileMe() {
           </>
         )}
       </div>
+
+
+      {/* ป๊อปอัปแจ้งลา — เกาะพื้นที่จอจริง (visualViewport) คีย์บอร์ดเด้งขึ้นมาแล้วกล่องหดตาม ไม่หลุดขอบจอ
+          เนื้อในเลื่อนได้ในตัวเอง · ช่องกรอกเป็น 16px กัน iOS ซูมเข้าเองตอนโฟกัส */}
+      {leaveForm && (
+        <div onClick={closeLeave}
+          style={{ position: 'fixed', left: 0, right: 0, top: vv ? vv.top : 0, height: vv ? vv.h : '100dvh',
+            background: 'rgba(15,23,42,0.45)', zIndex: 300, display: 'flex', alignItems: 'flex-end' }}>
+          <div onClick={e => e.stopPropagation()}
+            onFocusCapture={e => { const el = e.target as HTMLElement; setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250) }}
+            style={{ width: '100%', maxHeight: '100%', display: 'flex', flexDirection: 'column',
+              background: 'var(--surface)', borderRadius: '18px 18px 0 0', boxShadow: '0 -8px 30px rgba(0,0,0,0.18)' }}>
+            <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '13px 16px', borderBottom: '1px solid var(--border)' }}>
+              <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>แจ้งลา</span>
+              <button onClick={closeLeave} aria-label="ปิด"
+                style={{ minWidth: 32, minHeight: 32, border: 'none', background: 'transparent', color: 'var(--ink-3)', fontSize: 20, lineHeight: 1, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>×</button>
+            </div>
+            <div style={{ overflowY: 'auto', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch',
+              padding: '14px 16px calc(env(safe-area-inset-bottom) + 16px)' }}>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <label style={fieldLabel}>วันที่เริ่มลา</label>
+                  <input type="date" value={leaveForm.leave_date} style={fieldInput}
+                    onChange={e => { const v = e.target.value; setLeaveForm(f => f && ({ ...f, leave_date: v, leave_end_date: (!f.leave_end_date || f.leave_end_date < v) ? v : f.leave_end_date })) }} />
+                </div>
+                <div>
+                  <label style={fieldLabel}>วันที่สิ้นสุด</label>
+                  <input type="date" value={leaveForm.leave_end_date} min={leaveForm.leave_date} style={fieldInput}
+                    onChange={e => setLeaveForm(f => f && ({ ...f, leave_end_date: e.target.value }))} />
+                </div>
+              </div>
+
+              <label style={{ ...fieldLabel, marginTop: 10 }}>เวลา</label>
+              <input type="time" value={leaveForm.leave_time} style={fieldInput}
+                onChange={e => setLeaveForm(f => f && ({ ...f, leave_time: e.target.value }))} />
+
+              {rangeDays(leaveForm.leave_date, leaveForm.leave_end_date) > 1 && (
+                <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 6 }}>
+                  รวม <strong style={{ color: 'var(--ink)' }}>{rangeDays(leaveForm.leave_date, leaveForm.leave_end_date)} วัน</strong>
+                </div>
+              )}
+
+              <label style={{ ...fieldLabel, marginTop: 10 }}>ประเภทของการลา</label>
+              <select value={leaveForm.leave_type} style={fieldInput}
+                onChange={e => setLeaveForm(f => f && ({ ...f, leave_type: e.target.value }))}>
+                <option value="">— เลือก —</option>
+                {LEAVE_TYPES.map(o => <option key={o}>{o}</option>)}
+              </select>
+              {leaveForm.leave_type === 'ลาพักร้อน' && (
+                <div style={{ marginTop: 6, fontSize: 11.5, fontWeight: 600, color: vacMax ? 'var(--green)' : 'var(--red)' }}>
+                  {vacMax ? `ลาต่อเนื่องได้ไม่เกิน ${vacMax} วัน/ครั้ง` : 'ยังไม่มีสิทธิลาพักร้อน (อายุงานไม่ครบ 1 ปี)'}
+                </div>
+              )}
+
+              <label style={{ ...fieldLabel, marginTop: 10 }}>เหตุผล</label>
+              <textarea value={leaveForm.reason} rows={2} style={{ ...fieldInput, resize: 'none', lineHeight: 1.5 }}
+                onChange={e => setLeaveForm(f => f && ({ ...f, reason: e.target.value }))} />
+
+              <label style={{ ...fieldLabel, marginTop: 10 }}>ใบรับรองแพทย์ (ไม่บังคับ)</label>
+              <input type="file" accept="image/*,application/pdf" style={{ ...fieldInput, padding: 8 }}
+                onChange={e => setCertFile(e.target.files?.[0] ?? null)} />
+
+              {leaveError && (
+                <div style={{ marginTop: 10, fontSize: 12.5, color: 'var(--red)', fontWeight: 600 }}>{leaveError}</div>
+              )}
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <button onClick={closeLeave} disabled={leaveSaving}
+                  style={{ ...leaveBtn, flex: 1, background: 'var(--surface)', color: 'var(--ink-3)' }}>ยกเลิก</button>
+                <button onClick={sendLeave} disabled={leaveSaving}
+                  style={{ ...leaveBtn, flex: 2, background: 'var(--blue)', color: '#fff', border: 'none', opacity: leaveSaving ? 0.6 : 1 }}>
+                  {leaveSaving ? 'กำลังส่ง…' : 'ส่งใบลา'}
+                </button>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 8, lineHeight: 1.5 }}>
+                ส่งแล้วขึ้นสถานะ &quot;รออนุมัติ&quot; · วันลาคงเหลือจะหักหลังหัวหน้า/HR อนุมัติ
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )
