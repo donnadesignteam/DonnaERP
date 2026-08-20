@@ -95,7 +95,7 @@ async function fetchOrderInfo(rows: ScanRow[]): Promise<Record<string, OrderInfo
 
 const card: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 14, boxShadow: 'var(--shadow)' }
 const fieldLabel: React.CSSProperties = { fontSize: 11.5, color: 'var(--ink-3)', display: 'block', marginBottom: 4, fontWeight: 600 }
-const fieldInput: React.CSSProperties = { width: '100%', minHeight: 40, border: '1px solid var(--border)', borderRadius: 10, padding: '9px 11px', fontSize: 16, background: 'var(--bg)', color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }
+const fieldInput: React.CSSProperties = { width: '100%', maxWidth: '100%', minWidth: 0, minHeight: 40, border: '1px solid var(--border)', borderRadius: 10, padding: '9px 11px', fontSize: 16, background: 'var(--bg)', color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }
 const leaveBtn: React.CSSProperties = { width: '100%', minHeight: 44, borderRadius: 12, border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }
 const sectionTitle: React.CSSProperties = { fontSize: 13, fontWeight: 700, color: 'var(--ink-3)', margin: '22px 0 10px' }
 
@@ -705,16 +705,16 @@ export default function MobileMe() {
               <button onClick={closeLeave} aria-label="ปิด"
                 style={{ minWidth: 32, minHeight: 32, border: 'none', background: 'transparent', color: 'var(--ink-3)', fontSize: 20, lineHeight: 1, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>×</button>
             </div>
-            <div style={{ overflowY: 'auto', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch',
+            <div style={{ overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch',
               padding: '14px 16px calc(env(safe-area-inset-bottom) + 16px)' }}>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10 }}>
+                <div style={{ minWidth: 0 }}>
                   <label style={fieldLabel}>วันที่เริ่มลา</label>
                   <input type="date" value={leaveForm.leave_date} style={fieldInput}
                     onChange={e => { const v = e.target.value; setLeaveForm(f => f && ({ ...f, leave_date: v, leave_end_date: (!f.leave_end_date || f.leave_end_date < v) ? v : f.leave_end_date })) }} />
                 </div>
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <label style={fieldLabel}>วันที่สิ้นสุด</label>
                   <input type="date" value={leaveForm.leave_end_date} min={leaveForm.leave_date} style={fieldInput}
                     onChange={e => setLeaveForm(f => f && ({ ...f, leave_end_date: e.target.value }))} />
