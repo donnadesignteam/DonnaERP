@@ -25,7 +25,7 @@ export const EMPLOYEES: Employee[] = [
   { code:'DN021', realName:'วิศวกร มาชม', nickname:'เกมส์', role:'จัดส่ง', dept:'ปฏิบัติการ' },
   { code:'DN022', realName:'นรมน แซตูกู', nickname:'ยู', role:'ช่างเย็บ', dept:'ปฏิบัติการ' },
   { code:'DN023', realName:'Sangsar', nickname:'ศรี', role:'ช่างเย็บ', dept:'ปฏิบัติการ' },
-  { code:'DN024', realName:'Jai Aung Jing', nickname:'อ๋อง', role:'ช่างทั่วไป', dept:'ปฏิบัติการ' },
+  { code:'DN024', realName:'Jai Aung Jing', nickname:'อ่อง', role:'ช่างทั่วไป', dept:'ปฏิบัติการ' },
   { code:'DN025', realName:'ฐิตาภา ทาวงค์', nickname:'แต้ว', role:'บัญชี', dept:'ธุรการ' },
   { code:'DN026', realName:'ศิริรัตน์ กันทาซาว', nickname:'เก๋', role:'บัญชี', dept:'ธุรการ' },
   { code:'DN027', realName:'บูตะ เชอมือ', nickname:'เจน', role:'ช่างทั่วไป', dept:'ปฏิบัติการ' },
