@@ -44,26 +44,40 @@ export async function POST(req: NextRequest) {
 async function staffLogin(rawCode: string, rawPass: string) {
   const code = normalizeStaffCode(rawCode)
   const pass = normalizePass(rawPass)
-  if (!code || !pass) return null
+  const passRaw = String(rawPass || '').trim()
+  if (!code || !passRaw) return null
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   if (!url || !key) return null
 
   const db = createClient(url, key)
-  const { data, error } = await db.from('staff').select('code, nickname, active, start_date').eq('code', code).maybeSingle()
+  const { data, error } = await db.from('staff').select('code, nickname, active, start_date, login_pass').eq('code', code).maybeSingle()
   if (error) return NextResponse.json({ ok: false, error: 'เชื่อมต่อฐานข้อมูลไม่ได้' }, { status: 500 })
   if (!data) return null
   if (data.active === false) return NextResponse.json({ ok: false, error: 'รหัสพนักงานนี้ไม่ได้ทำงานแล้ว' }, { status: 401 })
+  // กรณีพิเศษ (เช่น เด็กฝึกงาน) — ตั้งรหัสผ่านไว้ในช่อง login_pass ของคนนั้นได้เลย
+  // มีค่าเมื่อไหร่ = ใช้ค่านี้แทนกติกาวันเริ่มงาน (ไม่ต้องมี start_date ก็ล็อกอินได้)
+  const custom = String((data as { login_pass?: string | null }).login_pass || '').trim()
+  if (custom) {
+    if (passRaw !== custom && pass !== normalizePass(custom)) return null
+    return staffOk(data.code, data.nickname)
+  }
+
   // คนที่ยังไม่มีวันเริ่มงานใน DB คำนวณรหัสผ่านไม่ได้ — บอกตรงๆ ดีกว่าปล่อยให้งงว่าพิมพ์ผิด
   if (!data.start_date) {
     return NextResponse.json({ ok: false, error: 'ยังไม่มีวันเริ่มงานในระบบ แจ้ง HR กรอกที่หน้าพนักงานก่อน' }, { status: 401 })
   }
   if (!staffPassVariants(data.start_date).includes(pass)) return null
 
+  return staffOk(data.code, data.nickname)
+}
+
+// ล็อกอินผ่าน — ออกคุกกี้สิทธิ์ (donna_auth) + คุกกี้ตัวตน (donna_staff)
+async function staffOk(code: string, nickname: string | null) {
   const token = await authToken()
-  const res = NextResponse.json({ ok: true, staff: true, code: data.code, nickname: data.nickname })
+  const res = NextResponse.json({ ok: true, staff: true, code, nickname })
   if (token) res.cookies.set(AUTH_COOKIE, token, { ...COOKIE_BASE, httpOnly: true })
-  res.cookies.set(STAFF_COOKIE, await buildStaffCookie(data.code, data.nickname), COOKIE_BASE)
+  res.cookies.set(STAFF_COOKIE, await buildStaffCookie(code, nickname), COOKIE_BASE)
   return res
 }
