@@ -26,7 +26,14 @@ type ClaimRow = {
   fault_appeal: string | null        // ข้อความอุทธรณ์ที่พนักงานยื่นจากแอปมือถือ (sql/add_claim_fault_appeal.sql)
   fault_appeal_at: string | null
   fault_appeal_by: string | null
+  ship_back_cost: number | null      // ค่าส่งกลับ
+  ship_return_cost: number | null    // ค่าส่งคืน
+  estimated_price: number | null     // ราคาประเมิน (ค่าของที่ต้องทำใหม่)
 }
+
+// ค่าเคลมของเคสหนึ่ง = ค่าส่งกลับ + ค่าส่งคืน + ราคาประเมิน
+const claimCost = (r: ClaimRow) => (r.ship_back_cost ?? 0) + (r.ship_return_cost ?? 0) + (r.estimated_price ?? 0)
+const baht = (v: number) => v ? '฿' + Math.round(v).toLocaleString('th-TH') : '—'
 
 // บริษัทขนส่งไม่ใช่พนักงาน — หน้านี้รวมเฉพาะคน (ชุดเดียวกับกลุ่ม "ขนส่ง" ในหน้าเคลม)
 const COURIERS = ['Flash Express', 'J&T Express', 'Kerry', 'ไปรษณีย์ไทย', 'SPX Express']
@@ -62,6 +69,8 @@ export default function StaffClaimsPage() {
   const [loading, setLoading] = useState(!cached)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
+  const [person, setPerson] = useState('')          // ฟีลเตอร์เลือกดูทีละคน
+  const [reviewFilter, setReviewFilter] = useState('')
   const [owner, setOwner] = useState<boolean | null>(null)   // null = ยังไม่รู้ (กัน hydration ไม่ตรง)
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -69,7 +78,7 @@ export default function StaffClaimsPage() {
 
   useEffect(() => {
     ;(async () => {
-      const COLS = 'id, claim_date, original_order_number, customer_username, claim_type, fault, fault_by, fix_method'
+      const COLS = 'id, claim_date, original_order_number, customer_username, claim_type, fault, fault_by, fix_method, ship_back_cost, ship_return_cost, estimated_price'
       let r = await fetchAllRows<ClaimRow>(() => supabase.from('claims')
         .select(`${COLS}, fault_review, fault_appeal, fault_appeal_at, fault_appeal_by`).order('id', { ascending: false }))
       // ยังไม่ได้รัน sql/add_claim_fault_appeal.sql → ถอยไปดึงแบบไม่มีคอลัมน์อุทธรณ์
@@ -108,6 +117,8 @@ export default function StaffClaimsPage() {
     for (const r of rows) {
       const name = (r.fault_by ?? '').trim()
       if (!name || COURIERS.includes(name)) continue
+      if (person && name !== person) continue
+      if (reviewFilter && (r.fault_review || PENDING) !== reviewFilter) continue
       if (q && !name.toLowerCase().includes(q)) continue
       const list = map.get(name)
       if (list) list.push(r)
@@ -120,9 +131,21 @@ export default function StaffClaimsPage() {
         pending: list.filter(c => !c.fault_review).length,
         guilty: list.filter(c => c.fault_review === 'ตรวจสอบแล้วผิดจริง').length,
         appeal: list.filter(c => (c.fault_appeal ?? '').trim()).length,
+        cost: list.reduce((sum, c) => sum + claimCost(c), 0),
+        guiltyCost: list.filter(c => c.fault_review === 'ตรวจสอบแล้วผิดจริง').reduce((sum, c) => sum + claimCost(c), 0),
       }))
       .sort((a, b) => b.list.length - a.list.length || a.name.localeCompare(b.name, 'th'))
-  }, [rows, search])
+  }, [rows, search, person, reviewFilter])
+
+  // รายชื่อคนทั้งหมด (ไม่ขึ้นกับฟีลเตอร์ที่เลือกอยู่) สำหรับกล่องเลือกคน
+  const people = useMemo(() => {
+    const set = new Set<string>()
+    for (const r of rows) {
+      const name = (r.fault_by ?? '').trim()
+      if (name && !COURIERS.includes(name)) set.add(name)
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, 'th'))
+  }, [rows])
 
   const totals = useMemo(() => ({
     people: groups.length,
@@ -130,6 +153,8 @@ export default function StaffClaimsPage() {
     pending: groups.reduce((s, g) => s + g.pending, 0),
     guilty: groups.reduce((s, g) => s + g.guilty, 0),
     appeal: groups.reduce((s, g) => s + g.appeal, 0),
+    cost: groups.reduce((s, g) => s + g.cost, 0),
+    guiltyCost: groups.reduce((s, g) => s + g.guiltyCost, 0),
   }), [groups])
 
   if (owner === false) {
@@ -161,10 +186,29 @@ export default function StaffClaimsPage() {
         <Tile label="รอตรวจสอบ" value={String(totals.pending)} color={REVIEW_COLOR[PENDING]} />
         <Tile label="ตรวจแล้วผิดจริง" value={String(totals.guilty)} color={REVIEW_COLOR['ตรวจสอบแล้วผิดจริง']} />
         <Tile label="ยื่นอุทธรณ์" value={String(totals.appeal)} color="var(--blue)" />
+        <Tile label="ค่าเคลมรวม" value={baht(totals.cost)} color="var(--ink)" />
+        <Tile label="ค่าเคลมที่ผิดจริง" value={baht(totals.guiltyCost)} color={REVIEW_COLOR['ตรวจสอบแล้วผิดจริง']} />
       </div>
 
-      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหาชื่อพนักงาน…"
-        style={{ width: '100%', maxWidth: 280, border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px', fontSize: 14, outline: 'none', marginBottom: 14, background: 'var(--surface)', color: 'var(--ink)' }} />
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหาชื่อพนักงาน…"
+          style={{ flex: '1 1 200px', maxWidth: 280, border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px', fontSize: 14, outline: 'none', background: 'var(--surface)', color: 'var(--ink)' }} />
+        <select value={person} onChange={e => setPerson(e.target.value)}
+          style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 14, outline: 'none', cursor: 'pointer', background: 'var(--surface)', color: 'var(--ink)', fontWeight: person ? 700 : 400 }}>
+          <option value="">ทุกคน ({people.length})</option>
+          {people.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <select value={reviewFilter} onChange={e => setReviewFilter(e.target.value)}
+          style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 14, outline: 'none', cursor: 'pointer', background: 'var(--surface)', color: reviewFilter ? REVIEW_COLOR[reviewFilter] : 'var(--ink)', fontWeight: reviewFilter ? 700 : 400 }}>
+          <option value="">ทุกสถานะ</option>
+          <option value={PENDING}>{PENDING}</option>
+          {REVIEWS.map(v => <option key={v} value={v}>{v}</option>)}
+        </select>
+        {(person || reviewFilter || search) && (
+          <button onClick={() => { setPerson(''); setReviewFilter(''); setSearch('') }}
+            style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px', fontSize: 13, cursor: 'pointer', background: 'var(--surface)', color: 'var(--ink-3)' }}>ล้างฟีลเตอร์</button>
+        )}
+      </div>
 
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
         {loading ? (
@@ -185,6 +229,7 @@ export default function StaffClaimsPage() {
                   <th style={th}>ประเภท</th>
                   <th style={th}>สาเหตุ</th>
                   <th style={th}>วิธีแก้ไข</th>
+                  <th style={{ ...th, textAlign: 'right' }}>ค่าเคลม</th>
                   <th style={{ ...th, minWidth: 200 }}>อุทธรณ์ของพนักงาน</th>
                   <th style={{ ...th, width: 210 }}>สถานะ</th>
                 </tr>
@@ -193,12 +238,17 @@ export default function StaffClaimsPage() {
                 {groups.map(g => (
                   <Fragment key={g.name}>
                     <tr style={{ background: 'var(--bg)' }}>
-                      <td style={{ ...td, fontWeight: 700 }} colSpan={9}>
+                      <td style={{ ...td, fontWeight: 700 }} colSpan={10}>
                         {g.name}
                         <span style={{ fontWeight: 400, color: 'var(--ink-4)', fontSize: 12 }}> · {g.list.length} เคส</span>
                         {g.pending > 0 && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: REVIEW_COLOR[PENDING], background: '#f59e0b22', borderRadius: 10, padding: '1px 8px' }}>รอตรวจสอบ {g.pending}</span>}
                         {g.guilty > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: REVIEW_COLOR['ตรวจสอบแล้วผิดจริง'], background: '#ef444422', borderRadius: 10, padding: '1px 8px' }}>ผิดจริง {g.guilty}</span>}
                         {g.appeal > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: '#2563eb', background: '#2563eb22', borderRadius: 10, padding: '1px 8px' }}>ยื่นอุทธรณ์ {g.appeal}</span>}
+                        {g.cost > 0 && (
+                          <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: 'var(--ink)', background: 'var(--border)', borderRadius: 10, padding: '1px 8px' }}>
+                            ค่าเคลมรวม {baht(g.cost)}{g.guiltyCost > 0 && g.guiltyCost !== g.cost ? ' · ผิดจริง ' + baht(g.guiltyCost) : ''}
+                          </span>
+                        )}
                       </td>
                     </tr>
                     {g.list.map(c => {
@@ -216,6 +266,11 @@ export default function StaffClaimsPage() {
                           <td style={td}>{c.claim_type || '—'}</td>
                           <td style={td}>{c.fault || '—'}</td>
                           <td style={td}>{c.fix_method || '—'}</td>
+                          <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap', fontWeight: claimCost(c) ? 600 : 400, color: claimCost(c) ? 'var(--ink)' : 'var(--ink-4)' }}
+                            title={([['ค่าส่งกลับ', c.ship_back_cost], ['ค่าส่งคืน', c.ship_return_cost], ['ราคาประเมิน', c.estimated_price]] as [string, number | null][])
+                              .filter(([, v]) => v).map(([k, v]) => k + ' ' + Number(v).toLocaleString('th-TH')).join(' + ') || 'ยังไม่ได้กรอกค่าใช้จ่าย'}>
+                            {baht(claimCost(c))}
+                          </td>
                           <td style={{ ...td, maxWidth: 320 }}>
                             {(c.fault_appeal ?? '').trim() ? (
                               <div style={{ background: '#2563eb11', border: '1px solid #2563eb44', borderRadius: 8, padding: '6px 9px' }}>
