@@ -263,6 +263,21 @@ export default function AnalyticsPage() {
       .sort((a, b) => b.total - a.total)
       .slice(0, 12)
 
+    // คอลัมน์ของตารางผลงาน = 5 ขั้นผลิต + สถานะอื่นที่มีคนสแกนจริง (เช่น รอจัดส่ง/จัดส่งแล้ว/งานเคลม)
+    // ‼️ เดิมโชว์แค่ 5 ขั้น แต่ช่อง "รวม" นับทุกสถานะ เลยมีตัวเลขหายไปจากตาราง
+    const extraCount = new Map<string, number>()
+    for (const t of techs) {
+      for (const [st, n2] of Object.entries(t.rec)) {
+        if (STAGE_SET.has(st)) continue
+        extraCount.set(st, (extraCount.get(st) ?? 0) + n2)
+      }
+    }
+    const techCols = [
+      ...STAGES.map(st => ({ status: st.status, label: st.label.replace('แผนก', '').replace('สินค้า', '').replace('ผ้า', ''), color: st.color })),
+      ...[...extraCount.entries()].sort((a, b) => b[1] - a[1])
+        .map(([st]) => ({ status: st, label: st.replace('แล้ว', ''), color: 'var(--ink-3)' })),
+    ]
+
     // --- เคลม ---
     const faultCount = new Map<string, number>()
     let refundSum = 0
@@ -289,7 +304,7 @@ export default function AnalyticsPage() {
       shipMed: median(shipDur), shipN: shipDur.length,
       onTimePct: withDeadline.length > 0 ? Math.round((onTime.length / withDeadline.length) * 100) : null,
       onTimeN: withDeadline.length,
-      monthOrders, monthShipDays, techs, faults, claimRate, refundSum, platforms, revenue, shippedCount: shipped.length,
+      monthOrders, monthShipDays, techs, techCols, faults, claimRate, refundSum, platforms, revenue, shippedCount: shipped.length,
     }
   }, [data, month])
 
@@ -359,7 +374,7 @@ export default function AnalyticsPage() {
 
       {/* พนักงานผลิต + เคลม + แพลตฟอร์ม */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 14 }}>
-        <Card title="ผลงานพนักงานผลิต" sub="จำนวนงานที่สแกนในช่วงที่เลือก แยกตามขั้น">
+        <Card title="ผลงานพนักงานผลิต" sub="จำนวนงานที่สแกนในช่วงที่เลือก แยกตามขั้น (รวมสถานะอื่นที่มีการสแกนด้วย)">
           {stats.techs.length === 0 ? (
             <p style={{ color: 'var(--ink-3)', fontSize: 12.5, textAlign: 'center', padding: '12px 0' }}>ไม่มีข้อมูล</p>
           ) : (
@@ -367,8 +382,8 @@ export default function AnalyticsPage() {
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
                   <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--ink-3)', fontWeight: 500, fontSize: 11.5 }}>ชื่อ</th>
-                  {STAGES.map(st => (
-                    <th key={st.status} style={{ textAlign: 'center', padding: '6px 8px', color: st.color, fontWeight: 600, fontSize: 11.5, whiteSpace: 'nowrap' }}>{st.label.replace('แผนก', '').replace('สินค้า', '').replace('ผ้า', '')}</th>
+                  {stats.techCols.map(st => (
+                    <th key={st.status} style={{ textAlign: 'center', padding: '6px 8px', color: st.color, fontWeight: 600, fontSize: 11.5, whiteSpace: 'nowrap' }}>{st.label}</th>
                   ))}
                   <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--ink-3)', fontWeight: 500, fontSize: 11.5 }}>รวม</th>
                 </tr>
@@ -377,7 +392,7 @@ export default function AnalyticsPage() {
                 {stats.techs.map(t => (
                   <tr key={t.name} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '7px 8px', fontWeight: 600, color: 'var(--ink)' }}>{t.name}</td>
-                    {STAGES.map(st => (
+                    {stats.techCols.map(st => (
                       <td key={st.status} style={{ textAlign: 'center', padding: '7px 8px', color: t.rec[st.status] ? 'var(--ink-2)' : 'var(--ink-4)' }}>{t.rec[st.status] ?? '-'}</td>
                     ))}
                     <td style={{ textAlign: 'right', padding: '7px 8px', fontWeight: 700, color: 'var(--blue)' }}>{t.total}</td>
