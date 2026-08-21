@@ -1,14 +1,15 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { fetchStaffOne, hasVacationRight, type Staff } from '@/lib/staffDb'
+import { rangeDays } from '@/lib/leave'
 import MyActivity from '@/components/MyActivity'
 
-type Leave = { filed: string | null; date: string | null; time: string | null; type: string | null; reason: string | null; status: string | null; supervisor: string | null }
+type Leave = { filed: string | null; date: string | null; end: string | null; time: string | null; type: string | null; reason: string | null; status: string | null; supervisor: string | null }
 type Scan = { order_number: string; customer_name: string | null; status: string | null; stages: string[]; last: string | null }
 type AdminOrder = { order_number: string | null; customer_name: string | null; platform: string | null; status: string | null; price: number; category: string; date: string | null }
 type Claim = { order_number: string | null; customer: string | null; type: string | null; status: string | null }
@@ -75,6 +76,127 @@ function staffToForm(s: Staff): Form {
   } as Form
 }
 
+// ── ใบสรุปวันขาด-ลา-มาสาย (ปริ้นจากแดชบอร์ดพนักงานรายคน) ──
+const LEAVE_GROUPS: { label: string; match: (t: string) => boolean }[] = [
+  { label: 'ลาป่วย', match: t => t === 'ลาป่วย' },
+  { label: 'ลากิจ', match: t => t.startsWith('ลากิจ') },
+  { label: 'ลาพักร้อน', match: t => t === 'ลาพักร้อน' },
+  { label: 'ขาดงาน / ไม่รับค่าจ้าง (WOP)', match: t => t.startsWith('WOP') },
+  { label: 'มาสาย', match: t => t === 'มาสาย' },
+]
+
+// นับ "จำนวนวัน" ของใบลาหนึ่งใบ — ครึ่งวัน = 0.5 · รายชั่วโมง/มาสาย = ไม่นับเป็นวัน (นับเป็นครั้ง)
+const leaveDays = (l: Leave) => {
+  const t = l.type || ''
+  if (t === 'มาสาย' || t === 'WOPรายชั่วโมง') return 0
+  const d = l.date ? rangeDays(l.date, l.end || l.date) : 0
+  return t.endsWith('ครึ่งวัน') ? 0.5 : d
+}
+
+const thDate = (v: string | null) => (v ? new Date(v).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—')
+const num = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1))
+
+function printLeaveSummary(emp: Staff, leaves: Leave[], year: string) {
+  const esc = (v: unknown) => String(v ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!))
+  const list = [...leaves]
+    .filter(l => year === 'all' || (l.date ?? '').slice(0, 4) === year)
+    .sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''))
+
+  const rows = LEAVE_GROUPS.map(g => {
+    const ls = list.filter(l => g.match(l.type || ''))
+    return { label: g.label, times: ls.length, days: ls.reduce((s2, l) => s2 + leaveDays(l), 0) }
+  })
+  const totalTimes = rows.reduce((s2, r) => s2 + r.times, 0)
+  const totalDays = rows.reduce((s2, r) => s2 + r.days, 0)
+
+  const period = year === 'all' ? 'ทั้งหมดเท่าที่มีในระบบ' : `ปี พ.ศ. ${Number(year) + 543} (${year})`
+  const printedAt = new Date().toLocaleString('th-TH', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+
+  const balance = [
+    ['ลาป่วย', emp.sick.avail, emp.sick.used, emp.sick.left],
+    ['ลากิจ', emp.personal.avail, emp.personal.avail != null && emp.personal.left != null ? emp.personal.avail - emp.personal.left : null, emp.personal.left],
+    ...(hasVacationRight(emp.start_date) ? [['ลาพักร้อน', emp.vacation.avail, emp.vacation.used, emp.vacation.left] as const] : []),
+  ] as [string, number | null, number | null, number | null][]
+
+  const html = `<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>สรุปวันขาด-ลา-มาสาย ${esc(emp.nickname || emp.name || emp.code)}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Sarabun', 'Noto Sans Thai', sans-serif; font-size: 13px; color: #000; margin: 0; padding: 18px; }
+  h1 { font-size: 19px; margin: 0 0 2px; }
+  h2 { font-size: 14px; margin: 18px 0 8px; }
+  .sub { font-size: 12px; color: #555; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
+  th, td { border: 1px solid #aaa; padding: 6px 9px; text-align: left; vertical-align: top; }
+  th { background: #f0f0f0; font-weight: 700; white-space: nowrap; }
+  td.n, th.n { text-align: right; white-space: nowrap; }
+  tr.total td { font-weight: 700; background: #f7f7f7; }
+  .sign { margin-top: 34px; display: flex; gap: 60px; }
+  .sign div { flex: 1; text-align: center; font-size: 12px; }
+  .sign .line { border-top: 1px dotted #555; margin-bottom: 5px; height: 34px; }
+  @page { margin: 0; }
+  @media print { body { padding: 14mm; } .toolbar { display: none !important; } }
+  .toolbar { position: fixed; top: 10px; right: 10px; background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 8px 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.18); z-index: 99; }
+  .toolbar button { padding: 8px 20px; border-radius: 8px; border: none; background: #1a1a1a; color: #fff; cursor: pointer; font-size: 14px; font-weight: 700; font-family: inherit; }
+</style>
+</head>
+<body>
+<div class="toolbar"><button onclick="window.print()">🖨 ปริ้น</button></div>
+
+<h1>สรุปวันขาด · ลา · มาสาย</h1>
+<div class="sub">
+  ${esc(emp.name || '—')}${emp.nickname ? ` (${esc(emp.nickname)})` : ''} · ${esc(emp.code)} · ${esc(emp.position || '—')}${emp.division ? ` · ${esc(emp.division)}` : ''}<br>
+  ${emp.start_date ? `เริ่มงาน ${thDate(emp.start_date)} · ` : ''}ช่วงข้อมูล: ${esc(period)} · ปริ้นเมื่อ ${esc(printedAt)}
+</div>
+
+<h2>สรุปรวม</h2>
+<table>
+  <thead><tr><th>ประเภท</th><th class="n">จำนวนครั้ง</th><th class="n">จำนวนวัน</th></tr></thead>
+  <tbody>
+    ${rows.map(r => `<tr><td>${esc(r.label)}</td><td class="n">${r.times}</td><td class="n">${r.days ? num(r.days) : '—'}</td></tr>`).join('')}
+    <tr class="total"><td>รวม</td><td class="n">${totalTimes}</td><td class="n">${totalDays ? num(totalDays) : '—'}</td></tr>
+  </tbody>
+</table>
+<div class="sub">หมายเหตุ: มาสาย และ WOP รายชั่วโมง นับเป็นครั้ง ไม่นับเป็นวัน · ลาครึ่งวันนับเป็น 0.5 วัน</div>
+
+<h2>สิทธิการลาคงเหลือ (ยอดสะสมทั้งปีจากทะเบียนพนักงาน)</h2>
+<table>
+  <thead><tr><th>ประเภท</th><th class="n">ใช้ได้</th><th class="n">ใช้ไป</th><th class="n">คงเหลือ</th></tr></thead>
+  <tbody>
+    ${balance.map(([k, a, u, l]) => `<tr><td>${esc(k)}</td><td class="n">${a ?? '—'}</td><td class="n">${u ?? '—'}</td><td class="n">${l ?? '—'}</td></tr>`).join('')}
+    <tr><td>มาสาย (สะสม)</td><td class="n">—</td><td class="n">${emp.late ?? '—'}</td><td class="n">—</td></tr>
+  </tbody>
+</table>
+
+<h2>รายการทั้งหมด (${list.length})</h2>
+<table>
+  <thead><tr><th class="n">#</th><th>วันที่</th><th class="n">วัน</th><th>ประเภท</th><th>เหตุผล</th><th>สถานะ</th><th>หัวหน้า</th></tr></thead>
+  <tbody>
+    ${list.length === 0
+      ? '<tr><td colspan="7" style="text-align:center;color:#666">ไม่มีรายการในช่วงนี้</td></tr>'
+      : list.map((l, i) => {
+          const range = l.end && l.end !== l.date ? `${thDate(l.date)} – ${thDate(l.end)}` : thDate(l.date)
+          const d = leaveDays(l)
+          return `<tr><td class="n">${i + 1}</td><td>${esc(range)}${l.time ? ` (${esc(l.time)})` : ''}</td><td class="n">${d ? num(d) : '—'}</td><td>${esc(l.type || '—')}</td><td>${esc(l.reason || '')}</td><td>${esc(l.status || '—')}</td><td>${esc(l.supervisor || '—')}</td></tr>`
+        }).join('')}
+  </tbody>
+</table>
+
+<div class="sign">
+  <div><div class="line"></div>ลงชื่อพนักงาน</div>
+  <div><div class="line"></div>ลงชื่อหัวหน้า / ฝ่ายบุคคล</div>
+</div>
+</body>
+</html>`
+
+  const win = window.open('', '_blank', 'width=1000,height=750')
+  if (!win) { alert('เบราว์เซอร์บล็อก popup — โปรดอนุญาต popup เพื่อปริ้น'); return }
+  win.document.open(); win.document.write(html); win.document.close(); win.focus()
+}
+
 export default function StaffDetailPage() {
   const { code } = useParams<{ code: string }>()
   const [emp, setEmp] = useState<Staff | null>(null)
@@ -85,6 +207,7 @@ export default function StaffDetailPage() {
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState<Form>({})
   const [saving, setSaving] = useState(false)
+  const [printYear, setPrintYear] = useState<string>('all')   // ช่วงข้อมูลของใบสรุปวันขาด-ลา-มาสาย
   const [monthFilter, setMonthFilter] = useState<string>('all') // filter เดือนของออเดอร์แอดมิน ('all' | 'YYYY-MM')
 
   const loadAll = useCallback(async () => {
@@ -114,7 +237,7 @@ export default function StaffDetailPage() {
       // ประวัติลา
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       setLeaves((lvR.data || []).map((l: any) => ({
-        filed: null, date: l.leave_date, time: l.leave_time, type: l.leave_type,
+        filed: null, date: l.leave_date, end: l.leave_end_date || l.leave_date, time: l.leave_time, type: l.leave_type,
         reason: l.reason, status: l.leave_status, supervisor: l.supervisor_approval,
       })))
 
@@ -246,6 +369,11 @@ export default function StaffDetailPage() {
     loadAll()
   }
 
+  // ปีที่มีรายการลาจริง (ใหม่ → เก่า) สำหรับกล่องเลือกช่วงก่อนปริ้น
+  const leaveYears = useMemo(
+    () => [...new Set(leaves.map(l => (l.date ?? '').slice(0, 4)).filter(Boolean))].sort((a, b) => b.localeCompare(a)),
+    [leaves])
+
   const inputStyle: React.CSSProperties = { width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }
 
   return (
@@ -271,7 +399,15 @@ export default function StaffDetailPage() {
               </div>
             </div>
             {!editing && (
-              <button onClick={startEdit} style={{ padding: '8px 16px', borderRadius: 9, border: '1px solid var(--border-2)', background: 'var(--surface)', color: 'var(--ink)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>✎ แก้ไขข้อมูล</button>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <select value={printYear} onChange={(e) => setPrintYear(e.target.value)} title="ช่วงข้อมูลที่จะปริ้น"
+                  style={{ padding: '8px 10px', borderRadius: 9, border: '1px solid var(--border-2)', background: 'var(--surface)', color: 'var(--ink)', fontSize: 13, cursor: 'pointer' }}>
+                  <option value="all">ทุกปี</option>
+                  {leaveYears.map((y) => <option key={y} value={y}>ปี {Number(y) + 543}</option>)}
+                </select>
+                <button onClick={() => printLeaveSummary(emp, leaves, printYear)} style={{ padding: '8px 16px', borderRadius: 9, border: '1px solid var(--border-2)', background: 'var(--surface)', color: 'var(--ink)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>🖨 ปริ้นสรุปวันลา</button>
+                <button onClick={startEdit} style={{ padding: '8px 16px', borderRadius: 9, border: '1px solid var(--border-2)', background: 'var(--surface)', color: 'var(--ink)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>✎ แก้ไขข้อมูล</button>
+              </div>
             )}
           </div>
 
