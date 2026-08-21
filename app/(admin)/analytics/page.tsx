@@ -261,7 +261,6 @@ export default function AnalyticsPage() {
     const techs = [...techMap.entries()]
       .map(([name, rec]) => ({ name, rec, total: Object.values(rec).reduce((a, b) => a + b, 0) }))
       .sort((a, b) => b.total - a.total)
-      .slice(0, 12)
 
     // คอลัมน์ของตารางผลงาน = 5 ขั้นผลิต + สถานะอื่นที่มีคนสแกนจริง (เช่น รอจัดส่ง/จัดส่งแล้ว/งานเคลม)
     // ‼️ เดิมโชว์แค่ 5 ขั้น แต่ช่อง "รวม" นับทุกสถานะ เลยมีตัวเลขหายไปจากตาราง
@@ -275,7 +274,7 @@ export default function AnalyticsPage() {
     const techCols = [
       ...STAGES.map(st => ({ status: st.status, label: st.label.replace('แผนก', '').replace('สินค้า', '').replace('ผ้า', ''), color: st.color })),
       ...[...extraCount.entries()].sort((a, b) => b[1] - a[1])
-        .map(([st]) => ({ status: st, label: st.replace('แล้ว', ''), color: 'var(--ink-3)' })),
+        .map(([st]) => ({ status: st, label: st.replace('แล้ว', ''), color: 'var(--ink-2)' })),
     ]
 
     // --- เคลม ---
@@ -378,6 +377,7 @@ export default function AnalyticsPage() {
           {stats.techs.length === 0 ? (
             <p style={{ color: 'var(--ink-3)', fontSize: 12.5, textAlign: 'center', padding: '12px 0' }}>ไม่มีข้อมูล</p>
           ) : (
+            <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
@@ -400,6 +400,7 @@ export default function AnalyticsPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </Card>
         <Card title="งานเคลม" sub={`เคลมที่เปิดในช่วงที่เลือก ${stats.claims.length} เคส · เงินคืนรวม ${fmtBaht(stats.refundSum)}`}>
