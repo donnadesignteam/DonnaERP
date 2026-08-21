@@ -134,9 +134,6 @@ function printLeaveSummary(emp: Staff, leaves: Leave[], year: string) {
   th { background: #f0f0f0; font-weight: 700; white-space: nowrap; }
   td.n, th.n { text-align: right; white-space: nowrap; }
   tr.total td { font-weight: 700; background: #f7f7f7; }
-  .sign { margin-top: 34px; display: flex; gap: 60px; }
-  .sign div { flex: 1; text-align: center; font-size: 12px; }
-  .sign .line { border-top: 1px dotted #555; margin-bottom: 5px; height: 34px; }
   @page { margin: 0; }
   @media print { body { padding: 14mm; } .toolbar { display: none !important; } }
   .toolbar { position: fixed; top: 10px; right: 10px; background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 8px 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.18); z-index: 99; }
@@ -185,10 +182,6 @@ function printLeaveSummary(emp: Staff, leaves: Leave[], year: string) {
   </tbody>
 </table>
 
-<div class="sign">
-  <div><div class="line"></div>ลงชื่อพนักงาน</div>
-  <div><div class="line"></div>ลงชื่อหัวหน้า / ฝ่ายบุคคล</div>
-</div>
 </body>
 </html>`
 
