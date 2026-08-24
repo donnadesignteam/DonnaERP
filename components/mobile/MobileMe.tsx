@@ -570,7 +570,7 @@ export default function MobileMe() {
             {/* งานเคลมที่ถูกลงชื่อในช่อง "ผิดโดย" — ขึ้นเฉพาะคนที่มีเคส */}
             {claims.length > 0 && (
               <>
-                <Section title="งานที่ทำผิด" {...sec('fault')} badge={`${claims.length} เคส${claimStat.pending ? ` · รอตรวจสอบ ${claimStat.pending}` : ''}`}>
+                <Section title="งานที่ทำผิด" {...sec('fault')} badge={`${claims.length} เคส${claimStat.cost ? ` · ${baht(claimStat.cost)}` : ''}${claimStat.pending ? ` · รอตรวจสอบ ${claimStat.pending}` : ''}`}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
                   {miniStat('ทั้งหมด', String(claims.length))}
                   {miniStat('รอตรวจสอบ', String(claimStat.pending), CLAIM_REVIEW_COLOR[CLAIM_PENDING])}
@@ -641,16 +641,16 @@ export default function MobileMe() {
                             </div>
                           )}
                           {/* มูลค่าที่ทำผิด = ค่าส่งกลับ + ค่าส่งคืน + ราคาประเมิน (ตัวเลขชุดเดียวกับที่ผู้จัดการเห็น) */}
-                          {claimCost(c) > 0 && (
-                            <div style={{ marginTop: 6, display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
-                              <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>มูลค่าที่ทำผิด</span>
-                              <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{baht(claimCost(c))}</span>
-                              <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>
-                                {([['ค่าส่งกลับ', c.ship_back_cost], ['ค่าส่งคืน', c.ship_return_cost], ['ราคาประเมิน', c.estimated_price]] as [string, number | null][])
-                                  .filter(([, v]) => v).map(([k, v]) => `${k} ${baht(v ?? 0)}`).join(' · ')}
-                              </span>
-                            </div>
-                          )}
+                          <div style={{ marginTop: 6, display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>มูลค่าที่ทำผิด</span>
+                            <span style={{ fontSize: 13.5, fontWeight: 700, color: claimCost(c) ? 'var(--ink)' : 'var(--ink-4)' }}>{baht(claimCost(c))}</span>
+                            <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>
+                              {claimCost(c)
+                                ? ([['ค่าส่งกลับ', c.ship_back_cost], ['ค่าส่งคืน', c.ship_return_cost], ['ราคาประเมิน', c.estimated_price]] as [string, number | null][])
+                                    .filter(([, v]) => v).map(([k, v]) => `${k} ${baht(v ?? 0)}`).join(' · ')
+                                : 'ยังไม่ได้ลงค่าเคลมในระบบ'}
+                            </span>
+                          </div>
                           {/* ยื่นอุทธรณ์ให้ผู้จัดการตรวจซ้ำ — ยื่นแล้วยังกดแก้ข้อความได้
                               ‼️ ฟอร์มกางในแถวเลย ไม่ใช้กล่องลอย (fixed) เพราะคีย์บอร์ดมือถือเด้งแล้วกล่องลอยหลุดขอบจอ */}
                           {c.fault_appeal && appeal?.claim.id !== c.id && (
