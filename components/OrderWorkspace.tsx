@@ -507,12 +507,14 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [shippingDateFrom, setShippingDateFrom] = useState('')
   const [shippingDateTo, setShippingDateTo] = useState('')
   const [month, setMonth] = useState('all')   // เดือนของวันที่รับออเดอร์: 'all' | 'YYYY-MM' | 'none'
-  const [openFilter, setOpenFilter] = useState<'platform' | 'courier' | 'status' | 'admin' | 'tech' | 'shipping' | 'urgent' | 'install' | 'days' | 'updated' | 'out-days' | 'out-deadline' | 'out-platform' | 'out-payment' | 'out-assigned' | 'out-admin' | 'out-status' | 'out-done' | 'out-installed' | 'out-updated' | 'out-created' | 'pay-date' | null>(null)
+  const [openFilter, setOpenFilter] = useState<'platform' | 'courier' | 'status' | 'admin' | 'tech' | 'shipping' | 'urgent' | 'install' | 'days' | 'updated' | 'out-days' | 'out-deadline' | 'out-platform' | 'out-payment' | 'out-assigned' | 'out-admin' | 'out-status' | 'out-done' | 'out-installed' | 'out-updated' | 'out-created' | 'pay-date' | 'ship-date' | null>(null)
   const [daysSort, setDaysSort] = useState<'asc' | 'desc' | null>('asc')
   const [sortOrder, setSortOrder] = useState<string[]>(cached?.sortOrder ?? [])
   const [updatedSort, setUpdatedSort] = useState<'asc' | 'desc' | null>(null)
   // เรียงตามวันที่สร้าง/วันที่ชำระ (entry_date) — ใช้ร่วมกันทุกแท็บ ทับการเรียงแบบอื่นเมื่อเลือกไว้
   const [createdSort, setCreatedSort] = useState<'asc' | 'desc' | null>(null)
+  // เรียงตามวันที่ต้องส่ง (deadline) — แท็บงานแพลตฟอร์ม
+  const [shipDateSort, setShipDateSort] = useState<'asc' | 'desc' | null>(null)
   const [outDaysSort, setOutDaysSort] = useState<'asc' | 'desc' | null>('asc')
   const [outUpdatedSort, setOutUpdatedSort] = useState<'asc' | 'desc' | null>(null)
   const [outDeadlineFrom, setOutDeadlineFrom] = useState('')
@@ -621,6 +623,16 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   // เทียบวันที่สร้าง (entry_date) — ใบที่ไม่มีวันที่ไปอยู่ล่างสุดเสมอ
   const cmpCreated = (a: Entry, b: Entry, dir: 'asc' | 'desc') => {
     const ms = (r: Entry) => (r.entry_date ? new Date(r.entry_date).getTime() : null)
+    const da = ms(a), db = ms(b)
+    if (da === null && db === null) return 0
+    if (da === null) return 1
+    if (db === null) return -1
+    return dir === 'asc' ? da - db : db - da
+  }
+
+  // เทียบวันที่ต้องส่ง (deadline) — ใบที่ไม่มีวันที่ไปอยู่ล่างสุดเสมอ
+  const cmpDeadline = (a: Entry, b: Entry, dir: 'asc' | 'desc') => {
+    const ms = (r: Entry) => (r.deadline ? new Date(r.deadline).getTime() : null)
     const da = ms(a), db = ms(b)
     if (da === null && db === null) return 0
     if (da === null) return 1
@@ -1736,7 +1748,9 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     return matchMonth && matchSearch && matchStatus && matchPlatform && matchCourier && matchAdmin && matchTech && matchUrgent && matchInstall && matchShipping && matchQuick && matchIncomplete && matchUnprinted && matchPrintedPending && matchDropoffPending && matchStatusStale && matchFromCalendar
   })
 
-  if (createdSort) {
+  if (shipDateSort) {
+    displayedFrozen.sort((a, b) => cmpDeadline(a, b, shipDateSort))
+  } else if (createdSort) {
     displayedFrozen.sort((a, b) => cmpCreated(a, b, createdSort))
   } else if (updatedSort) {
     displayedFrozen.sort((a, b) => {
@@ -2590,7 +2604,7 @@ ${body}
           {monthOptions.hasNone && <option value="none">{monthLabel('none')}</option>}
         </select>
         {/* เรียงตามวันที่สร้าง — ใช้ได้ทุกแท็บ (ทับการเรียงของหัวคอลัมน์เมื่อเลือกไว้) */}
-        <select value={createdSort ?? ''} onChange={e => setCreatedSort((e.target.value || null) as 'asc' | 'desc' | null)} title="เรียงตามวันที่สร้าง"
+        <select value={createdSort ?? ''} onChange={e => { setCreatedSort((e.target.value || null) as 'asc' | 'desc' | null); setShipDateSort(null) }} title="เรียงตามวันที่สร้าง"
           style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontSize: 14, outline: 'none', background: createdSort ? 'var(--blue-bg)' : 'var(--surface)', color: 'var(--ink)', fontWeight: createdSort ? 600 : 400, cursor: 'pointer', flexShrink: 0 }}>
           <option value="">เรียงตามค่าเริ่มต้น</option>
           <option value="desc">วันที่สร้าง: ใหม่สุด → เก่าสุด</option>
@@ -2830,7 +2844,7 @@ ${body}
           if (openFilter === 'out-created') return (
             <div style={{ ...dropStyle, minWidth: 170 }}>
               {([['ใหม่สุด → เก่าสุด', 'desc'], ['เก่าสุด → ใหม่สุด', 'asc'], ['ไม่เรียง', null]] as [string, 'asc'|'desc'|null][]).map(([label, val]) => (
-                <div key={label} onClick={() => { setCreatedSort(val); setOpenFilter(null); setOutFilterPos(null) }}
+                <div key={label} onClick={() => { setCreatedSort(val); setShipDateSort(null); setOpenFilter(null); setOutFilterPos(null) }}
                   style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: createdSort === val ? 600 : 400, color: createdSort === val ? 'var(--blue)' : 'var(--ink)', background: createdSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
                   {label}
                 </div>
@@ -3747,7 +3761,7 @@ ${body}
                   {openFilter === 'days' && (
                     <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 140 }}>
                       {([['น้อยไปมาก', 'asc'], ['มากไปน้อย', 'desc']] as [string, 'asc' | 'desc'][]).map(([label, val]) => (
-                        <div key={label} onClick={() => { setSortOrder(computeSortOrder(rows, val)); setDaysSort(val); setUpdatedSort(null); setCreatedSort(null); setOpenFilter(null) }}
+                        <div key={label} onClick={() => { setSortOrder(computeSortOrder(rows, val)); setDaysSort(val); setUpdatedSort(null); setCreatedSort(null); setShipDateSort(null); setOpenFilter(null) }}
                           style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: daysSort === val ? 600 : 400, color: daysSort === val ? 'var(--blue)' : 'var(--ink)', background: daysSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
                           {label}
                         </div>
@@ -3847,7 +3861,7 @@ ${body}
                   {openFilter === 'pay-date' && (
                     <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 170 }}>
                       {([['ใหม่สุด → เก่าสุด', 'desc'], ['เก่าสุด → ใหม่สุด', 'asc'], ['ไม่เรียง', null]] as [string, 'asc'|'desc'|null][]).map(([label, val]) => (
-                        <div key={label} onClick={() => { setCreatedSort(val); setOpenFilter(null) }}
+                        <div key={label} onClick={() => { setCreatedSort(val); setShipDateSort(null); setOpenFilter(null) }}
                           style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: createdSort === val ? 600 : 400, color: createdSort === val ? 'var(--blue)' : 'var(--ink)', background: createdSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
                           {label}
                         </div>
@@ -3857,7 +3871,22 @@ ${body}
                 </th>
                 )}
                 {showCol('ship_date') && (
-                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>วันที่ต้องส่ง</th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
+                  <button onClick={() => setOpenFilter(openFilter === 'ship-date' ? null : 'ship-date')}
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: shipDateSort ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    วันที่ต้องส่ง <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                  </button>
+                  {openFilter === 'ship-date' && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 170 }}>
+                      {([['ใหม่สุด → เก่าสุด', 'desc'], ['เก่าสุด → ใหม่สุด', 'asc'], ['ไม่เรียง', null]] as [string, 'asc'|'desc'|null][]).map(([label, val]) => (
+                        <div key={label} onClick={() => { setShipDateSort(val); setCreatedSort(null); setOpenFilter(null) }}
+                          style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: shipDateSort === val ? 600 : 400, color: shipDateSort === val ? 'var(--blue)' : 'var(--ink)', background: shipDateSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
+                          {label}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </th>
                 )}
                 {showCol('admin') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
@@ -3959,7 +3988,7 @@ ${body}
                   {openFilter === 'updated' && (
                     <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 150 }}>
                       {([['ใหม่สุด-เก่าสุด', 'desc'], ['เก่าสุด-ใหม่สุด', 'asc']] as [string, 'asc' | 'desc'][]).map(([label, val]) => (
-                        <div key={label} onClick={() => { setUpdatedSort(val); setDaysSort(null); setCreatedSort(null); setOpenFilter(null) }}
+                        <div key={label} onClick={() => { setUpdatedSort(val); setDaysSort(null); setCreatedSort(null); setShipDateSort(null); setOpenFilter(null) }}
                           style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: updatedSort === val ? 600 : 400, color: updatedSort === val ? 'var(--blue)' : 'var(--ink)', background: updatedSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
                           {label}
                         </div>
