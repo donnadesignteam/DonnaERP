@@ -9,6 +9,7 @@ import { LEAVE_TYPES, rangeDays, vacationMaxDays } from '@/lib/leave'
 import { readStaffSession } from '@/lib/staffSession'
 import { usePullToRefresh, PullIndicator, CardSkeleton } from './mobileUi'
 import MyActivity from '@/components/MyActivity'
+import { compressImage, uploadPackingFile } from '@/lib/packingPhotos'
 
 // แดชบอร์ด "ของฉัน" — พนักงานที่ล็อกอินด้วยรหัสตัวเองเห็นเฉพาะข้อมูลของตัวเอง
 // เข้าจากปุ่มมุมขวาบนของหน้า /hub · ข้อมูลชุดเดียวกับหน้าเดสก์ท็อป /staff/[code] แต่ตัดส่วนของแอดมิน
@@ -30,7 +31,15 @@ type ClaimFault = {
   fault_review: string | null
   fault_appeal: string | null        // ข้อความอุทธรณ์ที่พนักงานยื่นเอง (ต้องรัน sql/add_claim_fault_appeal.sql)
   fault_appeal_at: string | null
+  fault_appeal_photos: string[] | null   // รูปที่แนบมากับอุทธรณ์ (ต้องรัน sql/add_claim_appeal_photos.sql)
+  ship_back_cost: number | null      // ค่าส่งกลับ
+  ship_return_cost: number | null    // ค่าส่งคืน
+  estimated_price: number | null     // ราคาประเมิน (ค่าของที่ต้องทำใหม่)
 }
+
+// มูลค่าที่ทำผิดของเคสหนึ่ง = ค่าส่งกลับ + ค่าส่งคืน + ราคาประเมิน (สูตรเดียวกับหน้า /staff/claims ของผู้จัดการ)
+const claimCost = (c: ClaimFault) => (c.ship_back_cost ?? 0) + (c.ship_return_cost ?? 0) + (c.estimated_price ?? 0)
+const baht = (v: number) => (v ? '฿' + Math.round(v).toLocaleString('th-TH') : '—')
 
 // สถานะผลตรวจสอบเคสที่ถูกลงชื่อว่า "ผิดโดย" คนนี้ — พนักงานเห็นอย่างเดียว เปลี่ยนได้เฉพาะบัญชีร้าน (/staff/claims)
 const CLAIM_PENDING = 'รอตรวจสอบ'
@@ -43,9 +52,10 @@ const CLAIM_REVIEW_COLOR: Record<string, string> = {
 // เคสเคลมที่ช่อง "ผิดโดย" เป็นชื่อของคนนี้ (ชื่อในช่องนั้นเก็บเป็น ชื่อเล่น หรือ ชื่อจริง — เทียบทั้งสองแบบ)
 async function fetchMyFaultClaims(names: string[]): Promise<ClaimFault[]> {
   if (!names.length) return []
-  const COLS = 'id, claim_date, original_order_number, customer_username, claim_type, fault, fix_method'
-  // ยังไม่ได้รัน sql/add_claim_fault_appeal.sql / add_claim_fault_review.sql → ถอยไปดึงแบบไม่มีคอลัมน์ใหม่ จะได้เห็นเคสก่อน
-  let r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(`${COLS}, fault_review, fault_appeal, fault_appeal_at`).in('fault_by', names))
+  const COLS = 'id, claim_date, original_order_number, customer_username, claim_type, fault, fix_method, ship_back_cost, ship_return_cost, estimated_price'
+  // ยังไม่ได้รัน sql/add_claim_appeal_photos.sql / add_claim_fault_appeal.sql / add_claim_fault_review.sql → ถอยไปดึงแบบไม่มีคอลัมน์ใหม่ จะได้เห็นเคสก่อน
+  let r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(`${COLS}, fault_review, fault_appeal, fault_appeal_at, fault_appeal_photos`).in('fault_by', names))
+  if (r.error) r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(`${COLS}, fault_review, fault_appeal, fault_appeal_at`).in('fault_by', names))
   if (r.error) r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(`${COLS}, fault_review`).in('fault_by', names))
   if (r.error) r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(COLS).in('fault_by', names))
   if (r.error) return []
@@ -174,7 +184,8 @@ export default function MobileMe() {
   const [claims, setClaims] = useState<ClaimFault[]>([])   // เคลมที่ถูกลงชื่อว่าผิดโดยฉัน
   const [allClaims, setAllClaims] = useState(false)
   const [claimQuery, setClaimQuery] = useState('')   // ค้นหาในงานที่ทำผิด (ลูกค้า/เลขออเดอร์/ประเภท/สาเหตุ/วิธีแก้ไข/สถานะ)
-  const [appeal, setAppeal] = useState<{ claim: ClaimFault; text: string } | null>(null)   // กล่องยื่นอุทธรณ์
+  const [appeal, setAppeal] = useState<{ claim: ClaimFault; text: string; photos: string[] } | null>(null)   // กล่องยื่นอุทธรณ์ (ข้อความ + รูปแนบ)
+  const [appealUploading, setAppealUploading] = useState(false)
   const [appealSaving, setAppealSaving] = useState(false)
   const [appealError, setAppealError] = useState('')
   const [open, setOpen] = useState<Record<string, boolean>>({})   // หัวข้อที่กางอยู่ — ค่าเริ่มต้น = ปิดหมด
@@ -247,16 +258,42 @@ export default function MobileMe() {
     setAppealSaving(true)
     setAppealError('')
     const at = new Date().toISOString()
-    const { error: err } = await supabase.from('claims')
-      .update({ fault_appeal: text, fault_appeal_at: at, fault_appeal_by: emp?.nickname || emp?.name || code })
-      .eq('id', appeal.claim.id)
+    const photos = appeal.photos
+    const base = { fault_appeal: text, fault_appeal_at: at, fault_appeal_by: emp?.nickname || emp?.name || code }
+    let { error: err } = await supabase.from('claims').update({ ...base, fault_appeal_photos: photos }).eq('id', appeal.claim.id)
+    // ยังไม่ได้รัน sql/add_claim_appeal_photos.sql → บันทึกข้อความไปก่อน แล้วบอกให้ไปรัน (รูปยังอยู่บน R2 แนบใหม่ได้)
+    let photoWarn = false
+    if (err && /fault_appeal_photos/.test(err.message)) {
+      photoWarn = true
+      ;({ error: err } = await supabase.from('claims').update(base).eq('id', appeal.claim.id))
+    }
     setAppealSaving(false)
     if (err) {
       setAppealError(/fault_appeal/.test(err.message) ? 'ยังไม่ได้รัน sql/add_claim_fault_appeal.sql — บอกแอดมินให้รันก่อน' : `ส่งไม่สำเร็จ: ${err.message}`)
       return
     }
-    setClaims(prev => prev.map(c => c.id === appeal.claim.id ? { ...c, fault_appeal: text, fault_appeal_at: at } : c))
+    setClaims(prev => prev.map(c => c.id === appeal.claim.id ? { ...c, fault_appeal: text, fault_appeal_at: at, fault_appeal_photos: photoWarn ? c.fault_appeal_photos : photos } : c))
     setAppeal(null)
+    if (photoWarn && photos.length) alert('ส่งข้อความอุทธรณ์แล้ว แต่รูปยังไม่ถูกบันทึก — บอกแอดมินให้รัน sql/add_claim_appeal_photos.sql ก่อน')
+  }
+
+  // แนบรูปในอุทธรณ์ — ย่อรูปแล้วอัพขึ้น R2 ทันทีที่เลือก (เก็บแค่ลิงก์ลงฐานตอนกดส่ง)
+  const addAppealPhotos = async (files: FileList | null) => {
+    if (!files?.length || !appeal) return
+    setAppealUploading(true)
+    setAppealError('')
+    const urls: string[] = []
+    try {
+      for (const file of Array.from(files)) {
+        const small = await compressImage(file)
+        const key = `claims/appeal/${appeal.claim.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`
+        urls.push(await uploadPackingFile(small, key))
+      }
+    } catch (e) {
+      setAppealError(e instanceof Error ? e.message : String(e))
+    }
+    if (urls.length) setAppeal(a => a ? { ...a, photos: [...a.photos, ...urls] } : null)
+    setAppealUploading(false)
   }
 
   // ── ส่งใบลาของตัวเอง ──────────────────────────────────────────
@@ -349,6 +386,8 @@ export default function MobileMe() {
   const claimStat = {
     pending: claims.filter(c => !c.fault_review).length,
     guilty: claims.filter(c => c.fault_review === 'ตรวจสอบแล้วผิดจริง').length,
+    cost: claims.reduce((sum, c) => sum + claimCost(c), 0),
+    guiltyCost: claims.filter(c => c.fault_review === 'ตรวจสอบแล้วผิดจริง').reduce((sum, c) => sum + claimCost(c), 0),
   }
   // ค้นในงานที่ทำผิด — ชื่อลูกค้า เลขออเดอร์ ประเภท สาเหตุ วิธีแก้ไข หรือสถานะผลตรวจสอบ
   const cq = claimQuery.trim().toLowerCase()
@@ -537,6 +576,17 @@ export default function MobileMe() {
                   {miniStat('รอตรวจสอบ', String(claimStat.pending), CLAIM_REVIEW_COLOR[CLAIM_PENDING])}
                   {miniStat('ผิดจริง', String(claimStat.guilty), 'var(--red)')}
                 </div>
+                {claimStat.cost > 0 && (
+                  <div style={{ ...card, marginTop: 8, padding: '10px 13px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                    <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>มูลค่าที่ทำผิดรวม</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>
+                      {baht(claimStat.cost)}
+                      {claimStat.guiltyCost > 0 && (
+                        <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--red)', marginLeft: 6 }}>ผิดจริง {baht(claimStat.guiltyCost)}</span>
+                      )}
+                    </span>
+                  </div>
+                )}
                 <div style={{ position: 'relative', marginTop: 10 }}>
                   <input value={claimQuery} onChange={e => setClaimQuery(e.target.value)}
                     placeholder="ค้นหา ลูกค้า / เลขออเดอร์ / สาเหตุ / สถานะ"
@@ -590,6 +640,17 @@ export default function MobileMe() {
                               {c.fault ? `สาเหตุ: ${c.fault}` : ''}{c.fault && c.fix_method ? ' · ' : ''}{c.fix_method ? `วิธีแก้ไข: ${c.fix_method}` : ''}
                             </div>
                           )}
+                          {/* มูลค่าที่ทำผิด = ค่าส่งกลับ + ค่าส่งคืน + ราคาประเมิน (ตัวเลขชุดเดียวกับที่ผู้จัดการเห็น) */}
+                          {claimCost(c) > 0 && (
+                            <div style={{ marginTop: 6, display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>มูลค่าที่ทำผิด</span>
+                              <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{baht(claimCost(c))}</span>
+                              <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>
+                                {([['ค่าส่งกลับ', c.ship_back_cost], ['ค่าส่งคืน', c.ship_return_cost], ['ราคาประเมิน', c.estimated_price]] as [string, number | null][])
+                                  .filter(([, v]) => v).map(([k, v]) => `${k} ${baht(v ?? 0)}`).join(' · ')}
+                              </span>
+                            </div>
+                          )}
                           {/* ยื่นอุทธรณ์ให้ผู้จัดการตรวจซ้ำ — ยื่นแล้วยังกดแก้ข้อความได้
                               ‼️ ฟอร์มกางในแถวเลย ไม่ใช้กล่องลอย (fixed) เพราะคีย์บอร์ดมือถือเด้งแล้วกล่องลอยหลุดขอบจอ */}
                           {c.fault_appeal && appeal?.claim.id !== c.id && (
@@ -598,14 +659,23 @@ export default function MobileMe() {
                                 ยื่นอุทธรณ์แล้ว{c.fault_appeal_at ? ` · ${fmtDate(c.fault_appeal_at)}` : ''} · รอผู้จัดการตรวจ
                               </div>
                               <div style={{ fontSize: 12, color: 'var(--ink)', marginTop: 3, lineHeight: 1.55 }}>{c.fault_appeal}</div>
-                              <button onClick={() => { setAppealError(''); setAppeal({ claim: c, text: c.fault_appeal ?? '' }) }}
+                              {(c.fault_appeal_photos ?? []).length > 0 && (
+                                <div style={{ display: 'flex', gap: 6, marginTop: 7, flexWrap: 'wrap' }}>
+                                  {(c.fault_appeal_photos ?? []).map(u => (
+                                    <a key={u} href={u} target="_blank" rel="noreferrer">
+                                      <img src={u} alt="" style={{ width: 62, height: 62, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', display: 'block' }} />
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
+                              <button onClick={() => { setAppealError(''); setAppeal({ claim: c, text: c.fault_appeal ?? '', photos: c.fault_appeal_photos ?? [] }) }}
                                 style={{ marginTop: 6, border: 'none', background: 'transparent', color: 'var(--blue)', fontSize: 12, fontWeight: 600, padding: 0, cursor: 'pointer' }}>
                                 แก้ข้อความ
                               </button>
                             </div>
                           )}
                           {!c.fault_appeal && appeal?.claim.id !== c.id && (
-                            <button onClick={() => { setAppealError(''); setAppeal({ claim: c, text: '' }) }}
+                            <button onClick={() => { setAppealError(''); setAppeal({ claim: c, text: '', photos: [] }) }}
                               style={{ marginTop: 9, minHeight: 36, border: '1px solid var(--blue)', background: 'transparent', color: 'var(--blue)', borderRadius: 10, padding: '0 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
                               ยื่นอุทธรณ์
                             </button>
@@ -615,15 +685,32 @@ export default function MobileMe() {
                               <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--blue)' }}>ยื่นอุทธรณ์</div>
                               <textarea value={appeal.text} onChange={e => setAppeal(a => a ? { ...a, text: e.target.value } : null)} rows={4}
                                 style={{ width: '100%', marginTop: 6, border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 12, padding: '10px 12px', fontSize: 13.5, lineHeight: 1.6, outline: 'none', boxSizing: 'border-box', color: 'var(--ink)', resize: 'none', font: 'inherit' }} />
+                              {/* แนบรูปประกอบ — เลือกจากคลังหรือถ่ายใหม่ได้ อัพขึ้นทันทีที่เลือก */}
+                              <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                                {appeal.photos.map(u => (
+                                  <div key={u} style={{ position: 'relative' }}>
+                                    <img src={u} alt="" style={{ width: 62, height: 62, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', display: 'block' }} />
+                                    <button onClick={() => setAppeal(a => a ? { ...a, photos: a.photos.filter(x => x !== u) } : null)}
+                                      style={{ position: 'absolute', top: -6, right: -6, width: 22, height: 22, borderRadius: '50%', border: 'none', background: 'var(--red)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', lineHeight: 1 }}>✕</button>
+                                  </div>
+                                ))}
+                                <label style={{ width: 62, height: 62, borderRadius: 8, border: '1px dashed var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, cursor: 'pointer', color: 'var(--ink-4)', fontSize: 10.5, textAlign: 'center' }}>
+                                  <span style={{ fontSize: 18, lineHeight: 1 }}>{appealUploading ? '…' : '+'}</span>
+                                  {appealUploading ? 'กำลังอัพ' : 'แนบรูป'}
+                                  <input type="file" accept="image/*" multiple disabled={appealUploading}
+                                    onChange={e => { void addAppealPhotos(e.target.files); e.target.value = '' }}
+                                    style={{ display: 'none' }} />
+                                </label>
+                              </div>
                               {appealError && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 6, lineHeight: 1.55 }}>{appealError}</div>}
                               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                                 <button onClick={() => { setAppeal(null); setAppealError('') }} disabled={appealSaving}
                                   style={{ flex: 1, minHeight: 40, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--ink-3)', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                                   ยกเลิก
                                 </button>
-                                <button onClick={sendAppeal} disabled={appealSaving}
-                                  style={{ flex: 1.4, minHeight: 40, border: 'none', background: 'var(--blue)', color: '#fff', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: appealSaving ? 0.6 : 1 }}>
-                                  {appealSaving ? 'กำลังส่ง…' : 'ส่งให้ผู้จัดการ'}
+                                <button onClick={sendAppeal} disabled={appealSaving || appealUploading}
+                                  style={{ flex: 1.4, minHeight: 40, border: 'none', background: 'var(--blue)', color: '#fff', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: (appealSaving || appealUploading) ? 0.6 : 1 }}>
+                                  {appealSaving ? 'กำลังส่ง…' : appealUploading ? 'รอรูปอัพเสร็จ…' : 'ส่งให้ผู้จัดการ'}
                                 </button>
                               </div>
                             </div>

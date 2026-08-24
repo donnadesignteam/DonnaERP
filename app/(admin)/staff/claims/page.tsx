@@ -26,6 +26,7 @@ type ClaimRow = {
   fault_appeal: string | null        // ข้อความอุทธรณ์ที่พนักงานยื่นจากแอปมือถือ (sql/add_claim_fault_appeal.sql)
   fault_appeal_at: string | null
   fault_appeal_by: string | null
+  fault_appeal_photos: string[] | null   // รูปที่พนักงานแนบมากับอุทธรณ์ (sql/add_claim_appeal_photos.sql)
   ship_back_cost: number | null      // ค่าส่งกลับ
   ship_return_cost: number | null    // ค่าส่งคืน
   estimated_price: number | null     // ราคาประเมิน (ค่าของที่ต้องทำใหม่)
@@ -80,7 +81,13 @@ export default function StaffClaimsPage() {
     ;(async () => {
       const COLS = 'id, claim_date, original_order_number, customer_username, claim_type, fault, fault_by, fix_method, ship_back_cost, ship_return_cost, estimated_price'
       let r = await fetchAllRows<ClaimRow>(() => supabase.from('claims')
-        .select(`${COLS}, fault_review, fault_appeal, fault_appeal_at, fault_appeal_by`).order('id', { ascending: false }))
+        .select(`${COLS}, fault_review, fault_appeal, fault_appeal_at, fault_appeal_by, fault_appeal_photos`).order('id', { ascending: false }))
+      // ยังไม่ได้รัน sql/add_claim_appeal_photos.sql → ถอยไปดึงแบบไม่มีคอลัมน์รูปแนบ
+      if (r.error) {
+        r = await fetchAllRows<ClaimRow>(() => supabase.from('claims')
+          .select(`${COLS}, fault_review, fault_appeal, fault_appeal_at, fault_appeal_by`).order('id', { ascending: false }))
+        if (!r.error) setError('ยังไม่ได้รัน sql/add_claim_appeal_photos.sql — จะยังไม่เห็นรูปที่พนักงานแนบมากับอุทธรณ์')
+      }
       // ยังไม่ได้รัน sql/add_claim_fault_appeal.sql → ถอยไปดึงแบบไม่มีคอลัมน์อุทธรณ์
       if (r.error) {
         r = await fetchAllRows<ClaimRow>(() => supabase.from('claims')
@@ -278,6 +285,15 @@ export default function StaffClaimsPage() {
                                   {[c.fault_appeal_by, thaiDate(c.fault_appeal_at)].filter(v => v && v !== '—').join(' · ') || 'ยื่นอุทธรณ์'}
                                 </div>
                                 <div style={{ fontSize: 12.5, color: 'var(--ink)', marginTop: 2, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{c.fault_appeal}</div>
+                                {(c.fault_appeal_photos ?? []).length > 0 && (
+                                  <div style={{ display: 'flex', gap: 5, marginTop: 6, flexWrap: 'wrap' }}>
+                                    {(c.fault_appeal_photos ?? []).map(u => (
+                                      <a key={u} href={u} target="_blank" rel="noreferrer" title="กดเพื่อดูรูปเต็ม">
+                                        <img src={u} alt="" style={{ width: 54, height: 54, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)', display: 'block' }} />
+                                      </a>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                           </td>
