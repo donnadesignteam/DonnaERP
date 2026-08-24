@@ -10,6 +10,7 @@ import { readStaffSession } from '@/lib/staffSession'
 import { usePullToRefresh, PullIndicator, CardSkeleton } from './mobileUi'
 import MyActivity from '@/components/MyActivity'
 import { compressImage, uploadPackingFile } from '@/lib/packingPhotos'
+import { TH_MONTHS } from '@/lib/shopCalendar'
 
 // แดชบอร์ด "ของฉัน" — พนักงานที่ล็อกอินด้วยรหัสตัวเองเห็นเฉพาะข้อมูลของตัวเอง
 // เข้าจากปุ่มมุมขวาบนของหน้า /hub · ข้อมูลชุดเดียวกับหน้าเดสก์ท็อป /staff/[code] แต่ตัดส่วนของแอดมิน
@@ -183,6 +184,7 @@ export default function MobileMe() {
   const [allScans, setAllScans] = useState(false)
   const [claims, setClaims] = useState<ClaimFault[]>([])   // เคลมที่ถูกลงชื่อว่าผิดโดยฉัน
   const [allClaims, setAllClaims] = useState(false)
+  const [claimMonth, setClaimMonth] = useState('all')   // เดือนที่แจ้งเคลมของงานที่ทำผิด: 'all' | 'YYYY-MM' | 'none'
   const [claimQuery, setClaimQuery] = useState('')   // ค้นหาในงานที่ทำผิด (ลูกค้า/เลขออเดอร์/ประเภท/สาเหตุ/วิธีแก้ไข/สถานะ)
   const [appeal, setAppeal] = useState<{ claim: ClaimFault; text: string; photos: string[] } | null>(null)   // กล่องยื่นอุทธรณ์ (ข้อความ + รูปแนบ)
   const [appealUploading, setAppealUploading] = useState(false)
@@ -383,15 +385,29 @@ export default function MobileMe() {
   })
   const shownScans = allScans || sq ? foundScans : foundScans.slice(0, 8)
   const shownLeaves = allLeaves ? leaves : leaves.slice(0, 6)
+  // ── ตัวเลือกเดือนของงานที่ทำผิด (ยึดวันที่แจ้งเคลม เหมือนหมวดออเดอร์) ──
+  const claimMonthKey = (c: ClaimFault) => (c.claim_date ?? '').slice(0, 7) || 'none'
+  const claimMonths = (() => {
+    const keys = Array.from(new Set(claims.map(claimMonthKey)))
+    return { ym: keys.filter(k => k !== 'none').sort().reverse(), hasNone: keys.includes('none') }
+  })()
+  const claimMonthLabel = (k: string) => {
+    if (k === 'none') return 'ไม่ระบุวันที่แจ้ง'
+    const [y, m] = k.split('-')
+    return `${TH_MONTHS[Number(m) - 1]} ${Number(y) + 543}`
+  }
+  // กรองเดือนก่อนนับ → ตัวเลขสรุปกับยอดเงินตรงกับเดือนที่เลือก
+  const monthClaims = claimMonth === 'all' ? claims : claims.filter(c => claimMonthKey(c) === claimMonth)
   const claimStat = {
-    pending: claims.filter(c => !c.fault_review).length,
-    guilty: claims.filter(c => c.fault_review === 'ตรวจสอบแล้วผิดจริง').length,
-    cost: claims.reduce((sum, c) => sum + claimCost(c), 0),
-    guiltyCost: claims.filter(c => c.fault_review === 'ตรวจสอบแล้วผิดจริง').reduce((sum, c) => sum + claimCost(c), 0),
+    total: monthClaims.length,
+    pending: monthClaims.filter(c => !c.fault_review).length,
+    guilty: monthClaims.filter(c => c.fault_review === 'ตรวจสอบแล้วผิดจริง').length,
+    cost: monthClaims.reduce((sum, c) => sum + claimCost(c), 0),
+    guiltyCost: monthClaims.filter(c => c.fault_review === 'ตรวจสอบแล้วผิดจริง').reduce((sum, c) => sum + claimCost(c), 0),
   }
   // ค้นในงานที่ทำผิด — ชื่อลูกค้า เลขออเดอร์ ประเภท สาเหตุ วิธีแก้ไข หรือสถานะผลตรวจสอบ
   const cq = claimQuery.trim().toLowerCase()
-  const foundClaims = !cq ? claims : claims.filter(c =>
+  const foundClaims = !cq ? monthClaims : monthClaims.filter(c =>
     [c.customer_username, c.original_order_number, c.claim_type, c.fault, c.fix_method, c.fault_review || CLAIM_PENDING, fmtDate(c.claim_date)]
       .some(v => (v ?? '').toLowerCase().includes(cq)))
   const shownClaims = allClaims || cq ? foundClaims : foundClaims.slice(0, 5)
@@ -570,9 +586,9 @@ export default function MobileMe() {
             {/* งานเคลมที่ถูกลงชื่อในช่อง "ผิดโดย" — ขึ้นเฉพาะคนที่มีเคส */}
             {claims.length > 0 && (
               <>
-                <Section title="งานที่ทำผิด" {...sec('fault')} badge={`${claims.length} เคส${claimStat.cost ? ` · ${baht(claimStat.cost)}` : ''}${claimStat.pending ? ` · รอตรวจสอบ ${claimStat.pending}` : ''}`}>
+                <Section title="งานที่ทำผิด" {...sec('fault')} badge={`${claimStat.total} เคส${claimStat.cost ? ` · ${baht(claimStat.cost)}` : ''}${claimStat.pending ? ` · รอตรวจสอบ ${claimStat.pending}` : ''}`}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-                  {miniStat('ทั้งหมด', String(claims.length))}
+                  {miniStat('ทั้งหมด', String(claimStat.total))}
                   {miniStat('รอตรวจสอบ', String(claimStat.pending), CLAIM_REVIEW_COLOR[CLAIM_PENDING])}
                   {miniStat('ผิดจริง', String(claimStat.guilty), 'var(--red)')}
                 </div>
@@ -587,6 +603,12 @@ export default function MobileMe() {
                     </span>
                   </div>
                 )}
+                <select value={claimMonth} onChange={e => setClaimMonth(e.target.value)}
+                  style={{ width: '100%', minHeight: 42, marginTop: 10, border: '1px solid var(--border)', borderRadius: 12, padding: '0 13px', fontSize: 13.5, outline: 'none', boxSizing: 'border-box', color: 'var(--ink)', background: claimMonth === 'all' ? 'var(--surface)' : 'var(--blue-bg)', fontWeight: claimMonth === 'all' ? 400 : 700, font: 'inherit' }}>
+                  <option value="all">ทุกเดือน ({claims.length} เคส)</option>
+                  {claimMonths.ym.map(k => <option key={k} value={k}>{claimMonthLabel(k)}</option>)}
+                  {claimMonths.hasNone && <option value="none">{claimMonthLabel('none')}</option>}
+                </select>
                 <div style={{ position: 'relative', marginTop: 10 }}>
                   <input value={claimQuery} onChange={e => setClaimQuery(e.target.value)}
                     placeholder="ค้นหา ลูกค้า / เลขออเดอร์ / สาเหตุ / สถานะ"
@@ -597,7 +619,9 @@ export default function MobileMe() {
                   )}
                 </div>
                 {foundClaims.length === 0 ? (
-                  <div style={{ ...card, marginTop: 10, textAlign: 'center', color: 'var(--ink-4)', fontSize: 12.5 }}>ไม่เจอเคสที่ตรงกับ “{claimQuery}”</div>
+                  <div style={{ ...card, marginTop: 10, textAlign: 'center', color: 'var(--ink-4)', fontSize: 12.5 }}>
+                    {cq ? `ไม่เจอเคสที่ตรงกับ “${claimQuery}”` : 'เดือนนี้ไม่มีเคส'}
+                  </div>
                 ) : (
                 <div style={{ ...card, marginTop: 10, padding: 0, overflow: 'hidden' }}>
                   {shownClaims.map((c, i) => {

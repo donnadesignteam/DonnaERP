@@ -11,6 +11,7 @@ import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { isOwnerLogin, claimUpdate } from '@/lib/adminActor'
 import StaffTabs from '@/components/StaffTabs'
+import { TH_MONTHS } from '@/lib/shopCalendar'
 import Link from 'next/link'
 
 type ClaimRow = {
@@ -72,6 +73,7 @@ export default function StaffClaimsPage() {
   const [search, setSearch] = useState('')
   const [person, setPerson] = useState('')          // ฟีลเตอร์เลือกดูทีละคน
   const [reviewFilter, setReviewFilter] = useState('')
+  const [month, setMonth] = useState('all')         // เดือนที่แจ้งเคลม: 'all' | 'YYYY-MM' | 'none'
   const [owner, setOwner] = useState<boolean | null>(null)   // null = ยังไม่รู้ (กัน hydration ไม่ตรง)
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -117,6 +119,18 @@ export default function StaffClaimsPage() {
     }
   }
 
+  // ── ตัวเลือกเดือน (ยึดวันที่แจ้งเคลม เหมือนหมวดออเดอร์/หน้างานเคลม) ──
+  const monthKey = (r: ClaimRow) => (r.claim_date ?? '').slice(0, 7) || 'none'
+  const monthOptions = useMemo(() => {
+    const keys = Array.from(new Set(rows.filter(r => (r.fault_by ?? '').trim() && !COURIERS.includes((r.fault_by ?? '').trim())).map(monthKey)))
+    return { ym: keys.filter(k => k !== 'none').sort().reverse(), hasNone: keys.includes('none') }
+  }, [rows])
+  const monthLabel = (k: string) => {
+    if (k === 'none') return 'ไม่ระบุวันที่แจ้ง'
+    const [y, m] = k.split('-')
+    return `${TH_MONTHS[Number(m) - 1]} ${Number(y) + 543}`
+  }
+
   // จัดกลุ่มตามชื่อคนใน "ผิดโดย" — เอาเฉพาะชื่อที่มีเคสจริง และไม่ใช่บริษัทขนส่ง
   const groups = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -126,6 +140,7 @@ export default function StaffClaimsPage() {
       if (!name || COURIERS.includes(name)) continue
       if (person && name !== person) continue
       if (reviewFilter && (r.fault_review || PENDING) !== reviewFilter) continue
+      if (month !== 'all' && monthKey(r) !== month) continue
       if (q && !name.toLowerCase().includes(q)) continue
       const list = map.get(name)
       if (list) list.push(r)
@@ -142,7 +157,7 @@ export default function StaffClaimsPage() {
         guiltyCost: list.filter(c => c.fault_review === 'ตรวจสอบแล้วผิดจริง').reduce((sum, c) => sum + claimCost(c), 0),
       }))
       .sort((a, b) => b.list.length - a.list.length || a.name.localeCompare(b.name, 'th'))
-  }, [rows, search, person, reviewFilter])
+  }, [rows, search, person, reviewFilter, month])
 
   // รายชื่อคนทั้งหมด (ไม่ขึ้นกับฟีลเตอร์ที่เลือกอยู่) สำหรับกล่องเลือกคน
   const people = useMemo(() => {
@@ -211,8 +226,14 @@ export default function StaffClaimsPage() {
           <option value={PENDING}>{PENDING}</option>
           {REVIEWS.map(v => <option key={v} value={v}>{v}</option>)}
         </select>
-        {(person || reviewFilter || search) && (
-          <button onClick={() => { setPerson(''); setReviewFilter(''); setSearch('') }}
+        <select value={month} onChange={e => setMonth(e.target.value)} title="เดือนที่แจ้งเคลม"
+          style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 14, outline: 'none', cursor: 'pointer', background: month === 'all' ? 'var(--surface)' : 'var(--blue-bg)', color: 'var(--ink)', fontWeight: month === 'all' ? 400 : 700 }}>
+          <option value="all">ทุกเดือน</option>
+          {monthOptions.ym.map(k => <option key={k} value={k}>{monthLabel(k)}</option>)}
+          {monthOptions.hasNone && <option value="none">{monthLabel('none')}</option>}
+        </select>
+        {(person || reviewFilter || search || month !== 'all') && (
+          <button onClick={() => { setPerson(''); setReviewFilter(''); setSearch(''); setMonth('all') }}
             style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px', fontSize: 13, cursor: 'pointer', background: 'var(--surface)', color: 'var(--ink-3)' }}>ล้างฟีลเตอร์</button>
         )}
       </div>
