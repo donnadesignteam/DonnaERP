@@ -12,6 +12,7 @@ import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { recordAction } from '@/lib/history'
 import { tUpdate, prevOf } from '@/lib/trackedDb'
 import { itemBlockLines, railSplit, railLayers, railKind, railIssues, normalizeRailColor } from '@/lib/itemFormat'
+import { NO_FAULT, FAULT_BY_TECHS } from '@/lib/claimFault'
 import QRCode from 'qrcode'
 import { railLink } from '@/lib/rail'
 import { TECH_OPTIONS } from '@/lib/techs'
@@ -84,8 +85,6 @@ const FAULTS = ['ร้าน', 'ลูกค้า', 'ขนส่ง']
 const RESOLUTIONS = ['ส่งใหม่/ส่งเพิ่ม', 'แก้ไข/ผลิตใหม่', 'คืนเงินเต็ม', 'คืนเงินบางส่วน', 'คืนค่าส่ง', 'เก็บค่าแก้+ส่ง', 'เปลี่ยนสินค้า']
 const MONEY_DIR = ['คืนลูกค้า', 'เก็บลูกค้า']
 const MONEY_STATUS = ['รอ', 'โอนแล้ว', 'ชำระแล้ว']
-// ช่างที่ใส่ในช่อง "ผิดโดย" ได้ (คนละชุดกับ TECH_OPTIONS ที่เป็นช่างผู้รับผิดชอบงาน)
-const FAULT_BY_TECHS = ['ช่างพี่ฟอง', 'ช่างบัวบาน', 'ช่างกทม']
 const COURIERS = ['Flash Express', 'J&T Express', 'Kerry', 'ไปรษณีย์ไทย', 'SPX Express']
 
 // สถานะ workflow + สี
@@ -251,9 +250,11 @@ export default function ClaimsWorkspace() {
   const faultByGroups = useMemo(() => {
     const staff = Array.from(new Set(staffNames))
     const carriers = CARRIER_OPTIONS.filter(c => c !== 'อื่นๆ')
-    const known = new Set([...staff, ...FAULT_BY_TECHS, ...carriers])
+    const known = new Set([...staff, ...FAULT_BY_TECHS, ...carriers, NO_FAULT])
     const used = Array.from(new Set(rows.map(r => r.fault_by).filter((n): n is string => !!n && !known.has(n))))
     return [
+      // เคสที่ตรวจแล้วไม่ใช่ความผิดของใคร — เลือกค่านี้จะไม่ถูกนับเป็นงานเคลมของพนักงานคนไหน
+      { label: 'ไม่มีผู้รับผิด', items: [NO_FAULT] },
       { label: 'พนักงานร้าน', items: staff },
       { label: 'ช่าง', items: FAULT_BY_TECHS },
       { label: 'ขนส่ง', items: carriers },

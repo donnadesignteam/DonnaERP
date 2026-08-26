@@ -12,6 +12,7 @@ import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { isOwnerLogin, claimUpdate } from '@/lib/adminActor'
 import StaffTabs from '@/components/StaffTabs'
 import { TH_MONTHS } from '@/lib/shopCalendar'
+import { isPersonFault } from '@/lib/claimFault'
 import Link from 'next/link'
 
 type ClaimRow = {
@@ -38,7 +39,6 @@ const claimCost = (r: ClaimRow) => (r.ship_back_cost ?? 0) + (r.ship_return_cost
 const baht = (v: number) => v ? '฿' + Math.round(v).toLocaleString('th-TH') : '—'
 
 // บริษัทขนส่งไม่ใช่พนักงาน — หน้านี้รวมเฉพาะคน (ชุดเดียวกับกลุ่ม "ขนส่ง" ในหน้าเคลม)
-const COURIERS = ['Flash Express', 'J&T Express', 'Kerry', 'ไปรษณีย์ไทย', 'SPX Express']
 
 const PENDING = 'รอตรวจสอบ'
 const REVIEWS = ['ตรวจสอบแล้วไม่พบความผิด', 'ตรวจสอบแล้วผิดจริง']
@@ -122,7 +122,7 @@ export default function StaffClaimsPage() {
   // ── ตัวเลือกเดือน (ยึดวันที่แจ้งเคลม เหมือนหมวดออเดอร์/หน้างานเคลม) ──
   const monthKey = (r: ClaimRow) => (r.claim_date ?? '').slice(0, 7) || 'none'
   const monthOptions = useMemo(() => {
-    const keys = Array.from(new Set(rows.filter(r => (r.fault_by ?? '').trim() && !COURIERS.includes((r.fault_by ?? '').trim())).map(monthKey)))
+    const keys = Array.from(new Set(rows.filter(r => isPersonFault(r.fault_by)).map(monthKey)))
     return { ym: keys.filter(k => k !== 'none').sort().reverse(), hasNone: keys.includes('none') }
   }, [rows])
   const monthLabel = (k: string) => {
@@ -137,7 +137,7 @@ export default function StaffClaimsPage() {
     const map = new Map<string, ClaimRow[]>()
     for (const r of rows) {
       const name = (r.fault_by ?? '').trim()
-      if (!name || COURIERS.includes(name)) continue
+      if (!isPersonFault(name)) continue
       if (person && name !== person) continue
       if (reviewFilter && (r.fault_review || PENDING) !== reviewFilter) continue
       if (month !== 'all' && monthKey(r) !== month) continue
@@ -164,7 +164,7 @@ export default function StaffClaimsPage() {
     const set = new Set<string>()
     for (const r of rows) {
       const name = (r.fault_by ?? '').trim()
-      if (name && !COURIERS.includes(name)) set.add(name)
+      if (isPersonFault(name)) set.add(name)
     }
     return [...set].sort((a, b) => a.localeCompare(b, 'th'))
   }, [rows])
