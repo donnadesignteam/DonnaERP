@@ -7,7 +7,7 @@ import { useInstallPhotos, photoSaveError, type InstallPhoto } from '@/component
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { HOLIDAYS } from '@/lib/holidays'
-import { formatItemLines, autoTapeHooks, type RawItem } from '@/lib/itemFormat'
+import { formatItemLines, autoTapeHooks, ITEM_FIELDS, visibleItemCols, emptyItem, type RawItem } from '@/lib/itemFormat'
 import { syncOutsourcePO } from '@/lib/outsourceSync'
 import { recordAction } from '@/lib/history'
 import { prevOf } from '@/lib/trackedDb'
@@ -16,10 +16,11 @@ import { oeUpdate, instUpdate, instInsert } from '@/lib/adminActor'
 import { useConfirm } from '@/components/ConfirmDialog'
 import { usePrintColumns, PrintColumnPicker, printTableHtml, type PrintCol } from '@/components/PrintColumnPicker'
 import { createOrderForInstall, orderPatchFromInstall } from '@/lib/installOrderSync'
+import { PROD_STATUS_COLOR, daysRemaining, daysLabel, daysColor } from '@/lib/orderTabs'
 import { formatOrderLines, linesToHtml, openFormPrintWindow, escPrintHtml, type PrintLine, type PrintableOrder } from '@/lib/orderPrint'
 import QRCode from 'qrcode'
 import { WORK_TYPES, WORK_TYPE_OPTIONS, ZONES, TECHS, TECH_BY_ZONE,
-  normStatus, statusLabel, statusOptions, rowColor } from '@/lib/installMeta'
+  normStatus, statusLabel, statusOptions, rowColor, INSTALL_COLUMNS } from '@/lib/installMeta'
 
 
 type Installation = {
@@ -50,6 +51,26 @@ type Installation = {
   photos?: InstallPhoto[]           // รูปหน้างาน (ยังไม่ได้รัน migrations/add_installation_photos.sql = ไม่มีคอลัมน์นี้)
 }
 
+// ช่องของออเดอร์ต้นทางที่เอามาโชว์ในตารางรายการ (คอลัมน์ชุดเดียวกับแท็บงานติดตั้งในหมวดออเดอร์)
+type OrderMeta = {
+  id: string
+  items: RawItem[] | null
+  price: number | null
+  payment_status: string | null
+  paid_amount: number | null
+  deposit: number | null
+  order_assigned: string | null
+  admin_name: string | null
+  order_status: string | null
+  done_at: string | null
+  is_dropoff: boolean | null
+  rail_packed: boolean | null
+  created_at: string | null
+  outsource: string | null
+  technician: string | null
+  address: string | null
+}
+
 const PLATFORMS = ['Tiktok','Tiktok-Chat','Shopee','Shopee-Chat','Lazada','Facebook','LineOA',
   'Lineส่วนตัวยุน','Lineส่วนตัวสู้','Lineส่วนตัวเฟิร์น','Lineส่วนตัวน็อต','หน้าร้าน',
   'เคลม:Shopee','เคลม:Lazada','เคลม:Tiktok','เคลม:Facebook','เคลม:หน้าร้าน',
@@ -66,8 +87,6 @@ const STATUS_BY_TYPE: Record<string, string> = {
 const INITIAL_STATUSES = ['ติดตั้ง', 'วัดหน้างาน', 'รอนัดหมาย', 'รอแก้']
 
 
-const emptyItem = (): RawItem => ({ type: '', floors: null, rail_head: '', hook_type: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', orientation: '', fabric_split: '', chemical: '', weight_chain: '', pull_side: '', note: '', outsource: '' })
-
 // เติมกระดูมม่านลอนเทปที่ยังว่างให้อัตโนมัติ — ใช้ตอนเปิดโมดัล (ออเดอร์เก่าที่บันทึกกระดูมว่างไว้ก็โชว์ให้)
 const withAutoHooks = (items: RawItem[]): RawItem[] =>
   items.map(it => (it.hooks ?? '').trim() ? it : { ...it, hooks: autoTapeHooks(it) })
@@ -75,6 +94,14 @@ const withAutoHooks = (items: RawItem[]): RawItem[] =>
 // รวมข้อความสั่งนอกจากทุกรายการ → ไว้ลงคอลัมน์สั่งนอกของออเดอร์ต้นทาง
 const itemsOutsourceText = (items: RawItem[]): string =>
   items.map(it => (it.outsource ?? '').trim()).filter(Boolean).join(', ')
+
+// การจัดวางของแต่ละคอลัมน์ในตารางรายการ (ยอดเงินชิดขวา · ติ๊ก/ปุ่มอยู่กลาง)
+const COL_ALIGN: Record<string, 'left' | 'right' | 'center'> = {
+  total: 'right', paid: 'right', paybefore: 'right',
+  print: 'center', done: 'center', installed: 'center', rail: 'center',
+}
+const money = (v: number | null | undefined) => v == null ? '-' : Number(v).toLocaleString('th-TH')
+const shortDate = (v?: string | null) => v ? new Date(v).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '-'
 
 const DAYS = ['จ.','อ.','พ.','พฤ.','ศ.','ส.','อา.']
 const TH_MONTHS = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
@@ -172,7 +199,7 @@ export default function InstallationsPage() {
   const [pasteText, setPasteText] = useState('')
   const [parsing, setParsing] = useState(false)
   const [printAsk, setPrintAsk] = useState(false)   // ป๊อปอัปถามก่อนปริ้น: ตารางรายการ / ปฏิทิน
-  const printCols = usePrintColumns('installations')   // เลือกคอลัมน์ที่จะเอาลงใบปริ้นตารางรายการ
+  const printCols = usePrintColumns('installations-v2')   // เลือกคอลัมน์ที่จะเอาลงใบปริ้นตารางรายการ
   const [printColStep, setPrintColStep] = useState(false)   // กดตารางรายการแล้ว → ขั้นถัดไปคือเลือกคอลัมน์
   const [quoteDragOver, setQuoteDragOver] = useState(false)   // ลาก PDF ใบเสนอราคามาวางในกล่องเพิ่มรายการติดตั้ง
   const [parseError, setParseError] = useState('')
@@ -181,11 +208,25 @@ export default function InstallationsPage() {
   const [editAppt, setEditAppt] = useState<{ id: string; date: string; time: string } | null>(null)
   // รายการสินค้าของออเดอร์ต้นทาง (เฉพาะแถวที่ sync มาจากหมวดออเดอร์) — key = source_order_id
   const [orderItems, setOrderItems] = useState<Record<string, RawItem[]>>({})
+  // ข้อมูลอื่นของออเดอร์ต้นทาง (ยอด/ชำระ/แอดมิน/สถานะ...) — โชว์อย่างเดียว แก้ที่หมวดออเดอร์
+  const [orderMeta, setOrderMeta] = useState<Record<string, OrderMeta>>({})
+  // ปุ่ม "คอลัมน์" — ชุดคอลัมน์/ลำดับเดียวกับแท็บงานติดตั้งในหมวดออเดอร์ (INSTALL_COLUMNS)
+  const [hiddenCols, setHiddenCols] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('inst_hidden_cols') ?? '[]') } catch { return [] }
+  })
+  const [openColMenu, setOpenColMenu] = useState(false)
+  const showCol = (id: string) => !hiddenCols.includes(id)
+  const toggleCol = (id: string) => setHiddenCols(prev => {
+    const next = prev.includes(id) ? prev.filter(v => v !== id) : [...prev, id]
+    try { localStorage.setItem('inst_hidden_cols', JSON.stringify(next)) } catch {}
+    return next
+  })
   // popup แก้รายการสินค้า (แบบเดียวกับหมวดออเดอร์) — บันทึกกลับไปที่ order_entries ต้นทาง
   const [itemsModal, setItemsModal] = useState<{ orderId: string; items: RawItem[]; instId: string } | null>(null)
   const [itemsPasteText, setItemsPasteText] = useState('')
   const [itemsParsing, setItemsParsing] = useState(false)
   const [itemsError, setItemsError] = useState('')
+  const [itemsShowAll, setItemsShowAll] = useState(false)   // ปุ่ม "ทุกช่อง" ในป๊อปอัปรายการ (แบบเดียวกับหมวดออเดอร์)
   const [editWork, setEditWork] = useState<{ id: string; value: string } | null>(null)  // แก้รายละเอียดงานของแถวที่เพิ่มเอง
   // หน้ายอดติดตั้ง — สรุปยอด+โบนัสช่างรายเดือน (สูตรเดียวกับชีท "ยอดติดตั้ง")
   const [bonusModal, setBonusModal] = useState(false)
@@ -227,12 +268,17 @@ export default function InstallationsPage() {
     // ดึงรายการสินค้าจากออเดอร์ต้นทางมาโชว์ในคอลัมน์ "รายการ"
     const orderIds = rows.map(r => r.source_order_id).filter((v): v is string => !!v)
     if (orderIds.length) {
-      const { data: oes } = await supabase.from('order_entries').select('id, items').in('id', orderIds)
+      const { data: oes } = await supabase.from('order_entries')
+        .select('id, items, price, payment_status, paid_amount, deposit, order_assigned, admin_name, order_status, done_at, is_dropoff, rail_packed, created_at, outsource, technician, address')
+        .in('id', orderIds)
       const map: Record<string, RawItem[]> = {}
-      for (const oe of (oes ?? []) as { id: string; items: RawItem[] | null }[]) {
+      const metaMap: Record<string, OrderMeta> = {}
+      for (const oe of (oes ?? []) as OrderMeta[]) {
         if (Array.isArray(oe.items) && oe.items.length) map[oe.id] = oe.items
+        metaMap[oe.id] = oe
       }
       setOrderItems(map)
+      setOrderMeta(metaMap)
     }
   }
 
@@ -578,33 +624,61 @@ export default function InstallationsPage() {
 
   // ปริ้นตารางรายการ (แบบเดียวกับปุ่มปริ้น "ตารางที่เห็นอยู่" ในหมวดออเดอร์) — ตามเดือน/โซน/คำค้นที่กรองอยู่
   // คอลัมน์ของใบปริ้นตารางรายการ — ชุดเดียวกับคอลัมน์บนหน้าจอ (off: true = ไม่ติ๊กมาให้ตั้งแต่แรก)
+  // คอลัมน์ใบปริ้นแบบตาราง = ชุด/ลำดับเดียวกับคอลัมน์บนหน้าจอ (INSTALL_COLUMNS) เหมือนหมวดออเดอร์
   const printColDefs = (): PrintCol<Installation>[] => {
     const esc = (v: unknown) => escPrintHtml(String(v ?? ''))
-    return [
-      { key: 'serial', label: 'Serial', cell: r => esc(r.serial_no) },
-      { key: 'appt', label: 'นัดหมาย', cell: r => {
-          const dt = r.appointment_datetime ? new Date(r.appointment_datetime) : null
-          return dt && !isNaN(dt.getTime())
-            ? esc(`${String(dt.getDate()).padStart(2, '0')}/${dt.getMonth() + 1}/${dt.getFullYear()} ${dt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`)
-            : '-'
-        } },
-      { key: 'work_type', label: 'งาน', cell: r => esc(r.work_type) },
-      { key: 'customer', label: 'ลูกค้า', cell: r => esc(r.customer_real_name || r.customer_id) },
-      { key: 'items', label: 'รายการ', cell: r => formatItemLines(r.source_order_id ? (orderItems[r.source_order_id] ?? []) : []).join('<br>') || '-' },
-      { key: 'platform', label: 'แพลตฟอร์ม', cell: r => esc(r.platform) },
-      { key: 'province', label: 'จังหวัด', cell: r => esc(r.province) },
-      { key: 'zone', label: 'โซน', cell: r => esc(r.install_zone) },
-      { key: 'tech', label: 'ช่าง', cell: r => esc(r.technician_type) },
-      { key: 'phone', label: 'เบอร์', cell: r => esc(r.phone) },
-      { key: 'status', label: 'สถานะ', cell: r => esc(statusLabel(normStatus(r.installation_status))) },
-      { key: 'notes', label: 'หมายเหตุ', cell: r => esc(r.notes) },
-      { key: 'work_details', label: 'รายละเอียดงาน', off: true, cell: r => esc(r.work_details) },
-      { key: 'maps', label: 'Maps', off: true, cell: r => esc(r.location_link) },
-      { key: 'price', label: 'ราคา', off: true, cell: r => r.price != null ? esc(Number(r.price).toLocaleString('th-TH')) : '-' },
-      { key: 'updated', label: 'แก้ไขล่าสุด', off: true, cell: r => r.updated_at
-          ? esc(`${new Date(r.updated_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} ${new Date(r.updated_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`)
-          : '-' },
-    ]
+    const oeOf = (r: Installation) => r.source_order_id ? orderMeta[r.source_order_id] : undefined
+    const num = (v: number | null | undefined) => v == null ? '-' : esc(Number(v).toLocaleString('th-TH'))
+    const cellById: Record<string, (r: Installation) => string> = {
+      days: r => {
+        const d = r.appointment_datetime ? daysRemaining(r.appointment_datetime.split('T')[0]) : null
+        return d == null ? '-' : esc(d === 0 ? 'ต้องติดตั้งวันนี้' : daysLabel(d))
+      },
+      serial: r => esc(r.serial_no),
+      deadline: r => {
+        const dt = r.appointment_datetime ? new Date(r.appointment_datetime) : null
+        return dt && !isNaN(dt.getTime())
+          ? esc(`${String(dt.getDate()).padStart(2, '0')}/${dt.getMonth() + 1}/${dt.getFullYear()} ${dt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`)
+          : '-'
+      },
+      work: r => esc(r.work_type),
+      customer: r => esc(r.customer_real_name || r.customer_id),
+      platform: r => esc(r.platform),
+      items: r => formatItemLines(r.source_order_id ? (orderItems[r.source_order_id] ?? []) : []).join('<br>') || esc(r.work_details) || '-',
+      total: r => num(oeOf(r)?.price ?? (r.price || null)),
+      payment: r => esc(oeOf(r)?.payment_status || r.payment_status),
+      paid: r => num(oeOf(r)?.paid_amount),
+      paybefore: r => {
+        const oe = oeOf(r)
+        if (!oe?.payment_status || oe.payment_status === 'ชำระครบ' || oe.payment_status === 'ยังไม่ชำระ') return '-'
+        const auto = oe.paid_amount != null && oe.price != null
+          ? Math.max(0, Number(oe.price) - Number(oe.paid_amount))
+          : oe.payment_status === 'มัดจำ50%' && oe.price ? Number(oe.price) / 2 : null
+        return num(auto ?? oe.deposit)
+      },
+      assigned: r => esc(oeOf(r)?.order_assigned),
+      admin: r => esc(oeOf(r)?.admin_name || r.entered_by),
+      status: r => esc(oeOf(r)?.order_status),
+      done: r => oeOf(r)?.done_at ? '✓' : '-',
+      installed: r => oeOf(r)?.is_dropoff ? '✓' : '-',
+      inststatus: r => esc(statusLabel(normStatus(r.installation_status))),
+      rail: r => oeOf(r)?.rail_packed ? '✓' : '-',
+      created: r => esc(shortDate(oeOf(r)?.created_at ?? r.created_at)),
+      outsource: r => esc(oeOf(r)?.outsource),
+      province: r => esc(r.province),
+      zone: r => esc(r.install_zone),
+      insttech: r => esc(r.technician_type),
+      tech: r => esc(oeOf(r)?.technician),
+      address: r => esc(oeOf(r)?.address),
+      phone: r => esc(r.phone),
+      maps: r => esc(r.location_link),
+      notes: r => esc(r.notes),
+      updated: r => r.updated_at
+        ? esc(`${new Date(r.updated_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} ${new Date(r.updated_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`)
+        : '-',
+    }
+    return INSTALL_COLUMNS.filter(c => c.id !== 'print' && cellById[c.id])
+      .map(c => ({ key: c.id, label: c.label, cell: cellById[c.id] }))
   }
 
   const printColsOn = printColDefs().filter(c => printCols.isOn(c)).length   // ติ๊กไว้กี่คอลัมน์ (0 = ห้ามปริ้น ใบจะว่าง)
@@ -871,6 +945,33 @@ export default function InstallationsPage() {
             <option key={m} value={m}>{TH_MONTHS[Number(m.split('-')[1]) - 1]} {Number(m.split('-')[0]) + 543}</option>
           ))}
         </select>
+        {/* ปุ่มคอลัมน์ — ชุด/ลำดับเดียวกับแท็บงานติดตั้งในหมวดออเดอร์ ติ๊กออกเพื่อซ่อน (จำไว้ในเครื่อง) */}
+        <div className="no-print" style={{ position: 'relative' }}>
+          <button onClick={() => setOpenColMenu(v => !v)}
+            style={{ padding: '6px 14px', borderRadius: 20, border: hiddenCols.length ? 'none' : '1px solid var(--border)', background: hiddenCols.length ? 'var(--blue)' : 'var(--surface)', color: hiddenCols.length ? '#fff' : 'var(--ink-3)', fontSize: 13, fontWeight: hiddenCols.length ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+            คอลัมน์{hiddenCols.length > 0 && ` (ซ่อน ${hiddenCols.length})`} <span style={{ fontSize: 9, opacity: 0.7 }}>▼</span>
+          </button>
+          {openColMenu && (
+            <>
+              <div onClick={() => setOpenColMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 150 }} />
+              <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 200, maxHeight: 360, overflowY: 'auto' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 12px 8px', borderBottom: '1px solid var(--border)', marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, color: 'var(--ink-4)', fontWeight: 600 }}>ติ๊กออก = ซ่อน</span>
+                  {hiddenCols.length > 0 && (
+                    <button onClick={() => { setHiddenCols([]); try { localStorage.setItem('inst_hidden_cols', '[]') } catch {} }}
+                      style={{ border: 'none', background: 'transparent', color: 'var(--blue)', fontSize: 11, cursor: 'pointer', padding: 0 }}>โชว์ทั้งหมด</button>
+                  )}
+                </div>
+                {INSTALL_COLUMNS.map(c => (
+                  <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--ink)' }}>
+                    <input type="checkbox" checked={showCol(c.id)} onChange={() => toggleCol(c.id)} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
+                    {c.label}
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
         </div>
       </div>
       <div style={{ position: 'relative', marginBottom: 16 }}>
@@ -892,61 +993,76 @@ export default function InstallationsPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
-                {['Serial','นัดหมาย','งาน','ลูกค้า','รายการ','แพลตฟอร์ม','จังหวัด','โซน','ช่าง','เบอร์','สถานะ','หมายเหตุ','แก้ไขล่าสุด',''].map(h => (
-                  <th key={h} style={{ textAlign: 'left', padding: '12px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
+                {/* หัวตาราง = INSTALL_COLUMNS (ชุด/ลำดับเดียวกับแท็บงานติดตั้งในหมวดออเดอร์) */}
+                {INSTALL_COLUMNS.filter(c => showCol(c.id)).map(c => (
+                  <th key={c.id} style={{ textAlign: COL_ALIGN[c.id] ?? 'left', padding: '12px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{c.label}</th>
                 ))}
+                <th style={{ padding: '12px 14px' }} />
               </tr>
             </thead>
             <tbody>
               {displayed.map(ins => {
                 const bg = rowColor(ins)
-                return (
-                  <tr key={ins.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--blue)' }}>{ins.serial_no}</td>
-                    <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>
-                      {editAppt?.id === ins.id ? (
-                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                          <input type="date" autoFocus value={/^\d{4}-\d{2}-\d{2}$/.test(editAppt.date) ? editAppt.date : ''}
-                            onChange={e => { if (e.target.value) { setEditAppt({ ...editAppt, date: e.target.value }); saveAppt(ins.id, e.target.value, editAppt.time) } }}
-                            onMouseDown={e => { e.preventDefault(); try { (e.target as HTMLInputElement).showPicker() } catch {} }}
-                            style={{ border: '1px solid var(--blue)', borderRadius: 6, padding: '4px 7px', fontSize: 11, outline: 'none' }} />
-                          <select value={editAppt.time}
-                            onChange={e => { setEditAppt({ ...editAppt, time: e.target.value }); saveAppt(ins.id, editAppt.date, e.target.value) }}
-                            style={{ border: '1px solid var(--blue)', borderRadius: 6, padding: '4px 7px', fontSize: 11, outline: 'none' }}>
-                            {TIMES.map(t => <option key={t}>{t}</option>)}
-                          </select>
-                          <button onClick={() => setEditAppt(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 14 }}>✓</button>
-                        </div>
-                      ) : (
-                        <span onClick={() => {
-                          const d = ins.appointment_datetime ? new Date(ins.appointment_datetime) : null
-                          setEditAppt({
-                            id: ins.id,
-                            date: ins.appointment_datetime?.split('T')[0] ?? '',
-                            time: d ? `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}` : '9:00',
-                          })
-                        }} style={{ cursor: 'pointer' }}>
-                          {ins.appointment_datetime ? (
-                            <>
-                              <span style={{ color: 'var(--ink)' }}>{new Date(ins.appointment_datetime).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
-                              {' '}
-                              <span style={{ color: 'var(--blue)', fontWeight: 600 }}>{new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.</span>
-                            </>
-                          ) : <span style={{ color: 'var(--ink-4)' }}>เลือกวันนัด</span>}
-                        </span>
-                      )}
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      {/* งาน — ชิปสีเดียวกับคอลัมน์สถานะของแถวนั้น */}
-                      <select value={ins.work_type || ''} onChange={e => updateWorkType(ins.id, e.target.value)}
-                        style={{ background: bg + '22', color: bg, padding: '3px 8px', borderRadius: 980, fontWeight: 600, fontSize: 11, border: 'none', outline: 'none', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none' }}>
-                        <option value="" style={{ background: '#fff', color: 'var(--ink)' }}>—</option>
-                        {Array.from(new Set([...WORK_TYPE_OPTIONS, ins.work_type].filter(Boolean))).map(w => (
-                          <option key={w} value={w} style={{ background: '#fff', color: 'var(--ink)' }}>{w}</option>
-                        ))}
+                const oe = ins.source_order_id ? orderMeta[ins.source_order_id] : undefined
+                // ยอดที่ต้องชำระหลังติดตั้ง — สูตรเดียวกับหมวดออเดอร์
+                const autoDeposit = oe && oe.paid_amount != null && oe.price != null
+                  ? Math.max(0, Number(oe.price) - Number(oe.paid_amount))
+                  : oe?.payment_status === 'มัดจำ50%' && oe.price ? Number(oe.price) / 2 : null
+                const days = ins.appointment_datetime ? daysRemaining(ins.appointment_datetime.split('T')[0]) : null
+                const cells: Record<string, React.ReactNode> = {
+                  days: days == null ? <span style={{ color: 'var(--ink-4)' }}>-</span> : (
+                    <span style={{ color: daysColor(days), fontWeight: 600, whiteSpace: 'nowrap' }}>
+                      {days === 0 ? 'ต้องติดตั้งวันนี้' : daysLabel(days)}
+                    </span>
+                  ),
+                  serial: <span style={{ fontWeight: 700, color: 'var(--blue)' }}>{ins.serial_no}</span>,
+                  deadline: editAppt?.id === ins.id ? (
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <input type="date" autoFocus value={/^\d{4}-\d{2}-\d{2}$/.test(editAppt.date) ? editAppt.date : ''}
+                        onChange={e => { if (e.target.value) { setEditAppt({ ...editAppt, date: e.target.value }); saveAppt(ins.id, e.target.value, editAppt.time) } }}
+                        onMouseDown={e => { e.preventDefault(); try { (e.target as HTMLInputElement).showPicker() } catch {} }}
+                        style={{ border: '1px solid var(--blue)', borderRadius: 6, padding: '4px 7px', fontSize: 11, outline: 'none' }} />
+                      <select value={editAppt.time}
+                        onChange={e => { setEditAppt({ ...editAppt, time: e.target.value }); saveAppt(ins.id, editAppt.date, e.target.value) }}
+                        style={{ border: '1px solid var(--blue)', borderRadius: 6, padding: '4px 7px', fontSize: 11, outline: 'none' }}>
+                        {TIMES.map(t => <option key={t}>{t}</option>)}
                       </select>
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
+                      <button onClick={() => setEditAppt(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 14 }}>✓</button>
+                    </div>
+                  ) : (
+                    <span onClick={() => {
+                      const d = ins.appointment_datetime ? new Date(ins.appointment_datetime) : null
+                      setEditAppt({
+                        id: ins.id,
+                        date: ins.appointment_datetime?.split('T')[0] ?? '',
+                        time: d ? `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}` : '9:00',
+                      })
+                    }} style={{ cursor: 'pointer' }}>
+                      {ins.appointment_datetime ? (
+                        <>
+                          <span style={{ color: 'var(--ink)' }}>{new Date(ins.appointment_datetime).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
+                          {' '}
+                          <span style={{ color: 'var(--blue)', fontWeight: 600 }}>{new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.</span>
+                        </>
+                      ) : <span style={{ color: 'var(--ink-4)' }}>เลือกวันนัด</span>}
+                    </span>
+                  ),
+                  work: (
+                    /* งาน — ชิปสีเดียวกับคอลัมน์สถานะของแถวนั้น */
+                    <select value={ins.work_type || ''} onChange={e => updateWorkType(ins.id, e.target.value)}
+                      style={{ background: bg + '22', color: bg, padding: '3px 8px', borderRadius: 980, fontWeight: 600, fontSize: 11, border: 'none', outline: 'none', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none' }}>
+                      <option value="" style={{ background: '#fff', color: 'var(--ink)' }}>—</option>
+                      {Array.from(new Set([...WORK_TYPE_OPTIONS, ins.work_type].filter(Boolean))).map(w => (
+                        <option key={w} value={w} style={{ background: '#fff', color: 'var(--ink)' }}>{w}</option>
+                      ))}
+                    </select>
+                  ),
+                  print: (
+                    <button onClick={() => printInstall(ins)} title="ปริ้นใบงาน"
+                      style={{ border: '1px solid var(--border)', background: '#fff', borderRadius: 6, padding: '3px 8px', cursor: 'pointer', fontSize: 12 }}>🖨</button>
+                  ),
+                  customer: (
+                    <>
                       {(ins.customer_real_name || ins.customer_id)
                         ? <Link href={`/customers?name=${encodeURIComponent(ins.customer_real_name || ins.customer_id!)}`} title="เปิดโฟลเดอร์ออเดอร์" style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>{ins.customer_real_name || ins.customer_id}</Link>
                         : '-'}
@@ -954,82 +1070,110 @@ export default function InstallationsPage() {
                       {!!ins.photos?.length && (
                         <span title={`มีรูปหน้างาน ${ins.photos.length} รูป`} style={{ marginLeft: 6, fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>📷 {ins.photos.length}</span>
                       )}
-                    </td>
-                    <td style={{ padding: '6px 14px', minWidth: 160, maxWidth: 200 }}>
-                      {ins.source_order_id ? (
-                        // มาจากหมวดออเดอร์ → จิ้มเปิด popup แก้รายการ บันทึกกลับไปที่ออเดอร์ต้นทาง
-                        <div onClick={() => { ph.begin(ins.photos, ins.id); setItemsModal({ orderId: ins.source_order_id!, items: withAutoHooks(orderItems[ins.source_order_id!] ?? []), instId: ins.id }); setItemsPasteText(''); setItemsError('') }}
-                          style={{ cursor: 'pointer' }} title="จิ้มเพื่อแก้รายการ">
-                          {orderItems[ins.source_order_id]?.length ? (
-                            // โชว์แบบเดียวกับคอลัมน์รายการในหมวดออเดอร์: บรรทัดสั้น 1 บรรทัด/ชิ้น ตัดท้ายด้วย …
-                            <div>
-                              {formatItemLines(orderItems[ins.source_order_id]).map((line, k) => (
-                                <div key={k} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190, fontSize: 11, lineHeight: '1.6', color: k === 0 ? 'var(--ink)' : 'var(--ink-3)' }}>{line}</div>
-                              ))}
-                            </div>
-                          ) : <span style={{ color: 'var(--ink-4)' }}>+ เพิ่มรายการ</span>}
-                        </div>
-                      ) : editWork?.id === ins.id ? (
-                        <textarea autoFocus value={editWork.value} rows={2}
-                          onChange={e => setEditWork(ew => ew ? { ...ew, value: e.target.value } : null)}
-                          onBlur={() => saveWork(ins.id, editWork.value)}
-                          onKeyDown={e => { if (e.key === 'Escape') setEditWork(null) }}
-                          style={{ border: '1px solid var(--blue)', borderRadius: 6, background: 'transparent', fontSize: 11, width: '100%', outline: 'none', padding: '4px 6px', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }} />
-                      ) : (
-                        // แถวที่เพิ่มเองในหน้านี้ → จิ้มแก้รายละเอียดงานตรงนี้ได้เลย
-                        <div onClick={() => setEditWork({ id: ins.id, value: ins.work_details ?? '' })}
-                          style={{ cursor: 'text', fontSize: 11, whiteSpace: 'pre-line', color: ins.work_details ? 'var(--ink-3)' : 'var(--ink-4)', minWidth: 60 }}>
-                          {ins.work_details || '—'}
-                        </div>
-                      )}
-                    </td>
-                    <td style={{ padding: '12px 14px', color: 'var(--ink-3)' }}>{ins.platform || '-'}</td>
-                    <td style={{ padding: '12px 14px', color: 'var(--ink-3)' }}>{ins.province || '-'}</td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <select value={ins.install_zone || ''} onChange={e => updateZone(ins.id, e.target.value)}
-                        style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px', fontSize: 11, color: ins.install_zone ? 'var(--ink)' : 'var(--ink-4)', background: '#fff', outline: 'none', cursor: 'pointer' }}>
-                        <option value="">—</option>
-                        {ZONES.map(z => <option key={z} value={z}>{z}</option>)}
-                      </select>
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <select value={ins.technician_type || ''} onChange={e => updateTech(ins.id, e.target.value)}
-                        style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px', fontSize: 11, color: ins.technician_type ? 'var(--ink)' : 'var(--ink-4)', background: '#fff', outline: 'none', cursor: 'pointer' }}>
-                        <option value="">—</option>
-                        {TECHS.map(t => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                    </td>
-                    <td style={{ padding: '12px 14px', color: 'var(--ink-3)' }}>{ins.phone || '-'}</td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <select value={normStatus(ins.installation_status)} onChange={e => updateStatus(ins.id, e.target.value)}
-                        style={{ background: bg + '22', color: bg, padding: '3px 8px', borderRadius: 980, fontWeight: 600, fontSize: 11, border: 'none', outline: 'none', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none' }}>
-                        {Array.from(new Set([...statusOptions(ins.work_type), normStatus(ins.installation_status)])).map(s => (
-                          <option key={s} value={s} style={{ background: '#fff', color: 'var(--ink)' }}>{statusLabel(s)}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td style={{ padding: '12px 14px', fontSize: 11, color: 'var(--ink-3)', minWidth: 140, maxWidth: 220 }}>
-                      {editNote?.id === ins.id ? (
-                        <input type="text" autoFocus value={editNote.value}
-                          onChange={e => setEditNote(en => en ? { ...en, value: e.target.value } : null)}
-                          onBlur={() => saveNote(ins.id, editNote.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditNote(null) }}
-                          style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 11, width: '100%', outline: 'none', padding: '2px 0' }} />
-                      ) : (
-                        <div onClick={() => setEditNote({ id: ins.id, value: ins.notes ?? '' })}
-                          style={{ cursor: 'text', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: ins.notes ? 'var(--ink-3)' : 'var(--ink-4)', minWidth: 60 }}>
-                          {ins.notes || '—'}
-                        </div>
-                      )}
-                    </td>
-                    <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', color: 'var(--ink-4)', fontSize: 11 }}>
-                      {ins.updated_at ? (
+                    </>
+                  ),
+                  platform: <span style={{ color: 'var(--ink-3)' }}>{ins.platform || '-'}</span>,
+                  items: ins.source_order_id ? (
+                    // มาจากหมวดออเดอร์ → จิ้มเปิด popup แก้รายการ บันทึกกลับไปที่ออเดอร์ต้นทาง
+                    <div onClick={() => { ph.begin(ins.photos, ins.id); setItemsModal({ orderId: ins.source_order_id!, items: withAutoHooks(orderItems[ins.source_order_id!] ?? []), instId: ins.id }); setItemsPasteText(''); setItemsError('') }}
+                      style={{ cursor: 'pointer' }} title="จิ้มเพื่อแก้รายการ">
+                      {orderItems[ins.source_order_id]?.length ? (
+                        // โชว์แบบเดียวกับคอลัมน์รายการในหมวดออเดอร์: บรรทัดสั้น 1 บรรทัด/ชิ้น ตัดท้ายด้วย …
                         <div>
-                          <div>{new Date(ins.updated_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}</div>
-                          <div>{new Date(ins.updated_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>
+                          {formatItemLines(orderItems[ins.source_order_id]).map((line, k) => (
+                            <div key={k} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190, fontSize: 11, lineHeight: '1.6', color: k === 0 ? 'var(--ink)' : 'var(--ink-3)' }}>{line}</div>
+                          ))}
                         </div>
-                      ) : '-'}
-                    </td>
+                      ) : <span style={{ color: 'var(--ink-4)' }}>+ เพิ่มรายการ</span>}
+                    </div>
+                  ) : editWork?.id === ins.id ? (
+                    <textarea autoFocus value={editWork.value} rows={2}
+                      onChange={e => setEditWork(ew => ew ? { ...ew, value: e.target.value } : null)}
+                      onBlur={() => saveWork(ins.id, editWork.value)}
+                      onKeyDown={e => { if (e.key === 'Escape') setEditWork(null) }}
+                      style={{ border: '1px solid var(--blue)', borderRadius: 6, background: 'transparent', fontSize: 11, width: '100%', outline: 'none', padding: '4px 6px', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                  ) : (
+                    // แถวที่เพิ่มเองในหน้านี้ → จิ้มแก้รายละเอียดงานตรงนี้ได้เลย
+                    <div onClick={() => setEditWork({ id: ins.id, value: ins.work_details ?? '' })}
+                      style={{ cursor: 'text', fontSize: 11, whiteSpace: 'pre-line', color: ins.work_details ? 'var(--ink-3)' : 'var(--ink-4)', minWidth: 60 }}>
+                      {ins.work_details || '—'}
+                    </div>
+                  ),
+                  /* ตั้งแต่นี่ลงไป = ข้อมูลของออเดอร์ต้นทาง โชว์อย่างเดียว (แก้ที่หมวดออเดอร์) */
+                  total: <span style={{ fontWeight: 600 }}>{money(oe?.price ?? (ins.price || null))}</span>,
+                  payment: <span style={{ color: 'var(--ink-3)' }}>{oe?.payment_status || ins.payment_status || '-'}</span>,
+                  paid: <span style={{ color: 'var(--ink-3)' }}>{money(oe?.paid_amount)}</span>,
+                  paybefore: (oe?.payment_status === 'ชำระครบ' || !oe?.payment_status || oe?.payment_status === 'ยังไม่ชำระ')
+                    ? <span style={{ color: 'var(--ink-4)' }}>-</span>
+                    : <span style={{ fontWeight: 600, color: '#3b82f6' }}>{money(autoDeposit ?? oe?.deposit)}</span>,
+                  assigned: <span style={{ color: 'var(--ink-3)' }}>{oe?.order_assigned || '-'}</span>,
+                  admin: <span style={{ color: 'var(--ink-3)' }}>{oe?.admin_name || ins.entered_by || '-'}</span>,
+                  status: oe?.order_status
+                    ? <span style={{ background: (PROD_STATUS_COLOR[oe.order_status] ?? 'var(--ink-3)') + '22', color: PROD_STATUS_COLOR[oe.order_status] ?? 'var(--ink-3)', padding: '3px 8px', borderRadius: 980, fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>{oe.order_status}</span>
+                    : <span style={{ color: 'var(--ink-4)' }}>-</span>,
+                  done: oe?.done_at ? <span style={{ color: '#34c759', fontWeight: 600 }} title={shortDate(oe.done_at)}>✓</span> : <span style={{ color: 'var(--ink-4)' }}>-</span>,
+                  installed: oe?.is_dropoff ? <span style={{ color: '#34c759', fontWeight: 600 }}>✓</span> : <span style={{ color: 'var(--ink-4)' }}>-</span>,
+                  inststatus: (
+                    <select value={normStatus(ins.installation_status)} onChange={e => updateStatus(ins.id, e.target.value)}
+                      style={{ background: bg + '22', color: bg, padding: '3px 8px', borderRadius: 980, fontWeight: 600, fontSize: 11, border: 'none', outline: 'none', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none' }}>
+                      {Array.from(new Set([...statusOptions(ins.work_type), normStatus(ins.installation_status)])).map(st => (
+                        <option key={st} value={st} style={{ background: '#fff', color: 'var(--ink)' }}>{statusLabel(st)}</option>
+                      ))}
+                    </select>
+                  ),
+                  rail: oe?.rail_packed ? <span style={{ color: '#34c759', fontWeight: 600 }}>✓</span> : <span style={{ color: 'var(--ink-4)' }}>-</span>,
+                  created: <span style={{ color: 'var(--ink-4)', fontSize: 11, whiteSpace: 'nowrap' }}>{shortDate(oe?.created_at ?? ins.created_at)}</span>,
+                  outsource: <span style={{ color: 'var(--ink-3)', fontSize: 11 }}>{oe?.outsource || '-'}</span>,
+                  province: <span style={{ color: 'var(--ink-3)' }}>{ins.province || '-'}</span>,
+                  zone: (
+                    <select value={ins.install_zone || ''} onChange={e => updateZone(ins.id, e.target.value)}
+                      style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px', fontSize: 11, color: ins.install_zone ? 'var(--ink)' : 'var(--ink-4)', background: '#fff', outline: 'none', cursor: 'pointer' }}>
+                      <option value="">—</option>
+                      {ZONES.map(z => <option key={z} value={z}>{z}</option>)}
+                    </select>
+                  ),
+                  insttech: (
+                    <select value={ins.technician_type || ''} onChange={e => updateTech(ins.id, e.target.value)}
+                      style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px', fontSize: 11, color: ins.technician_type ? 'var(--ink)' : 'var(--ink-4)', background: '#fff', outline: 'none', cursor: 'pointer' }}>
+                      <option value="">—</option>
+                      {TECHS.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  ),
+                  tech: <span style={{ color: 'var(--ink-3)' }}>{oe?.technician || '-'}</span>,
+                  address: <span style={{ color: 'var(--ink-3)', fontSize: 11 }}>{oe?.address || '-'}</span>,
+                  phone: <span style={{ color: 'var(--ink-3)' }}>{ins.phone || '-'}</span>,
+                  maps: ins.location_link
+                    ? <a href={/^https?:\/\//i.test(ins.location_link) ? ins.location_link : `https://${ins.location_link}`} target="_blank" rel="noreferrer" style={{ color: 'var(--blue)', textDecoration: 'none' }}>เปิดแผนที่</a>
+                    : <span style={{ color: 'var(--ink-4)' }}>-</span>,
+                  notes: editNote?.id === ins.id ? (
+                    <input type="text" autoFocus value={editNote.value}
+                      onChange={e => setEditNote(en => en ? { ...en, value: e.target.value } : null)}
+                      onBlur={() => saveNote(ins.id, editNote.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditNote(null) }}
+                      style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 11, width: '100%', outline: 'none', padding: '2px 0' }} />
+                  ) : (
+                    <div onClick={() => setEditNote({ id: ins.id, value: ins.notes ?? '' })}
+                      style={{ cursor: 'text', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: ins.notes ? 'var(--ink-3)' : 'var(--ink-4)', minWidth: 60, fontSize: 11 }}>
+                      {ins.notes || '—'}
+                    </div>
+                  ),
+                  updated: ins.updated_at ? (
+                    <div style={{ whiteSpace: 'nowrap', color: 'var(--ink-4)', fontSize: 11 }}>
+                      <div>{new Date(ins.updated_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}</div>
+                      <div>{new Date(ins.updated_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>
+                    </div>
+                  ) : <span style={{ color: 'var(--ink-4)' }}>-</span>,
+                }
+                return (
+                  <tr key={ins.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                    {INSTALL_COLUMNS.filter(c => showCol(c.id)).map(c => (
+                      <td key={c.id} style={{
+                        padding: c.id === 'items' ? '6px 14px' : '12px 14px',
+                        textAlign: COL_ALIGN[c.id] ?? 'left',
+                        ...(c.id === 'items' ? { minWidth: 160, maxWidth: 200 } : {}),
+                        ...(c.id === 'notes' ? { minWidth: 140, maxWidth: 220 } : {}),
+                      }}>{cells[c.id]}</td>
+                    ))}
                     <td style={{ padding: '12px 14px' }}>
                       <button onClick={e => {
                         const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
@@ -1139,12 +1283,22 @@ export default function InstallationsPage() {
               </button>
             </div>
 
-            {/* Editable table */}
+            {/* ตารางแก้รายการ — ชุดคอลัมน์/ลำดับเดียวกับหมวดออเดอร์ (ITEM_FIELDS ใน lib/itemFormat.ts) */}
+            {(() => {
+            const cols = visibleItemCols(itemsModal.items, itemsShowAll)
+            return (
+            <>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+              <button onClick={() => setItemsShowAll(v => !v)}
+                style={{ fontSize: 11, padding: '3px 10px', border: '1px solid var(--border)', borderRadius: 6, background: itemsShowAll ? 'var(--blue-bg)' : 'var(--bg)', color: itemsShowAll ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer' }}>
+                {itemsShowAll ? 'โชว์เฉพาะช่องที่ใช้' : `ทุกช่อง (${ITEM_FIELDS.length - cols.length} ช่องที่ซ่อนอยู่)`}
+              </button>
+            </div>
             <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'auto', marginBottom: 14 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr style={{ background: '#FAFAFA', borderBottom: '1px solid var(--border)' }}>
-                    {['#', 'ประเภท', 'สีตาไก่', 'ชั้น', 'หัวราง/จีบ', 'ตะขอ', 'รหัสสี', 'ชื่อสี', 'กว้าง (ม.)', 'สูง (ม.)', 'จำนวน', 'หน่วย', 'กระดูม', 'ขวางผ้า', 'แบ่งผ้า', 'เคมี', 'โซ่ถ่วง', 'ฝั่งดึง', 'สั่งนอก', 'หมายเหตุ'].map(h => (
+                    {['#', ...cols.map(([lbl]) => lbl)].map(h => (
                       <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 500, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                     <th style={{ padding: '8px 10px', position: 'sticky', right: 0, background: '#FAFAFA', zIndex: 1 }} />
@@ -1154,27 +1308,7 @@ export default function InstallationsPage() {
                   {itemsModal.items.map((item, idx) => (
                     <tr key={idx} style={{ borderBottom: '1px solid var(--border)' }}>
                       <td style={{ padding: '6px 10px', color: 'var(--ink-4)', fontWeight: 500, width: 28 }}>{idx + 1}</td>
-                      {([
-                        ['type', 'text', 100],
-                        ['eyelet_color', 'text', 64],
-                        ['floors', 'number', 44],
-                        ['rail_head', 'text', 64],
-                        ['hook_type', 'text', 70],
-                        ['color_code', 'text', 60],
-                        ['color_name', 'text', 90],
-                        ['width', 'text', 56],
-                        ['height', 'text', 56],
-                        ['quantity', 'number', 50],
-                        ['unit', 'text', 46],
-                        ['hooks', 'text', 60],
-                        ['orientation', 'text', 60],
-                        ['fabric_split', 'text', 74],
-                        ['chemical', 'text', 64],
-                        ['weight_chain', 'text', 80],
-                        ['pull_side', 'text', 54],
-                        ['outsource', 'text', 90],
-                        ['note', 'text', 90],
-                      ] as [keyof RawItem, string, number][]).map(([key, type, w]) => (
+                      {cols.map(([, key, type, w]) => (
                         <td key={key} style={{ padding: '4px 6px' }}>
                           <input
                             type={type}
@@ -1200,7 +1334,7 @@ export default function InstallationsPage() {
                   ))}
                   {itemsModal.items.length === 0 && (
                     <tr>
-                      <td colSpan={20} style={{ padding: '20px', textAlign: 'center', color: 'var(--ink-4)', fontSize: 12 }}>
+                      <td colSpan={cols.length + 2} style={{ padding: '20px', textAlign: 'center', color: 'var(--ink-4)', fontSize: 12 }}>
                         ยังไม่มีรายการ — วางข้อความด้านบนแล้วกดแปลง หรือกดเพิ่มแถว
                       </td>
                     </tr>
@@ -1208,6 +1342,9 @@ export default function InstallationsPage() {
                 </tbody>
               </table>
             </div>
+            </>
+            )
+            })()}
 
             <button onClick={() => setItemsModal(m => m ? { ...m, items: [...m.items, emptyItem()] } : null)}
               style={{ fontSize: 12, padding: '4px 12px', border: '1px solid var(--blue)', borderRadius: 6, color: 'var(--blue)', background: 'var(--blue-bg)', cursor: 'pointer', marginBottom: 16 }}>

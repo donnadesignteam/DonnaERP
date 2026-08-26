@@ -47,3 +47,27 @@ export const rowColor = (ins: { installation_status?: string | null; work_type?:
   if (s === 'รอนัดหมาย' || s === 'นัดหมายแล้ว') return WORK_COLOR[ins.work_type ?? ''] ?? '#8e8e93'
   return STATUS_COLOR[s] ?? 'var(--ink-3)'
 }
+
+// คอลัมน์ของตารางงานติดตั้ง — ชุดเดียว/ลำดับเดียว ใช้ทั้งแท็บ "งานติดตั้ง" ในหมวดออเดอร์
+// และตารางรายการใต้ปฏิทินงานติดตั้ง (ทั้งสองหน้ามีปุ่ม "คอลัมน์" ติ๊กซ่อน/โชว์เอง)
+// ‼️ เพิ่ม/ย้ายคอลัมน์ที่นี่ที่เดียว แล้วไปเติมเซลล์ให้ครบทั้ง 2 หน้า
+export const INSTALL_COLUMNS: { id: string; label: string }[] = [
+  { id: 'days', label: 'วันผลิตที่เหลือ' }, { id: 'serial', label: 'Serial' },
+  { id: 'deadline', label: 'วันที่นัดหมาย' }, { id: 'work', label: 'งาน' },
+  { id: 'print', label: 'ปริ้น' },
+  { id: 'customer', label: 'ลูกค้า' }, { id: 'platform', label: 'แพลตฟอร์ม' },
+  { id: 'items', label: 'รายการ' }, { id: 'total', label: 'ยอดทั้งหมด' },
+  { id: 'payment', label: 'ชำระ' }, { id: 'paid', label: 'ชำระแล้ว' },
+  { id: 'paybefore', label: 'ยอดชำระหลังติดตั้ง' },
+  { id: 'assigned', label: 'ลงออเดอร์' }, { id: 'admin', label: 'แอดมิน' },
+  { id: 'status', label: 'สถานะงาน' },
+  { id: 'done', label: 'งานเสร็จ' }, { id: 'installed', label: 'ติดตั้ง' },
+  { id: 'inststatus', label: 'สถานะ' },
+  { id: 'rail', label: 'สถานะราง' },
+  { id: 'created', label: 'วันที่สร้าง' }, { id: 'outsource', label: 'สั่งนอก' },
+  { id: 'province', label: 'จังหวัด' }, { id: 'zone', label: 'โซน' },
+  { id: 'insttech', label: 'ช่างติดตั้ง' }, { id: 'tech', label: 'ช่างเย็บ' },
+  { id: 'address', label: 'ที่อยู่' }, { id: 'phone', label: 'เบอร์โทร' }, { id: 'maps', label: 'Maps' },
+  { id: 'notes', label: 'หมายเหตุ' },
+  { id: 'updated', label: 'แก้ไขล่าสุด' },
+]

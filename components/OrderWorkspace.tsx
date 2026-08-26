@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
-import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, CORE_ITEM_FIELDS } from '@/lib/itemFormat'
+import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, ITEM_FIELDS, shownFields, visibleItemCols, emptyItem as emptyRawItem } from '@/lib/itemFormat'
 import { railLink } from '@/lib/rail'
 import { TECH_OPTIONS } from '@/lib/techs'
 import { OUTSIDE_PLATFORMS, PLATFORM_NAMES, PROD_STATUSES, INSTALL_STATUSES, PROD_STATUS_COLOR, matchQuickTab, effectiveDueDate, type QuickTab } from '@/lib/orderTabs'
@@ -23,7 +23,7 @@ import { stampInsert, oeUpdate, oeInsert, instUpdate, instInsert, claimUpdate } 
 import { useConfirm } from '@/components/ConfirmDialog'
 import AnchoredMenu from '@/components/AnchoredMenu'
 import { usePrintColumns, PrintColumnPicker, printTableHtml, type PrintCol } from '@/components/PrintColumnPicker'
-import { WORK_TYPE_OPTIONS, ZONES, TECHS as INST_TECHS, TECH_BY_ZONE, statusOptions, statusLabel, normStatus, rowColor as instColor } from '@/lib/installMeta'
+import { WORK_TYPE_OPTIONS, ZONES, TECHS as INST_TECHS, TECH_BY_ZONE, statusOptions, statusLabel, normStatus, rowColor as instColor, INSTALL_COLUMNS } from '@/lib/installMeta'
 import { orderPatchFromInstall } from '@/lib/installOrderSync'
 import { useStableView } from '@/lib/useStableView'
 import { TH_MONTHS } from '@/lib/shopCalendar'
@@ -180,48 +180,8 @@ const claimToEntry = (c: ClaimSource): Entry => ({
   updated_at: c.updated_at ?? '',
 } as Entry)
 
-// ช่องทั้งหมดของรายการสินค้า [ชื่อคอลัมน์, คีย์, ชนิดช่องกรอก, กว้างในตาราง]
-// ตาราง/ฟอร์มจะโชว์เฉพาะช่องที่เกี่ยวกับสินค้าชนิดนั้น + ช่องที่มีข้อมูลอยู่ (กดปุ่มดูทุกช่องได้)
-const ITEM_FIELDS: [string, keyof Item, string, number][] = [
-  ['ประเภท', 'type', 'text', 110],
-  ['สีตาไก่', 'eyelet_color', 'text', 64],
-  ['ชั้น', 'floors', 'number', 44],
-  ['หัวราง', 'rail_head', 'text', 78],
-  ['จีบ', 'pleat', 'text', 48],
-  ['ตะขอ', 'hook_type', 'text', 70],
-  ['สีราง', 'rail_color', 'text', 58],
-  ['ความทึบ', 'opacity', 'text', 56],
-  ['รุ่น', 'model', 'text', 58],
-  ['ขนาดใบ', 'slat_size', 'text', 54],
-  ['ประเภทผ้า', 'fabric_type', 'text', 76],
-  ['รหัสสี', 'color_code', 'text', 60],
-  ['สีม่าน', 'color_name', 'text', 90],
-  ['สีจริง', 'color_desc', 'text', 80],
-  ['กว้าง (ม.)', 'width', 'text', 56],
-  ['สูง (ม.)', 'height', 'text', 56],
-  ['จำนวน', 'quantity', 'number', 50],
-  ['หน่วย', 'unit', 'text', 46],
-  ['กระดูม', 'hooks', 'text', 60],
-  ['เกินขนาด', 'orientation', 'text', 60],
-  ['แบ่งผ้า', 'fabric_split', 'text', 74],
-  ['เคมี', 'chemical', 'text', 64],
-  ['โซ่ถ่วง', 'weight_chain', 'text', 80],
-  ['ฝั่งดึง', 'pull_side', 'text', 54],
-  ['สั่งนอก', 'outsource', 'text', 90],
-  ['หมายเหตุ', 'note', 'text', 90],
-]
-
-// ช่องที่ต้องโชว์ของรายการหนึ่งชิ้น = ช่องหลัก + ช่องที่มีข้อมูลอยู่จริง (ช่องว่างไม่ต้องขึ้นให้รก)
-const shownFields = (it: Item): Set<string> => {
-  const s = new Set(CORE_ITEM_FIELDS)
-  for (const [, key] of ITEM_FIELDS) {
-    const v = it[key]
-    if (v !== '' && v != null && !(key === 'quantity' && v === 0)) s.add(key as string)
-  }
-  return s
-}
-
-const emptyItem = (): Item => ({ type: '', floors: null, rail_head: '', pleat: '', rail_color: '', opacity: '', model: '', slat_size: '', hook_type: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', orientation: '', fabric_split: '', chemical: '', weight_chain: '', pull_side: '', note: '', outsource: '' })
+// รายการสินค้าใช้ชุดช่อง/ลำดับคอลัมน์กลางจาก lib/itemFormat.ts (ITEM_FIELDS) ร่วมกับหน้าปฏิทินงานติดตั้ง
+const emptyItem = (): Item => emptyRawItem() as Item
 
 // รวมข้อความสั่งนอกจากทุกรายการ → ไว้ลงคอลัมน์สั่งนอกของออเดอร์
 const itemsOutsourceText = (items: Item[]): string =>
@@ -404,26 +364,7 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
     { id: 'notes', label: 'หมายเหตุ' },
     { id: 'updated', label: 'แก้ไขล่าสุด' },
   ],
-  install: [
-    { id: 'days', label: 'วันผลิตที่เหลือ' }, { id: 'serial', label: 'Serial' },
-    { id: 'deadline', label: 'วันที่นัดหมาย' }, { id: 'work', label: 'งาน' },
-    { id: 'print', label: 'ปริ้น' },
-    { id: 'customer', label: 'ลูกค้า' }, { id: 'platform', label: 'แพลตฟอร์ม' },
-    { id: 'items', label: 'รายการ' }, { id: 'total', label: 'ยอดทั้งหมด' },
-    { id: 'payment', label: 'ชำระ' }, { id: 'paid', label: 'ชำระแล้ว' },
-    { id: 'paybefore', label: 'ยอดชำระหลังติดตั้ง' },
-    { id: 'assigned', label: 'ลงออเดอร์' }, { id: 'admin', label: 'แอดมิน' },
-    { id: 'status', label: 'สถานะงาน' },
-    { id: 'done', label: 'งานเสร็จ' }, { id: 'installed', label: 'ติดตั้ง' },
-    { id: 'inststatus', label: 'สถานะ' },
-    { id: 'rail', label: 'สถานะราง' },
-    { id: 'created', label: 'วันที่สร้าง' }, { id: 'outsource', label: 'สั่งนอก' },
-    { id: 'province', label: 'จังหวัด' }, { id: 'zone', label: 'โซน' },
-    { id: 'insttech', label: 'ช่างติดตั้ง' }, { id: 'tech', label: 'ช่างเย็บ' },
-    { id: 'address', label: 'ที่อยู่' }, { id: 'phone', label: 'เบอร์โทร' }, { id: 'maps', label: 'Maps' },
-    { id: 'notes', label: 'หมายเหตุ' },
-    { id: 'updated', label: 'แก้ไขล่าสุด' },
-  ],
+  install: INSTALL_COLUMNS,
 }
 
 // คอลัมน์รายการโชว์ได้ไม่เกินกี่บรรทัด (เกินนี้ขึ้น "+ อีก N รายการ" แทน แถวจะได้ไม่ยืด)
@@ -5100,9 +5041,7 @@ ${body}
 
             {/* Editable table — โชว์เฉพาะช่องที่เกี่ยวกับสินค้าในใบนี้ (กด "ทุกช่อง" ถ้าอยากกรอกช่องอื่น) */}
             {(() => {
-            const shown = itemsModal.items.map(shownFields)
-            const cols = ITEM_FIELDS.filter(([, key]) =>
-              itemsShowAll || shown.length === 0 || shown.some(s => s.has(key as string)))
+            const cols = visibleItemCols(itemsModal.items, itemsShowAll)
             return (
             <>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>

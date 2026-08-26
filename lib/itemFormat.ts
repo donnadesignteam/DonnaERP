@@ -212,6 +212,56 @@ export function normalizeSlatSize(v: string): string {
 // บวกช่องหลักที่ต้องกรอกทุกชิ้น · ช่องที่เหลือกดปุ่ม "ทุกช่อง" เอาเมื่อจะกรอกเพิ่ม
 export const CORE_ITEM_FIELDS = ['type', 'width', 'height', 'quantity', 'unit']
 
+// ช่องทั้งหมดของรายการสินค้า [ชื่อคอลัมน์, คีย์, ชนิดช่องกรอก, กว้างในตาราง]
+// ‼️ ชุดเดียวใช้ร่วมกันทุกหน้า (หมวดออเดอร์ + ปฏิทินงานติดตั้ง) — ห้ามก๊อปไปเขียนซ้ำ
+//    เพิ่ม/ย้ายคอลัมน์ที่นี่ที่เดียว ทุกหน้าจะได้คอลัมน์ตำแหน่งเดียวกันเสมอ
+export const ITEM_FIELDS: [string, keyof RawItem, string, number][] = [
+  ['ประเภท', 'type', 'text', 110],
+  ['สีตาไก่', 'eyelet_color', 'text', 64],
+  ['ชั้น', 'floors', 'number', 44],
+  ['หัวราง', 'rail_head', 'text', 78],
+  ['จีบ', 'pleat', 'text', 48],
+  ['ตะขอ', 'hook_type', 'text', 70],
+  ['สีราง', 'rail_color', 'text', 58],
+  ['ความทึบ', 'opacity', 'text', 56],
+  ['รุ่น', 'model', 'text', 58],
+  ['ขนาดใบ', 'slat_size', 'text', 54],
+  ['ประเภทผ้า', 'fabric_type', 'text', 76],
+  ['รหัสสี', 'color_code', 'text', 60],
+  ['สีม่าน', 'color_name', 'text', 90],
+  ['สีจริง', 'color_desc', 'text', 80],
+  ['กว้าง (ม.)', 'width', 'text', 56],
+  ['สูง (ม.)', 'height', 'text', 56],
+  ['จำนวน', 'quantity', 'number', 50],
+  ['หน่วย', 'unit', 'text', 46],
+  ['กระดูม', 'hooks', 'text', 60],
+  ['เกินขนาด', 'orientation', 'text', 60],
+  ['แบ่งผ้า', 'fabric_split', 'text', 74],
+  ['เคมี', 'chemical', 'text', 64],
+  ['โซ่ถ่วง', 'weight_chain', 'text', 80],
+  ['ฝั่งดึง', 'pull_side', 'text', 54],
+  ['สั่งนอก', 'outsource', 'text', 90],
+  ['หมายเหตุ', 'note', 'text', 90],
+]
+
+// ช่องที่ต้องโชว์ของรายการหนึ่งชิ้น = ช่องหลัก + ช่องที่มีข้อมูลอยู่จริง (ช่องว่างไม่ต้องขึ้นให้รก)
+export const shownFields = (it: RawItem): Set<string> => {
+  const s = new Set(CORE_ITEM_FIELDS)
+  for (const [, key] of ITEM_FIELDS) {
+    const v = it[key]
+    if (v !== '' && v != null && !(key === 'quantity' && v === 0)) s.add(key as string)
+  }
+  return s
+}
+
+// คอลัมน์ที่จะโชว์ในตารางแก้รายการ — เรียงตาม ITEM_FIELDS เสมอ (ตำแหน่งเดียวกันทุกหน้า)
+export const visibleItemCols = (items: RawItem[], showAll: boolean) => {
+  const shown = items.map(shownFields)
+  return ITEM_FIELDS.filter(([, key]) => showAll || shown.length === 0 || shown.some(s => s.has(key as string)))
+}
+
+export const emptyItem = (): RawItem => ({ type: '', floors: null, rail_head: '', pleat: '', rail_color: '', opacity: '', model: '', slat_size: '', hook_type: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', orientation: '', fabric_split: '', chemical: '', weight_chain: '', pull_side: '', note: '', outsource: '' })
+
 // จำนวนชั้นของราง — ออเดอร์เก่าบางใบชั้นติดอยู่ในชื่อชนิด ("รางม่านจีบ 2 ชั้น") ช่อง floors ว่าง
 // ถ้าไม่เผื่ออ่านจากชื่อด้วย เว็บคำนวณอุปกรณ์รางจะคิดเป็นชั้นเดียว (ราง/หัวปิด/ลูกล้อ ขาดครึ่ง)
 export function railLayers(it: { floors?: number | null; type?: string }): number {
