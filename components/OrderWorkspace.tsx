@@ -989,6 +989,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   // คอลัมน์สถานะ: dropdown เลือกสถานะ (เปลี่ยนสถานะย้อนได้ด้วยปุ่มเลิกทำ ↶ รวมของทั้งเว็บ)
   const statusCell = (r: Entry) => {
     const flow = r.is_installation ? INSTALL_STATUSES : PROD_STATUSES
+    // เวลาที่ "เปลี่ยนมาเป็นสถานะนี้" — อ่านจากประวัติสถานะ (status_history) ครั้งล่าสุดที่ตรงกับสถานะปัจจุบัน
+    // ใบเก่าที่ยังไม่เคยขยับสถานะหลังมีประวัติ = ไม่มีข้อมูล ไม่ต้องโชว์ (ไม่เดาจาก updated_at เพราะเป็นการแก้ช่องอื่นก็ได้)
+    const hist = Array.isArray(r.status_history) ? r.status_history : []
+    const changedAt = [...hist].reverse().find(h => h.status === (r.order_status || ''))?.at
     return (
       <td style={{ padding: '8px 14px' }}>
         <select value={r.order_status || ''} onChange={e => updateField(r.id, 'order_status', e.target.value)}
@@ -996,6 +1000,12 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
           <option value="">—</option>
           {flow.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
+        {changedAt && (
+          <div style={{ fontSize: 10, color: 'var(--ink-4)', marginTop: 2, whiteSpace: 'nowrap' }}>
+            {new Date(changedAt).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
+            {new Date(changedAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+          </div>
+        )}
       </td>
     )
   }
