@@ -16,7 +16,7 @@ import { oeUpdate, instUpdate, instInsert } from '@/lib/adminActor'
 import { useConfirm } from '@/components/ConfirmDialog'
 import { usePrintColumns, PrintColumnPicker, printTableHtml, type PrintCol } from '@/components/PrintColumnPicker'
 import { createOrderForInstall, orderPatchFromInstall } from '@/lib/installOrderSync'
-import { PROD_STATUS_COLOR, daysRemaining, daysLabel, daysColor } from '@/lib/orderTabs'
+import { PROD_STATUS_COLOR } from '@/lib/orderTabs'
 import { formatOrderLines, linesToHtml, openFormPrintWindow, escPrintHtml, type PrintLine, type PrintableOrder } from '@/lib/orderPrint'
 import QRCode from 'qrcode'
 import { WORK_TYPES, WORK_TYPE_OPTIONS, ZONES, TECHS, TECH_BY_ZONE,
@@ -94,6 +94,9 @@ const withAutoHooks = (items: RawItem[]): RawItem[] =>
 // รวมข้อความสั่งนอกจากทุกรายการ → ไว้ลงคอลัมน์สั่งนอกของออเดอร์ต้นทาง
 const itemsOutsourceText = (items: RawItem[]): string =>
   items.map(it => (it.outsource ?? '').trim()).filter(Boolean).join(', ')
+
+// คอลัมน์ของตารางในหน้านี้ = ชุด/ลำดับกลาง (INSTALL_COLUMNS) แต่ไม่เอา "วันผลิตที่เหลือ"
+const COLS = INSTALL_COLUMNS.filter(c => c.id !== 'days')
 
 // การจัดวางของแต่ละคอลัมน์ในตารางรายการ (ยอดเงินชิดขวา · ติ๊ก/ปุ่มอยู่กลาง)
 const COL_ALIGN: Record<string, 'left' | 'right' | 'center'> = {
@@ -630,10 +633,6 @@ export default function InstallationsPage() {
     const oeOf = (r: Installation) => r.source_order_id ? orderMeta[r.source_order_id] : undefined
     const num = (v: number | null | undefined) => v == null ? '-' : esc(Number(v).toLocaleString('th-TH'))
     const cellById: Record<string, (r: Installation) => string> = {
-      days: r => {
-        const d = r.appointment_datetime ? daysRemaining(r.appointment_datetime.split('T')[0]) : null
-        return d == null ? '-' : esc(d === 0 ? 'ต้องติดตั้งวันนี้' : daysLabel(d))
-      },
       serial: r => esc(r.serial_no),
       deadline: r => {
         const dt = r.appointment_datetime ? new Date(r.appointment_datetime) : null
@@ -677,7 +676,7 @@ export default function InstallationsPage() {
         ? esc(`${new Date(r.updated_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} ${new Date(r.updated_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`)
         : '-',
     }
-    return INSTALL_COLUMNS.filter(c => c.id !== 'print' && cellById[c.id])
+    return COLS.filter(c => c.id !== 'print' && cellById[c.id])
       .map(c => ({ key: c.id, label: c.label, cell: cellById[c.id] }))
   }
 
@@ -962,7 +961,7 @@ export default function InstallationsPage() {
                       style={{ border: 'none', background: 'transparent', color: 'var(--blue)', fontSize: 11, cursor: 'pointer', padding: 0 }}>โชว์ทั้งหมด</button>
                   )}
                 </div>
-                {INSTALL_COLUMNS.map(c => (
+                {COLS.map(c => (
                   <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--ink)' }}>
                     <input type="checkbox" checked={showCol(c.id)} onChange={() => toggleCol(c.id)} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
                     {c.label}
@@ -993,8 +992,8 @@ export default function InstallationsPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
-                {/* หัวตาราง = INSTALL_COLUMNS (ชุด/ลำดับเดียวกับแท็บงานติดตั้งในหมวดออเดอร์) */}
-                {INSTALL_COLUMNS.filter(c => showCol(c.id)).map(c => (
+                {/* หัวตาราง = COLS (ชุด/ลำดับเดียวกับแท็บงานติดตั้งในหมวดออเดอร์ ยกเว้นวันผลิตที่เหลือ) */}
+                {COLS.filter(c => showCol(c.id)).map(c => (
                   <th key={c.id} style={{ textAlign: COL_ALIGN[c.id] ?? 'left', padding: '12px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{c.label}</th>
                 ))}
                 <th style={{ padding: '12px 14px' }} />
@@ -1008,13 +1007,7 @@ export default function InstallationsPage() {
                 const autoDeposit = oe && oe.paid_amount != null && oe.price != null
                   ? Math.max(0, Number(oe.price) - Number(oe.paid_amount))
                   : oe?.payment_status === 'มัดจำ50%' && oe.price ? Number(oe.price) / 2 : null
-                const days = ins.appointment_datetime ? daysRemaining(ins.appointment_datetime.split('T')[0]) : null
                 const cells: Record<string, React.ReactNode> = {
-                  days: days == null ? <span style={{ color: 'var(--ink-4)' }}>-</span> : (
-                    <span style={{ color: daysColor(days), fontWeight: 600, whiteSpace: 'nowrap' }}>
-                      {days === 0 ? 'ต้องติดตั้งวันนี้' : daysLabel(days)}
-                    </span>
-                  ),
                   serial: <span style={{ fontWeight: 700, color: 'var(--blue)' }}>{ins.serial_no}</span>,
                   deadline: editAppt?.id === ins.id ? (
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -1166,7 +1159,7 @@ export default function InstallationsPage() {
                 }
                 return (
                   <tr key={ins.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                    {INSTALL_COLUMNS.filter(c => showCol(c.id)).map(c => (
+                    {COLS.filter(c => showCol(c.id)).map(c => (
                       <td key={c.id} style={{
                         padding: c.id === 'items' ? '6px 14px' : '12px 14px',
                         textAlign: COL_ALIGN[c.id] ?? 'left',
