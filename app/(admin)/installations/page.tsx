@@ -7,7 +7,7 @@ import { useInstallPhotos, photoSaveError, type InstallPhoto } from '@/component
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { HOLIDAYS } from '@/lib/holidays'
-import { formatItemLines, autoTapeHooks, ITEM_FIELDS, visibleItemCols, emptyItem, type RawItem } from '@/lib/itemFormat'
+import { formatItemLines, autoTapeHooks, ITEM_FIELDS, ITEM_FIELD_OPTIONS, visibleItemCols, emptyItem, type RawItem } from '@/lib/itemFormat'
 import { syncOutsourcePO } from '@/lib/outsourceSync'
 import { recordAction } from '@/lib/history'
 import { prevOf } from '@/lib/trackedDb'
@@ -1336,6 +1336,14 @@ export default function InstallationsPage() {
                       <td style={{ padding: '6px 10px', color: 'var(--ink-4)', fontWeight: 500, width: 28 }}>{idx + 1}</td>
                       {cols.map(([, key, type, w]) => (
                         <td key={key} style={{ padding: '4px 6px' }}>
+                          {ITEM_FIELD_OPTIONS[key] ? (
+                            <select
+                              value={String(item[key] ?? ITEM_FIELD_OPTIONS[key][0])}
+                              onChange={e => setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: e.target.value } : it) } : null)}
+                              style={{ width: w, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: 12, outline: 'none', boxSizing: 'border-box', background: '#fff', cursor: 'pointer' }}>
+                              {ITEM_FIELD_OPTIONS[key].map(o => <option key={o} value={o}>{o}</option>)}
+                            </select>
+                          ) : (
                           <input
                             type={type}
                             step={type === 'number' ? '0.01' : undefined}
@@ -1350,6 +1358,7 @@ export default function InstallationsPage() {
                             }}
                             style={{ width: w, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }}
                           />
+                          )}
                         </td>
                       ))}
                       <td style={{ padding: '4px 8px', position: 'sticky', right: 0, background: 'var(--surface)', boxShadow: '-2px 0 4px rgba(0,0,0,0.04)' }}>

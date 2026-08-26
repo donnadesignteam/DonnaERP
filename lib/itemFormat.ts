@@ -3,6 +3,7 @@
 
 export type RawItem = {
   type?: string
+  supply?: string         // แบบ: สั่งตัด (ต้องเข้าผลิต) / พร้อมส่ง (ของสำเร็จ แพ็คส่งได้เลย) — ไม่ระบุ = สั่งตัด
   floors?: number | null
   rail_head?: string      // หัวราง (ของรางตาไก่): หัวกระดุม / หัวกลมจุก / หัวกลมเรียบ
   pleat?: string          // จีบ (ของม่านจีบ): 1จีบ / 2จีบ / 3จีบ — แยกช่องจากหัวราง
@@ -210,13 +211,19 @@ export function normalizeSlatSize(v: string): string {
 // ===== ช่องที่ต้องโชว์ในตาราง/ฟอร์มรายการสินค้า =====
 // รายการสินค้ามี 20 กว่าช่อง แต่สินค้าชิ้นหนึ่งใช้จริงไม่กี่ช่อง → โชว์เฉพาะช่องที่ "มีข้อมูล"
 // บวกช่องหลักที่ต้องกรอกทุกชิ้น · ช่องที่เหลือกดปุ่ม "ทุกช่อง" เอาเมื่อจะกรอกเพิ่ม
-export const CORE_ITEM_FIELDS = ['type', 'width', 'height', 'quantity', 'unit']
+// แบบของรายการ — มีแค่ 2 คำ · ไม่ได้ระบุมา = สั่งตัด (ของส่วนใหญ่ของร้านต้องตัด)
+export const SUPPLY_KINDS = ['สั่งตัด', 'พร้อมส่ง']
+export const normalizeSupply = (v: unknown): string =>
+  /พร้อม\s*ส่?ง|พร้อมสง|ready|stock/i.test(String(v ?? '')) ? 'พร้อมส่ง' : 'สั่งตัด'
+
+export const CORE_ITEM_FIELDS = ['type', 'supply', 'width', 'height', 'quantity', 'unit']
 
 // ช่องทั้งหมดของรายการสินค้า [ชื่อคอลัมน์, คีย์, ชนิดช่องกรอก, กว้างในตาราง]
 // ‼️ ชุดเดียวใช้ร่วมกันทุกหน้า (หมวดออเดอร์ + ปฏิทินงานติดตั้ง) — ห้ามก๊อปไปเขียนซ้ำ
 //    เพิ่ม/ย้ายคอลัมน์ที่นี่ที่เดียว ทุกหน้าจะได้คอลัมน์ตำแหน่งเดียวกันเสมอ
 export const ITEM_FIELDS: [string, keyof RawItem, string, number][] = [
   ['ประเภท', 'type', 'text', 110],
+  ['แบบ', 'supply', 'text', 76],
   ['สีตาไก่', 'eyelet_color', 'text', 64],
   ['ชั้น', 'floors', 'number', 44],
   ['หัวราง', 'rail_head', 'text', 78],
@@ -244,6 +251,9 @@ export const ITEM_FIELDS: [string, keyof RawItem, string, number][] = [
   ['หมายเหตุ', 'note', 'text', 90],
 ]
 
+// ช่องที่กรอกด้วยการเลือก ไม่ใช่พิมพ์เอง (กันพิมพ์ไม่ตรงคำมาตรฐาน)
+export const ITEM_FIELD_OPTIONS: Record<string, string[]> = { supply: SUPPLY_KINDS }
+
 // ช่องที่ต้องโชว์ของรายการหนึ่งชิ้น = ช่องหลัก + ช่องที่มีข้อมูลอยู่จริง (ช่องว่างไม่ต้องขึ้นให้รก)
 export const shownFields = (it: RawItem): Set<string> => {
   const s = new Set(CORE_ITEM_FIELDS)
@@ -260,7 +270,7 @@ export const visibleItemCols = (items: RawItem[], showAll: boolean) => {
   return ITEM_FIELDS.filter(([, key]) => showAll || shown.length === 0 || shown.some(s => s.has(key as string)))
 }
 
-export const emptyItem = (): RawItem => ({ type: '', floors: null, rail_head: '', pleat: '', rail_color: '', opacity: '', model: '', slat_size: '', hook_type: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', orientation: '', fabric_split: '', chemical: '', weight_chain: '', pull_side: '', note: '', outsource: '' })
+export const emptyItem = (): RawItem => ({ type: '', supply: 'สั่งตัด', floors: null, rail_head: '', pleat: '', rail_color: '', opacity: '', model: '', slat_size: '', hook_type: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', orientation: '', fabric_split: '', chemical: '', weight_chain: '', pull_side: '', note: '', outsource: '' })
 
 // จำนวนชั้นของราง — ออเดอร์เก่าบางใบชั้นติดอยู่ในชื่อชนิด ("รางม่านจีบ 2 ชั้น") ช่อง floors ว่าง
 // ถ้าไม่เผื่ออ่านจากชื่อด้วย เว็บคำนวณอุปกรณ์รางจะคิดเป็นชั้นเดียว (ราง/หัวปิด/ลูกล้อ ขาดครึ่ง)
@@ -309,7 +319,7 @@ export function railIssues(items: RawItem[]): string[] {
 const ITEM_EMPTY_FIELDS = ['type', 'rail_head', 'pleat', 'rail_color', 'opacity', 'model', 'slat_size',
   'hook_type', 'eyelet_color', 'fabric_type', 'color_code', 'color_name',
   'color_desc', 'width', 'height', 'quantity', 'unit', 'hooks', 'orientation', 'fabric_split',
-  'chemical', 'weight_chain', 'pull_side', 'note', 'outsource'] as const
+  'chemical', 'weight_chain', 'pull_side', 'note', 'outsource', 'supply'] as const
 export function fillItemDefaults(it: RawItem): RawItem {
   const out: RawItem = { ...it }
   if (out.floors == null) out.floors = null
@@ -330,7 +340,12 @@ export function fillItemDefaults(it: RawItem): RawItem {
     if (c) out.rail_color = normalizeRailColor(c[0])
   }
   if (!out.opacity && /ม่านม้วน/.test(nameRaw)) out.opacity = nameRaw.match(/\d+\s*%/)?.[0].replace(/\s+/g, '') ?? ''
-  out.type = normalizeItemType(nameRaw)
+  // แบบ (สั่งตัด/พร้อมส่ง) — ถ้าไม่ได้ส่งมา ลองอ่านจากชื่อชนิด/หมายเหตุ ("(สั่งตัด) ผ้าม่าน..." / "พร้อมส่ง")
+  // ที่เหลือเป็นสั่งตัดหมด (ของส่วนใหญ่ของร้านต้องตัด) — ใบปริ้นจะขึ้นป้ายเฉพาะของพร้อมส่ง
+  out.supply = normalizeSupply(out.supply || (/พร้อม\s*ส่?ง/.test(`${nameRaw} ${out.note ?? ''}`) ? 'พร้อมส่ง' : ''))
+  // คำว่า พร้อมส่ง/สั่งตัด ย้ายลงช่อง "แบบ" แล้ว — ไม่ต้องค้างในชื่อชนิด (ชื่ออุปกรณ์ไม่ถูกกวาดคำ จะติดไปเอง)
+  const typeName = nameRaw.replace(/\(?\s*(พร้อม\s*ส่?ง|สั่ง\s*ตัด)\s*\)?/g, ' ').replace(/\s+/g, ' ').trim() || nameRaw
+  out.type = normalizeItemType(typeName)
   const isRail = String(out.type ?? '').startsWith('ราง')
 
   // ---- ช่องหัวราง: เดิมเก็บปนกันทั้งจำนวนจีบ/ชนิดตะขอ/สีราง/แบ่งผ้า → แยกลงช่องของมัน
@@ -542,6 +557,7 @@ export function itemBlockLines(item: RawItem, opts?: { hideNote?: boolean }): { 
   // หมวดพิเศษต่อท้ายบรรทัดขนาด: แบ่งผ้า / เคมี / โซ่ถ่วง / ฝั่งดึง เช่น "(ดึงขวา)" "(แยกกลาง)"
   const pullRaw = (item.pull_side ?? '').trim()
   const extras = [
+    normalizeSupply(item.supply) === 'พร้อมส่ง' ? 'พร้อมส่ง' : '',
     (item.fabric_split ?? '').trim(),
     (item.chemical ?? '').trim(),
     (item.weight_chain ?? '').trim(),

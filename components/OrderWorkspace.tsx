@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
-import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, ITEM_FIELDS, shownFields, visibleItemCols, emptyItem as emptyRawItem } from '@/lib/itemFormat'
+import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, ITEM_FIELDS, ITEM_FIELD_OPTIONS, shownFields, visibleItemCols, emptyItem as emptyRawItem } from '@/lib/itemFormat'
 import { railLink } from '@/lib/rail'
 import { TECH_OPTIONS } from '@/lib/techs'
 import { OUTSIDE_PLATFORMS, PLATFORM_NAMES, PROD_STATUSES, INSTALL_STATUSES, PROD_STATUS_COLOR, matchQuickTab, effectiveDueDate, type QuickTab } from '@/lib/orderTabs'
@@ -34,6 +34,7 @@ import QRCode from 'qrcode'
 
 type Item = {
   type: string
+  supply?: string         // แบบ: สั่งตัด / พร้อมส่ง — ไม่ระบุ = สั่งตัด
   floors: number | null
   rail_head: string       // หัวราง (ของรางตาไก่): หัวกระดุม / หัวกลมจุก / หัวกลมเรียบ
   pleat?: string          // จีบ (ของม่านจีบ): 1จีบ / 2จีบ / 3จีบ
@@ -4829,6 +4830,14 @@ ${body}
                     {fields.map(([lbl, key, type]) => (
                       <div key={key} style={key === 'type' ? { gridColumn: 'span 2' } : undefined}>
                         <label style={{ fontSize: 11, color: 'var(--ink-4)', display: 'block', marginBottom: 2 }}>{lbl}</label>
+                        {ITEM_FIELD_OPTIONS[key] ? (
+                          <select
+                            value={String(item[key] ?? ITEM_FIELD_OPTIONS[key][0])}
+                            onChange={e => setModalItems(prev => prev.map((it, i) => i === idx ? { ...it, [key]: e.target.value } : it))}
+                            style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 7px', fontSize: 12, outline: 'none', boxSizing: 'border-box', background: '#fff', cursor: 'pointer' }}>
+                            {ITEM_FIELD_OPTIONS[key].map(o => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                        ) : (
                         <input type={type} step={type === 'number' ? (key === 'floors' ? '1' : '0.01') : undefined}
                           value={item[key] == null ? '' : String(item[key])}
                           onChange={e => {
@@ -4836,6 +4845,7 @@ ${body}
                             setModalItems(prev => prev.map((it, i) => i === idx ? { ...it, [key]: val } : it))
                           }}
                           style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 5, padding: '5px 8px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+                        )}
                       </div>
                     ))}
                   </div>
@@ -5076,6 +5086,14 @@ ${body}
                       <td style={{ padding: '6px 10px', color: 'var(--ink-4)', fontWeight: 500, width: 28 }}>{idx + 1}</td>
                       {cols.map(([, key, type, w]) => (
                         <td key={key} style={{ padding: '4px 6px' }}>
+                          {ITEM_FIELD_OPTIONS[key] ? (
+                            <select
+                              value={String(item[key] ?? ITEM_FIELD_OPTIONS[key][0])}
+                              onChange={e => setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: e.target.value } : it) } : null)}
+                              style={{ width: w, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: 12, outline: 'none', boxSizing: 'border-box', background: '#fff', cursor: 'pointer' }}>
+                              {ITEM_FIELD_OPTIONS[key].map(o => <option key={o} value={o}>{o}</option>)}
+                            </select>
+                          ) : (
                           <input
                             type={type}
                             step={type === 'number' ? '0.01' : undefined}
@@ -5088,6 +5106,7 @@ ${body}
                             }}
                             style={{ width: w, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }}
                           />
+                          )}
                         </td>
                       ))}
                       <td style={{ padding: '4px 8px', position: 'sticky', right: 0, background: 'var(--surface)', boxShadow: '-2px 0 4px rgba(0,0,0,0.04)' }}>
