@@ -103,6 +103,16 @@ const COL_ALIGN: Record<string, 'left' | 'right' | 'center'> = {
   total: 'right', paid: 'right', paybefore: 'right',
   print: 'center', done: 'center', installed: 'center', rail: 'center',
 }
+
+// ความกว้างคงที่ของคอลัมน์ที่เป็นข้อความยาว — ข้อความยาวแค่ไหนคอลัมน์ก็ไม่ยืด (ตัดท้ายด้วย … เอาเมาส์ชี้ดูเต็ม)
+const COL_W: Record<string, number> = {
+  customer: 150, items: 200, assigned: 100, admin: 90, outsource: 140,
+  province: 90, tech: 90, address: 170, phone: 110, notes: 190,
+}
+// คอลัมน์ที่ตัดบรรทัดเดียว (คอลัมน์รายการเป็นหลายบรรทัด จัดการความกว้างในตัวเอง)
+const CLIP_ONE_LINE = (id: string) => id !== 'items' && COL_W[id] != null
+// คอลัมน์รายการโชว์ได้ไม่เกินกี่บรรทัด (เกินนี้ขึ้น "+ อีก N รายการ" เหมือนหมวดออเดอร์)
+const ITEM_LINE_MAX = 3
 const money = (v: number | null | undefined) => v == null ? '-' : Number(v).toLocaleString('th-TH')
 const shortDate = (v?: string | null) => v ? new Date(v).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '-'
 
@@ -1072,11 +1082,19 @@ export default function InstallationsPage() {
                       style={{ cursor: 'pointer' }} title="จิ้มเพื่อแก้รายการ">
                       {orderItems[ins.source_order_id]?.length ? (
                         // โชว์แบบเดียวกับคอลัมน์รายการในหมวดออเดอร์: บรรทัดสั้น 1 บรรทัด/ชิ้น ตัดท้ายด้วย …
-                        <div>
-                          {formatItemLines(orderItems[ins.source_order_id]).map((line, k) => (
-                            <div key={k} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190, fontSize: 11, lineHeight: '1.6', color: k === 0 ? 'var(--ink)' : 'var(--ink-3)' }}>{line}</div>
-                          ))}
-                        </div>
+                        (() => {
+                          const lines = formatItemLines(orderItems[ins.source_order_id!])
+                          return (
+                            <div>
+                              {lines.slice(0, ITEM_LINE_MAX).map((line, k) => (
+                                <div key={k} title={line} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: COL_W.items, fontSize: 11, lineHeight: '1.6', color: k === 0 ? 'var(--ink)' : 'var(--ink-3)' }}>{line}</div>
+                              ))}
+                              {lines.length > ITEM_LINE_MAX && (
+                                <div style={{ fontSize: 11, lineHeight: '1.6', color: 'var(--ink-4)' }}>+ อีก {lines.length - ITEM_LINE_MAX} รายการ</div>
+                              )}
+                            </div>
+                          )
+                        })()
                       ) : <span style={{ color: 'var(--ink-4)' }}>+ เพิ่มรายการ</span>}
                     </div>
                   ) : editWork?.id === ins.id ? (
@@ -1157,15 +1175,30 @@ export default function InstallationsPage() {
                     </div>
                   ) : <span style={{ color: 'var(--ink-4)' }}>-</span>,
                 }
+                // ข้อความเต็มของคอลัมน์ที่ถูกตัดท้าย — เอาเมาส์ชี้แล้วอ่านได้
+                const titles: Record<string, string> = {
+                  customer: ins.customer_real_name || ins.customer_id || '',
+                  assigned: oe?.order_assigned || '',
+                  admin: oe?.admin_name || ins.entered_by || '',
+                  outsource: oe?.outsource || '',
+                  province: ins.province || '',
+                  tech: oe?.technician || '',
+                  address: oe?.address || '',
+                  phone: ins.phone || '',
+                  notes: ins.notes || '',
+                }
                 return (
                   <tr key={ins.id} style={{ borderBottom: '1px solid var(--border)' }}>
                     {COLS.filter(c => showCol(c.id)).map(c => (
                       <td key={c.id} style={{
                         padding: c.id === 'items' ? '6px 14px' : '12px 14px',
                         textAlign: COL_ALIGN[c.id] ?? 'left',
-                        ...(c.id === 'items' ? { minWidth: 160, maxWidth: 200 } : {}),
-                        ...(c.id === 'notes' ? { minWidth: 140, maxWidth: 220 } : {}),
-                      }}>{cells[c.id]}</td>
+                        ...(COL_W[c.id] != null ? { width: COL_W[c.id], minWidth: COL_W[c.id], maxWidth: COL_W[c.id] } : {}),
+                      }}>
+                        {COL_W[c.id] != null ? (
+                          <div title={titles[c.id] || undefined} style={{ width: COL_W[c.id], overflow: 'hidden', ...(CLIP_ONE_LINE(c.id) ? { whiteSpace: 'nowrap' as const, textOverflow: 'ellipsis' } : {}) }}>{cells[c.id]}</div>
+                        ) : cells[c.id]}
+                      </td>
                     ))}
                     <td style={{ padding: '12px 14px' }}>
                       <button onClick={e => {
