@@ -187,6 +187,7 @@ export default function ClaimsWorkspace() {
   // แถวไม่เด้งออกจากแท็บตอนเปลี่ยนสถานะ/ติ๊กจัดส่ง — กรองด้วย stable() แสดงผลด้วย live() (ดู lib/useStableView.ts)
   const { snapshot, stable, live } = useStableView<Claim>(rows)
   const [loading, setLoading] = useState(!cached)
+  const [fetched, setFetched] = useState(false)   // load() รอบแรกเสร็จแล้วหรือยัง (แคชอย่างเดียวยังไม่นับ)
   const [error, setError] = useState('')
   // กล่องยืนยันของเว็บเอง (ไม่ใช้ window.confirm — ดูเหตุผลใน components/ConfirmDialog.tsx)
   const { ask, confirmDialog } = useConfirm()
@@ -224,8 +225,22 @@ export default function ClaimsWorkspace() {
     setRows(claims)
     snapshot(claims)   // ตั้งจุดอ้างอิงใหม่ → เคลมที่เปลี่ยนสถานะค้างไว้ ย้ายเข้าแท็บใหม่ตอนนี้
     setLoading(false)
+    setFetched(true)
   }
   useEffect(() => { load() }, [])
+
+  // มาจากหมวดออเดอร์ด้วยลิงก์ /claims?claim=<id> → เปิดฟอร์มแก้ใบนั้นให้เลย แล้วล้าง query ทิ้ง
+  // (แถวงานเคลมในหมวดออเดอร์แก้ผ่านฟอร์มออเดอร์ไม่ได้ เพราะเป็นข้อมูลคนละตาราง)
+  useEffect(() => {
+    if (modal) return
+    const want = new URLSearchParams(window.location.search).get('claim')
+    if (!want) return
+    const c = rows.find(r => r.id === want)
+    if (!c && !fetched) return   // ยังมีแค่ข้อมูลแคช รอ load() รอบนี้จบก่อนค่อยฟ้องว่าไม่เจอ
+    window.history.replaceState(null, '', window.location.pathname)
+    if (c) openEdit(c)
+    else setError('ไม่พบงานเคลมใบนี้ (อาจถูกลบไปแล้ว)')
+  }, [fetched, rows, modal])   // eslint-disable-line react-hooks/exhaustive-deps
 
   // ช่องแอดมิน: ดึงชื่อพนักงานที่ยังทำงานอยู่ทุกคนจากตาราง staff — มีคนเข้า/ออกก็อัปเดตเองไม่ต้องแก้โค้ด
   useEffect(() => {

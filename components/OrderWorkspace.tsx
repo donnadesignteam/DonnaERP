@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
@@ -424,6 +425,7 @@ const INSTALL_STATUS_OPTIONS = ['ติดตั้งแล้ว', 'ติด�
 const linkHref = (l: string) => /^https?:\/\//i.test(l) ? l : `https://${l}`
 
 export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' | 'claims' }) {
+  const router = useRouter()
   const selectAllRef = useRef<HTMLInputElement>(null)
   const modalDownOnBackdrop = useRef(false)
   const tableCardRef = useRef<HTMLDivElement>(null)
@@ -810,8 +812,16 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       // รายการสินค้าไม่ได้แก้ = ตัด items ออกจากคำสั่ง → ชื่อแอดมิน/โบนัสไม่ขยับ
       // (กติกา 3 ส.ค. 69: แก้เฉพาะรายการสินค้าเท่านั้นที่ย้าย/ล้างเจ้าของโบนัส — ดู lib/adminActor.ts)
       if (orig && JSON.stringify(orig.items ?? null) === JSON.stringify(payload.items ?? null)) delete (payload as Record<string, unknown>).items
-      const res = await oeUpdate(payload).eq('id', d.id).select().single()
+      // ‼️ maybeSingle ไม่ใช่ single — ถ้า update ไม่โดนแถวไหนเลย single() จะโยน PGRST116
+      //    ("Cannot coerce the result to a single JSON object") ซึ่งแอดมินอ่านไม่รู้เรื่อง
+      //    เกิดได้เมื่อแถวถูกลบไปแล้ว หรือเป็นแถวงานเคลม (id อยู่ตาราง claims ไม่ใช่ order_entries)
+      const res = await oeUpdate(payload).eq('id', d.id).select().maybeSingle()
       if (res.error) { setSaving(false); setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
+      if (!res.data) {
+        setSaving(false)
+        setError('บันทึกไม่สำเร็จ: ไม่พบใบนี้ในตารางออเดอร์แล้ว — ถ้าเป็นงานเคลมให้แก้ที่หน้าเคลม (เมนู ··· → แก้ไข (ไปหน้าเคลม)) ถ้าไม่ใช่ ให้รีเฟรชหน้าแล้วลองใหม่')
+        return
+      }
       await syncInstallation({ ...payload, admin_name: d.admin_name || null }, String(d.id))
       if (payload.is_installation) await saveOrderPhotos(String(d.id))
       if (outsourceVal || prevOutsource) await syncOutsourcePO(String(d.id), payload.customer_name, payload.order_number, outsourceVal, modalItems)
@@ -4239,10 +4249,15 @@ ${body}
                 ทำซ้ำ
               </button>
             )}
-            <button onClick={() => { setOpenAction(null); setActionRect(null); setModal({ mode: 'edit', data: { ...r, items: null } }); void loadOrderPhotos(r); setModalItems(Array.isArray(r.items) ? [...(r.items as Item[])] : []); setItemsPasteText('') }}
+            {/* แถวงานเคลมเป็นข้อมูลจากตาราง claims (id คนละตาราง) — บันทึกผ่านฟอร์มออเดอร์ไม่ได้ ส่งไปแก้ที่หน้าเคลมแทน */}
+            <button onClick={() => {
+              setOpenAction(null); setActionRect(null)
+              if (isClaimEntry(r)) { router.push(`/claims?claim=${r.claim_id}`); return }
+              setModal({ mode: 'edit', data: { ...r, items: null } }); void loadOrderPhotos(r); setModalItems(Array.isArray(r.items) ? [...(r.items as Item[])] : []); setItemsPasteText('')
+            }}
               style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)' }}>
               <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/></svg>
-              แก้ไข
+              {isClaimEntry(r) ? 'แก้ไข (ไปหน้าเคลม)' : 'แก้ไข'}
             </button>
             <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
             {/* ยกเลิกออเดอร์ = เปลี่ยนสถานะเป็น "ยกเลิก" (ไปอยู่แท็บยกเลิก ไม่ลบทิ้ง) — กดซ้ำเอากลับมาได้
