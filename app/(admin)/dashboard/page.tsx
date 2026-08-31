@@ -285,10 +285,12 @@ export default function DashboardPage() {
     })
   }
   ordersList = ordersList.map(live)
-  const todayDue = stableAll.filter(o => effectiveISODate(o) === today).map(live)
-  const overdue = stableAll.filter(o => { const iso = effectiveISODate(o); return iso && iso < today && !DONE_STATUSES.includes(o.order_status) }).map(live)
+  // ‼️ ใบที่ยกเลิกแล้วไม่ใช่งานค้าง — ไม่ต้องขึ้นในการ์ดทั้ง 3 ใบ (รายการออเดอร์ด้านล่างกรองออกอยู่แล้ว)
+  const notCancelled = (o: Order) => o.order_status !== 'ยกเลิก'
+  const todayDue = stableAll.filter(o => notCancelled(o) && effectiveISODate(o) === today).map(live)
+  const overdue = stableAll.filter(o => { const iso = effectiveISODate(o); return notCancelled(o) && iso && iso < today && !DONE_STATUSES.includes(o.order_status) }).map(live)
   // งานเสร็จ (is_urgent) ที่ยังไม่ได้จัดส่ง → รอติ๊กจัดส่งใน popup
-  const toShip = stableAll.filter(o => o.is_urgent && o.order_status !== 'จัดส่งแล้ว').map(live)
+  const toShip = stableAll.filter(o => notCancelled(o) && o.is_urgent && o.order_status !== 'จัดส่งแล้ว').map(live)
 
   // ติ๊กจัดส่งจาก popup: อัปเดตเหมือนหน้าออเดอร์ (สถานะ+shipped_at+sync work_status+ประวัติ)
   const markShipped = async (id: string) => {
