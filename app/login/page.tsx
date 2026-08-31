@@ -2,18 +2,7 @@
 
 import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-
-// เข้าจากมือถือ (แอปที่ติดตั้งไว้ หรือเปิดในเบราว์เซอร์จอเล็ก) → ห้ามพาไปหน้าเดสก์ท็อป
-function onPhone() {
-  if (typeof window === 'undefined') return false
-  const standalone = window.matchMedia('(display-mode: standalone)').matches
-    || (window.navigator as Navigator & { standalone?: boolean }).standalone === true
-  if (standalone) return true
-  // ‼️ จอแคบอย่างเดียวไม่พอ — คอมที่ย่อหน้าต่าง/แบ่งครึ่งจอก็แคบได้ แล้วโดนเด้งไปหน้ามือถือ
-  //    ต้องเป็นจอสัมผัสด้วย (pointer: coarse) คอมที่ใช้เมาส์/แทร็กแพดจะไม่เข้าเงื่อนไขนี้
-  return window.matchMedia('(max-width: 820px)').matches
-    && window.matchMedia('(pointer: coarse)').matches
-}
+import { landingPath } from '@/lib/device'
 
 // เลือกหน้าปลายทางหลังล็อกอิน
 // - from = '/dashboard' หรือ '/' แปลว่า "ไม่ได้ตั้งใจมาหน้าไหนเป็นพิเศษ" (ค่า default / เปิดหน้าแรก)
@@ -25,8 +14,7 @@ function onPhone() {
 function landing(from: string, staff: boolean) {
   const noPreference = from === '/dashboard' || from === '/'
   if (!noPreference) return from
-  if (!onPhone()) return '/dashboard'   // คอม = หน้าเดสก์ท็อปเสมอ (พนักงานก็เห็นเท่าแอดมินอยู่แล้ว)
-  return staff ? '/m/me' : '/hub'       // มือถือ: พนักงาน→ข้อมูลของฉัน, รหัสร้าน→hub
+  return landingPath(staff)   // เครื่องเป็นตัวตัดสิน (lib/device.ts) — มือถือ: พนักงาน→/m/me, รหัสร้าน→/hub
 }
 
 function LoginForm() {

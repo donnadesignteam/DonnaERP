@@ -165,6 +165,12 @@ function HubContent() {
           </button>
         ))}
       </div>
+
+      {/* ทางออกฉุกเฉิน — อยากดูตารางเต็มแบบคอมบนมือถือ กดตรงนี้ เครื่องนี้จะจำไว้ (ปุ่ม "กลับเวอร์ชันมือถือ" อยู่มุมล่างขวาของหน้าเดสก์ท็อป) */}
+      <button onClick={() => router.push('/dashboard?desktop=1')}
+        style={{ border: 'none', background: 'transparent', color: 'var(--ink-4)', fontSize: 12.5, textDecoration: 'underline', cursor: 'pointer', padding: '4px 8px', WebkitTapHighlightColor: 'transparent' }}>
+        เปิดเวอร์ชันคอมพิวเตอร์
+      </button>
     </div>
   )
 }
