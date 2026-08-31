@@ -10,7 +10,7 @@ import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, ITEM_FIELDS, ITEM_FIELD_OPTIONS, shownFields, visibleItemCols, emptyItem as emptyRawItem } from '@/lib/itemFormat'
 import { railLink } from '@/lib/rail'
 import { TECH_OPTIONS } from '@/lib/techs'
-import { OUTSIDE_PLATFORMS, PLATFORM_NAMES, PROD_STATUSES, INSTALL_STATUSES, PROD_STATUS_COLOR, matchQuickTab, effectiveDueDate, type QuickTab } from '@/lib/orderTabs'
+import { OUTSIDE_PLATFORMS, PLATFORM_NAMES, PROD_STATUSES, INSTALL_STATUSES, PROD_STATUS_COLOR, matchQuickTab, effectiveDueDate, cmpDaysSort, cmpDeadlineSort, type QuickTab } from '@/lib/orderTabs'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { effShipping } from '@/lib/shipping'
 import { thaiTrackStatus } from '@/lib/trackExtract'
@@ -584,33 +584,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     return dir === 'asc' ? da - db : db - da
   }
 
+  // ‼️ ตัวเทียบอยู่ที่ lib/orderTabs.ts (cmpDaysSort) — ตารางรายการใต้ปฏิทินงานติดตั้งใช้ตัวเดียวกัน
   const computeSortOrder = (rs: Entry[], sort: 'asc' | 'desc' | null): string[] => {
     if (!sort) return rs.map(r => r.id)
-    const parseD = (s: string | null | undefined) => {
-      if (!s || s === '-') return null
-      const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
-      if (m) {
-        const d = new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]))
-        return isNaN(d.getTime()) ? null : d
-      }
-      if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
-        const d = new Date(s)
-        return isNaN(d.getTime()) ? null : d
-      }
-      return null
-    }
-    return [...rs].sort((a, b) => {
-      if (a.is_urgent && b.is_urgent) return 0
-      if (a.is_urgent) return 1
-      if (b.is_urgent) return -1
-      const aShipping = effShipping(a)
-      const bShipping = effShipping(b)
-      const da = parseD(aShipping), db = parseD(bShipping)
-      if (!da && !db) return 0
-      if (!da) return 1
-      if (!db) return -1
-      return sort === 'asc' ? da.getTime() - db.getTime() : db.getTime() - da.getTime()
-    }).map(r => r.id)
+    return [...rs].sort((a, b) => cmpDaysSort(a, b, sort)).map(r => r.id)
   }
 
   const load = async () => {
@@ -1760,13 +1737,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
         return outUpdatedSort === 'desc' ? db - da : da - db
       })
     } else if (outDaysSort) {
-      rs = [...rs].sort((a, b) => {
-        // เรียงน้อยไปมาก: งานเสร็จ (is_urgent) เลื่อนไปอยู่ล่างสุดเสมอ
-        if (outDaysSort === 'asc' && !!a.is_urgent !== !!b.is_urgent) return a.is_urgent ? 1 : -1
-        const da = a.deadline ? new Date(a.deadline).getTime() : (outDaysSort === 'asc' ? Infinity : -Infinity)
-        const db = b.deadline ? new Date(b.deadline).getTime() : (outDaysSort === 'asc' ? Infinity : -Infinity)
-        return outDaysSort === 'asc' ? da - db : db - da
-      })
+      // ‼️ ตัวเทียบอยู่ที่ lib/orderTabs.ts (cmpDeadlineSort) — ตารางใต้ปฏิทินงานติดตั้งใช้ตัวเดียวกัน
+      rs = [...rs].sort((a, b) => cmpDeadlineSort(a, b, outDaysSort))
     }
     return rs.map(live)
   })()

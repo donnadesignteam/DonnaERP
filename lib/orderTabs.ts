@@ -76,6 +76,52 @@ export function daysRemaining(dateStr: string): number | null {
   return isNaN(result) ? null : result
 }
 
+// ── ลำดับแถวเริ่มต้นของหมวดออเดอร์ (เรียงตามคอลัมน์ "วันผลิตที่เหลือ") ──
+// ‼️ ใช้ร่วมกัน: หมวดออเดอร์ (computeSortOrder) กับตารางรายการใต้ปฏิทินงานติดตั้ง
+//    กติกา: ใบที่ติ๊ก "งานเสร็จ" แล้วไปอยู่ท้ายสุด · ที่เหลือเรียงตามวันต้องส่ง · ใบที่ไม่มีวันไปอยู่ท้าย
+//    (ลำดับของใบที่เทียบกันไม่ได้ = คงลำดับเดิมที่โหลดมา — Array.sort ของ JS เป็น stable sort)
+export type DaysSortRow = { is_urgent?: boolean | null; is_dropoff?: boolean | null; shipping_datetime?: string | null }
+
+export function parseSortDate(s: string | null | undefined): Date | null {
+  if (!s || s === '-') return null
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+  if (m) {
+    const d = new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]))
+    return isNaN(d.getTime()) ? null : d
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    const d = new Date(s)
+    return isNaN(d.getTime()) ? null : d
+  }
+  return null
+}
+
+export function cmpDaysSort(a: DaysSortRow, b: DaysSortRow, sort: 'asc' | 'desc'): number {
+  if (a.is_urgent && b.is_urgent) return 0
+  if (a.is_urgent) return 1
+  if (b.is_urgent) return -1
+  const da = parseSortDate(effShipping(a)), db = parseSortDate(effShipping(b))
+  if (!da && !db) return 0
+  if (!da) return 1
+  if (!db) return -1
+  return sort === 'asc' ? da.getTime() - db.getTime() : db.getTime() - da.getTime()
+}
+
+// ── ลำดับของตารางงานนอก/งานติดตั้ง (ชั้นที่ 2 ต่อจาก cmpDaysSort) ──
+// เรียงตามคอลัมน์ "วันผลิตที่เหลือ" = วันกำหนด/วันนัด น้อย→มาก · งานเสร็จแล้ว (is_urgent) ไปล่างสุดเสมอ
+// ‼️ ใช้ร่วมกัน: หมวดออเดอร์ (displayedOut) กับตารางรายการใต้ปฏิทินงานติดตั้ง
+export type DeadlineSortRow = { is_urgent?: boolean | null; deadline?: string | null }
+
+export function cmpDeadlineSort(a: DeadlineSortRow, b: DeadlineSortRow, dir: 'asc' | 'desc'): number {
+  if (dir === 'asc' && !!a.is_urgent !== !!b.is_urgent) return a.is_urgent ? 1 : -1
+  const ms = (r: DeadlineSortRow) => (r.deadline ? new Date(r.deadline).getTime() : null)
+  const da = ms(a), db = ms(b)
+  if (da === null && db === null) return 0
+  if (da === null) return dir === 'asc' ? 1 : -1      // ไม่มีวันกำหนด = ท้ายกลุ่ม
+  if (db === null) return dir === 'asc' ? -1 : 1
+  return dir === 'asc' ? da - db : db - da
+}
+
 // สี/ข้อความคอลัมน์วันที่เหลือ: เกินกำหนด+0 วัน = แดง (0 = ต้องจัดส่งวันนี้), 1-10 วัน = เหลือง, >10 วัน = เขียว
 export const daysLabel = (d: number) => d < 0 ? `เกิน ${Math.abs(d)} วัน` : d === 0 ? 'ต้องจัดส่งวันนี้' : `${d} วัน`
 export const daysColor = (d: number) => d <= 0 ? 'var(--red)' : d <= 10 ? '#eab308' : '#34c759'

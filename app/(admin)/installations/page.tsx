@@ -16,7 +16,10 @@ import { oeUpdate, instUpdate, instInsert } from '@/lib/adminActor'
 import { useConfirm } from '@/components/ConfirmDialog'
 import { usePrintColumns, PrintColumnPicker, printTableHtml, type PrintCol } from '@/components/PrintColumnPicker'
 import { createOrderForInstall, orderPatchFromInstall } from '@/lib/installOrderSync'
-import { PROD_STATUS_COLOR } from '@/lib/orderTabs'
+import { PROD_STATUS_COLOR, INSTALL_STATUSES, daysRemaining, daysLabel, cmpDaysSort, cmpDeadlineSort } from '@/lib/orderTabs'
+import { TECH_OPTIONS } from '@/lib/techs'
+import { syncWorkStatus } from '@/lib/workStatusSync'
+import ProvinceSelect from '@/components/ProvinceSelect'
 import { formatOrderLines, linesToHtml, openFormPrintWindow, escPrintHtml, type PrintLine, type PrintableOrder } from '@/lib/orderPrint'
 import QRCode from 'qrcode'
 import { WORK_TYPES, WORK_TYPE_OPTIONS, ZONES, TECHS, TECH_BY_ZONE,
@@ -51,9 +54,12 @@ type Installation = {
   photos?: InstallPhoto[]           // รูปหน้างาน (ยังไม่ได้รัน migrations/add_installation_photos.sql = ไม่มีคอลัมน์นี้)
 }
 
-// ช่องของออเดอร์ต้นทางที่เอามาโชว์ในตารางรายการ (คอลัมน์ชุดเดียวกับแท็บงานติดตั้งในหมวดออเดอร์)
+// ช่องของออเดอร์ต้นทางที่เอามาโชว์/แก้ในตารางรายการ (คอลัมน์ชุดเดียวกับแท็บงานติดตั้งในหมวดออเดอร์)
+// ‼️ แก้ช่องพวกนี้ในหน้านี้ = เขียนลง order_entries ตรงๆ (แก้ได้ทั้ง 2 ฝั่ง) ดู saveOrder()
 type OrderMeta = {
   id: string
+  order_number: string | null
+  customer_name: string | null
   items: RawItem[] | null
   price: number | null
   payment_status: string | null
@@ -62,13 +68,72 @@ type OrderMeta = {
   order_assigned: string | null
   admin_name: string | null
   order_status: string | null
+  status_history: { status: string; at: string }[] | null
+  is_urgent: boolean | null
   done_at: string | null
+  install_status: string | null
   is_dropoff: boolean | null
   rail_packed: boolean | null
+  rail_packed_at: string | null
+  entry_date: string | null
+  shipping_datetime: string | null
   created_at: string | null
+  deadline: string | null
+  printed_at: string | null
   outsource: string | null
+  outsource_at: string | null
   technician: string | null
   address: string | null
+}
+
+const ORDER_META_COLS = 'id, order_number, customer_name, items, price, payment_status, paid_amount, deposit, order_assigned, admin_name, order_status, status_history, is_urgent, done_at, install_status, is_dropoff, rail_packed, rail_packed_at, entry_date, shipping_datetime, created_at, deadline, printed_at, outsource, outsource_at, technician, address'
+
+// ตัวเลือกของคอลัมน์ที่เป็นข้อมูลใบออเดอร์ — ชุดเดียวกับหมวดออเดอร์ (components/OrderWorkspace.tsx)
+const PAYMENT_STATUSES = ['ยังไม่ชำระ', 'มัดจำ', 'มัดจำ50%', 'ชำระครบ']
+const PAYMENT_STATUS_COLOR: Record<string, string> = {
+  'ยังไม่ชำระ': '#f59e0b', 'มัดจำ': '#8b5cf6', 'มัดจำ50%': '#3b82f6', 'ชำระครบ': '#22c55e',
+}
+const ORDER_ASSIGNED = ['รออัพเดท', 'แจ้งลงหน้าร้าน', 'พี่ฟอง', 'ช่างเชียงใหม่']
+const ADMINS = ['กาย', 'แพท', 'หนูนา', 'ยุน', 'ส้ม', 'เก๋']
+const INSTALL_STATUS_OPTIONS = ['ติดตั้งแล้ว', 'ติดตั้ง50%']
+const EMPTY_HL = 'rgba(245,158,11,0.42)'
+const daysColor = (d: number) => d <= 0 ? 'var(--red)' : d <= 10 ? '#eab308' : '#34c759'
+
+// ลำดับแถวชุดเดียวกับตารางงานติดตั้งในหมวดออเดอร์ — 3 ชั้น ต้องครบทั้ง 3 ถึงจะตรงกัน
+//   1) ฐานที่หมวดออเดอร์โหลดมา = วันที่สร้างใบ (entry_date) ใหม่→เก่า · วันเท่ากันตัดสินด้วย id ของใบออเดอร์
+//   2) cmpDaysSort (ชั้นของ "ทั้งหมด") — งานเสร็จไปท้าย
+//   3) cmpDeadlineSort — เรียงตามวันนัดติดตั้ง น้อย→มาก งานเสร็จอยู่ล่างสุด ‼️ ชั้นนี้คือชั้นที่เห็นบนจอ
+// แถวที่ไม่มีใบออเดอร์ (เช่น งานวัดหน้างาน) ใช้วันที่สร้าง/วันนัดของแถวปฏิทินแทน
+const computeRowOrder = (rows: Installation[], meta: Record<string, OrderMeta>): string[] => {
+  const oeOf = (r: Installation) => (r.source_order_id ? meta[r.source_order_id] : undefined)
+  const entryMs = (r: Installation) => {
+    const v = oeOf(r)?.entry_date ?? r.created_at
+    const t = v ? new Date(v).getTime() : NaN
+    return isNaN(t) ? null : t
+  }
+  // ‼️ วันเท่ากันต้องตัดสินด้วย id ของ "ใบออเดอร์" (ไม่ใช่ id ของแถวปฏิทิน) — หมวดออเดอร์เรียง order_entries.id
+  //    ใช้ id ของแถวปฏิทินแล้วลำดับของวันเดียวกันจะสลับกันคนละแบบกับหมวดออเดอร์
+  const base = [...rows].sort((a, b) => {
+    const da = entryMs(a), db = entryMs(b)
+    const ia = oeOf(a)?.id ?? a.id, ib = oeOf(b)?.id ?? b.id
+    const byId = ia < ib ? -1 : ia > ib ? 1 : 0   // เทียบดิบๆ ให้ตรงกับลำดับ id ที่ฐานส่งมา
+    if (da === null && db === null) return byId
+    if (da === null) return 1
+    if (db === null) return -1
+    return db - da || byId
+  })
+  const frozen = base.sort((a, b) => cmpDaysSort(oeOf(a) ?? {}, oeOf(b) ?? {}, 'asc'))
+  // ‼️ แถวที่มีใบออเดอร์ ต้องอ่านวันกำหนด/งานเสร็จ จากใบออเดอร์อย่างเดียว (ห้าม fallback ไปวันนัดในปฏิทิน)
+  //    ไม่งั้นใบที่วันกำหนดว่างจะไปแทรกกลางตาราง แทนที่จะตกท้ายเหมือนหมวดออเดอร์
+  //    ส่วนแถวที่ไม่มีใบออเดอร์ (งานวัดหน้างาน/งานที่ลงในปฏิทินเอง) ใช้วันนัด + ถือว่างานที่ทำเสร็จแล้ว = งานเสร็จ
+  const DONE_INST_STATUS = ['ติดตั้งเสร็จ', 'วัดหน้างานแล้ว']
+  const dl = (r: Installation) => {
+    const oe = oeOf(r)
+    return oe
+      ? { is_urgent: oe.is_urgent, deadline: oe.deadline }
+      : { is_urgent: DONE_INST_STATUS.includes(r.installation_status), deadline: r.appointment_datetime ? r.appointment_datetime.slice(0, 10) : null }
+  }
+  return frozen.sort((a, b) => cmpDeadlineSort(dl(a), dl(b), 'asc')).map(r => r.id)
 }
 
 const PLATFORMS = ['Tiktok','Tiktok-Chat','Shopee','Shopee-Chat','Lazada','Facebook','LineOA',
@@ -95,8 +160,8 @@ const withAutoHooks = (items: RawItem[]): RawItem[] =>
 const itemsOutsourceText = (items: RawItem[]): string =>
   items.map(it => (it.outsource ?? '').trim()).filter(Boolean).join(', ')
 
-// คอลัมน์ของตารางในหน้านี้ = ชุด/ลำดับกลาง (INSTALL_COLUMNS) แต่ไม่เอา "วันผลิตที่เหลือ"
-const COLS = INSTALL_COLUMNS.filter(c => c.id !== 'days')
+// คอลัมน์ของตารางในหน้านี้ = ชุด/ลำดับกลางชุดเดียวกับแท็บงานติดตั้งในหมวดออเดอร์ (INSTALL_COLUMNS ครบทุกคอลัมน์)
+const COLS = INSTALL_COLUMNS
 
 // การจัดวางของแต่ละคอลัมน์ในตารางรายการ (ยอดเงินชิดขวา · ติ๊ก/ปุ่มอยู่กลาง)
 const COL_ALIGN: Record<string, 'left' | 'right' | 'center'> = {
@@ -113,8 +178,13 @@ const COL_W: Record<string, number> = {
 const CLIP_ONE_LINE = (id: string) => id !== 'items' && COL_W[id] != null
 // คอลัมน์รายการโชว์ได้ไม่เกินกี่บรรทัด (เกินนี้ขึ้น "+ อีก N รายการ" เหมือนหมวดออเดอร์)
 const ITEM_LINE_MAX = 3
-const money = (v: number | null | undefined) => v == null ? '-' : Number(v).toLocaleString('th-TH')
 const shortDate = (v?: string | null) => v ? new Date(v).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '-'
+// ISO → ค่าที่ช่อง datetime-local รับได้ (เวลาเครื่อง)
+const toLocalInput = (iso: string) => {
+  const d = new Date(iso)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+}
 
 const DAYS = ['จ.','อ.','พ.','พฤ.','ศ.','ส.','อา.']
 const TH_MONTHS = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
@@ -241,6 +311,11 @@ export default function InstallationsPage() {
   const [itemsError, setItemsError] = useState('')
   const [itemsShowAll, setItemsShowAll] = useState(false)   // ปุ่ม "ทุกช่อง" ในป๊อปอัปรายการ (แบบเดียวกับหมวดออเดอร์)
   const [editWork, setEditWork] = useState<{ id: string; value: string } | null>(null)  // แก้รายละเอียดงานของแถวที่เพิ่มเอง
+  // แก้ช่องของ "ใบออเดอร์ต้นทาง" ตรงตาราง (id = source_order_id) — คู่กับ saveOrder()
+  const [oeEdit, setOeEdit] = useState<{ id: string; field: string; val: string } | null>(null)
+  const [editDoneAt, setEditDoneAt] = useState<string | null>(null)   // จิ้มแก้วัน-เวลางานเสร็จ (order id)
+  // ลำดับแถวของตารางรายการ — คำนวณตอนโหลดแล้วตรึงไว้ (เหมือนหมวดออเดอร์ แถวจะได้ไม่กระโดดตอนติ๊กงานเสร็จ)
+  const [sortOrder, setSortOrder] = useState<string[]>([])
   // หน้ายอดติดตั้ง — สรุปยอด+โบนัสช่างรายเดือน (สูตรเดียวกับชีท "ยอดติดตั้ง")
   const [bonusModal, setBonusModal] = useState(false)
   const [bonusMonth, setBonusMonth] = useState(() => {
@@ -260,7 +335,9 @@ export default function InstallationsPage() {
 
   const load = async () => {
     const { data, error: err } = await fetchAllRows<Installation>(() =>
-      supabase.from('installations').select('*').order('appointment_datetime', { ascending: false }).order('id', { ascending: true }))
+      supabase.from('installations').select('*')
+        .order('appointment_datetime', { ascending: false, nullsFirst: false })   // ‼️ ยังไม่ได้นัดวัน = ท้ายรายการ (ไม่ใช่บนสุด)
+        .order('id', { ascending: true }))
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
     let rows = data
     // งานวัดหน้างานที่เลยวันนัดไปแล้ว → เลื่อนสถานะเป็น "วัดหน้างานแล้ว" อัตโนมัติ
@@ -282,7 +359,7 @@ export default function InstallationsPage() {
     const orderIds = rows.map(r => r.source_order_id).filter((v): v is string => !!v)
     if (orderIds.length) {
       const { data: oes } = await supabase.from('order_entries')
-        .select('id, items, price, payment_status, paid_amount, deposit, order_assigned, admin_name, order_status, done_at, is_dropoff, rail_packed, created_at, outsource, technician, address')
+        .select(ORDER_META_COLS)
         .in('id', orderIds)
       const map: Record<string, RawItem[]> = {}
       const metaMap: Record<string, OrderMeta> = {}
@@ -292,10 +369,33 @@ export default function InstallationsPage() {
       }
       setOrderItems(map)
       setOrderMeta(metaMap)
+      setSortOrder(computeRowOrder(rows, metaMap))
+    } else {
+      setSortOrder(computeRowOrder(rows, {}))
     }
   }
 
+
   useEffect(() => { load() }, [])
+
+  // แก้ที่หมวดออเดอร์ → ตารางในหน้านี้ขยับตามทันที (sync สองทางแบบเห็นผลเลย ไม่ต้องรีเฟรช)
+  useEffect(() => {
+    const ch = supabase
+      .channel('installations_order_live')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'order_entries' }, payload => {
+        const row = payload.new as OrderMeta & { items?: RawItem[] | null }
+        setOrderMeta(m => (m[row.id] ? { ...m, [row.id]: { ...m[row.id], ...row } } : m))
+        if (Array.isArray(row.items)) setOrderItems(m => (m[row.id] ? { ...m, [row.id]: row.items as RawItem[] } : m))
+      })
+      // แถวปฏิทินถูกแก้จากที่อื่น (เช่น หมวดออเดอร์เปลี่ยนโซน/ช่าง) → กลืนค่าใหม่เข้าตาราง
+      // ‼️ merge อย่างเดียว ไม่ load() ใหม่ ไม่งั้นการแก้ในหน้านี้เองจะรีโหลดวนและแถวกระโดดออกจากรายการ
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'installations' }, payload => {
+        const row = payload.new as Installation
+        setInstalls(prev => prev.map(i => i.id === row.id ? { ...i, ...row } : i))
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [])
 
   // รัน serial ต่อจากเลขสูงสุดที่มี (กันชนกับเลขที่ sync มาจากออเดอร์)
   const nextSerial = () => pad(installs.reduce((mx, r) => Math.max(mx, parseInt(r.serial_no, 10) || 0), 0) + 1)
@@ -582,6 +682,144 @@ export default function InstallationsPage() {
     if (err) setError(`อัพเดทใบออเดอร์ที่ผูกไว้ไม่สำเร็จ: ${err.message}`)
   }
 
+  // ===== แก้ช่องที่เป็นข้อมูลของใบออเดอร์ (order_entries) ตรงตารางในหน้านี้ =====
+  // ‼️ คอลัมน์พวกนี้เดิมโชว์อย่างเดียว ตอนนี้แก้ได้เหมือนแท็บงานติดตั้งในหมวดออเดอร์ (ตรรกะเดียวกับ OrderWorkspace)
+  //    ช่องที่ปฏิทินก็มีของตัวเอง (ยอด/ชำระ/แอดมิน) เขียนลง installations ให้ด้วย ไม่งั้น 2 ฝั่งโชว์คนละค่า
+  const INST_MIRROR: Record<string, string> = { price: 'price', payment_status: 'payment_status', admin_name: 'entered_by' }
+
+  const saveOrder = async (orderId: string, patch: Record<string, unknown>, label: string) => {
+    setOeEdit(null)
+    const oe = orderMeta[orderId]
+    const now = new Date().toISOString()
+    const full = { ...patch, updated_at: now }
+    const prev = prevOf((oe ?? {}) as Record<string, unknown>, patch)   // ค่าเดิมเฉพาะช่องที่แก้ (ไม่แตะ updated_at ตอนย้อน)
+    setOrderMeta(m => (m[orderId] ? { ...m, [orderId]: { ...m[orderId], ...full } as OrderMeta } : m))
+    const { error: err } = await oeUpdate(full).eq('id', orderId)
+    if (err) { setError(`บันทึกใบออเดอร์ไม่สำเร็จ: ${err.message}`); load(); return false }
+
+    // สถานะงาน → sync กระดานงาน + เก็บประวัติสถานะ (เหมือนหมวดออเดอร์)
+    if (typeof patch.order_status === 'string' && patch.order_status) {
+      if (patch.order_status !== 'รอดำเนินการ') await syncWorkStatus(oe?.order_number, oe?.customer_name, patch.order_status, now)
+      const hist = Array.isArray(oe?.status_history) ? oe!.status_history! : []
+      if (!hist.length || hist[hist.length - 1]?.status !== patch.order_status) {
+        const next = [...hist, { status: patch.order_status, at: now }]
+        const { error: hErr } = await oeUpdate({ status_history: next }).eq('id', orderId)
+        if (!hErr) setOrderMeta(m => (m[orderId] ? { ...m, [orderId]: { ...m[orderId], status_history: next } } : m))
+      }
+    }
+
+    // ช่องที่ปฏิทินเก็บของตัวเองไว้ด้วย → เขียนให้ตรงกัน
+    const inst = installs.find(i => i.source_order_id === orderId)
+    const instPatch: Record<string, unknown> = {}
+    for (const [oKey, iKey] of Object.entries(INST_MIRROR)) {
+      if (Object.prototype.hasOwnProperty.call(patch, oKey)) instPatch[iKey] = patch[oKey] ?? ''
+    }
+    if (inst && Object.keys(instPatch).length) {
+      instPatch.updated_at = now
+      setInstalls(p => p.map(i => i.id === inst.id ? { ...i, ...instPatch } as Installation : i))
+      await instUpdate(instPatch).eq('id', inst.id)
+    }
+
+    recordAction({
+      label,
+      undo: async () => { await oeUpdate(prev).eq('id', orderId); await load() },
+      redo: async () => { await oeUpdate(full).eq('id', orderId); await load() },
+    })
+    return true
+  }
+
+  // ช่องตัวเลข/ข้อความของใบออเดอร์ (จิ้มแล้วพิมพ์ทับ)
+  const saveOrderNum = async (orderId: string, field: 'price' | 'paid_amount' | 'deposit', val: string) => {
+    const num = val === '' ? null : parseFloat(val)
+    const oe = orderMeta[orderId]
+    // กรอก "ชำระแล้ว" → คำนวณยอดที่เหลือ (ชำระหลังติดตั้ง) ให้เลย — กติกาเดียวกับหมวดออเดอร์
+    const extra = field === 'paid_amount' && oe?.price != null && num != null
+      ? { deposit: Math.max(0, Number(oe.price) - num) } : {}
+    await saveOrder(orderId, { [field]: num, ...extra }, `แก้ยอดออเดอร์ ${oe?.customer_name || ''}`)
+  }
+  const saveOrderText = async (orderId: string, field: 'address' | 'entry_date', val: string) =>
+    saveOrder(orderId, { [field]: val || null }, `แก้ข้อมูลออเดอร์ ${orderMeta[orderId]?.customer_name || ''}`)
+
+  // ชำระ — มัดจำ50%/ชำระครบ ลงยอดให้เลย (กติกาเดียวกับหมวดออเดอร์)
+  const saveOrderPayment = async (orderId: string, val: string) => {
+    const oe = orderMeta[orderId]
+    const patch: Record<string, unknown> = { payment_status: val }
+    if (val === 'มัดจำ50%' && oe?.price) { patch.deposit = oe.price / 2; patch.paid_amount = oe.price / 2 }
+    else if (val === 'มัดจำ') { patch.deposit = null; patch.paid_amount = null }
+    else if (val === 'ชำระครบ' && oe?.price) { patch.deposit = null; patch.paid_amount = oe.price }
+    else if (val === 'ยังไม่ชำระ') { patch.deposit = null; patch.paid_amount = null }
+    await saveOrder(orderId, patch, `แก้การชำระ ${oe?.customer_name || ''}`)
+  }
+
+  // งานเสร็จ (ติ๊ก) — งานติดตั้งเสร็จแล้วสถานะไป "รอติดตั้ง"
+  const toggleOrderDone = async (orderId: string, checked: boolean) => {
+    const now = new Date().toISOString()
+    await saveOrder(orderId, checked
+      ? { is_urgent: true, order_status: 'รอติดตั้ง', done_at: now }
+      : { is_urgent: false, order_status: 'รอดำเนินการ', done_at: null },
+      `${checked ? 'ติ๊ก' : 'เอาติ๊กออก'}งานเสร็จ ${orderMeta[orderId]?.customer_name || ''}`)
+  }
+
+  // คอลัมน์ "ติดตั้ง" — ติดตั้งแล้ว/ติดตั้ง50% (50% = ล้างวันนัดรอนัดใหม่ เหมือนหมวดออเดอร์)
+  const saveOrderInstallStatus = async (orderId: string, val: string) => {
+    const patch: Record<string, unknown> = { install_status: val || null, is_dropoff: val === 'ติดตั้งแล้ว' }
+    if (val === 'ติดตั้ง50%') patch.deadline = null
+    await saveOrder(orderId, patch, `แก้สถานะติดตั้ง ${orderMeta[orderId]?.customer_name || ''}`)
+  }
+
+  const toggleOrderRail = async (orderId: string, checked: boolean) => {
+    const now = new Date().toISOString()
+    await saveOrder(orderId, { rail_packed: checked, rail_packed_at: checked ? now : null },
+      `${checked ? 'ติ๊ก' : 'เอาติ๊กออก'}สถานะราง ${orderMeta[orderId]?.customer_name || ''}`)
+  }
+
+  // สั่งนอก — ล้างข้อความ = ล้างช่องสั่งนอกในรายการสินค้าด้วย + sync ใบสั่งซื้อนอก (เหมือนหมวดออเดอร์)
+  const saveOrderOutsource = async (orderId: string, val: string) => {
+    const oe = orderMeta[orderId]
+    const now = new Date().toISOString()
+    const patch: Record<string, unknown> = { outsource: val || null, outsource_at: val ? now : null }
+    const items = orderItems[orderId]
+    if (!val && Array.isArray(items) && items.some(it => (it.outsource ?? '').trim())) {
+      const cleared = items.map(it => ({ ...it, outsource: '' }))
+      patch.items = cleared
+      setOrderItems(m => ({ ...m, [orderId]: cleared }))
+    }
+    const ok = await saveOrder(orderId, patch, `แก้สั่งนอก ${oe?.customer_name || ''}`)
+    if (ok) await syncOutsourcePO(orderId, oe?.customer_name ?? undefined, oe?.order_number ?? undefined, val, items)
+  }
+
+  // แก้วัน-เวลา "งานเสร็จ" ที่ประทับไว้
+  const saveDoneAt = async (orderId: string, local: string) => {
+    setEditDoneAt(null)
+    if (!local) return
+    const iso = new Date(local).toISOString()
+    await saveOrder(orderId, { done_at: iso }, `แก้เวลางานเสร็จ ${orderMeta[orderId]?.customer_name || ''}`)
+  }
+
+  // ช่องของแถวปฏิทินเอง (เบอร์/จังหวัด/ลิงก์แผนที่/แพลตฟอร์ม) — บันทึกแล้ว sync ไปใบออเดอร์
+  const saveInstField = async (id: string, field: keyof Installation, value: string) => {
+    setOeEdit(null)
+    const now = new Date().toISOString()
+    const old = installs.find(i => i.id === id)
+    const patch = { [field]: value, updated_at: now } as Partial<Installation>
+    setInstalls(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i))
+    const { error: err } = await instUpdate(patch).eq('id', id)
+    if (err) { setError(`บันทึกไม่สำเร็จ: ${err.message}`); load(); return }
+    trackInst(id, patch, prevOf(old ?? {}, patch), `แก้ข้อมูลงานติดตั้ง ${old?.customer_real_name || ''}`)
+    await pushToOrder(id, { [field]: value })
+  }
+
+  // ติ๊กช่องปริ้นเอง — ไม่แตะ updated_at (ไม่ใช่การแก้เนื้อออเดอร์) เหมือนหมวดออเดอร์
+  const togglePrinted = async (orderId: string, printed: boolean) => {
+    const val = printed ? new Date().toISOString() : null
+    setOrderMeta(m => (m[orderId] ? { ...m, [orderId]: { ...m[orderId], printed_at: val } } : m))
+    const { error: err } = await oeUpdate({ printed_at: val }).eq('id', orderId)
+    if (err) { setError(`บันทึกสถานะปริ้นไม่สำเร็จ: ${err.message}`); load() }
+  }
+
+  const hasRailItems = (orderId?: string | null) =>
+    !!orderId && (orderItems[orderId] ?? []).some(it => typeof it.type === 'string' && it.type.startsWith('ราง'))
+
   // เปลี่ยนเป็น "งานติดตั้ง" แล้วยังไม่มีใบออเดอร์ → สร้างใบให้ ฝ่ายผลิตถึงจะเห็นในหมวดออเดอร์
   const linkOrder = async (ins: Installation) => {
     if (ins.work_type !== 'งานติดตั้ง' || ins.source_order_id) return
@@ -643,6 +881,14 @@ export default function InstallationsPage() {
     const oeOf = (r: Installation) => r.source_order_id ? orderMeta[r.source_order_id] : undefined
     const num = (v: number | null | undefined) => v == null ? '-' : esc(Number(v).toLocaleString('th-TH'))
     const cellById: Record<string, (r: Installation) => string> = {
+      days: r => {
+        const oe = oeOf(r)
+        if (oe?.order_status === 'ยกเลิก') return 'ยกเลิก'
+        if (oe?.is_urgent) return 'งานเสร็จ'
+        const due = oe?.deadline ?? (r.appointment_datetime ? r.appointment_datetime.slice(0, 10) : null)
+        const d = due ? daysRemaining(due) : null
+        return d === null ? 'รอกำหนด' : esc(d === 0 ? 'ต้องติดตั้งวันนี้' : daysLabel(d))
+      },
       serial: r => esc(r.serial_no),
       deadline: r => {
         const dt = r.appointment_datetime ? new Date(r.appointment_datetime) : null
@@ -669,10 +915,10 @@ export default function InstallationsPage() {
       admin: r => esc(oeOf(r)?.admin_name || r.entered_by),
       status: r => esc(oeOf(r)?.order_status),
       done: r => oeOf(r)?.done_at ? '✓' : '-',
-      installed: r => oeOf(r)?.is_dropoff ? '✓' : '-',
+      installed: r => esc(oeOf(r)?.install_status || (oeOf(r)?.is_dropoff ? 'ติดตั้งแล้ว' : '')),
       inststatus: r => esc(statusLabel(normStatus(r.installation_status))),
       rail: r => oeOf(r)?.rail_packed ? '✓' : '-',
-      created: r => esc(shortDate(oeOf(r)?.created_at ?? r.created_at)),
+      created: r => esc(shortDate(oeOf(r)?.entry_date ?? oeOf(r)?.created_at ?? r.created_at)),
       outsource: r => esc(oeOf(r)?.outsource),
       province: r => esc(r.province),
       zone: r => esc(r.install_zone),
@@ -835,10 +1081,15 @@ export default function InstallationsPage() {
   })
   const byZone = zoneFilter.length ? byMonth.filter(ins => zoneFilter.includes(ins.install_zone)) : byMonth
   const q = search.trim().toLowerCase()
-  const displayed = (!q ? byZone : byZone.filter(ins =>
+  const filtered = !q ? byZone : byZone.filter(ins =>
     [ins.serial_no, ins.customer_real_name, ins.customer_id, ins.platform, ins.province, ins.install_zone, ins.phone, ins.installation_status, ins.notes]
       .some(v => (v ?? '').toLowerCase().includes(q))
-  )).map(live)
+  )
+  // เรียงตามลำดับที่ตรึงไว้ตอนโหลด (ชุดเดียวกับหมวดออเดอร์) — แถวที่เพิ่งเพิ่มยังไม่มีในลำดับ ไปต่อท้าย
+  const orderMap = new Map(sortOrder.map((id, i) => [id, i]))
+  const displayed = (orderMap.size
+    ? [...filtered].sort((a, b) => (orderMap.get(a.id) ?? 999999) - (orderMap.get(b.id) ?? 999999))
+    : filtered).map(live)
 
   // ปฏิทินไม่แสดงงานที่ติดตั้งเสร็จแล้ว + filter ตามโซนที่เลือก
   const calendarInstalls = stableInstalls.filter(ins =>
@@ -1017,7 +1268,44 @@ export default function InstallationsPage() {
                 const autoDeposit = oe && oe.paid_amount != null && oe.price != null
                   ? Math.max(0, Number(oe.price) - Number(oe.paid_amount))
                   : oe?.payment_status === 'มัดจำ50%' && oe.price ? Number(oe.price) / 2 : null
+                const oid = ins.source_order_id || null
+                const noOrder = <span style={{ color: 'var(--ink-4)' }}>—</span>
+                // จิ้มแก้ช่องไหนอยู่ — ช่องของใบออเดอร์คีย์ด้วย order id · ช่องของแถวปฏิทินคีย์ด้วย install id
+                const isOe = (f: string) => !!oid && oeEdit?.id === oid && oeEdit.field === f
+                const isInst = (f: string) => oeEdit?.id === ins.id && oeEdit.field === f
+                // ช่องตัวเลขของใบออเดอร์ (จิ้มแล้วพิมพ์ทับ) — หน้าตาเดียวกับหมวดออเดอร์
+                const oeNumCell = (field: 'price' | 'paid_amount' | 'deposit') => {
+                  const val = oe ? oe[field] : null
+                  return isOe(field) ? (
+                    <input type="number" autoFocus value={oeEdit!.val}
+                      onChange={e => setOeEdit(ec => ec ? { ...ec, val: e.target.value } : null)}
+                      onBlur={() => saveOrderNum(oid!, field, oeEdit!.val)}
+                      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setOeEdit(null) }}
+                      style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: 90, outline: 'none', textAlign: 'right', padding: '2px 0' }} />
+                  ) : (
+                    <div onClick={() => setOeEdit({ id: oid!, field, val: String(val ?? '') })}
+                      style={{ cursor: 'text', textAlign: 'right', color: val != null ? 'var(--ink)' : 'var(--ink-4)', fontWeight: val != null ? 600 : 400 }}>
+                      {val != null ? Number(val).toLocaleString('th-TH') : '—'}
+                    </div>
+                  )
+                }
+                // เวลาที่เปลี่ยนมาเป็นสถานะนี้ (อ่านจากประวัติสถานะของใบออเดอร์)
+                const statusChangedAt = (Array.isArray(oe?.status_history) ? [...oe!.status_history!] : []).reverse()
+                  .find(h => h.status === (oe?.order_status || ''))?.at
+                // สถานะติดตั้งของใบออเดอร์ — ใบเก่าที่ติ๊ก is_dropoff ไว้ ถือว่า "ติดตั้งแล้ว"
+                const instStatusOfOrder = oe?.install_status || (oe?.is_dropoff ? 'ติดตั้งแล้ว' : '')
+                // วันผลิตที่เหลือ — นับจากวันนัดของใบออเดอร์ (deadline) เหมือนแท็บงานติดตั้งในหมวดออเดอร์
+                const dueDate = oe?.deadline ?? (ins.appointment_datetime ? ins.appointment_datetime.slice(0, 10) : null)
+                const outDays = dueDate ? daysRemaining(dueDate) : null
                 const cells: Record<string, React.ReactNode> = {
+                  days: oe?.order_status === 'ยกเลิก' ? <span style={{ fontWeight: 700, color: '#ef4444' }}>ยกเลิก</span>
+                    : oe?.is_urgent ? <span style={{ fontWeight: 700, color: '#22c55e' }}>งานเสร็จ</span>
+                    : oe?.order_status === 'เสร็จสิ้น' ? <span style={{ fontWeight: 700, color: '#22c55e' }}>เสร็จสิ้น</span>
+                    : outDays !== null ? (
+                      <span style={{ fontWeight: 700, color: daysColor(outDays) }}>
+                        {outDays === 0 ? 'ต้องติดตั้งวันนี้' : daysLabel(outDays)}
+                      </span>
+                    ) : <span style={{ color: 'var(--ink-4)' }}>รอกำหนด</span>,
                   serial: <span style={{ fontWeight: 700, color: 'var(--blue)' }}>{ins.serial_no}</span>,
                   deadline: editAppt?.id === ins.id ? (
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -1041,13 +1329,16 @@ export default function InstallationsPage() {
                         time: d ? `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}` : '9:00',
                       })
                     }} style={{ cursor: 'pointer' }}>
-                      {ins.appointment_datetime ? (
-                        <>
-                          <span style={{ color: 'var(--ink)' }}>{new Date(ins.appointment_datetime).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
+                      {/* ข้อความ/สีชุดเดียวกับหมวดออเดอร์: ติดตั้งแล้ว = เขียว · ยังไม่ได้นัด = รอนัดหมาย(ส้ม) · นัดแล้ว = ม่วง */}
+                      {instStatusOfOrder === 'ติดตั้งแล้ว' ? (
+                        <span style={{ fontWeight: 700, color: '#22c55e' }}>ติดตั้งแล้ว</span>
+                      ) : ins.appointment_datetime ? (
+                        <span style={{ color: '#bf5af2', whiteSpace: 'nowrap' }}>
+                          {new Date(ins.appointment_datetime).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                           {' '}
-                          <span style={{ color: 'var(--blue)', fontWeight: 600 }}>{new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.</span>
-                        </>
-                      ) : <span style={{ color: 'var(--ink-4)' }}>เลือกวันนัด</span>}
+                          {new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      ) : <span style={{ color: '#f59e0b', fontWeight: 600 }}>รอนัดหมาย</span>}
                     </span>
                   ),
                   work: (
@@ -1060,10 +1351,20 @@ export default function InstallationsPage() {
                       ))}
                     </select>
                   ),
-                  print: (
-                    <button onClick={() => printInstall(ins)} title="ปริ้นใบงาน"
-                      style={{ border: '1px solid var(--border)', background: '#fff', borderRadius: 6, padding: '3px 8px', cursor: 'pointer', fontSize: 12 }}>🖨</button>
-                  ),
+                  /* ปริ้น = ติ๊กว่าปริ้นใบงานนี้แล้ว (ช่องเดียวกับหมวดออเดอร์ = order_entries.printed_at)
+                     ปุ่มสั่งปริ้นจริงอยู่ในเมนู ··· ท้ายแถว */
+                  print: oid ? (
+                    <>
+                      <input type="checkbox" checked={!!oe?.printed_at} onChange={e => togglePrinted(oid, e.target.checked)}
+                        style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
+                      {oe?.printed_at && (
+                        <div style={{ fontSize: 10, color: '#eab308', fontWeight: 600, marginTop: 2 }}>
+                          {new Date(oe.printed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
+                          {new Date(oe.printed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      )}
+                    </>
+                  ) : noOrder,
                   customer: (
                     <>
                       {(ins.customer_real_name || ins.customer_id)
@@ -1075,7 +1376,13 @@ export default function InstallationsPage() {
                       )}
                     </>
                   ),
-                  platform: <span style={{ color: 'var(--ink-3)' }}>{ins.platform || '-'}</span>,
+                  platform: (
+                    <select value={ins.platform || ''} onChange={e => saveInstField(ins.id, 'platform', e.target.value)}
+                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: ins.platform ? 'var(--ink-3)' : 'var(--ink-4)', padding: 0, maxWidth: 140 }}>
+                      <option value="">—</option>
+                      {Array.from(new Set([...PLATFORMS, ins.platform].filter(Boolean))).map(p => <option key={p} value={p as string}>{p}</option>)}
+                    </select>
+                  ),
                   items: ins.source_order_id ? (
                     // มาจากหมวดออเดอร์ → จิ้มเปิด popup แก้รายการ บันทึกกลับไปที่ออเดอร์ต้นทาง
                     <div onClick={() => { ph.begin(ins.photos, ins.id); setItemsModal({ orderId: ins.source_order_id!, items: withAutoHooks(orderItems[ins.source_order_id!] ?? []), instId: ins.id }); setItemsPasteText(''); setItemsError('') }}
@@ -1110,20 +1417,78 @@ export default function InstallationsPage() {
                       {ins.work_details || '—'}
                     </div>
                   ),
-                  /* ตั้งแต่นี่ลงไป = ข้อมูลของออเดอร์ต้นทาง โชว์อย่างเดียว (แก้ที่หมวดออเดอร์) */
-                  total: <span style={{ fontWeight: 600 }}>{money(oe?.price ?? (ins.price || null))}</span>,
-                  payment: <span style={{ color: 'var(--ink-3)' }}>{oe?.payment_status || ins.payment_status || '-'}</span>,
-                  paid: <span style={{ color: 'var(--ink-3)' }}>{money(oe?.paid_amount)}</span>,
-                  paybefore: (oe?.payment_status === 'ชำระครบ' || !oe?.payment_status || oe?.payment_status === 'ยังไม่ชำระ')
-                    ? <span style={{ color: 'var(--ink-4)' }}>-</span>
-                    : <span style={{ fontWeight: 600, color: '#3b82f6' }}>{money(autoDeposit ?? oe?.deposit)}</span>,
-                  assigned: <span style={{ color: 'var(--ink-3)' }}>{oe?.order_assigned || '-'}</span>,
-                  admin: <span style={{ color: 'var(--ink-3)' }}>{oe?.admin_name || ins.entered_by || '-'}</span>,
-                  status: oe?.order_status
-                    ? <span style={{ background: (PROD_STATUS_COLOR[oe.order_status] ?? 'var(--ink-3)') + '22', color: PROD_STATUS_COLOR[oe.order_status] ?? 'var(--ink-3)', padding: '3px 8px', borderRadius: 980, fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>{oe.order_status}</span>
-                    : <span style={{ color: 'var(--ink-4)' }}>-</span>,
-                  done: oe?.done_at ? <span style={{ color: '#34c759', fontWeight: 600 }} title={shortDate(oe.done_at)}>✓</span> : <span style={{ color: 'var(--ink-4)' }}>-</span>,
-                  installed: oe?.is_dropoff ? <span style={{ color: '#34c759', fontWeight: 600 }}>✓</span> : <span style={{ color: 'var(--ink-4)' }}>-</span>,
+                  /* ตั้งแต่นี่ลงไป = ข้อมูลของใบออเดอร์ต้นทาง — แก้ตรงนี้ได้เลย (เขียนลง order_entries) */
+                  total: oid ? oeNumCell('price') : noOrder,
+                  payment: oid ? (
+                    <select value={oe?.payment_status || 'ยังไม่ชำระ'} onChange={e => saveOrderPayment(oid, e.target.value)}
+                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PAYMENT_STATUS_COLOR[oe?.payment_status ?? ''] ?? '#f59e0b', padding: 0 }}>
+                      {PAYMENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  ) : noOrder,
+                  paid: !oid ? noOrder
+                    : (!oe?.payment_status || oe.payment_status === 'ยังไม่ชำระ') ? <div style={{ textAlign: 'right', color: 'var(--ink-4)' }}>-</div>
+                    : oe.payment_status === 'ชำระครบ' && oe.paid_amount == null
+                      ? <div style={{ textAlign: 'right', fontWeight: 600, color: '#22c55e' }}>{oe.price != null ? Number(oe.price).toLocaleString('th-TH') : '—'}</div>
+                      : oeNumCell('paid_amount'),
+                  paybefore: !oid ? noOrder
+                    : (oe?.payment_status === 'ชำระครบ' || !oe?.payment_status || oe?.payment_status === 'ยังไม่ชำระ')
+                      ? <div style={{ textAlign: 'right', color: 'var(--ink-4)' }}>-</div>
+                      : autoDeposit != null
+                        ? <div style={{ textAlign: 'right', fontWeight: 600, color: '#3b82f6' }}>{autoDeposit.toLocaleString('th-TH')}</div>
+                        : oeNumCell('deposit'),
+                  assigned: oid ? (
+                    <select value={oe?.order_assigned || 'รออัพเดท'} onChange={e => saveOrder(oid, { order_assigned: e.target.value }, 'แก้ลงออเดอร์ ' + (oe?.customer_name || ''))}
+                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: oe?.order_assigned && oe.order_assigned !== 'รออัพเดท' ? 'var(--ink)' : 'var(--ink-4)', fontWeight: oe?.order_assigned && oe.order_assigned !== 'รออัพเดท' ? 600 : 400, padding: 0 }}>
+                      {ORDER_ASSIGNED.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  ) : noOrder,
+                  admin: oid ? (
+                    <select value={oe?.admin_name || ins.entered_by || ''} onChange={e => saveOrder(oid, { admin_name: e.target.value || null }, 'แก้แอดมิน ' + (oe?.customer_name || ''))}
+                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: (oe?.admin_name || ins.entered_by) ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 80 }}>
+                      <option value="">—</option>
+                      {Array.from(new Set([...ADMINS, ...ENTERED_BY, ins.entered_by].filter(Boolean))).map(a => <option key={a} value={a as string}>{a}</option>)}
+                    </select>
+                  ) : <span style={{ color: 'var(--ink-3)' }}>{ins.entered_by || '-'}</span>,
+                  status: oid ? (
+                    <>
+                      <select value={oe?.order_status || ''} onChange={e => saveOrder(oid, { order_status: e.target.value }, 'แก้สถานะงาน ' + (oe?.customer_name || ''))}
+                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PROD_STATUS_COLOR[oe?.order_status ?? ''] ?? 'var(--ink-4)', padding: 0 }}>
+                        <option value="">—</option>
+                        {INSTALL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                      {statusChangedAt && (
+                        <div style={{ fontSize: 10, color: 'var(--ink-4)', marginTop: 2, whiteSpace: 'nowrap' }}>
+                          {new Date(statusChangedAt).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
+                          {new Date(statusChangedAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      )}
+                    </>
+                  ) : noOrder,
+                  done: oid ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                      <input type="checkbox" checked={!!oe?.is_urgent} onChange={e => toggleOrderDone(oid, e.target.checked)}
+                        style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                      {oe?.is_urgent && oe.done_at && (editDoneAt === oid ? (
+                        <input type="datetime-local" autoFocus defaultValue={toLocalInput(oe.done_at)}
+                          onBlur={e => saveDoneAt(oid, e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditDoneAt(null) }}
+                          style={{ fontSize: 10, padding: '1px 4px', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--ink)', background: 'var(--bg)' }} />
+                      ) : (
+                        <span onClick={() => setEditDoneAt(oid)} title="กดเพื่อแก้วัน-เวลางานเสร็จ"
+                          style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3, cursor: 'pointer', textDecoration: 'underline dotted' }}>
+                          {new Date(oe.done_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
+                          {new Date(oe.done_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      ))}
+                    </div>
+                  ) : noOrder,
+                  installed: oid ? (
+                    <select value={instStatusOfOrder} onChange={e => saveOrderInstallStatus(oid, e.target.value)}
+                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: instStatusOfOrder === 'ติดตั้งแล้ว' ? '#22c55e' : instStatusOfOrder === 'ติดตั้ง50%' ? '#f59e0b' : 'var(--ink-4)', padding: 0 }}>
+                      <option value="">—</option>
+                      {INSTALL_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  ) : noOrder,
                   inststatus: (
                     <select value={normStatus(ins.installation_status)} onChange={e => updateStatus(ins.id, e.target.value)}
                       style={{ background: bg + '22', color: bg, padding: '3px 8px', borderRadius: 980, fontWeight: 600, fontSize: 11, border: 'none', outline: 'none', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none' }}>
@@ -1132,30 +1497,122 @@ export default function InstallationsPage() {
                       ))}
                     </select>
                   ),
-                  rail: oe?.rail_packed ? <span style={{ color: '#34c759', fontWeight: 600 }}>✓</span> : <span style={{ color: 'var(--ink-4)' }}>-</span>,
-                  created: <span style={{ color: 'var(--ink-4)', fontSize: 11, whiteSpace: 'nowrap' }}>{shortDate(oe?.created_at ?? ins.created_at)}</span>,
-                  outsource: <span style={{ color: 'var(--ink-3)', fontSize: 11 }}>{oe?.outsource || '-'}</span>,
-                  province: <span style={{ color: 'var(--ink-3)' }}>{ins.province || '-'}</span>,
+                  rail: !oid ? noOrder : hasRailItems(oid) ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                      <input type="checkbox" checked={!!oe?.rail_packed} onChange={e => toggleOrderRail(oid, e.target.checked)}
+                        style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                      {oe?.rail_packed && oe.rail_packed_at && (
+                        <span style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3 }}>
+                          {new Date(oe.rail_packed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
+                          {new Date(oe.rail_packed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                    </div>
+                  ) : <span style={{ color: 'var(--ink-4)' }}>–</span>,
+                  created: oid ? (
+                    isOe('entry_date') ? (
+                      <input type="date" autoFocus value={oeEdit!.val}
+                        onChange={e => setOeEdit(ec => ec ? { ...ec, val: e.target.value } : null)}
+                        onBlur={() => saveOrderText(oid, 'entry_date', oeEdit!.val)}
+                        style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, outline: 'none', padding: '2px 0' }} />
+                    ) : (
+                      <div onClick={() => setOeEdit({ id: oid, field: 'entry_date', val: (oe?.entry_date ?? '').slice(0, 10) })}
+                        style={{ cursor: 'text', whiteSpace: 'nowrap', fontSize: 11, color: oe?.entry_date ? 'var(--ink-3)' : 'var(--ink-4)' }}>
+                        {shortDate(oe?.entry_date ?? oe?.created_at ?? ins.created_at)}
+                      </div>
+                    )
+                  ) : <span style={{ color: 'var(--ink-4)', fontSize: 11, whiteSpace: 'nowrap' }}>{shortDate(ins.created_at)}</span>,
+                  outsource: oid ? (
+                    isOe('outsource') ? (
+                      <input type="text" autoFocus value={oeEdit!.val}
+                        onChange={e => setOeEdit(ec => ec ? { ...ec, val: e.target.value } : null)}
+                        onBlur={() => saveOrderOutsource(oid, oeEdit!.val)}
+                        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setOeEdit(null) }}
+                        style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: '100%', outline: 'none', padding: '2px 0' }} />
+                    ) : (
+                      <div onClick={() => setOeEdit({ id: oid, field: 'outsource', val: oe?.outsource ?? '' })} style={{ cursor: 'text', minWidth: 60 }}>
+                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, color: oe?.outsource ? 'var(--ink)' : 'var(--ink-4)' }}>{oe?.outsource || '—'}</div>
+                        {oe?.outsource && oe.outsource_at && (
+                          <div style={{ color: 'var(--ink-4)', fontSize: 10, lineHeight: 1.3 }}>
+                            {new Date(oe.outsource_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
+                            {new Date(oe.outsource_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  ) : noOrder,
+                  province: isInst('province') ? (
+                    <ProvinceSelect value={ins.province ?? ''}
+                      onPick={v => saveInstField(ins.id, 'province', v)}
+                      onCancel={() => setOeEdit(null)} />
+                  ) : (
+                    <div onClick={() => setOeEdit({ id: ins.id, field: 'province', val: ins.province ?? '' })}
+                      style={{ cursor: 'pointer', whiteSpace: 'nowrap', color: ins.province ? 'var(--ink)' : 'var(--ink-4)' }}>
+                      {ins.province || '—'}
+                    </div>
+                  ),
                   zone: (
                     <select value={ins.install_zone || ''} onChange={e => updateZone(ins.id, e.target.value)}
-                      style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px', fontSize: 11, color: ins.install_zone ? 'var(--ink)' : 'var(--ink-4)', background: '#fff', outline: 'none', cursor: 'pointer' }}>
+                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: ins.install_zone ? 600 : 400, color: ins.install_zone ? 'var(--ink-2)' : 'var(--ink-4)', padding: 0 }}>
                       <option value="">—</option>
                       {ZONES.map(z => <option key={z} value={z}>{z}</option>)}
                     </select>
                   ),
                   insttech: (
                     <select value={ins.technician_type || ''} onChange={e => updateTech(ins.id, e.target.value)}
-                      style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px', fontSize: 11, color: ins.technician_type ? 'var(--ink)' : 'var(--ink-4)', background: '#fff', outline: 'none', cursor: 'pointer' }}>
+                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: ins.technician_type ? 600 : 400, color: ins.technician_type ? 'var(--ink-2)' : 'var(--ink-4)', padding: 0 }}>
                       <option value="">—</option>
                       {TECHS.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                   ),
-                  tech: <span style={{ color: 'var(--ink-3)' }}>{oe?.technician || '-'}</span>,
-                  address: <span style={{ color: 'var(--ink-3)', fontSize: 11 }}>{oe?.address || '-'}</span>,
-                  phone: <span style={{ color: 'var(--ink-3)' }}>{ins.phone || '-'}</span>,
-                  maps: ins.location_link
-                    ? <a href={/^https?:\/\//i.test(ins.location_link) ? ins.location_link : `https://${ins.location_link}`} target="_blank" rel="noreferrer" style={{ color: 'var(--blue)', textDecoration: 'none' }}>เปิดแผนที่</a>
-                    : <span style={{ color: 'var(--ink-4)' }}>-</span>,
+                  tech: oid ? (
+                    <select value={oe?.technician || ''} onChange={e => saveOrder(oid, { technician: e.target.value || null }, 'แก้ช่างเย็บ ' + (oe?.customer_name || ''))}
+                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: oe?.technician ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 100 }}>
+                      <option value="">—</option>
+                      {TECH_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  ) : noOrder,
+                  address: oid ? (
+                    isOe('address') ? (
+                      <input type="text" autoFocus value={oeEdit!.val}
+                        onChange={e => setOeEdit(ec => ec ? { ...ec, val: e.target.value } : null)}
+                        onBlur={() => saveOrderText(oid, 'address', oeEdit!.val)}
+                        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setOeEdit(null) }}
+                        style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: '100%', outline: 'none', padding: '2px 0' }} />
+                    ) : (
+                      <div onClick={() => setOeEdit({ id: oid, field: 'address', val: oe?.address ?? '' })} title={oe?.address || undefined}
+                        style={{ cursor: 'text', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: oe?.address ? 'var(--ink)' : 'var(--ink-4)' }}>
+                        {oe?.address || '—'}
+                      </div>
+                    )
+                  ) : noOrder,
+                  phone: isInst('phone') ? (
+                    <input type="text" autoFocus value={oeEdit!.val}
+                      onChange={e => setOeEdit(ec => ec ? { ...ec, val: e.target.value } : null)}
+                      onBlur={() => saveInstField(ins.id, 'phone', oeEdit!.val)}
+                      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setOeEdit(null) }}
+                      style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: '100%', outline: 'none', padding: '2px 0' }} />
+                  ) : (
+                    <div onClick={() => setOeEdit({ id: ins.id, field: 'phone', val: ins.phone ?? '' })}
+                      style={{ cursor: 'text', color: ins.phone ? 'var(--ink)' : 'var(--ink-4)' }}>{ins.phone || '—'}</div>
+                  ),
+                  maps: isInst('location_link') ? (
+                    <input type="text" autoFocus value={oeEdit!.val}
+                      onChange={e => setOeEdit(ec => ec ? { ...ec, val: e.target.value } : null)}
+                      onBlur={() => saveInstField(ins.id, 'location_link', oeEdit!.val)}
+                      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setOeEdit(null) }}
+                      style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: '100%', minWidth: 120, outline: 'none', padding: '2px 0' }} />
+                  ) : ins.location_link ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                      <a href={/^https?:\/\//i.test(ins.location_link) ? ins.location_link : `https://${ins.location_link}`} target="_blank" rel="noreferrer" title={ins.location_link}
+                        style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>📍 เปิด Maps</a>
+                      <button onClick={() => setOeEdit({ id: ins.id, field: 'location_link', val: ins.location_link })} title="แก้ลิงก์"
+                        style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink-4)', fontSize: 11, padding: 0 }}>✎</button>
+                    </div>
+                  ) : (
+                    <div onClick={() => setOeEdit({ id: ins.id, field: 'location_link', val: '' })}
+                      style={{ cursor: 'text', color: 'var(--ink-4)', minWidth: 60 }}>—</div>
+                  ),
                   notes: editNote?.id === ins.id ? (
                     <input type="text" autoFocus value={editNote.value}
                       onChange={e => setEditNote(en => en ? { ...en, value: e.target.value } : null)}
@@ -1175,6 +1632,11 @@ export default function InstallationsPage() {
                     </div>
                   ) : <span style={{ color: 'var(--ink-4)' }}>-</span>,
                 }
+                // ช่องที่ยังไม่ได้กรอก → พื้นหลังสีเตือน (ชุดเดียวกับหมวดออเดอร์)
+                const cellBg: Record<string, string | undefined> = {
+                  admin: (oe?.admin_name || ins.entered_by) ? undefined : EMPTY_HL,
+                  tech: oid && !oe?.technician ? EMPTY_HL : undefined,
+                }
                 // ข้อความเต็มของคอลัมน์ที่ถูกตัดท้าย — เอาเมาส์ชี้แล้วอ่านได้
                 const titles: Record<string, string> = {
                   customer: ins.customer_real_name || ins.customer_id || '',
@@ -1193,6 +1655,7 @@ export default function InstallationsPage() {
                       <td key={c.id} style={{
                         padding: c.id === 'items' ? '6px 14px' : '12px 14px',
                         textAlign: COL_ALIGN[c.id] ?? 'left',
+                        background: cellBg[c.id],
                         ...(COL_W[c.id] != null ? { width: COL_W[c.id], minWidth: COL_W[c.id], maxWidth: COL_W[c.id] } : {}),
                       }}>
                         {COL_W[c.id] != null ? (
