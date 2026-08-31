@@ -663,6 +663,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       // ข้อมูลที่ออเดอร์เป็นเจ้าของ (ไม่รวม serial_no — กำหนดครั้งเดียวตอนสร้าง ไม่เปลี่ยนตอนแก้)
       const onsite = {
         appointment_datetime: apptFromDate,
+        // ‼️ ยอด/สถานะชำระต้องตามไปด้วย ไม่งั้นหน้า "ยอดติดตั้ง" กับแอปมือถืออ่านสำเนาเก่า (เคยเพี้ยน 47 จาก 72 แถว)
+        ...(p.payment_status ? { payment_status: p.payment_status } : {}),
         platform: p.platform || '',
         customer_id: p.customer_name || '',
         customer_real_name: p.customer_name || '',
@@ -2134,6 +2136,17 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     )
   }
 
+  // ยอด/สถานะชำระ ถูกเก็บสำเนาไว้ในตาราง installations ด้วย (หน้ายอดติดตั้ง/แอปมือถืออ่านจากตรงนั้น)
+  // แก้ตรงตารางหมวดออเดอร์ → เขียนสำเนาให้ตรงกันเลย
+  const mirrorInstallMoney = async (r: Entry, patch: Record<string, unknown>) => {
+    if (!r.is_installation) return
+    const out: Record<string, unknown> = {}
+    if (Object.prototype.hasOwnProperty.call(patch, 'price')) out.price = patch.price ?? 0
+    if (typeof patch.payment_status === 'string' && patch.payment_status) out.payment_status = patch.payment_status
+    if (!Object.keys(out).length) return
+    await instUpdate(out).eq('source_order_id', r.id)
+  }
+
   const handlePaymentStatus = async (r: Entry, val: string) => {
     const now = new Date().toISOString()
     const updates: Record<string, unknown> = { payment_status: val, updated_at: now }
@@ -2147,6 +2160,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       const sy = window.scrollY
       flushSync(() => setRows(prev => prev.map(row => row.id === r.id ? { ...row, ...updates, updated_at: now } as Entry : row)))
       window.scrollTo(window.scrollX, sy)
+      await mirrorInstallMoney(r, updates)
       trackOrderField(r.id, updates, prevOf(r, updates), `แก้การชำระ ${r.order_number || r.customer_name || ''}`)
     }
   }
@@ -2164,6 +2178,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       const sy = window.scrollY
       flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: num, ...extra, updated_at: now } as Entry : r)))
       window.scrollTo(window.scrollX, sy)
+      if (row) await mirrorInstallMoney(row, { [field]: num })
       if (oldVal !== num) trackOrderField(id, { [field]: num, updated_at: now }, { [field]: oldVal, updated_at: row?.updated_at ?? null }, `แก้ข้อมูล ${row?.order_number || row?.customer_name || ''}`)
     }
     setEditCell(null)

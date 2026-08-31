@@ -817,6 +817,18 @@ export default function InstallationsPage() {
     if (err) { setError(`บันทึกสถานะปริ้นไม่สำเร็จ: ${err.message}`); load() }
   }
 
+  // ‼️ ยอดเงิน/สถานะชำระของงานที่มีใบออเดอร์ ให้ยึดใบออเดอร์เป็นหลักเสมอ
+  //    (ช่อง price/payment_status ในตาราง installations เป็นสำเนาเก่า ไม่ได้อัปเดตทุกครั้งที่แก้ในหมวดออเดอร์
+  //     — ตรวจแล้วเพี้ยน 47 จาก 72 แถว ทำให้หน้า "ยอดติดตั้ง" กับตารางรายการโชว์คนละค่า)
+  const priceOf = (ins: Installation) => {
+    const oe = ins.source_order_id ? orderMeta[ins.source_order_id] : undefined
+    return Number(oe?.price ?? ins.price ?? 0)
+  }
+  const payOf = (ins: Installation) => {
+    const oe = ins.source_order_id ? orderMeta[ins.source_order_id] : undefined
+    return oe?.payment_status || ins.payment_status || ''
+  }
+
   const hasRailItems = (orderId?: string | null) =>
     !!orderId && (orderItems[orderId] ?? []).some(it => typeof it.type === 'string' && it.type.startsWith('ราง'))
 
@@ -1008,7 +1020,7 @@ export default function InstallationsPage() {
       if (items.length) push('')
       if (ins.work_details) push(ins.work_details)
       if (ins.location_link) push(ins.location_link)
-      if (ins.price) push(`ราคา ${Number(ins.price).toLocaleString('th-TH')} บาท${ins.payment_status ? ` (${ins.payment_status})` : ''}`)
+      if (priceOf(ins)) push(`ราคา ${priceOf(ins).toLocaleString('th-TH')} บาท${payOf(ins) ? ` (${payOf(ins)})` : ''}`)
       if (ins.notes) push(`หมายเหตุ: ${ins.notes}`)
       if (ins.entered_by) { push(''); push(`แอดมิน: ${ins.entered_by}`) }
     }
@@ -1968,8 +1980,8 @@ export default function InstallationsPage() {
           return d.getFullYear() === by && d.getMonth() === bm - 1
         })
         const done = inMonth.filter(ins => ins.installation_status === 'ติดตั้งเสร็จ')
-        const noPrice = done.filter(ins => !(ins.price > 0))
-        const total = done.reduce((s, ins) => s + (ins.price > 0 ? ins.price : 0), 0)
+        const noPrice = done.filter(ins => !(priceOf(ins) > 0))
+        const total = done.reduce((s, ins) => s + Math.max(0, priceOf(ins)), 0)
         const cost = total * 0.8
         const profit = total * 0.2
         const bonusTotal = total * 0.01
@@ -2071,9 +2083,9 @@ export default function InstallationsPage() {
                         <td style={{ padding: '10px 14px', color: 'var(--ink-3)' }}>{ins.platform || '-'}</td>
                         <td style={{ padding: '10px 14px', color: 'var(--ink-3)' }}>{ins.install_zone || '-'}</td>
                         <td style={{ padding: '10px 14px', color: 'var(--ink-3)' }}>{ins.technician_type || '-'}</td>
-                        <td style={{ padding: '10px 14px', color: ins.payment_status === 'ชำระครบ' ? '#34c759' : 'var(--ink-3)', fontWeight: ins.payment_status === 'ชำระครบ' ? 600 : 400 }}>{ins.payment_status || '-'}</td>
-                        <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: ins.price > 0 ? 'var(--ink)' : '#b45309', whiteSpace: 'nowrap' }}>
-                          {ins.price > 0 ? fmtB(ins.price) : 'ยังไม่ลงราคา'}
+                        <td style={{ padding: '10px 14px', color: payOf(ins) === 'ชำระครบ' ? '#34c759' : 'var(--ink-3)', fontWeight: payOf(ins) === 'ชำระครบ' ? 600 : 400 }}>{payOf(ins) || '-'}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: priceOf(ins) > 0 ? 'var(--ink)' : '#b45309', whiteSpace: 'nowrap' }}>
+                          {priceOf(ins) > 0 ? fmtB(priceOf(ins)) : 'ยังไม่ลงราคา'}
                         </td>
                       </tr>
                     ))}
