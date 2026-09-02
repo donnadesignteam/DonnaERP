@@ -25,7 +25,7 @@ import { useConfirm } from '@/components/ConfirmDialog'
 import AnchoredMenu from '@/components/AnchoredMenu'
 import { usePrintColumns, PrintColumnPicker, printTableHtml, type PrintCol } from '@/components/PrintColumnPicker'
 import { WORK_TYPE_OPTIONS, ZONES, TECHS as INST_TECHS, TECH_BY_ZONE, statusOptions, statusLabel, normStatus, rowColor as instColor, INSTALL_COLUMNS } from '@/lib/installMeta'
-import { orderPatchFromInstall } from '@/lib/installOrderSync'
+import { orderPatchFromInstall, installPatchFromOrder } from '@/lib/installOrderSync'
 import { useStableView } from '@/lib/useStableView'
 import { TH_MONTHS } from '@/lib/shopCalendar'
 // ข้อความใบออเดอร์ (คัดลอก/ใบปริ้นแบบฟอร์ม) อยู่ใน lib/orderPrint.ts — หน้าปฏิทินติดตั้งใช้ตัวเดียวกัน
@@ -951,6 +951,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const sy = window.scrollY
     flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value, ...extra, updated_at: now } as Entry : r)))
     window.scrollTo(window.scrollX, sy)
+    await pushToInstall(rows.find(r => r.id === id), { [field]: value, ...extra })
     return true
   }
 
@@ -1992,6 +1993,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       const sy = window.scrollY
       flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: val || null, updated_at: now } as Entry : r)))
       window.scrollTo(window.scrollX, sy)
+      await pushToInstall(row, { [field]: val || null })
       if ((oldVal ?? '') !== (val || '')) trackOrderField(id, { [field]: val || null, updated_at: now }, { [field]: oldVal, updated_at: row?.updated_at ?? null }, `แก้ข้อมูล ${row?.order_number || row?.customer_name || ''}`)
     }
     setEditCell(null)
@@ -2028,6 +2030,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const { error: err } = await oeUpdate(updates).eq('id', id)
     if (!err) {
       setRows(prev => prev.map(r => r.id === id ? { ...r, ...updates } as Entry : r))
+      await pushToInstall(row, updates)   // ‼️ ย้ายวันนัดในตาราง = ต้องย้ายในปฏิทินด้วย
       if (row) trackOrderField(id, updates, prevOf(row, updates), `แก้วันติดตั้ง ${row.order_number || row.customer_name || ''}`)
     }
   }
@@ -2043,6 +2046,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       const sy = window.scrollY
       flushSync(() => setRows(prev => prev.map(row => row.id === r.id ? { ...row, ...updates } as Entry : row)))
       window.scrollTo(window.scrollX, sy)
+      await pushToInstall(r, updates)
       trackOrderField(r.id, updates, prevOf(r, updates), `แก้สถานะติดตั้ง ${r.order_number || r.customer_name || ''}`)
     }
   }
@@ -2136,15 +2140,24 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     )
   }
 
-  // ยอด/สถานะชำระ ถูกเก็บสำเนาไว้ในตาราง installations ด้วย (หน้ายอดติดตั้ง/แอปมือถืออ่านจากตรงนั้น)
-  // แก้ตรงตารางหมวดออเดอร์ → เขียนสำเนาให้ตรงกันเลย
-  const mirrorInstallMoney = async (r: Entry, patch: Record<string, unknown>) => {
-    if (!r.is_installation) return
-    const out: Record<string, unknown> = {}
-    if (Object.prototype.hasOwnProperty.call(patch, 'price')) out.price = patch.price ?? 0
-    if (typeof patch.payment_status === 'string' && patch.payment_status) out.payment_status = patch.payment_status
-    if (!Object.keys(out).length) return
-    await instUpdate(out).eq('source_order_id', r.id)
+  // แก้ช่องไหนในหมวดออเดอร์ → แก้ช่องเดียวกันในแถวปฏิทินงานติดตั้งที่ผูกกันไว้ (sync สองทาง)
+  // ‼️ ต้องเรียกทุกทางที่เขียน order_entries ของงานติดตั้ง ไม่ใช่แค่ตอนบันทึกจากกล่องแก้ออเดอร์
+  //    (เดิมแก้วันนัด/ลูกค้า/เบอร์/จังหวัด/Maps/หมายเหตุ/แพลตฟอร์ม ตรงตาราง แล้วปฏิทินไม่ขยับตาม)
+  // กติกาแปลงช่องอยู่ที่ lib/installOrderSync.ts (installPatchFromOrder) — ทางกลับคือ orderPatchFromInstall
+  const pushToInstall = async (row: Entry | undefined, patch: Record<string, unknown>) => {
+    if (!row?.is_installation) return
+    const instPatch = installPatchFromOrder(patch, { ...row, ...patch } as Record<string, unknown>)
+    if (!Object.keys(instPatch).length) return
+    instPatch.updated_at = new Date().toISOString()
+    const { error: err } = await instUpdate(instPatch).eq('source_order_id', row.id)
+    if (err) setError(`อัพเดทปฏิทินงานติดตั้งไม่สำเร็จ: ${err.message}`)
+    else setInstMeta(prev => {
+      const cur = prev[row.id]
+      // สถานะติดตั้งเปลี่ยน → คอลัมน์ "สถานะ" ในแท็บนี้ต้องขยับตามทันที ไม่ต้องรอรีเฟรช
+      return cur && typeof instPatch.installation_status === 'string'
+        ? { ...prev, [row.id]: { ...cur, installation_status: instPatch.installation_status as string } }
+        : prev
+    })
   }
 
   const handlePaymentStatus = async (r: Entry, val: string) => {
@@ -2160,7 +2173,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       const sy = window.scrollY
       flushSync(() => setRows(prev => prev.map(row => row.id === r.id ? { ...row, ...updates, updated_at: now } as Entry : row)))
       window.scrollTo(window.scrollX, sy)
-      await mirrorInstallMoney(r, updates)
+      await pushToInstall(r, updates)
       trackOrderField(r.id, updates, prevOf(r, updates), `แก้การชำระ ${r.order_number || r.customer_name || ''}`)
     }
   }
@@ -2178,7 +2191,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       const sy = window.scrollY
       flushSync(() => setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: num, ...extra, updated_at: now } as Entry : r)))
       window.scrollTo(window.scrollX, sy)
-      if (row) await mirrorInstallMoney(row, { [field]: num })
+      await pushToInstall(row, { [field]: num, ...extra })
       if (oldVal !== num) trackOrderField(id, { [field]: num, updated_at: now }, { [field]: oldVal, updated_at: row?.updated_at ?? null }, `แก้ข้อมูล ${row?.order_number || row?.customer_name || ''}`)
     }
     setEditCell(null)

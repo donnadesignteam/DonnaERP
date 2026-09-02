@@ -72,6 +72,62 @@ export async function createOrderForInstall(ins: InstallRow): Promise<{ orderId:
   return { orderId: (data as { id: string }).id }
 }
 
+// ===== ทิศทาง: ใบออเดอร์ → แถวปฏิทิน =====
+// แก้ช่องไหนในหมวดออเดอร์ (แท็บงานติดตั้ง) → แก้ช่องเดียวกันในแถวปฏิทินที่ผูกกันไว้
+// ‼️ ส่งเฉพาะช่องที่เพิ่งแก้ (patch) เหมือนทิศทางกลับ — ไม่ push ทั้งแถว
+// ‼️ ชุดช่องต้องตรงกับ onsite ใน syncInstallation (components/OrderWorkspace.tsx) ที่ใช้ตอนบันทึกจากกล่องแก้ออเดอร์
+type OrderRow = {
+  deadline?: string | null
+  installation_date?: string | null
+  install_time?: string | null
+  platform?: string | null
+  customer_name?: string | null
+  province?: string | null
+  phone?: string | null
+  location_link?: string | null
+  price?: number | null
+  notes?: string | null
+  admin_name?: string | null
+  payment_status?: string | null
+  install_status?: string | null
+}
+
+// คอลัมน์ "ติดตั้ง" ของหมวดออเดอร์ → สถานะในปฏิทิน (ทางกลับของ INSTALL_STATUS_TO_ORDER)
+const ORDER_STATUS_TO_INSTALL: Record<string, string> = {
+  'ติดตั้งแล้ว': 'ติดตั้งเสร็จ',
+  'ติดตั้ง50%': 'ติดตั้ง50%',
+}
+
+export function installPatchFromOrder(patch: Record<string, unknown>, merged: OrderRow): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(patch, k)
+
+  if (has('deadline') || has('installation_date') || has('install_time')) {
+    const d = merged.installation_date || merged.deadline
+    const t = String(merged.install_time || '9:00').split(':')
+    const hhmm = `${(t[0] || '9').padStart(2, '0')}:${(t[1] || '00').padStart(2, '0')}`
+    out.appointment_datetime = d ? `${String(d).slice(0, 10)}T${hhmm}:00+07:00` : null
+  }
+  if (has('platform')) out.platform = merged.platform || ''
+  if (has('customer_name')) {
+    out.customer_id = merged.customer_name || ''
+    out.customer_real_name = merged.customer_name || ''
+  }
+  if (has('province')) out.province = merged.province || ''
+  if (has('phone')) out.phone = merged.phone || ''
+  if (has('location_link')) out.location_link = merged.location_link || ''
+  if (has('price')) out.price = merged.price ?? 0
+  if (has('notes')) out.notes = merged.notes || ''
+  if (has('admin_name')) out.entered_by = merged.admin_name || ''
+  // สถานะชำระคนละชุดคำกัน — ส่งเฉพาะคำที่ฝั่งออเดอร์มีจริง (ว่าง = ไม่แตะของเดิม)
+  if (has('payment_status') && merged.payment_status) out.payment_status = merged.payment_status
+  if (has('install_status')) {
+    const mapped = ORDER_STATUS_TO_INSTALL[merged.install_status ?? '']
+    if (mapped) out.installation_status = mapped
+  }
+  return out
+}
+
 // สถานะติดตั้งในปฏิทิน → คอลัมน์ "ติดตั้ง" ของหมวดออเดอร์ (คำที่ไม่มีคู่ = ไม่แตะของเดิม)
 const INSTALL_STATUS_TO_ORDER: Record<string, string> = {
   'ติดตั้งเสร็จ': 'ติดตั้งแล้ว',
