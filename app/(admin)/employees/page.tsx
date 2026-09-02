@@ -88,6 +88,8 @@ export default function EmployeesPage() {
   const [certFile, setCertFile] = useState<File | null>(null)
   const [certBusy, setCertBusy] = useState<string | null>(null)  // id แถวที่กำลังอัปโหลดใบรับรองทีหลัง
   const [dayModal, setDayModal] = useState<{ ymd: string; day: number; leaves: Leave[] } | null>(null)
+  // กล่อง "รออนุมัติ" เหนือรายการลา — แบบเดียวกับปุ่มกรอง "ข้อมูลไม่ครบ / ยังไม่ปริ้น" ในหมวดออเดอร์
+  const [pendingFilter, setPendingFilter] = useState(false)
 
   const load = async () => {
     setError('')
@@ -253,6 +255,12 @@ export default function EmployeesPage() {
   const vacOverDays = form.leave_type === 'ลาพักร้อน' && selVacMax != null && selVacMax > 0 && selRangeDays > selVacMax
   const vacBlocked = vacNoRight || vacOverDays
 
+  // ใบลาที่ยังไม่มีใครตัดสิน — ยังไม่มีใครกดอนุมัติ และยังไม่มีใครกดไม่อนุมัติ
+  const isPending = (l: Leave) =>
+    !isApproved(l) && l.supervisor_approval !== 'ไม่อนุมัติ' && l.hr_approval !== 'ไม่อนุมัติ'
+  const pendingLeaves = leaves.filter(isPending)
+  const shownLeaves = pendingFilter ? pendingLeaves : leaves
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
@@ -326,7 +334,21 @@ export default function EmployeesPage() {
       </div>
 
       {/* Leave list */}
-      <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)', marginBottom: 14 }}>รายการลา</h2>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
+        <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>รายการลา</h2>
+        {/* ปุ่มกรอง "รออนุมัติ" — หน้าตา/พฤติกรรมชุดเดียวกับปุ่ม "ข้อมูลไม่ครบ / ยังไม่ปริ้น" ในหมวดออเดอร์
+            ไม่มีใบรออนุมัติ = ปุ่มหายไปเลย (เหมือนกัน) */}
+        {pendingLeaves.length > 0 && (
+          <button onClick={() => setPendingFilter(f => !f)}
+            title="ใบลาที่ยังไม่มีใครกดอนุมัติ/ไม่อนุมัติ — กดเพื่อดูเฉพาะใบพวกนี้"
+            style={{ padding: '6px 14px', borderRadius: 20, border: pendingFilter ? 'none' : '1px solid var(--border)', background: pendingFilter ? '#f59e0b' : 'var(--surface)', color: pendingFilter ? '#fff' : '#f59e0b', fontSize: 13, fontWeight: pendingFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+            รออนุมัติ
+            <span style={{ background: pendingFilter ? 'rgba(255,255,255,0.3)' : '#f59e0b22', color: pendingFilter ? '#fff' : '#f59e0b', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
+              {pendingLeaves.length}
+            </span>
+          </button>
+        )}
+      </div>
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', overflowX: 'auto' }}>
         {error ? (
           <div style={{ padding: 40, textAlign: 'center' }}>
@@ -337,8 +359,8 @@ export default function EmployeesPage() {
           </div>
         ) : loading ? (
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>กำลังโหลด…</div>
-        ) : leaves.length === 0 ? (
-          <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>ไม่มีรายการลา</div>
+        ) : shownLeaves.length === 0 ? (
+          <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>{pendingFilter ? 'ไม่มีใบลาที่รออนุมัติ' : 'ไม่มีรายการลา'}</div>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
@@ -349,8 +371,8 @@ export default function EmployeesPage() {
               </tr>
             </thead>
             <tbody>
-              {leaves.map(l => (
-                <tr key={l.id} style={{ borderBottom: '1px solid var(--border)' }}>
+              {shownLeaves.map(l => (
+                <tr key={l.id} style={{ borderBottom: '1px solid var(--border)', background: isPending(l) ? '#f59e0b0f' : undefined }}>
                   <td style={{ padding: '11px 13px', fontWeight: 700, color: 'var(--blue)' }}>{l.employee_code}</td>
                   <td style={{ padding: '11px 13px' }}>{l.employee_name}</td>
                   <td style={{ padding: '11px 13px' }}>{l.employee_nickname}</td>
