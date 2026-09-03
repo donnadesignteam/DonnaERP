@@ -134,7 +134,7 @@ export default function AnalyticsPage() {
     ;(async () => {
       const [o, s, c] = await Promise.all([
         fetchAllRows<OrderRow>(() => supabase.from('order_entries').select('id,order_number,order_status,created_at,shipped_at,deadline,price,platform,is_installation,status_history').order('created_at', { ascending: true }).order('id', { ascending: true })),
-        fetchAllRows<ScanRow>(() => supabase.from('production_scans').select('order_number,status,tech_name,scanned_at').order('scanned_at', { ascending: true })),
+        fetchAllRows<ScanRow>(() => supabase.from('production_scans').select('order_number,status,tech_name,scanned_at').order('scanned_at', { ascending: true }).order('id', { ascending: true })),
         fetchAllRows<ClaimRow>(() => supabase.from('claims').select('id,created_at,status,fault,refund_amount,claim_type').order('created_at', { ascending: true }).order('id', { ascending: true })),
       ])
       const next: AllData = {
@@ -160,13 +160,17 @@ export default function AnalyticsPage() {
     const inRange = (iso: string | null | undefined) =>
       !!iso && (!month || iso.startsWith(month))
 
-    const orders = data.orders.filter(o => inRange(o.created_at))
+    // ‼️ ใบที่ยกเลิกแล้วไม่ใช่ยอดขาย/ไม่ใช่ผลงาน — ตัดออกก่อนคิดทุกตัวเลขในหน้านี้
+    // (กติกาเดียวกับหน้าภาพรวม) ไม่งั้นยอดขาย/จำนวนออเดอร์/%เคลม/สัดส่วนแพลตฟอร์ม จะบวมเกินจริง
+    const liveOrders = data.orders.filter(o => o.order_status !== 'ยกเลิก')
+
+    const orders = liveOrders.filter(o => inRange(o.created_at))
     const claims = data.claims.filter(c => inRange(c.created_at))
 
     // --- เวลาแต่ละแผนก: รวม 2 แหล่ง — สแกนผลิต + ประวัติเปลี่ยนสถานะในเว็บ (status_history)
     // เก็บเวลาแรกสุดของแต่ละขั้นต่อออเดอร์ แล้วดูส่วนต่างขั้นก่อนหน้า → ขั้นนี้
     const orderByNumber = new Map<string, OrderRow>()
-    data.orders.forEach(o => { if (o.order_number) orderByNumber.set(o.order_number, o) })
+    liveOrders.forEach(o => { if (o.order_number) orderByNumber.set(o.order_number, o) })
     const STAGE_SET = new Set(STAGES.map(st => st.status))
 
     const stageTimes = new Map<string, { created: string | null; times: Map<string, string> }>()
@@ -181,12 +185,16 @@ export default function AnalyticsPage() {
       if (!prev || at < prev) times.set(status, at)
     }
 
+    // ‼️ สแกนของใบที่ยกเลิกไม่เอามาคิดเวลาผลิต (มักหยุดกลางคัน ค่ากลางจะเพี้ยน)
+    //    แต่ตาราง "ผลงานพนักงาน" ด้านล่างยังนับทุกสแกน เพราะงานนั้นพนักงานลงมือทำไปจริง
+    const cancelledNos = new Set(data.orders.filter(o => o.order_status === 'ยกเลิก' && o.order_number).map(o => o.order_number))
     for (const s of data.scans) {
       if (!s.order_number || !s.scanned_at || !STAGE_SET.has(s.status)) continue
+      if (cancelledNos.has(s.order_number)) continue
       const e = entryFor(s.order_number, orderByNumber.get(s.order_number)?.created_at ?? null)
       setEarliest(e.times, s.status, s.scanned_at)
     }
-    for (const o of data.orders) {
+    for (const o of liveOrders) {
       if (!Array.isArray(o.status_history)) continue
       const events = o.status_history.filter(h => h?.status && h?.at && STAGE_SET.has(h.status))
       if (!events.length) continue
@@ -240,9 +248,9 @@ export default function AnalyticsPage() {
         label: d.toLocaleDateString('th-TH', { month: 'short' }),
       })
     }
-    const monthOrders = months.map(m => ({ label: m.label, value: data.orders.filter(o => o.created_at.startsWith(m.key)).length as number | null }))
+    const monthOrders = months.map(m => ({ label: m.label, value: liveOrders.filter(o => o.created_at.startsWith(m.key)).length as number | null }))
     const monthShipDays = months.map(m => {
-      const durs = data.orders
+      const durs = liveOrders
         .filter(o => o.shipped_at?.startsWith(m.key))
         .map(o => new Date(o.shipped_at!).getTime() - new Date(o.created_at).getTime())
         .filter(d => d > 0 && d <= 90 * DAY)

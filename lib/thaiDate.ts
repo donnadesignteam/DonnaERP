@@ -19,3 +19,16 @@ export function normalizeThaiDate(value: unknown): string | null {
   if (isNaN(d.getTime()) || d.getMonth() + 1 !== Number(m[2]) || d.getDate() !== Number(m[3])) return null
   return `${y}-${m[2]}-${m[3]}`
 }
+
+// ── วันที่แบบ YYYY-MM-DD ตามเวลาเครื่อง ────────────────────────────
+// ‼️ ห้ามใช้ new Date().toISOString().slice(0,10) — นั่นคือเวลา UTC
+//    ไทยเป็น UTC+7 ช่วง 00:00–07:00 ตามเวลาไทย UTC ยังเป็น "เมื่อวาน" อยู่
+//    ทำให้ลงออเดอร์/เปิดเคลมตอนดึกได้วันย้อนหลัง 1 วัน และการ์ด "ครบกำหนดวันนี้" เลื่อนทั้งแผง
+export function ymdLocal(d: Date | string | number): string {
+  const x = d instanceof Date ? d : new Date(d)
+  if (isNaN(x.getTime())) return ''
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`
+}
+
+// วันนี้ (YYYY-MM-DD) ตามเวลาเครื่อง
+export const todayYmd = () => ymdLocal(new Date())

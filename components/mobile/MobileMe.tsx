@@ -55,10 +55,10 @@ async function fetchMyFaultClaims(names: string[]): Promise<ClaimFault[]> {
   if (!names.length) return []
   const COLS = 'id, claim_date, original_order_number, customer_username, claim_type, fault, fix_method, ship_back_cost, ship_return_cost, estimated_price'
   // ยังไม่ได้รัน sql/add_claim_appeal_photos.sql / add_claim_fault_appeal.sql / add_claim_fault_review.sql → ถอยไปดึงแบบไม่มีคอลัมน์ใหม่ จะได้เห็นเคสก่อน
-  let r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(`${COLS}, fault_review, fault_appeal, fault_appeal_at, fault_appeal_photos`).in('fault_by', names))
-  if (r.error) r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(`${COLS}, fault_review, fault_appeal, fault_appeal_at`).in('fault_by', names))
-  if (r.error) r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(`${COLS}, fault_review`).in('fault_by', names))
-  if (r.error) r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(COLS).in('fault_by', names))
+  let r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(`${COLS}, fault_review, fault_appeal, fault_appeal_at, fault_appeal_photos`).in('fault_by', names).order('id', { ascending: true }))
+  if (r.error) r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(`${COLS}, fault_review, fault_appeal, fault_appeal_at`).in('fault_by', names).order('id', { ascending: true }))
+  if (r.error) r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(`${COLS}, fault_review`).in('fault_by', names).order('id', { ascending: true }))
+  if (r.error) r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(COLS).in('fault_by', names).order('id', { ascending: true }))
   if (r.error) return []
   return [...((r.data as ClaimFault[]) ?? [])].sort((a, b) => (b.claim_date ?? '').localeCompare(a.claim_date ?? ''))
 }
@@ -91,8 +91,8 @@ async function fetchOrderInfo(rows: ScanRow[]): Promise<Record<string, OrderInfo
   const cols = 'id, order_number, customer_name, order_status'
 
   const results = await Promise.all([
-    ...chunk(nums).map(c => fetchAllRows<OrderRow>(() => supabase.from('order_entries').select(cols).in('order_number', c))),
-    ...chunk(ids).map(c => fetchAllRows<OrderRow>(() => supabase.from('order_entries').select(cols).in('id', c))),
+    ...chunk(nums).map(c => fetchAllRows<OrderRow>(() => supabase.from('order_entries').select(cols).in('order_number', c).order('id', { ascending: true }))),
+    ...chunk(ids).map(c => fetchAllRows<OrderRow>(() => supabase.from('order_entries').select(cols).in('id', c).order('id', { ascending: true }))),
   ])
 
   const map: Record<string, OrderInfo> = {}
@@ -217,7 +217,7 @@ export default function MobileMe() {
         supabase.from('leave_requests').select('leave_date, leave_time, leave_type, reason, leave_status')
           .eq('employee_code', code).order('leave_date', { ascending: false }),
         fetchAllRows<ScanRow>(() => supabase.from('production_scans').select('order_number, stage, scanned_at')
-          .eq('tech_code', code).order('scanned_at', { ascending: false })),
+          .eq('tech_code', code).order('scanned_at', { ascending: false }).order('id', { ascending: false })),
         fetchMyFaultClaims([s.nickname, s.name].map(v => (v ?? '').trim()).filter(Boolean)),
       ])
       setClaims(cl)

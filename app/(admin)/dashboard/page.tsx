@@ -9,6 +9,7 @@ import { effShipping } from '@/lib/shipping'
 import { syncWorkStatus } from '@/lib/workStatusSync'
 import { useStableView } from '@/lib/useStableView'
 import { oeUpdate } from '@/lib/adminActor'
+import { todayYmd } from '@/lib/thaiDate'
 
 
 type Order = {
@@ -188,7 +189,7 @@ export default function DashboardPage() {
   const [statusFilters, setStatusFilters] = useState<string[]>([])
   const [openColFilter, setOpenColFilter] = useState<string|null>(null)
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = todayYmd()
 
   // นาฬิกาใหญ่มุมขวาบน — เริ่มหลัง mount (กัน hydration mismatch) เดินทุกวินาที
   const [clock, setClock] = useState<Date | null>(null)
@@ -287,7 +288,7 @@ export default function DashboardPage() {
   ordersList = ordersList.map(live)
   // ‼️ ใบที่ยกเลิกแล้วไม่ใช่งานค้าง — ไม่ต้องขึ้นในการ์ดทั้ง 3 ใบ (รายการออเดอร์ด้านล่างกรองออกอยู่แล้ว)
   const notCancelled = (o: Order) => o.order_status !== 'ยกเลิก'
-  const todayDue = stableAll.filter(o => notCancelled(o) && effectiveISODate(o) === today).map(live)
+  const todayDue = stableAll.filter(o => notCancelled(o) && !DONE_STATUSES.includes(o.order_status) && effectiveISODate(o) === today).map(live)
   const overdue = stableAll.filter(o => { const iso = effectiveISODate(o); return notCancelled(o) && iso && iso < today && !DONE_STATUSES.includes(o.order_status) }).map(live)
   // งานเสร็จ (is_urgent) ที่ยังไม่ได้จัดส่ง → รอติ๊กจัดส่งใน popup
   const toShip = stableAll.filter(o => notCancelled(o) && o.is_urgent && o.order_status !== 'จัดส่งแล้ว').map(live)

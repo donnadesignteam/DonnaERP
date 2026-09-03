@@ -11,7 +11,16 @@ import { landingPath } from '@/lib/device'
 //
 // ‼️ เครื่องเป็นตัวตัดสินก่อนเสมอ ไม่ใช่ว่าล็อกอินด้วยรหัสอะไร — เดิมเช็ค staff ก่อน
 //    ทำให้พนักงานที่ล็อกอินจากคอมโดนพาไปหน้ามือถือ /m/me
-function landing(from: string, staff: boolean) {
+// ‼️ ?from= มาจาก URL = คนนอกกำหนดได้ ต้องรับแค่ path ในเว็บเราเท่านั้น
+//    เดิมโยนเข้า router.replace() ตรงๆ ส่งลิงก์ ?from=https://... ให้พนักงานกดแล้วเด้งออกนอกเว็บได้ (phishing)
+//    กัน: ต้องเริ่มด้วย / และห้ามเป็น // หรือ /\ (protocol-relative → ออกนอกโดเมน)
+function safeFrom(from: string): string {
+  if (!/^\/(?![/\\])/.test(from)) return '/dashboard'
+  return from
+}
+
+function landing(rawFrom: string, staff: boolean) {
+  const from = safeFrom(rawFrom)
   const noPreference = from === '/dashboard' || from === '/'
   if (!noPreference) return from
   return landingPath(staff)   // เครื่องเป็นตัวตัดสิน (lib/device.ts) — มือถือ: พนักงาน→/m/me, รหัสร้าน→/hub

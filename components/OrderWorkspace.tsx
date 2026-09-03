@@ -28,6 +28,8 @@ import { WORK_TYPE_OPTIONS, ZONES, TECHS as INST_TECHS, TECH_BY_ZONE, statusOpti
 import { orderPatchFromInstall, installPatchFromOrder } from '@/lib/installOrderSync'
 import { useStableView } from '@/lib/useStableView'
 import { TH_MONTHS } from '@/lib/shopCalendar'
+import { todayYmd, ymdLocal } from '@/lib/thaiDate'
+import { parseMoney } from '@/lib/money'
 // ข้อความใบออเดอร์ (คัดลอก/ใบปริ้นแบบฟอร์ม) อยู่ใน lib/orderPrint.ts — หน้าปฏิทินติดตั้งใช้ตัวเดียวกัน
 import { formatOrderText, formatOrderHtml } from '@/lib/orderPrint'
 import * as XLSX from 'xlsx'
@@ -271,7 +273,7 @@ const daysLabel = (d: number) => d < 0 ? `เกิน ${Math.abs(d)} วัน`
 const daysColor = (d: number) => d <= 0 ? 'var(--red)' : d <= 10 ? '#eab308' : '#34c759'
 
 const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping_datetime' | 'shipped_at' | 'rail_packed' | 'rail_packed_at' | 'done_at' | 'printed_at' | 'status_history' | 'shipments' | 'outsource_at' | 'install_status'> => ({
-  entry_date: new Date().toISOString().split('T')[0],
+  entry_date: todayYmd(),
   deadline: '',
   status: 'อยู่ในกำหนด',
   admin_name: '',
@@ -596,7 +598,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
     // ใบที่ผูกกับปฏิทิน แต่ในปฏิทินไม่ใช่ "งานติดตั้ง" (เช่น งานวัดหน้างาน) → ไม่ต้องโชว์ในหมวดออเดอร์
     const { data: insts } = await fetchAllRows<InstMeta & { source_order_id: string | null }>(() =>
-      supabase.from('installations').select('id, source_order_id, work_type, serial_no, installation_status, install_zone, technician_type').not('source_order_id', 'is', null))
+      supabase.from('installations').select('id, source_order_id, work_type, serial_no, installation_status, install_zone, technician_type').not('source_order_id', 'is', null).order('id', { ascending: true }))
     setNonOrderIds(new Set(insts.filter(i => i.source_order_id && i.work_type !== 'งานติดตั้ง').map(i => i.source_order_id as string)))
     // แท็บงานติดตั้งเอา Serial/งาน/สถานะ มาโชว์+แก้ได้ตรงตาราง
     setInstMeta(Object.fromEntries(insts.filter(i => i.source_order_id).map(i =>
@@ -604,9 +606,9 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
         install_zone: i.install_zone, technician_type: i.technician_type }])))
     // งานเคลมจากหน้าเคลม (ตาราง claims) → โชว์ปนในหมวดออเดอร์ด้วย จะได้เรียงวันที่เหลือรวมกัน
     const CLAIM_COLS = 'id, claim_date, channel, customer_username, original_order_number, items, status, is_urgent, notes, courier, printed_at, shipped_at, admin_name, estimated_price, created_at, updated_at'
-    let claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(`${CLAIM_COLS}, deadline, technician`))
+    let claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(`${CLAIM_COLS}, deadline, technician`).order('id', { ascending: true }))
     // ยังไม่ได้รัน scripts/add_claim_deadline.sql / add_claim_technician.sql → ดึงแบบไม่มี 2 คอลัมน์นั้นไปก่อน (งานเคลมยังโชว์ได้)
-    if (claimRes.error) claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(CLAIM_COLS))
+    if (claimRes.error) claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(CLAIM_COLS).order('id', { ascending: true }))
     const claimEntries = claimRes.data.map(claimToEntry)
     const entries = scope === 'claims' ? data : [...data, ...claimEntries]
     const order = computeSortOrder(entries, daysSort)
@@ -1294,7 +1296,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`
     }
     const d = new Date(s)
-    return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0]
+    return isNaN(d.getTime()) ? null : ymdLocal(d)
   }
 
   function computePasteRowsFromCols(c1: string, c2: string, c3: string, c4: string, c5: string, c6: string, c7: string, c8: string, c9 = '') {
@@ -1484,7 +1486,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
 
   async function savePasteRows() {
     setPasteSaving(true)
-    const today = new Date().toISOString().split('T')[0]
+    const today = todayYmd()
     const resetCols = () => { setPasteRows([]); setPasteCol1(''); setPasteCol2(''); setPasteCol3(''); setPasteCol4(''); setPasteCol5(''); setPasteCol6(''); setPasteCol7(''); setPasteCol8(''); setPasteCol9('') }
 
     const newRows = pasteRows.filter(isPasteRowSaveable)
@@ -2103,7 +2105,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       ...r,
       id: undefined,
       order_number: '',
-      entry_date: new Date().toISOString().split('T')[0],
+      entry_date: todayYmd(),
       order_status: 'รอดำเนินการ',
       status: 'อยู่ในกำหนด',
       order_assigned: 'รออัพเดท',
@@ -2179,7 +2181,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   }
 
   const saveNumericCell = async (id: string, field: string, val: string) => {
-    const num = val === '' ? null : parseFloat(val)
+    const num = parseMoney(val)
+    if (num === undefined) return   // อ่านไม่ออก (พิมพ์อะไรที่ไม่ใช่ตัวเลข) → ไม่บันทึก ปล่อยยอดเดิมไว้
     const now = new Date().toISOString()
     const row = rows.find(r => r.id === id)
     const oldVal = row ? (row as any)[field] ?? null : null
@@ -3009,7 +3012,7 @@ ${body}
                 const numCell = (field: 'price' | 'deposit' | 'paid_amount') => {
                   const val = r[field]
                   return isEditing(field) ? (
-                    <input type="number" autoFocus value={editCell!.val}
+                    <input type="text" inputMode="decimal" autoFocus value={editCell!.val}
                       onChange={e => setEditCell(ec => ec ? { ...ec, val: e.target.value } : null)}
                       onBlur={() => saveNumericCell(r.id, field, editCell!.val)}
                       onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}

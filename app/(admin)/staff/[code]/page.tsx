@@ -220,7 +220,7 @@ export default function StaffDetailPage() {
       const [lvR, scR, aoR] = await Promise.all([
         supabase.from('leave_requests').select('*').eq('employee_code', cc).order('leave_date', { ascending: false }),
         fetchAllRows<{ order_number: string; stage: string | null; status: string | null; scanned_at: string | null }>(() =>
-          supabase.from('production_scans').select('order_number, stage, status, scanned_at').eq('tech_code', cc).order('scanned_at', { ascending: false })),
+          supabase.from('production_scans').select('order_number, stage, status, scanned_at').eq('tech_code', cc).order('scanned_at', { ascending: false }).order('id', { ascending: false })),
         nickname
           ? fetchAllRows<Record<string, unknown>>(() =>
               supabase.from('order_entries').select('order_number, customer_name, platform, is_installation, order_status, price, updated_at, entry_date, created_at').eq('admin_name', nickname).order('updated_at', { ascending: false }).order('id', { ascending: true }))

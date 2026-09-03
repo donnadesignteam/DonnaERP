@@ -13,6 +13,7 @@ import { recordAction } from '@/lib/history'
 import { tUpdate } from '@/lib/trackedDb'
 import { useConfirm } from '@/components/ConfirmDialog'
 import { LEAVE_TYPES, rangeDays, vacationMaxDays, applyLeaveToStaff, isQuotaApplied, isApproved } from '@/lib/leave'
+import { todayYmd } from '@/lib/thaiDate'
 
 type Leave = {
   id: string
@@ -182,14 +183,21 @@ export default function EmployeesPage() {
       delete legacy.quota_applied
       inserted = (await supabase.from('leave_requests').insert(legacy).select().single()).data
     }
+    // ‼️ ลงใบลาไม่สำเร็จ = ห้ามหักสิทธิ — เดิมหักก่อนเช็ก ถ้า insert พังทั้ง 2 รอบ สิทธิลาจะหายทั้งที่ไม่มีใบลาในระบบ
+    if (!inserted) {
+      setSaving(false)
+      alert('บันทึกใบลาไม่สำเร็จ — สิทธิลายังไม่ถูกหัก ลองอีกครั้ง')
+      return
+    }
     // อัปเดตสิทธิลาในหน้าพนักงาน (staff) ให้ตรงกัน
     await applyLeaveToStaff(form.employee_code, form.leave_type, days, 1)
-    if (inserted) {
+    {
       const code = form.employee_code, type = form.leave_type, nick = form.nickname
+      const row = inserted
       recordAction({
         label: `เพิ่มใบลา ${nick}`,
-        undo: async () => { await supabase.from('leave_requests').delete().eq('id', inserted.id); await applyLeaveToStaff(code, type, days, -1); await load() },
-        redo: async () => { await supabase.from('leave_requests').insert(inserted); await applyLeaveToStaff(code, type, days, 1); await load() },
+        undo: async () => { await supabase.from('leave_requests').delete().eq('id', row.id); await applyLeaveToStaff(code, type, days, -1); await load() },
+        redo: async () => { await supabase.from('leave_requests').insert(row); await applyLeaveToStaff(code, type, days, 1); await load() },
       })
     }
     setSaving(false)
@@ -231,11 +239,26 @@ export default function EmployeesPage() {
   const updateLeave = async (id: string, field: string, val: string) => {
     const old = leaves.find((x) => x.id === id)
     await tUpdate('leave_requests', id, { [field]: val }, { [field]: old ? (old as any)[field] ?? null : null }, `แก้ใบลา ${old?.employee_nickname || ''}`, load)
-    // ใบที่พนักงานแจ้งเองจากมือถือยังไม่หักสิทธิ — พออนุมัติ (หัวหน้าหรือ HR คนใดคนหนึ่ง) ค่อยหักให้ครั้งเดียว
-    if (old && !isQuotaApplied(old) && isApproved({ ...old, [field]: val })) {
-      const days = rangeDays(old.leave_date, old.leave_end_date || old.leave_date)
-      await applyLeaveToStaff(old.employee_code, old.leave_type, days, 1)
-      await supabase.from('leave_requests').update({ quota_applied: true }).eq('id', id)
+    if (old) {
+      const next = { ...old, [field]: val } as Leave
+      const daysOf = (l: Leave) => rangeDays(l.leave_date, l.leave_end_date || l.leave_date)
+      const applied = isQuotaApplied(old)
+      const wasApproved = isApproved(old), nowApproved = isApproved(next)
+      if (!applied && nowApproved) {
+        // ใบที่พนักงานแจ้งเองจากมือถือยังไม่หักสิทธิ — พออนุมัติ (หัวหน้าหรือ HR คนใดคนหนึ่ง) ค่อยหักให้ครั้งเดียว
+        await applyLeaveToStaff(next.employee_code, next.leave_type, daysOf(next), 1)
+        await supabase.from('leave_requests').update({ quota_applied: true }).eq('id', id)
+      } else if (applied && wasApproved && !nowApproved) {
+        // ‼️ ถอนอนุมัติ/เปลี่ยนเป็นไม่อนุมัติ = คืนสิทธิที่หักไว้ ไม่งั้นพนักงานเสียสิทธิฟรี (อนุมัติใหม่ค่อยหักอีกรอบ)
+        // ปักธงก่อนแล้วค่อยคืนสิทธิ — ถ้ายังไม่ได้รัน sql/add_leave_quota_applied.sql ปักธงไม่ได้ ก็อย่าคืน
+        // ไม่งั้นคืนไปแล้วระบบจำไม่ได้ พออนุมัติใหม่จะไม่หักกลับ สิทธิเกินจริง
+        const { error: qErr } = await supabase.from('leave_requests').update({ quota_applied: false }).eq('id', id)
+        if (!qErr) await applyLeaveToStaff(old.employee_code, old.leave_type, daysOf(old), -1)
+      } else if (applied && (field === 'leave_date' || field === 'leave_end_date' || field === 'leave_type')) {
+        // ‼️ แก้วัน/ประเภทลาของใบที่หักสิทธิไปแล้ว ต้องคืนของเก่าแล้วหักของใหม่ ไม่งั้นสิทธิค้างเลขเดิม
+        await applyLeaveToStaff(old.employee_code, old.leave_type, daysOf(old), -1)
+        await applyLeaveToStaff(next.employee_code, next.leave_type, daysOf(next), 1)
+      }
     }
     load()
   }
@@ -296,7 +319,7 @@ export default function EmployeesPage() {
             const campaign = CAMPAIGNS[ymd]
             const holiday = HOLIDAYS[ymd]
             const dayLeaves = leaves.filter(l => ymd >= l.leave_date && ymd <= (l.leave_end_date || l.leave_date))
-            const isToday = ymd === new Date().toISOString().split('T')[0]
+            const isToday = ymd === todayYmd()
             const isSunday = new Date(year, month, day).getDay() === 0
 
             let bg = '#fff'

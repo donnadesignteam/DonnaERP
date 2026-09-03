@@ -22,6 +22,7 @@ import { syncWorkStatus } from '@/lib/workStatusSync'
 import ProvinceSelect from '@/components/ProvinceSelect'
 import { formatOrderLines, linesToHtml, openFormPrintWindow, escPrintHtml, type PrintLine, type PrintableOrder } from '@/lib/orderPrint'
 import QRCode from 'qrcode'
+import { parseMoney } from '@/lib/money'
 import { WORK_TYPES, WORK_TYPE_OPTIONS, ZONES, TECHS, TECH_BY_ZONE,
   normStatus, statusLabel, statusOptions, rowColor, INSTALL_COLUMNS } from '@/lib/installMeta'
 
@@ -730,7 +731,8 @@ export default function InstallationsPage() {
 
   // ช่องตัวเลข/ข้อความของใบออเดอร์ (จิ้มแล้วพิมพ์ทับ)
   const saveOrderNum = async (orderId: string, field: 'price' | 'paid_amount' | 'deposit', val: string) => {
-    const num = val === '' ? null : parseFloat(val)
+    const num = parseMoney(val)
+    if (num === undefined) return   // อ่านไม่ออก (พิมพ์อะไรที่ไม่ใช่ตัวเลข) → ไม่บันทึก ปล่อยยอดเดิมไว้
     const oe = orderMeta[orderId]
     // กรอก "ชำระแล้ว" → คำนวณยอดที่เหลือ (ชำระหลังติดตั้ง) ให้เลย — กติกาเดียวกับหมวดออเดอร์
     const extra = field === 'paid_amount' && oe?.price != null && num != null
@@ -1289,7 +1291,7 @@ export default function InstallationsPage() {
                 const oeNumCell = (field: 'price' | 'paid_amount' | 'deposit') => {
                   const val = oe ? oe[field] : null
                   return isOe(field) ? (
-                    <input type="number" autoFocus value={oeEdit!.val}
+                    <input type="text" inputMode="decimal" autoFocus value={oeEdit!.val}
                       onChange={e => setOeEdit(ec => ec ? { ...ec, val: e.target.value } : null)}
                       onBlur={() => saveOrderNum(oid!, field, oeEdit!.val)}
                       onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setOeEdit(null) }}

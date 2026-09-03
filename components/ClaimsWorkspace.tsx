@@ -20,6 +20,7 @@ import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { TH_MONTHS } from '@/lib/shopCalendar'
 import { fetchEmployeeOptions } from '@/lib/staffDb'
 import { useStableView } from '@/lib/useStableView'
+import { todayYmd, ymdLocal } from '@/lib/thaiDate'
 import { useInstallPhotos, photoSaveError, type InstallPhoto } from '@/components/InstallPhotos'
 
 type Item = {
@@ -99,15 +100,9 @@ const WORKFLOW: { key: string; color: string }[] = [
 ]
 const STATUS_COLOR = (s: string) => WORKFLOW.find(w => w.key === s)?.color ?? 'var(--ink-3)'
 
-// timestamp → YYYY-MM-DD ตามเวลาเครื่อง (ห้ามใช้ toISOString().slice(0,10) — UTC ทำให้วันเพี้ยนไป 1 วันตอนดึก)
-const ymdLocal = (iso: string) => {
-  const d = new Date(iso)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
 function emptyClaim(): Claim {
   return {
-    id: '', claim_date: new Date().toISOString().slice(0, 10), deadline: null, channel: '', customer_username: '',
+    id: '', claim_date: todayYmd(), deadline: null, channel: '', customer_username: '',
     original_order_number: '', claim_type: '', fault: '', fault_by: '', fix_method: '', cause: '', resolution: '', items: null,
     ship_name: '', ship_address: '', ship_phone: '', return_tracking: '', outbound_tracking: '',
     courier: '', refund_amount: null, ship_back_cost: null, ship_return_cost: null, estimated_price: null,
@@ -295,7 +290,7 @@ export default function ClaimsWorkspace() {
     setModal({ mode: 'add', data: {
       ...c,
       id: '',
-      claim_date: new Date().toISOString().slice(0, 10),
+      claim_date: todayYmd(),
       items: Array.isArray(c.items) ? c.items.map(it => ({ ...it })) : null,
       shipments: null, shipped_at: null, printed_at: null,
       return_tracking: '', outbound_tracking: '',
