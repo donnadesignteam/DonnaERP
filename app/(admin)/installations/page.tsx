@@ -567,6 +567,18 @@ export default function InstallationsPage() {
     if (!err) await pushToOrder(id, { appointment_datetime: dt })   // sync ไปใบออเดอร์ที่ผูกไว้
   }
 
+  // ล้างวันนัด → ช่องวันที่นัดหมายกลับไปขึ้น "รอนัดหมาย" (ตัวเลือกในกล่องแก้วันนัด)
+  const clearAppt = async (id: string) => {
+    const now = new Date().toISOString()
+    const old = installs.find(i => i.id === id)
+    setEditAppt(null)
+    setInstalls(prev => prev.map(i => i.id === id ? { ...i, appointment_datetime: null, updated_at: now } as unknown as Installation : i))
+    const { error: err } = await instUpdate({ appointment_datetime: null, updated_at: now }).eq('id', id)
+    if (err) { setError(`ล้างวันนัดไม่สำเร็จ: ${err.message}`); load(); return }
+    trackInst(id, { appointment_datetime: null, updated_at: now }, { appointment_datetime: old?.appointment_datetime ?? null, updated_at: old?.updated_at ?? null }, `ยกเลิกวันนัดติดตั้ง ${old?.customer_real_name || ''}`)
+    await pushToOrder(id, { appointment_datetime: null })   // sync ไปใบออเดอร์ที่ผูกไว้
+  }
+
   // แปลงข้อความที่วางเป็นรายการสินค้าด้วย AI (endpoint เดียวกับหมวดออเดอร์)
   const parseItems = async () => {
     if (!itemsPasteText.trim()) return
@@ -930,7 +942,7 @@ export default function InstallationsPage() {
       status: r => esc(oeOf(r)?.order_status),
       done: r => oeOf(r)?.done_at ? '✓' : '-',
       installed: r => esc(oeOf(r)?.install_status || (oeOf(r)?.is_dropoff ? 'ติดตั้งแล้ว' : '')),
-      inststatus: r => esc(statusLabel(normStatus(r.installation_status))),
+      inststatus: r => esc(statusLabel(normStatus(r.installation_status), r.work_type)),
       rail: r => oeOf(r)?.rail_packed ? '✓' : '-',
       created: r => esc(shortDate(oeOf(r)?.entry_date ?? oeOf(r)?.created_at ?? r.created_at)),
       outsource: r => esc(oeOf(r)?.outsource),
@@ -1332,6 +1344,8 @@ export default function InstallationsPage() {
                         style={{ border: '1px solid var(--blue)', borderRadius: 6, padding: '4px 7px', fontSize: 11, outline: 'none' }}>
                         {TIMES.map(t => <option key={t}>{t}</option>)}
                       </select>
+                      <button onClick={() => clearAppt(ins.id)} title="ล้างวันนัด กลับไปเป็นรอนัดหมาย"
+                        style={{ border: '1px solid #f59e0b', background: 'transparent', borderRadius: 6, padding: '3px 7px', fontSize: 11, cursor: 'pointer', color: '#f59e0b', fontWeight: 600, whiteSpace: 'nowrap' }}>รอนัดหมาย</button>
                       <button onClick={() => setEditAppt(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 14 }}>✓</button>
                     </div>
                   ) : (
@@ -1507,7 +1521,7 @@ export default function InstallationsPage() {
                     <select value={normStatus(ins.installation_status)} onChange={e => updateStatus(ins.id, e.target.value)}
                       style={{ background: bg + '22', color: bg, padding: '3px 8px', borderRadius: 980, fontWeight: 600, fontSize: 11, border: 'none', outline: 'none', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none' }}>
                       {Array.from(new Set([...statusOptions(ins.work_type), normStatus(ins.installation_status)])).map(st => (
-                        <option key={st} value={st} style={{ background: '#fff', color: 'var(--ink)' }}>{statusLabel(st)}</option>
+                        <option key={st} value={st} style={{ background: '#fff', color: 'var(--ink)' }}>{statusLabel(st, ins.work_type)}</option>
                       ))}
                     </select>
                   ),
@@ -1913,7 +1927,7 @@ export default function InstallationsPage() {
                   {ins.phone && <div style={{ fontSize: 13, marginTop: 4 }}>📞 {ins.phone}</div>}
                   {ins.location_link && <a href={ins.location_link} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: 'var(--blue)', display: 'block', marginTop: 4 }}>📍 ดูแผนที่</a>}
                   <div style={{ marginTop: 8 }}>
-                    <span style={{ background: bg + '22', color: bg, padding: '2px 8px', borderRadius: 980, fontSize: 11, fontWeight: 600 }}>{statusLabel(normStatus(ins.installation_status))}</span>
+                    <span style={{ background: bg + '22', color: bg, padding: '2px 8px', borderRadius: 980, fontSize: 11, fontWeight: 600 }}>{statusLabel(normStatus(ins.installation_status), ins.work_type)}</span>
                   </div>
                 </div>
               )

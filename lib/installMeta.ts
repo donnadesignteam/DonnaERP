@@ -20,11 +20,17 @@ export const STATUS_BY_WORK: Record<string, string[]> = {
 }
 // ป้ายที่โชว์ (ค่าที่เก็บในฐานยังเป็นคำเดิม)
 export const STATUS_LABEL: Record<string, string> = { 'ติดตั้ง50%': 'ติดตั้งเสร็จ50%', 'รอแก้': 'รอแก้งาน' }
+// ป้ายเฉพาะลักษณะงาน — งานติดตั้ง: คอลัมน์สถานะอ่านว่า "รอติดตั้ง"
+// (คำว่า "รอนัดหมาย" ไปอยู่ช่องวันที่นัดหมายแทน) · งานวัดหน้างานยังใช้คำเดิม
+export const STATUS_LABEL_BY_WORK: Record<string, Record<string, string>> = {
+  'งานติดตั้ง': { 'รอนัดหมาย': 'รอติดตั้ง' },
+}
 // ค่าเดิมของแถวเก่า → สถานะใหม่ที่ความหมายเดียวกัน (ยังไม่ได้ลงมือ = รอนัดหมาย)
 export const STATUS_ALIAS: Record<string, string> = { 'ติดตั้ง': 'รอนัดหมาย', 'วัดหน้างาน': 'รอนัดหมาย' }
 
 export const normStatus = (s?: string | null) => STATUS_ALIAS[s ?? ''] ?? (s ?? '')
-export const statusLabel = (s: string) => STATUS_LABEL[s] ?? s
+export const statusLabel = (s: string, workType?: string | null) =>
+  STATUS_LABEL_BY_WORK[workType ?? '']?.[s] ?? STATUS_LABEL[s] ?? s
 export const statusOptions = (workType?: string | null) => STATUS_BY_WORK[workType ?? ''] ?? INST_STATUS
 
 export const STATUS_COLOR: Record<string, string> = {

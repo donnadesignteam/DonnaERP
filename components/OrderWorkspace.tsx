@@ -1680,8 +1680,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       return true
     })()
     // จัดส่งแล้ว/ยกเลิก → ย้ายไปอยู่หมวดของตัวเองหมวดเดียว หายจากหมวดอื่นทั้งหมด (ตรรกะอยู่ใน lib/orderTabs.ts)
-    // ‼️ กำลังพิมพ์ค้นหา = ข้ามตัวกรองแท็บ ค้นเจอทุกแถบรวมจัดส่งแล้ว/ยกเลิก (ไม่ต้องเดาว่าใบอยู่แท็บไหน)
-    const matchQuick = searching || matchQuickTab(r, quickFilter as QuickTab)
+    // ‼️ ค้นหา = ค้นเฉพาะแท็บที่เลือกอยู่ (เดิมข้ามตัวกรองแท็บ ทำให้อยู่แท็บงานติดตั้ง/งานนอก
+    //    แล้วค้นเจองานแท็บอื่นโผล่ปนมา) — จะค้นทุกงานให้กดแท็บ "ทั้งหมด"
+    //    ค้นในแท็บ "ทั้งหมด" = เจอทุกใบรวมจัดส่งแล้ว/ยกเลิกด้วย (แต่ตอนไม่ได้ค้น แท็บนี้ยังไม่โชว์ 2 กลุ่มนั้นเหมือนเดิม)
+    const matchQuick = (searching && quickFilter === 'all') || matchQuickTab(r, quickFilter as QuickTab)
     const matchIncomplete = !incompleteFilter || (!r.items || r.items.length === 0 || !r.deadline || r.price == null || !r.customer_name || (OUTSIDE_PLATFORMS.includes(r.platform ?? '') && (!r.order_assigned || r.order_assigned === 'รออัพเดท')) || ((OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation) && (!r.payment_status || r.payment_status === 'ยังไม่ชำระ')))
     const matchUnprinted = !unprintedFilter || !r.printed_at
     const matchPrintedPending = !printedPendingFilter || isPrintedPending(r)
@@ -2037,6 +2039,20 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     }
   }
 
+  // ล้างวันนัด → ช่องวันที่นัดหมายกลับไปขึ้น "รอนัดหมาย" (ตัวเลือกในกล่องแก้วันนัด)
+  const clearInstallDt = async (id: string) => {
+    const now = new Date().toISOString()
+    const row = rows.find(r => r.id === id)
+    const updates: Record<string, unknown> = { deadline: null, installation_date: null, install_time: null, updated_at: now }
+    const { error: err } = await oeUpdate(updates).eq('id', id)
+    if (!err) {
+      setRows(prev => prev.map(r => r.id === id ? { ...r, ...updates } as Entry : r))
+      await pushToInstall(row, updates)   // ‼️ ล้างวันนัดในตาราง = ล้างในปฏิทินด้วย
+      if (row) trackOrderField(id, updates, prevOf(row, updates), `ยกเลิกวันนัดติดตั้ง ${row.order_number || row.customer_name || ''}`)
+    }
+    setInstallDtEdit(null)
+  }
+
   // dropdown ติดตั้ง: ติดตั้งแล้ว / ติดตั้ง50% — เลือก 50% จะล้างวันนัดเดิมให้ขึ้น "รอนัดหมาย" รอนัดใหม่
   // is_dropoff คงไว้เป็นธง "ติดตั้งแล้ว" เพื่อให้ filter/จอเดิมทำงานเหมือนเดิม
   const handleInstallStatus = async (r: Entry, val: string) => {
@@ -2285,7 +2301,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       done: r => r.is_urgent ? esc(`✓ ${stamp(r.done_at)}`.trim()) : '-',
       shipped: r => r.order_status === 'จัดส่งแล้ว' ? esc(`✓ ${stamp(r.shipped_at)}`.trim()) : '-',
       installed: r => esc(installStatusOf(r) || '-'),
-      inststatus: r => { const ins = instMeta[r.id]; return ins ? esc(statusLabel(normStatus(ins.installation_status))) : '-' },
+      inststatus: r => { const ins = instMeta[r.id]; return ins ? esc(statusLabel(normStatus(ins.installation_status), ins.work_type)) : '-' },
       rail: r => !hasRail(r) ? '-' : r.rail_packed ? esc(`✓ ${stamp(r.rail_packed_at)}`.trim()) : 'ยังไม่แพ็ค',
       created: r => esc(dOnly(r.entry_date) || '-'),
       outsource: r => esc(r.outsource || '-'),
@@ -2585,8 +2601,8 @@ ${body}
           </button>
         ))}
         {searching && (
-          <span style={{ fontSize: 12, color: 'var(--ink-3)', whiteSpace: 'nowrap' }} title="กำลังค้นหา = ไม่สนแท็บ ค้นเจอทุกแถบรวมจัดส่งแล้ว/ยกเลิก">
-            ค้นหาทุกแถบอยู่
+          <span style={{ fontSize: 12, color: 'var(--ink-3)', whiteSpace: 'nowrap' }} title={quickFilter === 'all' ? 'ค้นทุกใบ รวมจัดส่งแล้ว/ยกเลิก' : `ค้นเฉพาะแท็บ "${tabLabel}" — อยากค้นทุกงานให้กดแท็บ "ทั้งหมด"`}>
+            {quickFilter === 'all' ? 'ค้นทุกใบ (รวมจัดส่งแล้ว/ยกเลิก)' : <>ค้นในแท็บ “{tabLabel}”</>}
           </span>
         )}
         <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px' }} />
@@ -3126,6 +3142,8 @@ ${body}
                           style={{ border: '1px solid var(--blue)', borderRadius: 6, padding: '4px 7px', fontSize: 11, outline: 'none' }}>
                           {timeOpts.map(t => <option key={t}>{t}</option>)}
                         </select>
+                        <button onClick={() => clearInstallDt(r.id)} title="ล้างวันนัด กลับไปเป็นรอนัดหมาย"
+                          style={{ border: '1px solid #f59e0b', background: 'transparent', borderRadius: 6, padding: '3px 7px', fontSize: 11, cursor: 'pointer', color: '#f59e0b', fontWeight: 600, whiteSpace: 'nowrap' }}>รอนัดหมาย</button>
                         <button onClick={() => setInstallDtEdit(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 14 }}>✓</button>
                       </div>
                     )
@@ -3323,7 +3341,7 @@ ${body}
                         <select value={normStatus(ins.installation_status)} onChange={e => saveInstMeta(r.id, { installation_status: e.target.value })}
                           style={{ background: instColor(ins) + '22', color: instColor(ins), padding: '3px 8px', borderRadius: 980, fontWeight: 600, fontSize: 11, border: 'none', outline: 'none', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none' }}>
                           {Array.from(new Set([...statusOptions(ins.work_type), normStatus(ins.installation_status)])).map(st => (
-                            <option key={st} value={st} style={{ background: '#fff', color: 'var(--ink)' }}>{statusLabel(st)}</option>
+                            <option key={st} value={st} style={{ background: '#fff', color: 'var(--ink)' }}>{statusLabel(st, ins.work_type)}</option>
                           ))}
                         </select>
                       ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
