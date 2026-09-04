@@ -42,3 +42,22 @@ export async function syncOutsourcePO(
     }
   } catch { /* sync สั่งซื้อพังไม่ให้กระทบการบันทึกออเดอร์ */ }
 }
+
+// ออเดอร์จัดส่งแล้ว = ของที่สั่งนอกเข้าครบแล้ว → ปิดรายการในหมวดสั่งซื้อที่ผูกกันให้เป็น "ของเข้าแล้ว"
+// ‼️ แตะเฉพาะแถวที่ยัง "รอของ" (แถวที่แอดมินตั้งค่าเองไว้แล้วไม่ไปยุ่ง)
+export async function markPOReceivedForOrders(orderIds: string[]) {
+  const ids = Array.from(new Set(orderIds.filter(Boolean)))
+  if (!ids.length) return []
+  const done: string[] = []
+  try {
+    // ยิงทีละก้อน กัน URL ยาวเกินเวลาอัปเดตหลายใบพร้อมกัน
+    for (let i = 0; i < ids.length; i += 100) {
+      const chunk = ids.slice(i, i + 100)
+      const { data } = await supabase.from('purchase_orders')
+        .update({ status: 'ของเข้าแล้ว', updated_at: new Date().toISOString() })
+        .in('source_order_id', chunk).eq('status', 'รอของ').select('id')
+      for (const r of data ?? []) done.push((r as { id: string }).id)
+    }
+  } catch { /* คอลัมน์ source_order_id ยังไม่มี / เน็ตหลุด → ข้ามเงียบๆ ไม่ให้กระทบงานหลัก */ }
+  return done
+}

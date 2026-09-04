@@ -14,7 +14,7 @@ import { OUTSIDE_PLATFORMS, PLATFORM_NAMES, PROD_STATUSES, INSTALL_STATUSES, PRO
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { effShipping } from '@/lib/shipping'
 import { thaiTrackStatus } from '@/lib/trackExtract'
-import { syncOutsourcePO } from '@/lib/outsourceSync'
+import { syncOutsourcePO, markPOReceivedForOrders } from '@/lib/outsourceSync'
 import { useInstallPhotos, photoSaveError } from '@/components/InstallPhotos'
 import ProvinceSelect from '@/components/ProvinceSelect'
 import { syncWorkStatus as syncWorkStatusExact } from '@/lib/workStatusSync'
@@ -908,6 +908,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   // แยกออกจาก update หลัก เผื่อคอลัมน์ status_history ยังไม่ถูกสร้าง จะได้ไม่พังสถานะหลัก
   const logStatus = async (id: string, status: string, now: string, existing: StatusEvent[] | null | undefined) => {
     if (!status) return
+    // ออเดอร์จัดส่งแล้ว → รายการในหมวดสั่งซื้อที่ผูกกันไว้ เปลี่ยนเป็น "ของเข้าแล้ว" ให้เลย
+    if (status === 'จัดส่งแล้ว') await markPOReceivedForOrders([id])
     const prev = Array.isArray(existing) ? existing : []
     if (prev.length && prev[prev.length - 1]?.status === status) return  // กันบันทึกซ้ำสถานะเดิม
     const next = [...prev, { status, at: now, by: null }]

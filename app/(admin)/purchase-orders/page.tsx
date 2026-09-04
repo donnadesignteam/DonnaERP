@@ -9,6 +9,7 @@ import { recordAction } from '@/lib/history'
 import { tUpdate, prevOf } from '@/lib/trackedDb'
 import { useStableView } from '@/lib/useStableView'
 import { oeUpdate } from '@/lib/adminActor'
+import { markPOReceivedForOrders } from '@/lib/outsourceSync'
 import { useConfirm } from '@/components/ConfirmDialog'
 
 
@@ -57,7 +58,26 @@ export default function PurchaseOrdersPage() {
     const { data, error: err } = await fetchAllRows<PO>(() =>
       supabase.from('purchase_orders').select('*').order('created_at', { ascending: false }).order('id', { ascending: true }))
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
-    const pos = data
+    let pos = data
+    // ออเดอร์ที่จัดส่งแล้ว = ของเข้าครบแล้ว → ปิดรายการสั่งซื้อที่ผูกกันไว้ให้เป็น "ของเข้าแล้ว" อัตโนมัติ
+    // (ตอนกดจัดส่งในหมวดออเดอร์เปลี่ยนให้ทันทีอยู่แล้ว — ตรงนี้ไล่เก็บใบเก่า/ใบที่เปลี่ยนสถานะจากที่อื่น)
+    const waiting = pos.filter(p => p.source_order_id && p.status === 'รอของ')
+    if (waiting.length) {
+      const ids = waiting.map(p => p.source_order_id as string)
+      const shipped: string[] = []
+      for (let i = 0; i < ids.length; i += 100) {
+        const { data: os } = await supabase.from('order_entries').select('id')
+          .in('id', ids.slice(i, i + 100)).eq('order_status', 'จัดส่งแล้ว')
+        for (const o of os ?? []) shipped.push(o.id as string)
+      }
+      if (shipped.length) {
+        const changed = await markPOReceivedForOrders(shipped)
+        if (changed.length) {
+          const done = new Set(changed)
+          pos = pos.map(p => done.has(p.id) ? { ...p, status: 'ของเข้าแล้ว' } : p)
+        }
+      }
+    }
     setPageCache('purchase_orders', pos)
     setRows(pos)
     snapshot(pos)   // ตั้งจุดอ้างอิงใหม่ → แถวที่เปลี่ยนสถานะค้างไว้ ย้ายเข้าแท็บใหม่ตอนนี้
