@@ -135,6 +135,9 @@ type Entry = {
   last_content_at?: string | null
   // แถวที่ดึงมาจากหน้าเคลม (ตาราง claims) — ไม่ใช่ใบออเดอร์จริง แก้ได้เฉพาะสถานะ/งานเสร็จ/จัดส่ง/ปริ้น/หมายเหตุ
   claim_id?: string | null
+  // ปักหมุดออเดอร์สำคัญ (sql/add_pinned_column.sql) — ลอยขึ้นบนสุดของทุกแท็บ เห็นร่วมกันทั้งทีม
+  pinned?: boolean | null
+  pinned_at?: string | null
 }
 
 // สถานะเคลม ↔ สถานะออเดอร์ (ต่างกันแค่หัวกับท้ายของสายงาน)
@@ -160,6 +163,7 @@ type ClaimSource = {
   printed_at: string | null; shipped_at: string | null; admin_name: string | null
   technician?: string | null
   estimated_price: number | null; created_at?: string | null; updated_at?: string | null
+  pinned?: boolean | null; pinned_at?: string | null
 }
 const claimToEntry = (c: ClaimSource): Entry => ({
   ...emptyForm(),
@@ -180,6 +184,8 @@ const claimToEntry = (c: ClaimSource): Entry => ({
   admin_name: c.admin_name,
   technician: c.technician ?? null,   // ช่างที่ลงไว้ในหน้าเคลม (แก้ที่หน้าเคลม)
   price: c.estimated_price,
+  pinned: !!c.pinned,
+  pinned_at: c.pinned_at ?? null,
   created_at: c.created_at ?? '',
   updated_at: c.updated_at ?? '',
 } as Entry)
@@ -606,7 +612,9 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
         install_zone: i.install_zone, technician_type: i.technician_type }])))
     // งานเคลมจากหน้าเคลม (ตาราง claims) → โชว์ปนในหมวดออเดอร์ด้วย จะได้เรียงวันที่เหลือรวมกัน
     const CLAIM_COLS = 'id, claim_date, channel, customer_username, original_order_number, items, status, is_urgent, notes, courier, printed_at, shipped_at, admin_name, estimated_price, created_at, updated_at'
-    let claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(`${CLAIM_COLS}, deadline, technician`).order('id', { ascending: true }))
+    let claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(`${CLAIM_COLS}, deadline, technician, pinned, pinned_at`).order('id', { ascending: true }))
+    // ยังไม่ได้รัน sql/add_pinned_column.sql → ดึงแบบไม่มีคอลัมน์ปักหมุดไปก่อน
+    if (claimRes.error) claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(`${CLAIM_COLS}, deadline, technician`).order('id', { ascending: true }))
     // ยังไม่ได้รัน scripts/add_claim_deadline.sql / add_claim_technician.sql → ดึงแบบไม่มี 2 คอลัมน์นั้นไปก่อน (งานเคลมยังโชว์ได้)
     if (claimRes.error) claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(CLAIM_COLS).order('id', { ascending: true }))
     const claimEntries = claimRes.data.map(claimToEntry)
@@ -1031,6 +1039,21 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const printHeader = () => (
     <th style={{ textAlign: 'center', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ปริ้น</th>
   )
+
+  // ── ปักหมุดออเดอร์สำคัญ ──
+  // แถวที่ปักหมุดลอยขึ้นบนสุดของแท็บที่เปิดอยู่เสมอ (ไม่ว่าจะเรียงคอลัมน์ไหน) · หมุดเก็บในฐาน เห็นตรงกันทั้งทีม
+  // ‼️ ต้องรัน sql/add_pinned_column.sql ก่อน ไม่งั้นกดแล้วขึ้น error
+  const togglePin = async (id: string) => {
+    const row = rows.find(r => r.id === id)
+    if (!row) return
+    const next = !row.pinned
+    const now = new Date().toISOString()
+    const patch = { pinned: next, pinned_at: next ? now : null }
+    const upd = isClaimEntry(row) ? claimUpdate(patch) : oeUpdate(patch)
+    const { error: err } = await upd.eq('id', id)
+    if (err) { setError(`ปักหมุดไม่สำเร็จ: ${err.message}`); return }
+    setRows(prev => prev.map(r => r.id === id ? { ...r, ...patch } as Entry : r))
+  }
 
   const toggleDone = async (id: string, checked: boolean) => {
     const row = rows.find(r => r.id === id)
@@ -1661,6 +1684,14 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     return `${TH_MONTHS[Number(m) - 1]} ${Number(y) + 543}`
   }
 
+  // ปักหมุด: แถวที่ปักไว้ลอยขึ้นบนสุดเสมอ ไม่ว่าจะเรียงคอลัมน์ไหนอยู่ (หมุดใหม่สุดอยู่บน)
+  // ‼️ ใช้ค่าสด (หลัง .map(live)) แถวจึงเด้งขึ้นบนทันทีที่กดหมุด
+  const pinFirst = (rs: Entry[]): Entry[] => {
+    if (!rs.some(r => r.pinned)) return rs
+    const at = (r: Entry) => (r.pinned_at ? new Date(r.pinned_at).getTime() : 0)
+    return [...rs].sort((a, b) => (a.pinned ? 1 : 0) === (b.pinned ? 1 : 0) ? (a.pinned ? at(b) - at(a) : 0) : (a.pinned ? -1 : 1))
+  }
+
   const searching = search.trim().length > 0
   const displayedFrozen = scopedRows.filter(r => {
     const matchMonth = month === 'all' || monthKey(r) === month
@@ -1712,7 +1743,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   }
 
   // คืนค่าสดก่อนเอาไปวาดบนจอ — ลำดับ/สมาชิกได้จาก stable แล้ว แต่ข้อมูลที่โชว์ต้องเป็นของล่าสุด
-  const displayed = displayedFrozen.map(live)
+  const displayed = pinFirst(displayedFrozen.map(live))
 
   // ตัวเลือกกรองคอลัมน์แอดมิน = รายชื่อในช่องเลือก + ชื่อที่มีอยู่จริงในข้อมูล
   // (ชื่อที่ระบบใส่ให้อัตโนมัติ เช่น น็อต จะได้กรองได้ด้วย ถึงจะไม่มีในช่องเลือก)
@@ -1749,7 +1780,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       // ‼️ ตัวเทียบอยู่ที่ lib/orderTabs.ts (cmpDeadlineSort) — ตารางใต้ปฏิทินงานติดตั้งใช้ตัวเดียวกัน
       rs = [...rs].sort((a, b) => cmpDeadlineSort(a, b, outDaysSort))
     }
-    return rs.map(live)
+    return pinFirst(rs.map(live))
   })()
 
   const displayedAll = (() => {
@@ -1792,7 +1823,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
         return allDaysSort === 'asc' ? da - db : db - da
       })
     }
-    return rs.map(live)
+    return pinFirst(rs.map(live))
   })()
 
   const activeDisplayed = (quickFilter === 'all' || quickFilter === 'claim' || quickFilter === 'shipped') ? displayedAll
@@ -3170,7 +3201,7 @@ ${body}
                 const isDone = r.order_status === 'เสร็จสิ้น'
                 const isCancelled = r.order_status === 'ยกเลิก'
                 return (
-                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : 'transparent' }}>
+                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : r.pinned ? '#F2F2F2' : 'transparent' }}>
                     <td style={{ padding: '12px 14px' }}>
                       <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)}
                         style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
@@ -3596,7 +3627,7 @@ ${body}
                 const allEffective = effectiveDueDate(r)   // งานนอก/ติดตั้ง=deadline · แพลตฟอร์ม=effShipping (lib/orderTabs.ts)
                 const allDays = allEffective ? daysRemaining(allEffective) : null
                 return (
-                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : 'transparent' }}>
+                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : r.pinned ? '#F2F2F2' : 'transparent' }}>
                     <td style={{ padding: '12px 14px' }}>
                       <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)}
                         style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
@@ -3990,7 +4021,7 @@ ${body}
                 const effectiveShipping = effShipping(r)
                 const days = effectiveShipping ? daysRemaining(effectiveShipping) : null
                 return (
-                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : 'transparent' }}>
+                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : r.pinned ? '#F2F2F2' : 'transparent' }}>
                     <td style={{ padding: '12px 14px' }}>
                       <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)}
                         style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
@@ -4223,6 +4254,12 @@ ${body}
         if (!r) return null
         return (
           <AnchoredMenu rect={actionRect}>
+            {/* ปักหมุด — ใบที่ปักไว้ลอยขึ้นบนสุดของแท็บ + พื้นหลังเทาจาง (เห็นตรงกันทั้งทีม) */}
+            <button onClick={() => { setOpenAction(null); setActionRect(null); void togglePin(r.id) }}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: r.pinned ? 'var(--red)' : 'var(--ink)' }}>
+              <svg width="14" height="14" fill={r.pinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 21V4h12l-2.5 4L17 12H5"/></svg>
+              {r.pinned ? 'เอาหมุดออก' : 'ปักหมุด'}
+            </button>
             <button onClick={() => copyOrderText(r)}
               style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: copiedId === r.id ? '#34c759' : 'var(--ink)' }}>
               <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
