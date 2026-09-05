@@ -2,9 +2,11 @@
 // ใช้ร่วมกันหน้า /scan และโฟลเดอร์ลูกค้า (customers)
 import { supabase } from '@/lib/supabase'
 
-// ย่อรูปก่อนอัพ: จำกัดด้านยาวสุด 1600px + JPEG 80% — รูปมือถือ ~4MB เหลือ ~250-400KB (10GB เก็บได้หลักหมื่นรูป)
+// ย่อรูปก่อนอัพ: จำกัดด้านยาวสุด 1024px + JPEG 70% — รูปมือถือ ~4MB เหลือ ~100-150KB
+// ‼️ 5ก.ย.69 ลดจาก 1600px/80% (ได้ ~500KB/รูป กินโควต้า R2 ฟรีเดือนละ ~650MB) — เทียบภาพจริงแล้ว
+//    ตัวหนังสือบนใบสั่งงาน/QR ยังคมอ่านออกครบ · รูปเก่าบน R2 ย่อย้อนหลังไปแล้ว (scripts/r2_shrink_all.mjs)
 // แปลงไม่ได้ (เช่น HEIC บนบางเบราว์เซอร์) หรือย่อแล้วใหญ่กว่าเดิม → ใช้ไฟล์เดิม
-export async function compressImage(file: File, maxDim = 1600, quality = 0.8): Promise<File> {
+export async function compressImage(file: File, maxDim = 1024, quality = 0.7): Promise<File> {
   try {
     const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' })
     const scale = Math.min(1, maxDim / Math.max(bmp.width, bmp.height))

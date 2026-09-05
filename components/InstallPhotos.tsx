@@ -57,7 +57,7 @@ export function useInstallPhotos(opts?: { prefix?: string; title?: string }) {
     const list: InstallPhoto[] = []
     try {
       for (const file of Array.from(files)) {
-        const small = await compressImage(file)   // ย่อ 1600px / JPEG 80%
+        const small = await compressImage(file)   // ย่อ 1024px / JPEG 70%
         const ext = (small.name.split('.').pop() || 'jpg').toLowerCase()
         const key = `${prefix}/${folder.current}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
         const url = await uploadPackingFile(small, key)
