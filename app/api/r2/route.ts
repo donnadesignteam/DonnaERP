@@ -23,6 +23,9 @@ export async function POST(req: Request) {
   try {
     const body = await req.json()
 
+    // ‼️ โคลนลองดีไซน์ (donnaweb-design): ปิดการเขียน/ลบไฟล์บน R2 ของจริง
+    return NextResponse.json({ error: 'โหมดลองดีไซน์: แก้ไขไฟล์บน R2 ถูกปิดไว้' }, { status: 403 })
+
     if (body.action === 'sign') {
       const key = String(body.key || '')
       if (!key || key.includes('..')) return NextResponse.json({ error: 'key ไม่ถูกต้อง' }, { status: 400 })
