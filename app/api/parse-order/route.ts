@@ -14,7 +14,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'ไม่มีข้อความ' }, { status: 400 })
   }
 
-  const prompt = `แปลงข้อความออเดอร์ที่แอดมิน copy มาจากแชทไลน์เป็น JSON object เดียวเท่านั้น ห้ามมี markdown ห้ามมีข้อความอื่น
+  // ‼️ rules = ส่วนตายตัวทั้งหมด (Anthropic จำไว้ ลดค่า API) ห้ามใส่ค่าที่เปลี่ยนทุกครั้งในนี้ — ข้อความออเดอร์ส่งแยกเป็นก้อนท้าย
+  const rules = `แปลงข้อความออเดอร์ที่แอดมิน copy มาจากแชทไลน์เป็น JSON object เดียวเท่านั้น ห้ามมี markdown ห้ามมีข้อความอื่น
 
 schema:
 {
@@ -55,12 +56,12 @@ ${ITEM_RULES}
 - ลด output ของ item: ฟิลด์ต่อไปนี้ถ้าค่าว่าง/null ให้ตัดทิ้ง ไม่ต้องใส่ใน JSON (ระบบเติมให้เอง) — floors, rail_head, eyelet_color, fabric_type, color_code, color_name, color_desc, hooks, orientation, fabric_split, chemical, weight_chain, pull_side, note — ใส่เฉพาะฟิลด์ที่มีค่าจริง · แต่ type, width, height, quantity, unit ต้องใส่ครบทุก item เสมอ (ฟิลด์ระดับออเดอร์ยังใส่ null ตามเดิม)
 
 ข้อความ:
-${text}`
+`
 
   let raw: string
   let stopReason: string | undefined
   try {
-    const r = await askClaude(prompt, 8192)
+    const r = await askClaude(text, 8192, rules)
     raw = r.text
     stopReason = r.stopReason
   } catch (e) {

@@ -14,7 +14,8 @@ export async function POST(req: NextRequest) {
   }
 
   // ‼️ กติกาแปลงรายการใช้ชุดเดียวกับตอนวางข้อความไลน์ทั้งก้อน (parse-order) — แก้ที่ lib/itemPrompt.ts ที่เดียว
-  const prompt = `แปลงรายการสินค้าต่อไปนี้เป็น JSON array เท่านั้น ห้ามมี markdown
+  // ‼️ rules = ส่วนตายตัวทั้งหมด (Anthropic จำไว้ ลดค่า API) — รายการที่วางมาส่งแยกเป็นก้อนท้าย
+  const rules = `แปลงรายการสินค้าต่อไปนี้เป็น JSON array เท่านั้น ห้ามมี markdown
 
 schema แต่ละ item:
 ${ITEM_SCHEMA}
@@ -24,11 +25,11 @@ ${ITEM_RULES}
 - ข้อความที่วางมาอาจติดบรรทัดหัวออเดอร์มาด้วย (ชื่อร้าน/ช่องทาง เช่น shopee:, เลขออเดอร์, ที่อยู่, เบอร์โทร, วันส่ง เช่น "ส่งก่อน 19/8/2026", ชื่อบริษัทขนส่ง) — บรรทัดพวกนี้ไม่ใช่สินค้า ให้ข้ามไป แล้วแปลงเฉพาะรายการสินค้า ห้ามทำเป็น item
 
 รายการ:
-${text}`
+`
 
   let raw: string
   try {
-    raw = (await askClaude(prompt, 8192)).text
+    raw = (await askClaude(text, 8192, rules)).text
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 })
   }
