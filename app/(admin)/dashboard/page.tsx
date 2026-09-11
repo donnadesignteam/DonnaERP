@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { fetchAllRows } from '@/lib/fetchAll'
+import { syncRows, byCreatedAsc } from '@/lib/rowCache'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { effShipping } from '@/lib/shipping'
 import { syncWorkStatus } from '@/lib/workStatusSync'
@@ -223,8 +223,12 @@ export default function DashboardPage() {
 
   const load = async () => {
     setError('')
-    const { data: rows, error: err } = await fetchAllRows<Order>(() =>
-      supabase.from('order_entries').select('id,order_number,customer_name,order_status,deadline,created_at,platform,courier,is_installation,is_urgent,is_dropoff,shipping_datetime,notes,updated_at').order('created_at', { ascending: true }).order('id', { ascending: true }))
+    // จำไว้ในเครื่อง ขอเฉพาะใบที่เปลี่ยน (lib/rowCache.ts)
+    const cols = 'id,order_number,customer_name,order_status,deadline,created_at,platform,courier,is_installation,is_urgent,is_dropoff,shipping_datetime,notes,updated_at'
+    const { data: rows, error: err } = await syncRows<Order>({
+      key: 'dashboard', table: 'order_entries', select: cols, sort: byCreatedAsc,
+      full: () => supabase.from('order_entries').select(cols).order('created_at', { ascending: true }).order('id', { ascending: true }),
+    })
     if (err) { setError(err.message || 'โหลดข้อมูลไม่สำเร็จ'); setLoading(false); return }
     setPageCache('dashboard:order_entries', rows)
     setAll(rows)

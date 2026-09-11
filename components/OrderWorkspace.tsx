@@ -5,6 +5,7 @@ import { flushSync } from 'react-dom'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { syncRows, byEntryDateDesc } from '@/lib/rowCache'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, ITEM_FIELDS, ITEM_FIELD_OPTIONS, shownFields, visibleItemCols, itemInputValue, emptyItem as emptyRawItem } from '@/lib/itemFormat'
@@ -600,8 +601,11 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   }
 
   const load = async () => {
-    const { data, error: err } = await fetchAllRows<Entry>(() =>
-      supabase.from('order_entries').select('*').order('entry_date', { ascending: false, nullsFirst: false }).order('id', { ascending: true }))
+    // จำออเดอร์ไว้ในเครื่อง ขอเฉพาะใบที่เปลี่ยน (lib/rowCache.ts) — เดิมดึงทั้งตาราง ~1.4 MB ทุกครั้งที่เปิด/undo
+    const { data, error: err } = await syncRows<Entry>({
+      key: 'workspace', table: 'order_entries', select: '*', sort: byEntryDateDesc,
+      full: () => supabase.from('order_entries').select('*').order('entry_date', { ascending: false, nullsFirst: false }).order('id', { ascending: true }),
+    })
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
     // ใบที่ผูกกับปฏิทิน แต่ในปฏิทินไม่ใช่ "งานติดตั้ง" (เช่น งานวัดหน้างาน) → ไม่ต้องโชว์ในหมวดออเดอร์
     const { data: insts } = await fetchAllRows<InstMeta & { source_order_id: string | null }>(() =>

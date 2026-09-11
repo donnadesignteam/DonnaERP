@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
+import { syncRows, byCreatedAsc } from '@/lib/rowCache'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 
@@ -133,7 +134,12 @@ export default function AnalyticsPage() {
   useEffect(() => {
     ;(async () => {
       const [o, s, c] = await Promise.all([
-        fetchAllRows<OrderRow>(() => supabase.from('order_entries').select('id,order_number,order_status,created_at,shipped_at,deadline,price,platform,is_installation,status_history').order('created_at', { ascending: true }).order('id', { ascending: true })),
+        // ออเดอร์: จำไว้ในเครื่อง ขอเฉพาะใบที่เปลี่ยน (lib/rowCache.ts) — มี status_history ก้อนใหญ่
+        syncRows<OrderRow>({
+          key: 'analytics', table: 'order_entries', sort: byCreatedAsc,
+          select: 'id,order_number,order_status,created_at,shipped_at,deadline,price,platform,is_installation,status_history',
+          full: () => supabase.from('order_entries').select('id,order_number,order_status,created_at,shipped_at,deadline,price,platform,is_installation,status_history').order('created_at', { ascending: true }).order('id', { ascending: true }),
+        }),
         fetchAllRows<ScanRow>(() => supabase.from('production_scans').select('order_number,status,tech_name,scanned_at').order('scanned_at', { ascending: true }).order('id', { ascending: true })),
         fetchAllRows<ClaimRow>(() => supabase.from('claims').select('id,created_at,status,fault,refund_amount,claim_type').order('created_at', { ascending: true }).order('id', { ascending: true })),
       ])

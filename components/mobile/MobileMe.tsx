@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { clearRowCache } from '@/lib/rowCache'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { fetchStaffOne, hasVacationRight, tenureDays, type Staff } from '@/lib/staffDb'
 import { LEAVE_TYPES, rangeDays, vacationMaxDays } from '@/lib/leave'
@@ -352,6 +353,7 @@ export default function MobileMe() {
   }
 
   const logout = async () => {
+    clearRowCache()   // ล้างออเดอร์ที่จำไว้ในเครื่อง (มีชื่อ/ที่อยู่/เบอร์ลูกค้า)
     await fetch('/api/logout', { method: 'POST' }).catch(() => {})
     router.replace('/login')
   }
