@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
-import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, ITEM_FIELDS, ITEM_FIELD_OPTIONS, shownFields, visibleItemCols, emptyItem as emptyRawItem } from '@/lib/itemFormat'
+import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, ITEM_FIELDS, ITEM_FIELD_OPTIONS, shownFields, visibleItemCols, itemInputValue, emptyItem as emptyRawItem } from '@/lib/itemFormat'
 import { railLink } from '@/lib/rail'
 import { TECH_OPTIONS } from '@/lib/techs'
 import { OUTSIDE_PLATFORMS, PLATFORM_NAMES, PROD_STATUSES, INSTALL_STATUSES, PROD_STATUS_COLOR, matchQuickTab, effectiveDueDate, cmpDaysSort, cmpDeadlineSort, type QuickTab } from '@/lib/orderTabs'
@@ -63,6 +63,7 @@ type Item = {
   pull_side?: string      // ฝั่งดึง (ม่านพับ/มู่ลี่): ดึงซ้าย / ดึงขวา
   note: string
   outsource?: string      // สั่งนอกของรายการนี้ — ตอนบันทึกจะรวมทุกรายการไปลงคอลัมน์สั่งนอกของออเดอร์
+  price?: number          // ราคาของรายการนี้ (ยอดทั้งบรรทัด) — มีเฉพาะตอนแปลงจากข้อความที่เขียนราคาแยกไว้
 }
 
 type StatusEvent = {
@@ -2470,8 +2471,16 @@ ${body}
         if (!res.ok || data.error) throw new Error(data.error || 'แปลงไม่สำเร็จ')
         const o = data.order || {}
         if (!Array.isArray(o.items) || o.items.length === 0) throw new Error('อ่านรายการจากข้อความที่แก้ไม่ได้')
+        // ใบปริ้นไม่มีราคารายการ → แปลงกลับมาราคาจะหาย · ยกราคาเดิมมาให้รายการที่ลำดับ+ชนิด+ความกว้างตรงกับของเดิม
+        const { data: prev } = await supabase.from('order_entries').select('items').eq('id', d.id).maybeSingle()
+        const oldItems: Item[] = Array.isArray(prev?.items) ? prev.items : []
+        const items = (o.items as Item[]).map((it, i) => {
+          const old = oldItems[i]
+          return it.price == null && old?.price != null && old.type === it.type && String(old.width) === String(it.width)
+            ? { ...it, price: old.price } : it
+        })
         const now = new Date().toISOString()
-        const updates = { items: o.items as Item[], updated_at: now }
+        const updates = { items, updated_at: now }
         const { error: err } = await oeUpdate(updates).eq('id', d.id)
         if (err) throw new Error(err.message)
         setRows(prev => prev.map(r => r.id === d.id ? { ...r, ...updates } as Entry : r))
@@ -4916,7 +4925,7 @@ ${body}
                         <input type={type} step={type === 'number' ? (key === 'floors' ? '1' : '0.01') : undefined}
                           value={item[key] == null ? '' : String(item[key])}
                           onChange={e => {
-                            const val = key === 'floors' ? (e.target.value === '' ? null : Number(e.target.value)) : e.target.value
+                            const val = itemInputValue(key, e.target.value)
                             setModalItems(prev => prev.map((it, i) => i === idx ? { ...it, [key]: val } : it))
                           }}
                           style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 5, padding: '5px 8px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
@@ -5174,9 +5183,7 @@ ${body}
                             step={type === 'number' ? '0.01' : undefined}
                             value={item[key] == null ? '' : String(item[key])}
                             onChange={e => {
-                              const val = key === 'floors'
-                                ? (e.target.value === '' ? null : Number(e.target.value))
-                                : e.target.value
+                              const val = itemInputValue(key, e.target.value)
                               setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: val } : it) } : null)
                             }}
                             style={{ width: w, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }}
