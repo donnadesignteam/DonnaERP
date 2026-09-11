@@ -379,7 +379,7 @@ export default function StaffDetailPage() {
       {emp && (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, margin: '14px 0 22px' }}>
-            <div style={{ width: 60, height: 60, borderRadius: 30, background: 'linear-gradient(135deg, #C47E3A, #9D6025)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 24, fontWeight: 700, flexShrink: 0 }}>
+            <div style={{ width: 60, height: 60, borderRadius: 30, background: 'linear-gradient(135deg, #A87452, #8A6142)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 24, fontWeight: 700, flexShrink: 0 }}>
               {(emp.nickname || emp.name || '?').charAt(0)}
             </div>
             <div style={{ flex: 1 }}>
@@ -448,7 +448,7 @@ export default function StaffDetailPage() {
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 14 }}>
                 <BalanceCard title="ลาป่วย คงเหลือ" left={emp.sick.left} avail={emp.sick.avail} used={emp.sick.used} color="#5ac8fa" />
-                <BalanceCard title="ลากิจ คงเหลือ" left={emp.personal.left} avail={emp.personal.avail} used={emp.personal.avail != null && emp.personal.left != null ? emp.personal.avail - emp.personal.left : null} color="#C47E3A" />
+                <BalanceCard title="ลากิจ คงเหลือ" left={emp.personal.left} avail={emp.personal.avail} used={emp.personal.avail != null && emp.personal.left != null ? emp.personal.avail - emp.personal.left : null} color="#A87452" />
                 {hasVacationRight(emp.start_date) ? (
                   <BalanceCard title="ลาพักร้อน คงเหลือ" left={emp.vacation.left} avail={emp.vacation.avail} used={emp.vacation.used} color="#30c759" />
                 ) : (

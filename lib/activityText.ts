@@ -19,12 +19,12 @@ export type Log = {
 
 // หมวด → สีป้าย
 export const CAT_COLOR: Record<string, string> = {
-  'ออเดอร์': '#C47E3A',
+  'ออเดอร์': '#A87452',
   'เคลม': '#f43f5e',
-  'งานติดตั้ง': '#ff9f0a',
+  'งานติดตั้ง': '#C79A4B',
   'สั่งซื้อ': '#5e9eff',
   'สต็อก': '#30d158',
-  'ใบลา': '#bf5af2',
+  'ใบลา': '#9A7BA0',
   'สแกนผลิต': '#5ac8fa',
   'ผู้จัดจำหน่าย': '#8e8e93',
 }
@@ -33,7 +33,7 @@ export const CAT_COLOR: Record<string, string> = {
 export function actionLabel(a: Log['action'], table: string) {
   if (a === 'insert') return table === 'production_scans' ? { t: 'สแกน', c: '#5ac8fa' } : { t: 'เพิ่ม', c: '#30d158' }
   if (a === 'delete') return { t: 'ลบ', c: '#f43f5e' }
-  return { t: 'แก้ไข', c: '#C47E3A' }
+  return { t: 'แก้ไข', c: '#A87452' }
 }
 
 // ชื่อฟิลด์ → ภาษาไทย (ไม่เจอ = ใช้ชื่อดิบ)

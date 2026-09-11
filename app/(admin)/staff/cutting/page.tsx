@@ -155,7 +155,7 @@ export default function CuttingPage() {
       )}
 
       {view.warnRows.length > 0 && (
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--yellow, #eab308)', borderRadius: 12, boxShadow: 'var(--shadow)', padding: '16px 18px', marginBottom: 18 }}>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--yellow, #C79A4B)', borderRadius: 12, boxShadow: 'var(--shadow)', padding: '16px 18px', marginBottom: 18 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)', marginBottom: 8 }}>⚠️ ออเดอร์ที่ระบบคิดเมตรไม่ครบ</div>
           <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 10 }}>
             ส่วนใหญ่คือรายการที่ชื่อไม่บอกว่าเป็นม่านแบบไหน (เช่น &quot;ผ้าม่านหน้าต่าง&quot;) — แก้ชื่อ/หัวรางในออเดอร์แล้วให้ช่างสแกนใหม่ ตัวเลขถึงจะครบ

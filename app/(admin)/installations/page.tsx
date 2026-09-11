@@ -7,7 +7,7 @@ import { useInstallPhotos, photoSaveError, type InstallPhoto } from '@/component
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { HOLIDAYS } from '@/lib/holidays'
-import { formatItemLines, autoTapeHooks, ITEM_FIELDS, ITEM_FIELD_OPTIONS, visibleItemCols, emptyItem, type RawItem } from '@/lib/itemFormat'
+import { formatItemLines, autoTapeHooks, ITEM_FIELDS, ITEM_FIELD_OPTIONS, visibleItemCols, itemInputValue, emptyItem, type RawItem } from '@/lib/itemFormat'
 import { syncOutsourcePO } from '@/lib/outsourceSync'
 import { recordAction } from '@/lib/history'
 import { prevOf } from '@/lib/trackedDb'
@@ -92,13 +92,13 @@ const ORDER_META_COLS = 'id, order_number, customer_name, items, price, payment_
 // ตัวเลือกของคอลัมน์ที่เป็นข้อมูลใบออเดอร์ — ชุดเดียวกับหมวดออเดอร์ (components/OrderWorkspace.tsx)
 const PAYMENT_STATUSES = ['ยังไม่ชำระ', 'มัดจำ', 'มัดจำ50%', 'ชำระครบ']
 const PAYMENT_STATUS_COLOR: Record<string, string> = {
-  'ยังไม่ชำระ': '#f59e0b', 'มัดจำ': '#8b5cf6', 'มัดจำ50%': '#3b82f6', 'ชำระครบ': '#22c55e',
+  'ยังไม่ชำระ': '#C79A4B', 'มัดจำ': '#9A7BA0', 'มัดจำ50%': '#6E8CA0', 'ชำระครบ': '#6F8F6A',
 }
 const ORDER_ASSIGNED = ['รออัพเดท', 'แจ้งลงหน้าร้าน', 'พี่ฟอง', 'ช่างเชียงใหม่']
 const ADMINS = ['กาย', 'แพท', 'หนูนา', 'ยุน', 'ส้ม', 'เก๋']
 const INSTALL_STATUS_OPTIONS = ['ติดตั้งแล้ว', 'ติดตั้ง50%']
 const EMPTY_HL = 'rgba(245,158,11,0.42)'
-const daysColor = (d: number) => d <= 0 ? 'var(--red)' : d <= 10 ? '#eab308' : '#34c759'
+const daysColor = (d: number) => d <= 0 ? 'var(--red)' : d <= 10 ? '#C79A4B' : '#6F8F6A'
 
 // ลำดับแถวชุดเดียวกับตารางงานติดตั้งในหมวดออเดอร์ — 3 ชั้น ต้องครบทั้ง 3 ถึงจะตรงกัน
 //   1) ฐานที่หมวดออเดอร์โหลดมา = วันที่สร้างใบ (entry_date) ใหม่→เก่า · วันเท่ากันตัดสินด้วย id ของใบออเดอร์
@@ -1190,7 +1190,7 @@ export default function InstallationsPage() {
         }} />
         {/* Legend */}
         <div style={{ display: 'flex', gap: 16, marginTop: 16, flexWrap: 'wrap' }}>
-          {[['#5ac8fa', 'วัดหน้างาน'], ['#ff9f0a', 'ติดตั้ง'], ['var(--red)', 'รอแก้'], ['#eab308', 'วันหยุด'], ['#9ca3af', 'ร้านปิด (อา.)']].map(([c, l]) => (
+          {[['#5ac8fa', 'วัดหน้างาน'], ['#C79A4B', 'ติดตั้ง'], ['var(--red)', 'รอแก้'], ['#C79A4B', 'วันหยุด'], ['#9ca3af', 'ร้านปิด (อา.)']].map(([c, l]) => (
             <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <span style={{ width: 10, height: 10, borderRadius: 2, background: c, display: 'inline-block' }} />
               <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{l}</span>
@@ -1324,9 +1324,9 @@ export default function InstallationsPage() {
                 const dueDate = oe?.deadline ?? (ins.appointment_datetime ? ins.appointment_datetime.slice(0, 10) : null)
                 const outDays = dueDate ? daysRemaining(dueDate) : null
                 const cells: Record<string, React.ReactNode> = {
-                  days: oe?.order_status === 'ยกเลิก' ? <span style={{ fontWeight: 700, color: '#ef4444' }}>ยกเลิก</span>
-                    : oe?.is_urgent ? <span style={{ fontWeight: 700, color: '#22c55e' }}>งานเสร็จ</span>
-                    : oe?.order_status === 'เสร็จสิ้น' ? <span style={{ fontWeight: 700, color: '#22c55e' }}>เสร็จสิ้น</span>
+                  days: oe?.order_status === 'ยกเลิก' ? <span style={{ fontWeight: 700, color: '#C0563F' }}>ยกเลิก</span>
+                    : oe?.is_urgent ? <span style={{ fontWeight: 700, color: '#6F8F6A' }}>งานเสร็จ</span>
+                    : oe?.order_status === 'เสร็จสิ้น' ? <span style={{ fontWeight: 700, color: '#6F8F6A' }}>เสร็จสิ้น</span>
                     : outDays !== null ? (
                       <span style={{ fontWeight: 700, color: daysColor(outDays) }}>
                         {outDays === 0 ? 'ต้องติดตั้งวันนี้' : daysLabel(outDays)}
@@ -1345,7 +1345,7 @@ export default function InstallationsPage() {
                         {TIMES.map(t => <option key={t}>{t}</option>)}
                       </select>
                       <button onClick={() => clearAppt(ins.id)} title="ล้างวันนัด กลับไปเป็นรอนัดหมาย"
-                        style={{ border: '1px solid #f59e0b', background: 'transparent', borderRadius: 6, padding: '3px 7px', fontSize: 11, cursor: 'pointer', color: '#f59e0b', fontWeight: 600, whiteSpace: 'nowrap' }}>รอนัดหมาย</button>
+                        style={{ border: '1px solid #C79A4B', background: 'transparent', borderRadius: 6, padding: '3px 7px', fontSize: 11, cursor: 'pointer', color: '#C79A4B', fontWeight: 600, whiteSpace: 'nowrap' }}>รอนัดหมาย</button>
                       <button onClick={() => setEditAppt(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 14 }}>✓</button>
                     </div>
                   ) : (
@@ -1359,14 +1359,14 @@ export default function InstallationsPage() {
                     }} style={{ cursor: 'pointer' }}>
                       {/* ข้อความ/สีชุดเดียวกับหมวดออเดอร์: ติดตั้งแล้ว = เขียว · ยังไม่ได้นัด = รอนัดหมาย(ส้ม) · นัดแล้ว = ม่วง */}
                       {instStatusOfOrder === 'ติดตั้งแล้ว' ? (
-                        <span style={{ fontWeight: 700, color: '#22c55e' }}>ติดตั้งแล้ว</span>
+                        <span style={{ fontWeight: 700, color: '#6F8F6A' }}>ติดตั้งแล้ว</span>
                       ) : ins.appointment_datetime ? (
-                        <span style={{ color: '#bf5af2', whiteSpace: 'nowrap' }}>
+                        <span style={{ color: '#9A7BA0', whiteSpace: 'nowrap' }}>
                           {new Date(ins.appointment_datetime).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                           {' '}
                           {new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                         </span>
-                      ) : <span style={{ color: '#f59e0b', fontWeight: 600 }}>รอนัดหมาย</span>}
+                      ) : <span style={{ color: '#C79A4B', fontWeight: 600 }}>รอนัดหมาย</span>}
                     </span>
                   ),
                   work: (
@@ -1386,7 +1386,7 @@ export default function InstallationsPage() {
                       <input type="checkbox" checked={!!oe?.printed_at} onChange={e => togglePrinted(oid, e.target.checked)}
                         style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
                       {oe?.printed_at && (
-                        <div style={{ fontSize: 10, color: '#eab308', fontWeight: 600, marginTop: 2 }}>
+                        <div style={{ fontSize: 10, color: '#C79A4B', fontWeight: 600, marginTop: 2 }}>
                           {new Date(oe.printed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
                           {new Date(oe.printed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                         </div>
@@ -1449,20 +1449,20 @@ export default function InstallationsPage() {
                   total: oid ? oeNumCell('price') : noOrder,
                   payment: oid ? (
                     <select value={oe?.payment_status || 'ยังไม่ชำระ'} onChange={e => saveOrderPayment(oid, e.target.value)}
-                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PAYMENT_STATUS_COLOR[oe?.payment_status ?? ''] ?? '#f59e0b', padding: 0 }}>
+                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PAYMENT_STATUS_COLOR[oe?.payment_status ?? ''] ?? '#C79A4B', padding: 0 }}>
                       {PAYMENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   ) : noOrder,
                   paid: !oid ? noOrder
                     : (!oe?.payment_status || oe.payment_status === 'ยังไม่ชำระ') ? <div style={{ textAlign: 'right', color: 'var(--ink-4)' }}>-</div>
                     : oe.payment_status === 'ชำระครบ' && oe.paid_amount == null
-                      ? <div style={{ textAlign: 'right', fontWeight: 600, color: '#22c55e' }}>{oe.price != null ? Number(oe.price).toLocaleString('th-TH') : '—'}</div>
+                      ? <div style={{ textAlign: 'right', fontWeight: 600, color: '#6F8F6A' }}>{oe.price != null ? Number(oe.price).toLocaleString('th-TH') : '—'}</div>
                       : oeNumCell('paid_amount'),
                   paybefore: !oid ? noOrder
                     : (oe?.payment_status === 'ชำระครบ' || !oe?.payment_status || oe?.payment_status === 'ยังไม่ชำระ')
                       ? <div style={{ textAlign: 'right', color: 'var(--ink-4)' }}>-</div>
                       : autoDeposit != null
-                        ? <div style={{ textAlign: 'right', fontWeight: 600, color: '#3b82f6' }}>{autoDeposit.toLocaleString('th-TH')}</div>
+                        ? <div style={{ textAlign: 'right', fontWeight: 600, color: '#6E8CA0' }}>{autoDeposit.toLocaleString('th-TH')}</div>
                         : oeNumCell('deposit'),
                   assigned: oid ? (
                     <select value={oe?.order_assigned || 'รออัพเดท'} onChange={e => saveOrder(oid, { order_assigned: e.target.value }, 'แก้ลงออเดอร์ ' + (oe?.customer_name || ''))}
@@ -1495,7 +1495,7 @@ export default function InstallationsPage() {
                   done: oid ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                       <input type="checkbox" checked={!!oe?.is_urgent} onChange={e => toggleOrderDone(oid, e.target.checked)}
-                        style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                        style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                       {oe?.is_urgent && oe.done_at && (editDoneAt === oid ? (
                         <input type="datetime-local" autoFocus defaultValue={toLocalInput(oe.done_at)}
                           onBlur={e => saveDoneAt(oid, e.target.value)}
@@ -1503,7 +1503,7 @@ export default function InstallationsPage() {
                           style={{ fontSize: 10, padding: '1px 4px', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--ink)', background: 'var(--bg)' }} />
                       ) : (
                         <span onClick={() => setEditDoneAt(oid)} title="กดเพื่อแก้วัน-เวลางานเสร็จ"
-                          style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3, cursor: 'pointer', textDecoration: 'underline dotted' }}>
+                          style={{ color: '#6F8F6A', fontSize: 10, lineHeight: 1.3, cursor: 'pointer', textDecoration: 'underline dotted' }}>
                           {new Date(oe.done_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
                           {new Date(oe.done_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                         </span>
@@ -1512,7 +1512,7 @@ export default function InstallationsPage() {
                   ) : noOrder,
                   installed: oid ? (
                     <select value={instStatusOfOrder} onChange={e => saveOrderInstallStatus(oid, e.target.value)}
-                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: instStatusOfOrder === 'ติดตั้งแล้ว' ? '#22c55e' : instStatusOfOrder === 'ติดตั้ง50%' ? '#f59e0b' : 'var(--ink-4)', padding: 0 }}>
+                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: instStatusOfOrder === 'ติดตั้งแล้ว' ? '#6F8F6A' : instStatusOfOrder === 'ติดตั้ง50%' ? '#C79A4B' : 'var(--ink-4)', padding: 0 }}>
                       <option value="">—</option>
                       {INSTALL_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
@@ -1528,9 +1528,9 @@ export default function InstallationsPage() {
                   rail: !oid ? noOrder : hasRailItems(oid) ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                       <input type="checkbox" checked={!!oe?.rail_packed} onChange={e => toggleOrderRail(oid, e.target.checked)}
-                        style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                        style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                       {oe?.rail_packed && oe.rail_packed_at && (
-                        <span style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3 }}>
+                        <span style={{ color: '#6F8F6A', fontSize: 10, lineHeight: 1.3 }}>
                           {new Date(oe.rail_packed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
                           {new Date(oe.rail_packed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                         </span>
@@ -1842,9 +1842,7 @@ export default function InstallationsPage() {
                               ? autoTapeHooks(item)                                  /* ว่าง → โชว์กระดูมที่คำนวณจากม่านลอนเทป (พิมพ์ทับได้) */
                               : (item[key] == null ? '' : String(item[key]))}
                             onChange={e => {
-                              const val = key === 'floors'
-                                ? (e.target.value === '' ? null : Number(e.target.value))
-                                : e.target.value
+                              const val = itemInputValue(key, e.target.value)
                               setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: val } : it) } : null)
                             }}
                             style={{ width: w, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }}
@@ -1977,7 +1975,7 @@ export default function InstallationsPage() {
               <button onClick={() => setSummaryModal(false)}
                 style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ปิด</button>
               <button onClick={async () => { await navigator.clipboard.writeText(summaryText); setSummaryCopied(true); setTimeout(() => setSummaryCopied(false), 2000) }}
-                style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: summaryCopied ? '#34c759' : 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600, transition: 'background 0.15s' }}>
+                style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: summaryCopied ? '#6F8F6A' : 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600, transition: 'background 0.15s' }}>
                 {summaryCopied ? '✓ คัดลอกแล้ว' : 'คัดลอกข้อความ'}
               </button>
             </div>
@@ -2039,7 +2037,7 @@ export default function InstallationsPage() {
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     {([['ทุกช่าง', null], ...TECHS.map(t => [t, t] as [string, string])] as [string, string | null][]).map(([label, val]) => (
                       <button key={label} onClick={() => setBonusTech(val)}
-                        style={{ padding: '5px 12px', borderRadius: 980, border: bonusTech === val ? 'none' : '1px solid var(--border)', background: bonusTech === val ? '#ff9f0a' : '#fff', color: bonusTech === val ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: bonusTech === val ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        style={{ padding: '5px 12px', borderRadius: 980, border: bonusTech === val ? 'none' : '1px solid var(--border)', background: bonusTech === val ? '#C79A4B' : '#fff', color: bonusTech === val ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: bonusTech === val ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                         {label}
                       </button>
                     ))}
@@ -2064,8 +2062,8 @@ export default function InstallationsPage() {
                 {card('งานติดตั้งเสร็จ', `${done.length} งาน`, 'var(--ink)')}
                 {card('รวมยอดติดตั้งสำเร็จ', fmtB(total), 'var(--blue)')}
                 {card('ทุน 80%', fmtB(cost), 'var(--ink-2)')}
-                {card('กำไร 20%', fmtB(profit), '#34c759')}
-                {card('โบนัสรวม 1%', fmtB(bonusTotal), '#ff9f0a')}
+                {card('กำไร 20%', fmtB(profit), '#6F8F6A')}
+                {card('โบนัสรวม 1%', fmtB(bonusTotal), '#C79A4B')}
                 {card(`โบนัสต่อคน (${techCount} คน)`, '฿' + bonusEach.toLocaleString('th-TH'), 'var(--red)')}
               </div>
               {noPrice.length > 0 && (
@@ -2099,7 +2097,7 @@ export default function InstallationsPage() {
                         <td style={{ padding: '10px 14px', color: 'var(--ink-3)' }}>{ins.platform || '-'}</td>
                         <td style={{ padding: '10px 14px', color: 'var(--ink-3)' }}>{ins.install_zone || '-'}</td>
                         <td style={{ padding: '10px 14px', color: 'var(--ink-3)' }}>{ins.technician_type || '-'}</td>
-                        <td style={{ padding: '10px 14px', color: payOf(ins) === 'ชำระครบ' ? '#34c759' : 'var(--ink-3)', fontWeight: payOf(ins) === 'ชำระครบ' ? 600 : 400 }}>{payOf(ins) || '-'}</td>
+                        <td style={{ padding: '10px 14px', color: payOf(ins) === 'ชำระครบ' ? '#6F8F6A' : 'var(--ink-3)', fontWeight: payOf(ins) === 'ชำระครบ' ? 600 : 400 }}>{payOf(ins) || '-'}</td>
                         <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: priceOf(ins) > 0 ? 'var(--ink)' : '#b45309', whiteSpace: 'nowrap' }}>
                           {priceOf(ins) > 0 ? fmtB(priceOf(ins)) : 'ยังไม่ลงราคา'}
                         </td>

@@ -81,7 +81,7 @@ export default function ClientVersions() {
             const isOld = !!current && r.version !== current
             return (
               <div key={r.client_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 8, background: isOld ? '#fff6f6' : 'var(--bg)' }}>
-                <span style={{ width: 8, height: 8, borderRadius: 4, background: isOld ? 'var(--red)' : '#34c759', flexShrink: 0 }} />
+                <span style={{ width: 8, height: 8, borderRadius: 4, background: isOld ? 'var(--red)' : '#6F8F6A', flexShrink: 0 }} />
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {r.staff_name || r.staff_code || 'รหัสรวมของร้าน'} · {device(r.user_agent)}

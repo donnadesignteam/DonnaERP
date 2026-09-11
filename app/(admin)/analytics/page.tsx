@@ -25,11 +25,11 @@ type AllData = { orders: OrderRow[]; scans: ScanRow[]; claims: ClaimRow[] }
 
 // ลำดับขั้นผลิต + สีตามชุดเดียวกับหน้าออเดอร์/dashboard (PROD_STATUS_COLOR)
 const STAGES = [
-  { status: 'ตัดผ้าแล้ว', label: 'แผนกตัดผ้า', color: '#0ea5e9' },
-  { status: 'เย็บแล้ว',   label: 'แผนกเย็บผ้า', color: '#8b5cf6' },
-  { status: 'ตรวจสอบแล้ว', label: 'ผู้ช่วยช่าง', color: '#6366f1' },
-  { status: 'รีดแล้ว',    label: 'แผนกรีดผ้า',  color: '#ec4899' },
-  { status: 'แพ็คแล้ว',   label: 'แผนกแพ็คสินค้า', color: '#14b8a6' },
+  { status: 'ตัดผ้าแล้ว', label: 'แผนกตัดผ้า', color: '#6E8CA0' },
+  { status: 'เย็บแล้ว',   label: 'แผนกเย็บผ้า', color: '#9A7BA0' },
+  { status: 'ตรวจสอบแล้ว', label: 'ผู้ช่วยช่าง', color: '#7B7FA3' },
+  { status: 'รีดแล้ว',    label: 'แผนกรีดผ้า',  color: '#C2848E' },
+  { status: 'แพ็คแล้ว',   label: 'แผนกแพ็คสินค้า', color: '#6E9A92' },
 ]
 
 const DAY = 86400000
@@ -350,13 +350,13 @@ export default function AnalyticsPage() {
 
       {/* การ์ดสรุป */}
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 22 }}>
-        <StatTile label="เวลาผลิตรวม (ตัด → แพ็ค)" value={fmtDur(stats.totalProdMed)} sub={`จาก ${stats.totalProdN} ออเดอร์`} color="#C47E3A"
+        <StatTile label="เวลาผลิตรวม (ตัด → แพ็ค)" value={fmtDur(stats.totalProdMed)} sub={`จาก ${stats.totalProdN} ออเดอร์`} color="#A87452"
           icon={<svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>} />
-        <StatTile label="เวลาจัดส่ง (ลงออเดอร์ → ส่ง)" value={stats.shipMed != null ? `${Math.round((stats.shipMed / DAY) * 10) / 10} วัน` : '—'} sub={`จาก ${stats.shipN} ออเดอร์ที่จัดส่งแล้ว`} color="#6366F1"
+        <StatTile label="เวลาจัดส่ง (ลงออเดอร์ → ส่ง)" value={stats.shipMed != null ? `${Math.round((stats.shipMed / DAY) * 10) / 10} วัน` : '—'} sub={`จาก ${stats.shipN} ออเดอร์ที่จัดส่งแล้ว`} color="#7B7FA3"
           icon={<svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 00-3.213-9.193 2.056 2.056 0 00-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 00-10.026 0 1.106 1.106 0 00-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12"/></svg>} />
         <StatTile label="ส่งทันกำหนด" value={stats.onTimePct != null ? `${stats.onTimePct}%` : '—'} sub={`จาก ${stats.onTimeN} ออเดอร์ที่มีกำหนดส่ง`} color="#16A34A"
           icon={<svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>} />
-        <StatTile label="ยอดขายที่จัดส่งแล้ว" value={fmtBaht(stats.revenue)} sub={`${stats.shippedCount} ออเดอร์ · เคลม ${stats.claims.length} เคส (${stats.claimRate.toFixed(1)}%)`} color="#DC2626"
+        <StatTile label="ยอดขายที่จัดส่งแล้ว" value={fmtBaht(stats.revenue)} sub={`${stats.shippedCount} ออเดอร์ · เคลม ${stats.claims.length} เคส (${stats.claimRate.toFixed(1)}%)`} color="#C0563F"
           icon={<svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>} />
       </div>
 
@@ -418,7 +418,7 @@ export default function AnalyticsPage() {
             <>
               <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginBottom: 4 }}>แยกตามฝ่ายผิด</div>
               {stats.faults.map(([fault, n]) => (
-                <HBar key={fault} label={fault} value={n} max={maxFault} color="#DC2626"
+                <HBar key={fault} label={fault} value={n} max={maxFault} color="#C0563F"
                   valueText={`${n} เคส`} subText={`${Math.round((n / stats.claims.length) * 100)}%`} />
               ))}
             </>

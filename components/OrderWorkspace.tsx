@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
-import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, ITEM_FIELDS, ITEM_FIELD_OPTIONS, shownFields, visibleItemCols, emptyItem as emptyRawItem } from '@/lib/itemFormat'
+import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, ITEM_FIELDS, ITEM_FIELD_OPTIONS, shownFields, visibleItemCols, itemInputValue, emptyItem as emptyRawItem } from '@/lib/itemFormat'
 import { railLink } from '@/lib/rail'
 import { TECH_OPTIONS } from '@/lib/techs'
 import { OUTSIDE_PLATFORMS, PLATFORM_NAMES, PROD_STATUSES, INSTALL_STATUSES, PROD_STATUS_COLOR, matchQuickTab, effectiveDueDate, cmpDaysSort, cmpDeadlineSort, type QuickTab } from '@/lib/orderTabs'
@@ -63,6 +63,7 @@ type Item = {
   pull_side?: string      // ฝั่งดึง (ม่านพับ/มู่ลี่): ดึงซ้าย / ดึงขวา
   note: string
   outsource?: string      // สั่งนอกของรายการนี้ — ตอนบันทึกจะรวมทุกรายการไปลงคอลัมน์สั่งนอกของออเดอร์
+  price?: number          // ราคาของรายการนี้ (ยอดทั้งบรรทัด) — มีเฉพาะตอนแปลงจากข้อความที่เขียนราคาแยกไว้
 }
 
 type StatusEvent = {
@@ -227,7 +228,7 @@ const COURIERS = [
 const ADMINS = ['กาย', 'แพท', 'หนูนา', 'ยุน', 'ส้ม', 'เก๋']
 const TECHS = TECH_OPTIONS   // แก้รายชื่อช่างที่ lib/techs.ts (หน้าเคลมใช้ชุดเดียวกัน)
 
-// ไฮไลต์ช่องที่ยังไม่ได้ลงข้อมูล (คอลัมน์แอดมิน/ช่าง) — สีส้มชุดเดียวกับสถานะ "รอดำเนินการ" (#f59e0b ใน PROD_STATUS_COLOR)
+// ไฮไลต์ช่องที่ยังไม่ได้ลงข้อมูล (คอลัมน์แอดมิน/ช่าง) — สีส้มชุดเดียวกับสถานะ "รอดำเนินการ" (#C79A4B ใน PROD_STATUS_COLOR)
 const EMPTY_HL = 'rgba(245,158,11,0.42)'
 
 const TIMES = ['8:00','9:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00']
@@ -276,7 +277,7 @@ const carrierTrackUrl = (sh: Shipment) =>
 
 // สี/ข้อความคอลัมน์วันที่เหลือ: เกินกำหนด+0 วัน = แดง (0 = ต้องจัดส่งวันนี้), 1-10 วัน = เหลือง, >10 วัน = เขียว
 const daysLabel = (d: number) => d < 0 ? `เกิน ${Math.abs(d)} วัน` : d === 0 ? 'ต้องจัดส่งวันนี้' : `${d} วัน`
-const daysColor = (d: number) => d <= 0 ? 'var(--red)' : d <= 10 ? '#eab308' : '#34c759'
+const daysColor = (d: number) => d <= 0 ? 'var(--red)' : d <= 10 ? '#C79A4B' : '#6F8F6A'
 
 const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping_datetime' | 'shipped_at' | 'rail_packed' | 'rail_packed_at' | 'done_at' | 'printed_at' | 'status_history' | 'shipments' | 'outsource_at' | 'install_status'> => ({
   entry_date: todayYmd(),
@@ -310,7 +311,7 @@ const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping
 })
 
 const STATUS_COLOR: Record<string, string> = {
-  'อยู่ในกำหนด': '#34c759',
+  'อยู่ในกำหนด': '#6F8F6A',
   'งานเสร็จแล้ว': 'var(--blue)',
 }
 
@@ -319,17 +320,17 @@ const STATUS_COLOR: Record<string, string> = {
 
 const OUTSIDE_STATUSES = ['รอดำเนินการ', 'เสร็จสิ้น', 'รอยอดปลายทาง', 'ยกเลิก']
 const OUTSIDE_STATUS_COLOR: Record<string, string> = {
-  'รอดำเนินการ': '#f59e0b',
-  'เสร็จสิ้น': '#22c55e',
-  'รอยอดปลายทาง': '#3b82f6',
-  'ยกเลิก': '#ef4444',
+  'รอดำเนินการ': '#C79A4B',
+  'เสร็จสิ้น': '#6F8F6A',
+  'รอยอดปลายทาง': '#6E8CA0',
+  'ยกเลิก': '#C0563F',
 }
 const PAYMENT_STATUSES = ['ยังไม่ชำระ', 'มัดจำ', 'มัดจำ50%', 'ชำระครบ']
 const PAYMENT_STATUS_COLOR: Record<string, string> = {
-  'ยังไม่ชำระ': '#f59e0b',
-  'มัดจำ': '#8b5cf6',
-  'มัดจำ50%': '#3b82f6',
-  'ชำระครบ': '#22c55e',
+  'ยังไม่ชำระ': '#C79A4B',
+  'มัดจำ': '#9A7BA0',
+  'มัดจำ50%': '#6E8CA0',
+  'ชำระครบ': '#6F8F6A',
 }
 const ORDER_ASSIGNED = ['รออัพเดท', 'แจ้งลงหน้าร้าน', 'พี่ฟอง', 'ช่างเชียงใหม่']
 
@@ -1029,7 +1030,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       <input type="checkbox" checked={!!r.printed_at} onChange={e => togglePrinted(r.id, e.target.checked)}
         style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
       {r.printed_at && (
-        <div style={{ fontSize: 10, color: '#eab308', fontWeight: 600, marginTop: 2 }}>
+        <div style={{ fontSize: 10, color: '#C79A4B', fontWeight: 600, marginTop: 2 }}>
           {new Date(r.printed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
           {new Date(r.printed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
         </div>
@@ -1148,7 +1149,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     )
     return (
       <span onClick={() => setEditShipped(key)} title={`กดเพื่อแก้วัน-เวลา${field === 'done_at' ? 'งานเสร็จ' : 'จัดส่ง'}`}
-        style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3, cursor: 'pointer', textDecoration: 'underline dotted' }}>
+        style={{ color: '#6F8F6A', fontSize: 10, lineHeight: 1.3, cursor: 'pointer', textDecoration: 'underline dotted' }}>
         {new Date(iso).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
         {new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
       </span>
@@ -2470,8 +2471,16 @@ ${body}
         if (!res.ok || data.error) throw new Error(data.error || 'แปลงไม่สำเร็จ')
         const o = data.order || {}
         if (!Array.isArray(o.items) || o.items.length === 0) throw new Error('อ่านรายการจากข้อความที่แก้ไม่ได้')
+        // ใบปริ้นไม่มีราคารายการ → แปลงกลับมาราคาจะหาย · ยกราคาเดิมมาให้รายการที่ลำดับ+ชนิด+ความกว้างตรงกับของเดิม
+        const { data: prev } = await supabase.from('order_entries').select('items').eq('id', d.id).maybeSingle()
+        const oldItems: Item[] = Array.isArray(prev?.items) ? prev.items : []
+        const items = (o.items as Item[]).map((it, i) => {
+          const old = oldItems[i]
+          return it.price == null && old?.price != null && old.type === it.type && String(old.width) === String(it.width)
+            ? { ...it, price: old.price } : it
+        })
         const now = new Date().toISOString()
-        const updates = { items: o.items as Item[], updated_at: now }
+        const updates = { items, updated_at: now }
         const { error: err } = await oeUpdate(updates).eq('id', d.id)
         if (err) throw new Error(err.message)
         setRows(prev => prev.map(r => r.id === d.id ? { ...r, ...updates } as Entry : r))
@@ -2658,9 +2667,9 @@ ${body}
           if (incompleteCount === 0) return null
           return (
             <button onClick={() => setIncompleteFilter(f => !f)}
-              style={{ padding: '6px 14px', borderRadius: 20, border: incompleteFilter ? 'none' : '1px solid var(--border)', background: incompleteFilter ? '#ef4444' : 'var(--surface)', color: incompleteFilter ? '#fff' : '#ef4444', fontSize: 13, fontWeight: incompleteFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+              style={{ padding: '6px 14px', borderRadius: 20, border: incompleteFilter ? 'none' : '1px solid var(--border)', background: incompleteFilter ? '#C0563F' : 'var(--surface)', color: incompleteFilter ? '#fff' : '#C0563F', fontSize: 13, fontWeight: incompleteFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
               ข้อมูลไม่ครบ
-              <span style={{ background: incompleteFilter ? 'rgba(255,255,255,0.3)' : '#ef444422', color: incompleteFilter ? '#fff' : '#ef4444', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
+              <span style={{ background: incompleteFilter ? 'rgba(255,255,255,0.3)' : '#C0563F22', color: incompleteFilter ? '#fff' : '#C0563F', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
                 {incompleteCount}
               </span>
             </button>
@@ -2671,9 +2680,9 @@ ${body}
           if (unprintedCount === 0) return null
           return (
             <button onClick={() => { setUnprintedFilter(f => !f); setPrintedPendingFilter(false) }}
-              style={{ padding: '6px 14px', borderRadius: 20, border: unprintedFilter ? 'none' : '1px solid var(--border)', background: unprintedFilter ? '#eab308' : 'var(--surface)', color: unprintedFilter ? '#fff' : '#eab308', fontSize: 13, fontWeight: unprintedFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+              style={{ padding: '6px 14px', borderRadius: 20, border: unprintedFilter ? 'none' : '1px solid var(--border)', background: unprintedFilter ? '#C79A4B' : 'var(--surface)', color: unprintedFilter ? '#fff' : '#C79A4B', fontSize: 13, fontWeight: unprintedFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
               ยังไม่ปริ้น
-              <span style={{ background: unprintedFilter ? 'rgba(255,255,255,0.3)' : '#eab30822', color: unprintedFilter ? '#fff' : '#eab308', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
+              <span style={{ background: unprintedFilter ? 'rgba(255,255,255,0.3)' : '#C79A4B22', color: unprintedFilter ? '#fff' : '#C79A4B', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
                 {unprintedCount}
               </span>
             </button>
@@ -2685,9 +2694,9 @@ ${body}
           return (
             <button onClick={() => { setPrintedPendingFilter(f => !f); setUnprintedFilter(false) }}
               title="ปริ้นใบงานไปเกิน 24 ชม. แล้ว แต่สถานะยังเป็น รอดำเนินการ"
-              style={{ padding: '6px 14px', borderRadius: 20, border: printedPendingFilter ? 'none' : '1px solid var(--border)', background: printedPendingFilter ? '#3b82f6' : 'var(--surface)', color: printedPendingFilter ? '#fff' : '#3b82f6', fontSize: 13, fontWeight: printedPendingFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+              style={{ padding: '6px 14px', borderRadius: 20, border: printedPendingFilter ? 'none' : '1px solid var(--border)', background: printedPendingFilter ? '#6E8CA0' : 'var(--surface)', color: printedPendingFilter ? '#fff' : '#6E8CA0', fontSize: 13, fontWeight: printedPendingFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
               ปริ้นแล้วแต่ยังไม่ดำเนินการ
-              <span style={{ background: printedPendingFilter ? 'rgba(255,255,255,0.3)' : '#3b82f622', color: printedPendingFilter ? '#fff' : '#3b82f6', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
+              <span style={{ background: printedPendingFilter ? 'rgba(255,255,255,0.3)' : '#6E8CA022', color: printedPendingFilter ? '#fff' : '#6E8CA0', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
                 {printedPendingCount}
               </span>
             </button>
@@ -2699,9 +2708,9 @@ ${body}
           return (
             <button onClick={() => setDropoffPendingFilter(f => !f)}
               title="กด Drop-off ไปเกิน 24 ชม. แล้ว แต่ยังไม่ได้ติ๊กจัดส่ง (รวมใบที่อัพเดท Drop จากไฟล์ Shopee)"
-              style={{ padding: '6px 14px', borderRadius: 20, border: dropoffPendingFilter ? 'none' : '1px solid var(--border)', background: dropoffPendingFilter ? '#f97316' : 'var(--surface)', color: dropoffPendingFilter ? '#fff' : '#f97316', fontSize: 13, fontWeight: dropoffPendingFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+              style={{ padding: '6px 14px', borderRadius: 20, border: dropoffPendingFilter ? 'none' : '1px solid var(--border)', background: dropoffPendingFilter ? '#B5715A' : 'var(--surface)', color: dropoffPendingFilter ? '#fff' : '#B5715A', fontSize: 13, fontWeight: dropoffPendingFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
               กด Drop-off แล้วแต่ยังไม่ได้ส่ง
-              <span style={{ background: dropoffPendingFilter ? 'rgba(255,255,255,0.3)' : '#f9731622', color: dropoffPendingFilter ? '#fff' : '#f97316', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
+              <span style={{ background: dropoffPendingFilter ? 'rgba(255,255,255,0.3)' : '#B5715A22', color: dropoffPendingFilter ? '#fff' : '#B5715A', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
                 {dropoffPendingCount}
               </span>
             </button>
@@ -2713,9 +2722,9 @@ ${body}
           return (
             <button onClick={() => setStatusStaleFilter(f => !f)}
               title="งานแพลตฟอร์มที่ค้างสถานะเดิมมาเกิน 24 ชม."
-              style={{ padding: '6px 14px', borderRadius: 20, border: statusStaleFilter ? 'none' : '1px solid var(--border)', background: statusStaleFilter ? '#a855f7' : 'var(--surface)', color: statusStaleFilter ? '#fff' : '#a855f7', fontSize: 13, fontWeight: statusStaleFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+              style={{ padding: '6px 14px', borderRadius: 20, border: statusStaleFilter ? 'none' : '1px solid var(--border)', background: statusStaleFilter ? '#9A7BA0' : 'var(--surface)', color: statusStaleFilter ? '#fff' : '#9A7BA0', fontSize: 13, fontWeight: statusStaleFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
               สถานะไม่อัพเดท
-              <span style={{ background: statusStaleFilter ? 'rgba(255,255,255,0.3)' : '#a855f722', color: statusStaleFilter ? '#fff' : '#a855f7', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
+              <span style={{ background: statusStaleFilter ? 'rgba(255,255,255,0.3)' : '#9A7BA022', color: statusStaleFilter ? '#fff' : '#9A7BA0', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
                 {statusStaleCount}
               </span>
             </button>
@@ -2764,7 +2773,7 @@ ${body}
               ))}
               {/* filter งานเสร็จ: กดเพื่อดูเฉพาะงานเสร็จ กดซ้ำเพื่อยกเลิก */}
               <div onClick={() => { setOutDoneFilter(outDoneFilter === true ? null : true); setOpenFilter(null); setOutFilterPos(null) }}
-                style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: outDoneFilter === true ? 600 : 400, color: outDoneFilter === true ? '#22c55e' : 'var(--ink)', background: outDoneFilter === true ? 'rgba(34,197,94,0.08)' : 'transparent', borderTop: '1px solid var(--border)' }}>
+                style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: outDoneFilter === true ? 600 : 400, color: outDoneFilter === true ? '#6F8F6A' : 'var(--ink)', background: outDoneFilter === true ? 'rgba(34,197,94,0.08)' : 'transparent', borderTop: '1px solid var(--border)' }}>
                 งานเสร็จ {outDoneFilter === true && '✓'}
               </div>
             </div>
@@ -2987,7 +2996,7 @@ ${body}
                 {showCol('done') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap' }}>
                   <button onClick={e => openOutFilter(e, 'out-done')}
-                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outDoneFilter !== null ? '#22c55e' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outDoneFilter !== null ? '#6F8F6A' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
                     งานเสร็จ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                 </th>
@@ -2998,7 +3007,7 @@ ${body}
                 {quickFilter === 'install' && showCol('installed') && (
                   <th style={{ textAlign: 'center', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap' }}>
                     <button onClick={e => openOutFilter(e, 'out-installed')}
-                      style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outInstalledFilter !== null ? '#22c55e' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                      style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outInstalledFilter !== null ? '#6F8F6A' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
                       ติดตั้ง <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                     </button>
                   </th>
@@ -3112,7 +3121,7 @@ ${body}
                       style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, outline: 'none', padding: '2px 0' }} />
                   ) : (
                     <div onClick={() => setEditCell({ id: r.id, field, val })}
-                      style={{ cursor: 'text', whiteSpace: 'nowrap', color: field === 'deadline' ? (val ? '#bf5af2' : 'var(--ink-4)') : (val ? 'var(--ink-3)' : 'var(--ink-4)') }}>
+                      style={{ cursor: 'text', whiteSpace: 'nowrap', color: field === 'deadline' ? (val ? '#9A7BA0' : 'var(--ink-4)') : (val ? 'var(--ink-3)' : 'var(--ink-4)') }}>
                       {display}
                     </div>
                   )
@@ -3176,17 +3185,17 @@ ${body}
                           {timeOpts.map(t => <option key={t}>{t}</option>)}
                         </select>
                         <button onClick={() => clearInstallDt(r.id)} title="ล้างวันนัด กลับไปเป็นรอนัดหมาย"
-                          style={{ border: '1px solid #f59e0b', background: 'transparent', borderRadius: 6, padding: '3px 7px', fontSize: 11, cursor: 'pointer', color: '#f59e0b', fontWeight: 600, whiteSpace: 'nowrap' }}>รอนัดหมาย</button>
+                          style={{ border: '1px solid #C79A4B', background: 'transparent', borderRadius: 6, padding: '3px 7px', fontSize: 11, cursor: 'pointer', color: '#C79A4B', fontWeight: 600, whiteSpace: 'nowrap' }}>รอนัดหมาย</button>
                         <button onClick={() => setInstallDtEdit(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 14 }}>✓</button>
                       </div>
                     )
                   }
                   const open = () => setInstallDtEdit({ id: r.id, date: (r.deadline || '').slice(0, 10), time: r.install_time || '9:00' })
                   if (!r.deadline) return (
-                    <span onClick={open} title="จิ้มเพื่อนัดวันติดตั้ง" style={{ color: '#f59e0b', fontWeight: 600, cursor: 'pointer' }}>รอนัดหมาย</span>
+                    <span onClick={open} title="จิ้มเพื่อนัดวันติดตั้ง" style={{ color: '#C79A4B', fontWeight: 600, cursor: 'pointer' }}>รอนัดหมาย</span>
                   )
                   return (
-                    <span onClick={open} title="จิ้มเพื่อแก้วันเวลานัด" style={{ cursor: 'pointer', whiteSpace: 'nowrap', color: '#bf5af2' }}>
+                    <span onClick={open} title="จิ้มเพื่อแก้วันเวลานัด" style={{ cursor: 'pointer', whiteSpace: 'nowrap', color: '#9A7BA0' }}>
                       {new Date(r.deadline).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' })}{r.install_time ? ` ${r.install_time}` : ''}
                     </span>
                   )
@@ -3209,11 +3218,11 @@ ${body}
                     {showCol('days') && (
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
                       {isCancelled ? (
-                        <span style={{ fontWeight: 700, color: '#ef4444' }}>ยกเลิก</span>
+                        <span style={{ fontWeight: 700, color: '#C0563F' }}>ยกเลิก</span>
                       ) : r.is_urgent ? (
-                        <span style={{ fontWeight: 700, color: '#22c55e' }}>งานเสร็จ</span>
+                        <span style={{ fontWeight: 700, color: '#6F8F6A' }}>งานเสร็จ</span>
                       ) : isDone ? (
-                        <span style={{ fontWeight: 700, color: '#22c55e' }}>เสร็จสิ้น</span>
+                        <span style={{ fontWeight: 700, color: '#6F8F6A' }}>เสร็จสิ้น</span>
                       ) : outDays !== null ? (
                         <span style={{ fontWeight: 700, color: daysColor(outDays) }}>
                           {outDays === 0 && quickFilter === 'install' ? 'ต้องติดตั้งวันนี้' : daysLabel(outDays)}
@@ -3229,8 +3238,8 @@ ${body}
                     {showCol('deadline') && (
                     <td style={{ padding: '8px 14px' }}>
                       {isCancelled ? <span style={{ color: 'var(--ink-4)' }}>-</span>
-                        : r.order_status === 'จัดส่งแล้ว' ? <span style={{ fontWeight: 700, color: '#22c55e' }}>จัดส่งแล้ว</span>
-                        : (quickFilter === 'install' && instStatus === 'ติดตั้งแล้ว') ? <span style={{ fontWeight: 700, color: '#22c55e' }}>ติดตั้งแล้ว</span>
+                        : r.order_status === 'จัดส่งแล้ว' ? <span style={{ fontWeight: 700, color: '#6F8F6A' }}>จัดส่งแล้ว</span>
+                        : (quickFilter === 'install' && instStatus === 'ติดตั้งแล้ว') ? <span style={{ fontWeight: 700, color: '#6F8F6A' }}>ติดตั้งแล้ว</span>
                         : quickFilter === 'install' ? installDtCell()
                         : dateCell('deadline')}
                     </td>
@@ -3292,7 +3301,7 @@ ${body}
                     {showCol('payment') && (
                     <td style={{ padding: '8px 14px' }}>
                       <select value={r.payment_status || 'ยังไม่ชำระ'} onChange={e => handlePaymentStatus(r, e.target.value)}
-                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PAYMENT_STATUS_COLOR[r.payment_status] ?? '#f59e0b', padding: 0 }}>
+                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PAYMENT_STATUS_COLOR[r.payment_status] ?? '#C79A4B', padding: 0 }}>
                         {PAYMENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </td>
@@ -3302,7 +3311,7 @@ ${body}
                       {(!r.payment_status || r.payment_status === 'ยังไม่ชำระ') ? (
                         <div style={{ textAlign: 'right', color: 'var(--ink-4)' }}>-</div>
                       ) : r.payment_status === 'ชำระครบ' && r.paid_amount == null ? (
-                        <div style={{ textAlign: 'right', fontWeight: 600, color: '#22c55e' }}>{r.price != null ? Number(r.price).toLocaleString('th-TH') : '—'}</div>
+                        <div style={{ textAlign: 'right', fontWeight: 600, color: '#6F8F6A' }}>{r.price != null ? Number(r.price).toLocaleString('th-TH') : '—'}</div>
                       ) : numCell('paid_amount')}
                     </td>
                     )}
@@ -3311,7 +3320,7 @@ ${body}
                       {(r.payment_status === 'ชำระครบ' || !r.payment_status || r.payment_status === 'ยังไม่ชำระ') ? (
                         <div style={{ textAlign: 'right', color: 'var(--ink-4)' }}>-</div>
                       ) : autoDeposit != null ? (
-                        <div style={{ textAlign: 'right', fontWeight: 600, color: '#3b82f6' }}>{autoDeposit.toLocaleString('th-TH')}</div>
+                        <div style={{ textAlign: 'right', fontWeight: 600, color: '#6E8CA0' }}>{autoDeposit.toLocaleString('th-TH')}</div>
                       ) : numCell('deposit')}
                     </td>
                     )}
@@ -3339,7 +3348,7 @@ ${body}
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                         <input type="checkbox" checked={!!r.is_urgent} onChange={e => toggleDone(r.id, e.target.checked)}
-                          style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                          style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                         {timeStamp(r, 'done_at')}
                       </div>
                     </td>
@@ -3348,7 +3357,7 @@ ${body}
                       <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                           <input type="checkbox" checked={r.order_status === 'จัดส่งแล้ว'} onChange={e => toggleShipped(r.id, e.target.checked)}
-                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                           {shippedStamp(r)}
                           {Array.isArray(r.shipments) && r.shipments.length > 0 && (
                             <button onClick={() => { setTrackModal(r.id); setTrackError('') }} title="ดูสถานะพัสดุ"
@@ -3362,7 +3371,7 @@ ${body}
                     {quickFilter === 'install' && showCol('installed') && (
                       <td style={{ padding: '12px 14px', textAlign: 'center' }}>
                         <select value={instStatus} onChange={e => handleInstallStatus(r, e.target.value)}
-                          style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: instStatus === 'ติดตั้งแล้ว' ? '#22c55e' : instStatus === 'ติดตั้ง50%' ? '#f59e0b' : 'var(--ink-4)', padding: 0 }}>
+                          style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: instStatus === 'ติดตั้งแล้ว' ? '#6F8F6A' : instStatus === 'ติดตั้ง50%' ? '#C79A4B' : 'var(--ink-4)', padding: 0 }}>
                           <option value="">—</option>
                           {INSTALL_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
@@ -3385,9 +3394,9 @@ ${body}
                       {hasRail(r) ? (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                           <input type="checkbox" checked={!!r.rail_packed} onChange={e => toggleRailPacked(r.id, e.target.checked)}
-                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                           {r.rail_packed && r.rail_packed_at && (
-                            <span style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3 }}>
+                            <span style={{ color: '#6F8F6A', fontSize: 10, lineHeight: 1.3 }}>
                               {new Date(r.rail_packed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
                               {new Date(r.rail_packed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                             </span>
@@ -3481,7 +3490,7 @@ ${body}
                       ))}
                       {/* filter งานเสร็จ: กดเพื่อดูเฉพาะงานเสร็จ กดซ้ำเพื่อยกเลิก */}
                       <div onClick={() => { setAllDoneFilter(allDoneFilter === true ? null : true); setOpenAllFilter(null) }}
-                        style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: allDoneFilter === true ? 600 : 400, color: allDoneFilter === true ? '#22c55e' : 'var(--ink)', background: allDoneFilter === true ? 'rgba(34,197,94,0.08)' : 'transparent', borderTop: '1px solid var(--border)' }}>
+                        style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: allDoneFilter === true ? 600 : 400, color: allDoneFilter === true ? '#6F8F6A' : 'var(--ink)', background: allDoneFilter === true ? 'rgba(34,197,94,0.08)' : 'transparent', borderTop: '1px solid var(--border)' }}>
                         งานเสร็จ {allDoneFilter === true && '✓'}
                       </div>
                     </div>
@@ -3547,7 +3556,7 @@ ${body}
                       {['งานติดตั้ง', ...new Set(rows.map(r => r.courier).filter(Boolean))].map(c => (
                         <label key={c} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: allCourierFilters.includes(c!) ? 'var(--blue-bg)' : 'transparent' }}>
                           <input type="checkbox" checked={allCourierFilters.includes(c!)} onChange={() => setAllCourierFilters(toggleArr(allCourierFilters, c!))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
-                          {c === 'งานติดตั้ง' ? <span style={{ color: '#f97316', fontWeight: 600 }}>งานติดตั้ง</span> : c}
+                          {c === 'งานติดตั้ง' ? <span style={{ color: '#B5715A', fontWeight: 600 }}>งานติดตั้ง</span> : c}
                         </label>
                       ))}
                     </div>
@@ -3576,7 +3585,7 @@ ${body}
                 {showCol('done') && (
                 <th style={{ textAlign: 'center', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
                   <button onClick={() => setOpenAllFilter(openAllFilter === 'done' ? null : 'done')}
-                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: allDoneFilter !== null ? '#22c55e' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: allDoneFilter !== null ? '#6F8F6A' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
                     งานเสร็จ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openAllFilter === 'done' && (
@@ -3635,9 +3644,9 @@ ${body}
                     {showCol('days') && (
                     <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>
                       {r.order_status === 'จัดส่งแล้ว' ? (
-                        <span style={{ fontWeight: 700, color: '#22c55e' }}>งานเสร็จแล้ว</span>
+                        <span style={{ fontWeight: 700, color: '#6F8F6A' }}>งานเสร็จแล้ว</span>
                       ) : r.is_urgent ? (
-                        <span style={{ fontWeight: 700, color: '#22c55e' }}>งานเสร็จ</span>
+                        <span style={{ fontWeight: 700, color: '#6F8F6A' }}>งานเสร็จ</span>
                       ) : allDays !== null ? (
                         <span style={{ fontWeight: 700, color: daysColor(allDays) }}>
                           {daysLabel(allDays)}
@@ -3646,12 +3655,12 @@ ${body}
                     </td>
                     )}
                     {showCol('deadline') && (
-                    <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', fontWeight: 500, color: '#bf5af2' }}>
+                    <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', fontWeight: 500, color: '#9A7BA0' }}>
                       {!isOutsideRow ? (
-                        r.order_status === 'จัดส่งแล้ว' ? <span style={{ color: '#22c55e', fontWeight: 700 }}>จัดส่งแล้ว</span>
+                        r.order_status === 'จัดส่งแล้ว' ? <span style={{ color: '#6F8F6A', fontWeight: 700 }}>จัดส่งแล้ว</span>
                         : shipDtCell(r, allEffective)
                       ) : (
-                        r.order_status === 'จัดส่งแล้ว' ? <span style={{ color: '#22c55e', fontWeight: 700 }}>จัดส่งแล้ว</span>
+                        r.order_status === 'จัดส่งแล้ว' ? <span style={{ color: '#6F8F6A', fontWeight: 700 }}>จัดส่งแล้ว</span>
                         : r.deadline ? new Date(r.deadline).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>รอกำหนด</span>
                       )}
                     </td>
@@ -3672,7 +3681,7 @@ ${body}
                     )}
                     {showCol('courier') && (
                     <td style={{ padding: '12px 14px', color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
-                      {r.is_installation ? <span style={{ color: '#f97316', fontWeight: 600 }}>งานติดตั้ง</span> : r.courier || <span style={{ color: 'var(--ink-4)' }}>-</span>}
+                      {r.is_installation ? <span style={{ color: '#B5715A', fontWeight: 600 }}>งานติดตั้ง</span> : r.courier || <span style={{ color: 'var(--ink-4)' }}>-</span>}
                     </td>
                     )}
                     {showCol('status') && statusCell(r)}
@@ -3680,7 +3689,7 @@ ${body}
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                         <input type="checkbox" checked={!!r.is_urgent} onChange={e => toggleDone(r.id, e.target.checked)}
-                          style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                          style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                         {timeStamp(r, 'done_at')}
                       </div>
                     </td>
@@ -3692,7 +3701,7 @@ ${body}
                       ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                           <input type="checkbox" checked={r.order_status === 'จัดส่งแล้ว'} onChange={e => toggleShipped(r.id, e.target.checked)}
-                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                           {shippedStamp(r)}
                           {Array.isArray(r.shipments) && r.shipments.length > 0 && (
                             <button onClick={() => { setTrackModal(r.id); setTrackError('') }} title="ดูสถานะพัสดุ"
@@ -3709,9 +3718,9 @@ ${body}
                       {hasRail(r) ? (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                           <input type="checkbox" checked={!!r.rail_packed} onChange={e => toggleRailPacked(r.id, e.target.checked)}
-                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                           {r.rail_packed && r.rail_packed_at && (
-                            <span style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3 }}>
+                            <span style={{ color: '#6F8F6A', fontSize: 10, lineHeight: 1.3 }}>
                               {new Date(r.rail_packed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
                               {new Date(r.rail_packed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                             </span>
@@ -3748,7 +3757,7 @@ ${body}
                     )}
                     <td style={{ padding: '8px 14px' }}>
                       <button onClick={e => { const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); if (openAction === r.id) { setOpenAction(null); setActionRect(null) } else { setOpenAction(r.id); setActionRect(rect) } }}
-                        style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: openAction === r.id ? 'var(--bg)' : '#fff', cursor: 'pointer', fontSize: 16, color: copiedId === r.id ? '#34c759' : 'var(--ink-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', letterSpacing: 1, transition: 'color 0.2s' }}>
+                        style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: openAction === r.id ? 'var(--bg)' : '#fff', cursor: 'pointer', fontSize: 16, color: copiedId === r.id ? '#6F8F6A' : 'var(--ink-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', letterSpacing: 1, transition: 'color 0.2s' }}>
                         {copiedId === r.id ? '✓' : '···'}
                       </button>
                     </td>
@@ -3784,7 +3793,7 @@ ${body}
                       ))}
                       {/* filter งานเสร็จ: กดเพื่อดูเฉพาะงานเสร็จ กดซ้ำเพื่อยกเลิก */}
                       <div onClick={() => { setUrgentFilter(urgentFilter === true ? null : true); setOpenFilter(null) }}
-                        style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: urgentFilter === true ? 600 : 400, color: urgentFilter === true ? '#22c55e' : 'var(--ink)', background: urgentFilter === true ? 'rgba(34,197,94,0.08)' : 'transparent', borderTop: '1px solid var(--border)' }}>
+                        style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: urgentFilter === true ? 600 : 400, color: urgentFilter === true ? '#6F8F6A' : 'var(--ink)', background: urgentFilter === true ? 'rgba(34,197,94,0.08)' : 'transparent', borderTop: '1px solid var(--border)' }}>
                         งานเสร็จ {urgentFilter === true && '✓'}
                       </div>
                     </div>
@@ -3965,7 +3974,7 @@ ${body}
                 {showCol('done') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
                   <button onClick={() => setOpenFilter(openFilter === 'urgent' ? null : 'urgent')}
-                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: urgentFilter ? '#22c55e' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: urgentFilter ? '#6F8F6A' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
                     งานเสร็จ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openFilter === 'urgent' && (
@@ -4029,9 +4038,9 @@ ${body}
                     {showCol('days') && (
                     <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>
                       {r.order_status === 'จัดส่งแล้ว' ? (
-                        <span style={{ fontWeight: 700, color: '#22c55e' }}>งานเสร็จแล้ว</span>
+                        <span style={{ fontWeight: 700, color: '#6F8F6A' }}>งานเสร็จแล้ว</span>
                       ) : r.is_urgent ? (
-                        <span style={{ fontWeight: 700, color: '#22c55e' }}>งานเสร็จ</span>
+                        <span style={{ fontWeight: 700, color: '#6F8F6A' }}>งานเสร็จ</span>
                       ) : days !== null ? (
                         <span style={{ fontWeight: 700, color: daysColor(days) }}>
                           {daysLabel(days)}
@@ -4040,9 +4049,9 @@ ${body}
                     </td>
                     )}
                     {showCol('shipping') && (
-                    <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', fontWeight: 500, color: '#bf5af2' }}>
+                    <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', fontWeight: 500, color: '#9A7BA0' }}>
                       {r.order_status === 'จัดส่งแล้ว' ? (
-                        <span style={{ color: '#22c55e', fontWeight: 700 }}>จัดส่งแล้ว</span>
+                        <span style={{ color: '#6F8F6A', fontWeight: 700 }}>จัดส่งแล้ว</span>
                       ) : shipDtCell(r, effectiveShipping)}
                     </td>
                     )}
@@ -4062,7 +4071,7 @@ ${body}
                       {r.price ? `${r.price.toLocaleString('th-TH')} ฿` : '-'}
                       {r.net_income != null && (
                         <div title={`ยอดโอนจริงจากไฟล์รายรับ Shopee${r.net_income_at ? ` · โอนเมื่อ ${r.net_income_at}` : ''}`}
-                          style={{ fontSize: 11, fontWeight: 600, color: '#16a34a' }}>รับจริง {r.net_income.toLocaleString('th-TH')} ฿</div>
+                          style={{ fontSize: 11, fontWeight: 600, color: '#5F7F5A' }}>รับจริง {r.net_income.toLocaleString('th-TH')} ฿</div>
                       )}
                     </td>
                     )}
@@ -4094,7 +4103,7 @@ ${body}
                     )}
                     {showCol('pay_date') && (
                     <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', color: 'var(--ink-3)' }}>
-                      {r.entry_date ? new Date(r.entry_date).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : <span style={{ color: '#f59e0b', fontWeight: 500 }}>ยังไม่ชำระ</span>}
+                      {r.entry_date ? new Date(r.entry_date).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : <span style={{ color: '#C79A4B', fontWeight: 500 }}>ยังไม่ชำระ</span>}
                     </td>
                     )}
                     {showCol('ship_date') && (
@@ -4127,14 +4136,14 @@ ${body}
                     {showCol('dropoff') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center' }}>
                       <input type="checkbox" checked={!!r.is_dropoff} onChange={e => updateField(r.id, 'is_dropoff', e.target.checked)}
-                        style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6366f1' }} />
+                        style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#7B7FA3' }} />
                     </td>
                     )}
                     {showCol('done') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                         <input type="checkbox" checked={!!r.is_urgent} onChange={e => toggleDone(r.id, e.target.checked)}
-                          style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                          style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                         {timeStamp(r, 'done_at')}
                       </div>
                     </td>
@@ -4143,7 +4152,7 @@ ${body}
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                         <input type="checkbox" checked={r.order_status === 'จัดส่งแล้ว'} onChange={e => toggleShipped(r.id, e.target.checked)}
-                          style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                          style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                         {shippedStamp(r)}
                         {Array.isArray(r.shipments) && r.shipments.length > 0 && (
                           <button onClick={() => { setTrackModal(r.id); setTrackError('') }} title="ดูสถานะพัสดุ"
@@ -4159,9 +4168,9 @@ ${body}
                       {hasRail(r) ? (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                           <input type="checkbox" checked={!!r.rail_packed} onChange={e => toggleRailPacked(r.id, e.target.checked)}
-                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                           {r.rail_packed && r.rail_packed_at && (
-                            <span style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3 }}>
+                            <span style={{ color: '#6F8F6A', fontSize: 10, lineHeight: 1.3 }}>
                               {new Date(r.rail_packed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
                               {new Date(r.rail_packed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                             </span>
@@ -4235,7 +4244,7 @@ ${body}
                     )}
                     <td style={{ padding: '8px 14px' }}>
                       <button onClick={e => { const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); if (openAction === r.id) { setOpenAction(null); setActionRect(null) } else { setOpenAction(r.id); setActionRect(rect) } }}
-                        style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: openAction === r.id ? 'var(--bg)' : '#fff', cursor: 'pointer', fontSize: 16, color: copiedId === r.id ? '#34c759' : 'var(--ink-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', letterSpacing: 1, transition: 'color 0.2s' }}>
+                        style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: openAction === r.id ? 'var(--bg)' : '#fff', cursor: 'pointer', fontSize: 16, color: copiedId === r.id ? '#6F8F6A' : 'var(--ink-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', letterSpacing: 1, transition: 'color 0.2s' }}>
                         {copiedId === r.id ? '✓' : '···'}
                       </button>
                     </td>
@@ -4261,7 +4270,7 @@ ${body}
               {r.pinned ? 'เอาหมุดออก' : 'ปักหมุด'}
             </button>
             <button onClick={() => copyOrderText(r)}
-              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: copiedId === r.id ? '#34c759' : 'var(--ink)' }}>
+              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: copiedId === r.id ? '#6F8F6A' : 'var(--ink)' }}>
               <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
               {copiedId === r.id ? 'คัดลอกแล้ว' : 'คัดลอก'}
             </button>
@@ -4270,7 +4279,7 @@ ${body}
               <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z"/></svg>
               ปริ้น
               {r.printed_at && (
-                <span style={{ marginLeft: 'auto', fontSize: 10, color: '#eab308', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                <span style={{ marginLeft: 'auto', fontSize: 10, color: '#C79A4B', fontWeight: 600, whiteSpace: 'nowrap' }}>
                   {new Date(r.printed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
                   {new Date(r.printed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                 </span>
@@ -4569,7 +4578,7 @@ ${body}
                   const noMatch = incomeRows.filter(r => !r.matchedId).length
                   return (
                     <p style={{ fontSize: 13, marginBottom: 10 }}>
-                      <strong style={{ color: 'var(--blue)' }}>ตรวจพบไฟล์รายรับ (Income)</strong> — {incomeRows.length} ออเดอร์ · ลงยอดใหม่ <strong>{matchNew}</strong>{matchOld > 0 && <> · ทับยอดเดิม <strong style={{ color: '#f59e0b' }}>{matchOld}</strong></>}{noMatch > 0 && <> · ไม่พบในระบบ <strong style={{ color: 'var(--red)' }}>{noMatch}</strong></>}
+                      <strong style={{ color: 'var(--blue)' }}>ตรวจพบไฟล์รายรับ (Income)</strong> — {incomeRows.length} ออเดอร์ · ลงยอดใหม่ <strong>{matchNew}</strong>{matchOld > 0 && <> · ทับยอดเดิม <strong style={{ color: '#C79A4B' }}>{matchOld}</strong></>}{noMatch > 0 && <> · ไม่พบในระบบ <strong style={{ color: 'var(--red)' }}>{noMatch}</strong></>}
                     </p>
                   )
                 })()}
@@ -4587,11 +4596,11 @@ ${body}
                         <tr key={i} style={{ borderBottom: '1px solid var(--border)', opacity: r.matchedId ? 1 : 0.55 }}>
                           <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
                             {!r.matchedId ? (
-                              <span style={{ fontSize: 10, fontWeight: 600, color: '#ef4444', background: '#fee2e2', borderRadius: 4, padding: '2px 6px' }}>ไม่พบในระบบ</span>
+                              <span style={{ fontSize: 10, fontWeight: 600, color: '#C0563F', background: '#fee2e2', borderRadius: 4, padding: '2px 6px' }}>ไม่พบในระบบ</span>
                             ) : r.hasIncome ? (
-                              <span style={{ fontSize: 10, fontWeight: 600, color: '#f59e0b', background: '#fef3c7', borderRadius: 4, padding: '2px 6px' }}>ทับยอดเดิม</span>
+                              <span style={{ fontSize: 10, fontWeight: 600, color: '#C79A4B', background: '#fef3c7', borderRadius: 4, padding: '2px 6px' }}>ทับยอดเดิม</span>
                             ) : (
-                              <span style={{ fontSize: 10, fontWeight: 600, color: '#22c55e', background: '#dcfce7', borderRadius: 4, padding: '2px 6px' }}>ลงยอดใหม่</span>
+                              <span style={{ fontSize: 10, fontWeight: 600, color: '#6F8F6A', background: '#dcfce7', borderRadius: 4, padding: '2px 6px' }}>ลงยอดใหม่</span>
                             )}
                           </td>
                           <td style={{ padding: '7px 10px', fontWeight: 600, color: 'var(--blue)' }}>{r.orderNumber}</td>
@@ -4713,7 +4722,7 @@ ${body}
                       const skipCount = pasteRows.length - saveCount - dropoffCount - shippedCount - cancelCount
                       return (
                         <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 8 }}>
-                          พบ {pasteRows.length} ออเดอร์ — บันทึกใหม่ <strong style={{ color: 'var(--ink)' }}>{saveCount}</strong>{shippedCount > 0 && <> · จัดส่งแล้ว <strong style={{ color: '#22c55e' }}>{shippedCount}</strong></>}{cancelCount > 0 && <> · ย้ายไปหมวดยกเลิก <strong style={{ color: 'var(--red)' }}>{cancelCount}</strong></>}{dropoffCount > 0 && <> · อัพเดท Drop-off <strong style={{ color: '#6366f1' }}>{dropoffCount}</strong></>}{skipCount > 0 && <> · ข้าม <strong style={{ color: 'var(--red)' }}>{skipCount}</strong></>} รายการ
+                          พบ {pasteRows.length} ออเดอร์ — บันทึกใหม่ <strong style={{ color: 'var(--ink)' }}>{saveCount}</strong>{shippedCount > 0 && <> · จัดส่งแล้ว <strong style={{ color: '#6F8F6A' }}>{shippedCount}</strong></>}{cancelCount > 0 && <> · ย้ายไปหมวดยกเลิก <strong style={{ color: 'var(--red)' }}>{cancelCount}</strong></>}{dropoffCount > 0 && <> · อัพเดท Drop-off <strong style={{ color: '#7B7FA3' }}>{dropoffCount}</strong></>}{skipCount > 0 && <> · ข้าม <strong style={{ color: 'var(--red)' }}>{skipCount}</strong></>} รายการ
                         </p>
                       )
                     })()}
@@ -4739,20 +4748,20 @@ ${body}
                               <tr key={i} style={{ borderBottom: '1px solid var(--border)', opacity: (saveable || isDropoffUpdate || isShippedRow || isCancelDelete) ? 1 : 0.55 }}>
                                 <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
                                   {isShippedRow ? (
-                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#22c55e', background: '#dcfce7', borderRadius: 4, padding: '2px 6px' }}>จัดส่งแล้ว{r.shippedDate ? ` · ${r.shippedDate}` : ''}</span>
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#6F8F6A', background: '#dcfce7', borderRadius: 4, padding: '2px 6px' }}>จัดส่งแล้ว{r.shippedDate ? ` · ${r.shippedDate}` : ''}</span>
                                   ) : isCancelDelete ? (
-                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#ef4444', background: '#fee2e2', borderRadius: 4, padding: '2px 6px' }}>ย้ายไปหมวดยกเลิก</span>
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#C0563F', background: '#fee2e2', borderRadius: 4, padding: '2px 6px' }}>ย้ายไปหมวดยกเลิก</span>
                                   ) : isDropoffUpdate ? (
-                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#6366f1', background: '#ede9fe', borderRadius: 4, padding: '2px 6px' }}>อัพเดท Drop-off</span>
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#7B7FA3', background: '#ede9fe', borderRadius: 4, padding: '2px 6px' }}>อัพเดท Drop-off</span>
                                   ) : r.isDuplicate ? (
-                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#f59e0b', background: '#fef3c7', borderRadius: 4, padding: '2px 6px' }}>มีออเดอร์นี้แล้ว</span>
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#C79A4B', background: '#fef3c7', borderRadius: 4, padding: '2px 6px' }}>มีออเดอร์นี้แล้ว</span>
                                   ) : isCancelled ? (
-                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#ef4444', background: '#fee2e2', borderRadius: 4, padding: '2px 6px' }}>ยกเลิก</span>
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#C0563F', background: '#fee2e2', borderRadius: 4, padding: '2px 6px' }}>ยกเลิก</span>
                                   ) : r.orderStatus ? (
-                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#22c55e', background: '#dcfce7', borderRadius: 4, padding: '2px 6px' }}>{r.orderStatus}</span>
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#6F8F6A', background: '#dcfce7', borderRadius: 4, padding: '2px 6px' }}>{r.orderStatus}</span>
                                   ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                                 </td>
-                                <td style={{ padding: '7px 10px', color: (!r.paymentDate || r.paymentDate === '-') ? '#f59e0b' : undefined, fontWeight: (!r.paymentDate || r.paymentDate === '-') ? 500 : undefined }}>
+                                <td style={{ padding: '7px 10px', color: (!r.paymentDate || r.paymentDate === '-') ? '#C79A4B' : undefined, fontWeight: (!r.paymentDate || r.paymentDate === '-') ? 500 : undefined }}>
                                   {(!r.paymentDate || r.paymentDate === '-') ? 'ยังไม่ชำระ' : r.paymentDate}
                                 </td>
                                 <td style={{ padding: '7px 10px' }}>{r.deadline || '-'}</td>
@@ -4838,7 +4847,7 @@ ${body}
               {!isInstall && !isOutside && (
                 <div style={{ marginBottom: 14 }}>
                   <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>วันและเวลาที่ต้องส่ง</label>
-                  <div style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, background: 'var(--bg)', color: '#bf5af2', fontWeight: 600 }}>
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, background: 'var(--bg)', color: '#9A7BA0', fontWeight: 600 }}>
                     {modal.data.shipping_datetime || calcShipping(modal.data.deadline ?? '', modal.data.courier ?? '') || '— เลือกกำหนดส่ง + บริษัท'}
                   </div>
                 </div>
@@ -4916,7 +4925,7 @@ ${body}
                         <input type={type} step={type === 'number' ? (key === 'floors' ? '1' : '0.01') : undefined}
                           value={item[key] == null ? '' : String(item[key])}
                           onChange={e => {
-                            const val = key === 'floors' ? (e.target.value === '' ? null : Number(e.target.value)) : e.target.value
+                            const val = itemInputValue(key, e.target.value)
                             setModalItems(prev => prev.map((it, i) => i === idx ? { ...it, [key]: val } : it))
                           }}
                           style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 5, padding: '5px 8px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
@@ -4944,7 +4953,7 @@ ${body}
                   <div style={{ marginBottom: 14 }}>
                     <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>ชำระ</label>
                     <select value={modal.data.payment_status || 'ยังไม่ชำระ'} onChange={e => set('payment_status', e.target.value)}
-                      style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', fontWeight: 600, color: PAYMENT_STATUS_COLOR[modal.data.payment_status ?? ''] ?? '#f59e0b' }}>
+                      style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', fontWeight: 600, color: PAYMENT_STATUS_COLOR[modal.data.payment_status ?? ''] ?? '#C79A4B' }}>
                       {PAYMENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
@@ -5174,9 +5183,7 @@ ${body}
                             step={type === 'number' ? '0.01' : undefined}
                             value={item[key] == null ? '' : String(item[key])}
                             onChange={e => {
-                              const val = key === 'floors'
-                                ? (e.target.value === '' ? null : Number(e.target.value))
-                                : e.target.value
+                              const val = itemInputValue(key, e.target.value)
                               setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: val } : it) } : null)
                             }}
                             style={{ width: w, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }}

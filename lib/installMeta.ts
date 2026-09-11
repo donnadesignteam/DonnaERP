@@ -38,14 +38,14 @@ export const STATUS_COLOR: Record<string, string> = {
   'นัดหมายแล้ว': '#5ac8fa',
   'วัดหน้างาน': '#5ac8fa',
   'วัดหน้างานแล้ว': '#30b0c7',
-  'ติดตั้ง': '#ff9f0a',
-  'ติดตั้งเสร็จ': '#34c759',
-  'ติดตั้ง50%': '#bf5af2',
+  'ติดตั้ง': '#C79A4B',
+  'ติดตั้งเสร็จ': '#6F8F6A',
+  'ติดตั้ง50%': '#9A7BA0',
   'รอแก้': 'var(--red)',
 }
 
 // สีของงานที่ยังไม่ลงมือ (รอนัดหมาย/นัดหมายแล้ว) ดูจากลักษณะงาน
-export const WORK_COLOR: Record<string, string> = { 'งานวัดหน้างาน': '#5ac8fa', 'งานติดตั้ง': '#ff9f0a', 'งานแก้': 'var(--red)' }
+export const WORK_COLOR: Record<string, string> = { 'งานวัดหน้างาน': '#5ac8fa', 'งานติดตั้ง': '#C79A4B', 'งานแก้': 'var(--red)' }
 
 // สีประจำแถวงานติดตั้ง — ยังไม่ลงมือ (รอนัดหมาย/นัดหมายแล้ว) ดูจากลักษณะงาน · ที่เหลือดูจากสถานะ
 export const rowColor = (ins: { installation_status?: string | null; work_type?: string | null }) => {

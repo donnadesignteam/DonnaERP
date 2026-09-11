@@ -90,13 +90,13 @@ const COURIERS = ['Flash Express', 'J&T Express', 'Kerry', 'ไปรษณี�
 
 // สถานะ workflow + สี
 const WORKFLOW: { key: string; color: string }[] = [
-  { key: 'รอของคืน', color: '#ff9f0a' },
+  { key: 'รอของคืน', color: '#C79A4B' },
   { key: 'ตัดผ้าแล้ว', color: '#30d158' },     // สายผลิต — DonnaBot อัปเดตอัตโนมัติจากรูปกลุ่มช่าง
   { key: 'เย็บแล้ว', color: '#5e9eff' },
-  { key: 'ตรวจสอบแล้ว', color: '#6366f1' },   // ผู้ช่วยช่างสแกน (ก่อนรีด)
-  { key: 'รีดแล้ว', color: '#bf5af2' },
+  { key: 'ตรวจสอบแล้ว', color: '#7B7FA3' },   // ผู้ช่วยช่างสแกน (ก่อนรีด)
+  { key: 'รีดแล้ว', color: '#9A7BA0' },
   { key: 'แพ็คแล้ว', color: '#f43f5e' },
-  { key: 'ส่งแล้ว', color: '#34c759' },
+  { key: 'ส่งแล้ว', color: '#6F8F6A' },
 ]
 const STATUS_COLOR = (s: string) => WORKFLOW.find(w => w.key === s)?.color ?? 'var(--ink-3)'
 
@@ -117,7 +117,8 @@ const emptyItem = (): Item => ({ type: '', floors: null, rail_head: '', hook_typ
 function itemLine(it: Item): string {
   const head = [it.type, it.floors ? `${it.floors}ชั้น` : '', it.rail_head, it.hook_type, it.color_code, it.color_name].filter(Boolean).join(' ')
   const w = Number(it.width), h = Number(it.height)
-  const dim = w > 0 && h > 0 ? `ก${w}*ส${h}` : w > 0 ? `ก${w}` : ''
+  const isRail = (it.type ?? '').startsWith('ราง')   // รางขึ้นแค่ตัวเลข ไม่มี ก นำหน้า (ให้ตรงกับ itemBlockLines)
+  const dim = w > 0 && h > 0 ? `ก${w}*ส${h}` : w > 0 ? (isRail ? `${w}` : `ก${w}`) : ''
   const tail = [dim, it.quantity ? `= ${it.quantity} ${it.unit || ''}`.trim() : '', it.note].filter(Boolean).join(' ')
   return [head, tail].filter(Boolean).join('  ')
 }
@@ -966,13 +967,13 @@ ${body}
                       ) : (
                         <div onClick={() => setEditCell({ id: r.id, field: 'refund_amount', val: r.refund_amount != null ? String(r.refund_amount) : '' })} style={{ cursor: 'text' }}>
                           {r.refund_amount != null ? (
-                            <span style={{ fontWeight: 600, color: r.money_direction === 'เก็บลูกค้า' ? '#34c759' : 'var(--red)' }}>
+                            <span style={{ fontWeight: 600, color: r.money_direction === 'เก็บลูกค้า' ? '#6F8F6A' : 'var(--red)' }}>
                               {r.money_direction === 'เก็บลูกค้า' ? '+' : '−'}{Number(r.refund_amount).toLocaleString()}
                             </span>
                           ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                         </div>
                       )}
-                      {r.money_status && <div style={{ fontSize: 11, color: r.money_status === 'รอ' ? '#ff9f0a' : '#34c759' }}>{r.money_status}</div>}
+                      {r.money_status && <div style={{ fontSize: 11, color: r.money_status === 'รอ' ? '#C79A4B' : '#6F8F6A' }}>{r.money_status}</div>}
                     </td>
                     <td style={{ padding: '8px 14px' }}>
                       <select value={r.status} onChange={e => updateStatus(r.id, e.target.value)}
@@ -989,7 +990,7 @@ ${body}
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
                       <input type="checkbox" checked={!!r.closed_at} onChange={e => toggleClosed(r, e.target.checked)}
                         title={r.closed_at ? 'ปิดงานแล้ว' : 'ติ๊กเพื่อปิดงาน'}
-                        style={{ cursor: 'pointer', width: 16, height: 16, accentColor: '#34c759' }} />
+                        style={{ cursor: 'pointer', width: 16, height: 16, accentColor: '#6F8F6A' }} />
                       {r.closed_at && (
                         /* วันที่ปิดงาน — แก้ได้ (ปิดงานย้อนหลังบ่อย) เก็บเวลาเดิมของวันไว้ เปลี่ยนแค่วัน */
                         <input type="date" className="date-inline" value={ymdLocal(r.closed_at)}
@@ -1007,7 +1008,7 @@ ${body}
                       <input type="checkbox" checked={!!r.shipped_at}
                         onChange={e => e.target.checked ? openShipModal(r) : unship(r)}
                         title={r.shipped_at ? 'ส่งแล้ว — ติ๊กออกเพื่อยกเลิก' : 'ติ๊กเพื่อกรอกเลขพัสดุ'}
-                        style={{ cursor: 'pointer', width: 16, height: 16, accentColor: '#34c759' }} />
+                        style={{ cursor: 'pointer', width: 16, height: 16, accentColor: '#6F8F6A' }} />
                     </td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', minWidth: 80 }}>{textCell(r, 'ship_back_cost', { numeric: true, align: 'right' })}</td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', minWidth: 80 }}>{textCell(r, 'ship_return_cost', { numeric: true, align: 'right' })}</td>
@@ -1048,7 +1049,7 @@ ${body}
                 <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z"/></svg>
                 ปริ้น
                 {r.printed_at && (
-                  <span style={{ marginLeft: 'auto', fontSize: 10, color: '#eab308', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                  <span style={{ marginLeft: 'auto', fontSize: 10, color: '#C79A4B', fontWeight: 600, whiteSpace: 'nowrap' }}>
                     {new Date(r.printed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
                     {new Date(r.printed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                   </span>

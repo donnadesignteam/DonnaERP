@@ -29,6 +29,13 @@ export type RawItem = {
   pull_side?: string      // ฝั่งดึง (ม่านพับ/มู่ลี่): ดึงซ้าย / ดึงขวา
   note?: string
   outsource?: string      // สั่งนอกของรายการนี้ — ตอนบันทึกจะรวมไปลงคอลัมน์สั่งนอกของออเดอร์
+  price?: number          // ราคาของรายการนี้ (ยอดทั้งบรรทัด) — มีเฉพาะตอนต้นฉบับเขียนราคาแยกไว้ ไม่มี = ไม่เก็บ key นี้เลย
+}
+
+// ราคารายการ: รับได้ทั้ง 6475 / "6,475" / "6,475 บาท" → ตัวเลข · อ่านไม่ออกหรือ ≤ 0 = ไม่มีราคา
+export function itemPrice(v: unknown): number | null {
+  const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/[,\s]|บาท|บ\.?$/g, ''))
+  return Number.isFinite(n) && n > 0 ? n : null
 }
 
 // ===== คำมาตรฐานของชื่อชนิด (type) =====
@@ -249,7 +256,16 @@ export const ITEM_FIELDS: [string, keyof RawItem, string, number][] = [
   ['ฝั่งดึง', 'pull_side', 'text', 54],
   ['สั่งนอก', 'outsource', 'text', 90],
   ['หมายเหตุ', 'note', 'text', 90],
+  ['ราคา (บาท)', 'price', 'number', 76],   // ราคาของรายการ (ยอดทั้งบรรทัด) — ขึ้นเฉพาะใบที่มีราคาแยก
 ]
+
+// ค่าที่พิมพ์ในช่องกรอกรายการ → ค่าที่เก็บจริง
+// ชั้น: ว่าง = null · ราคา: ว่าง = ไม่มีราคา (undefined → key หายตอนบันทึก JSON) · นอกนั้นเก็บตามที่พิมพ์
+export function itemInputValue(key: keyof RawItem, raw: string): unknown {
+  if (key === 'floors') return raw === '' ? null : Number(raw)
+  if (key === 'price') return itemPrice(raw) ?? undefined
+  return raw
+}
 
 // ช่องที่กรอกด้วยการเลือก ไม่ใช่พิมพ์เอง (กันพิมพ์ไม่ตรงคำมาตรฐาน)
 export const ITEM_FIELD_OPTIONS: Record<string, string[]> = { supply: SUPPLY_KINDS }
@@ -322,6 +338,10 @@ const ITEM_EMPTY_FIELDS = ['type', 'rail_head', 'pleat', 'rail_color', 'opacity'
   'chemical', 'weight_chain', 'pull_side', 'note', 'outsource', 'supply'] as const
 export function fillItemDefaults(it: RawItem): RawItem {
   const out: RawItem = { ...it }
+  // ราคา: เก็บเฉพาะที่เป็นตัวเลขจริง ไม่มีราคา → ลบ key ทิ้ง (ไม่เก็บ 0/null ให้รกข้อมูล)
+  const p = itemPrice(out.price)
+  if (p != null) out.price = p
+  else delete out.price
   if (out.floors == null) out.floors = null
   for (const k of ITEM_EMPTY_FIELDS) if (out[k] == null) out[k] = ''
   const nameRaw = String(out.type ?? '')
@@ -549,7 +569,8 @@ export function itemBlockLines(item: RawItem, opts?: { hideNote?: boolean }): { 
   const wStr = widthText(item.width)
   const hStr = heightText(item.height)
   // สูงแบบ "ซ2.845*ข3.345" มี label ซ้าย/ขวาในตัวแล้ว ไม่ต้องเติม "ส" นำหน้า
-  const dim = wStr && hStr ? (/^[\d.]+$/.test(hStr) ? `ก${wStr}*ส${hStr}` : `ก${wStr}*${hStr}`) : wStr ? `ก${wStr}` : ''
+  // รางมีแต่ความยาว → ขึ้นตัวเลขเฉย ๆ "2.00 = 1 ชุด" ไม่ต้องมี ก นำหน้า
+  const dim = wStr && hStr ? (/^[\d.]+$/.test(hStr) ? `ก${wStr}*ส${hStr}` : `ก${wStr}*${hStr}`) : wStr ? (isRail ? wStr : `ก${wStr}`) : ''
   // กระดูม/ตะขอ เช่น "(30+30)" — ใส่ต่อท้ายบรรทัดขนาดให้เหมือนใบออเดอร์ต้นฉบับ
   // เผื่อบางเคสเก็บมาไม่มีวงเล็บ (30+30) ให้เติมวงเล็บให้เอง
   const hooksRaw = (item.hooks ?? '').trim()

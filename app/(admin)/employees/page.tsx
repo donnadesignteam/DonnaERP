@@ -347,7 +347,7 @@ export default function EmployeesPage() {
 
         {/* Legend */}
         <div style={{ display: 'flex', gap: 16, marginTop: 14, flexWrap: 'wrap' }}>
-          {[['var(--red)','RedZone'],['#f59e0b','Campaign'],['#eab308','วันหยุด'],['var(--blue)','ใบลา'],['#9ca3af','ร้านปิด (อา.)']].map(([c,l]) => (
+          {[['var(--red)','RedZone'],['#C79A4B','Campaign'],['#C79A4B','วันหยุด'],['var(--blue)','ใบลา'],['#9ca3af','ร้านปิด (อา.)']].map(([c,l]) => (
             <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <span style={{ width: 10, height: 10, borderRadius: 2, background: c, display: 'inline-block' }} />
               <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{l}</span>
@@ -364,9 +364,9 @@ export default function EmployeesPage() {
         {pendingLeaves.length > 0 && (
           <button onClick={() => setPendingFilter(f => !f)}
             title="ใบลาที่ยังไม่มีใครกดอนุมัติ/ไม่อนุมัติ — กดเพื่อดูเฉพาะใบพวกนี้"
-            style={{ padding: '6px 14px', borderRadius: 20, border: pendingFilter ? 'none' : '1px solid var(--border)', background: pendingFilter ? '#f59e0b' : 'var(--surface)', color: pendingFilter ? '#fff' : '#f59e0b', fontSize: 13, fontWeight: pendingFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+            style={{ padding: '6px 14px', borderRadius: 20, border: pendingFilter ? 'none' : '1px solid var(--border)', background: pendingFilter ? '#C79A4B' : 'var(--surface)', color: pendingFilter ? '#fff' : '#C79A4B', fontSize: 13, fontWeight: pendingFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
             รออนุมัติ
-            <span style={{ background: pendingFilter ? 'rgba(255,255,255,0.3)' : '#f59e0b22', color: pendingFilter ? '#fff' : '#f59e0b', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
+            <span style={{ background: pendingFilter ? 'rgba(255,255,255,0.3)' : '#C79A4B22', color: pendingFilter ? '#fff' : '#C79A4B', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
               {pendingLeaves.length}
             </span>
           </button>
@@ -395,7 +395,7 @@ export default function EmployeesPage() {
             </thead>
             <tbody>
               {shownLeaves.map(l => (
-                <tr key={l.id} style={{ borderBottom: '1px solid var(--border)', background: isPending(l) ? '#f59e0b0f' : undefined }}>
+                <tr key={l.id} style={{ borderBottom: '1px solid var(--border)', background: isPending(l) ? '#C79A4B0f' : undefined }}>
                   <td style={{ padding: '11px 13px', fontWeight: 700, color: 'var(--blue)' }}>{l.employee_code}</td>
                   <td style={{ padding: '11px 13px' }}>{l.employee_name}</td>
                   <td style={{ padding: '11px 13px' }}>{l.employee_nickname}</td>
@@ -435,13 +435,13 @@ export default function EmployeesPage() {
                   </td>
                   <td style={{ padding: '11px 13px' }}>
                     <select value={l.supervisor_approval} onChange={e => updateLeave(l.id, 'supervisor_approval', e.target.value)}
-                      style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 6px', fontSize: 11, outline: 'none', color: l.supervisor_approval === 'อนุมัติ' ? '#34c759' : l.supervisor_approval === 'ไม่อนุมัติ' ? 'var(--red)' : 'var(--ink-3)' }}>
+                      style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 6px', fontSize: 11, outline: 'none', color: l.supervisor_approval === 'อนุมัติ' ? '#6F8F6A' : l.supervisor_approval === 'ไม่อนุมัติ' ? 'var(--red)' : 'var(--ink-3)' }}>
                       {['รออนุมัติ','อนุมัติ','ไม่อนุมัติ'].map(o => <option key={o}>{o}</option>)}
                     </select>
                   </td>
                   <td style={{ padding: '11px 13px' }}>
                     <select value={l.hr_approval} onChange={e => updateLeave(l.id, 'hr_approval', e.target.value)}
-                      style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 6px', fontSize: 11, outline: 'none', color: l.hr_approval === 'อนุมัติ' ? '#34c759' : l.hr_approval === 'ไม่อนุมัติ' ? 'var(--red)' : 'var(--ink-3)' }}>
+                      style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 6px', fontSize: 11, outline: 'none', color: l.hr_approval === 'อนุมัติ' ? '#6F8F6A' : l.hr_approval === 'ไม่อนุมัติ' ? 'var(--red)' : 'var(--ink-3)' }}>
                       {['รออนุมัติ','อนุมัติ','ไม่อนุมัติ'].map(o => <option key={o}>{o}</option>)}
                     </select>
                   </td>
@@ -542,7 +542,7 @@ export default function EmployeesPage() {
                 {selTenure != null && (
                   <div style={{ gridColumn: '1/-1' }}>
                     <span style={{ color: 'var(--ink-3)' }}>เงื่อนไขลาพักร้อน: </span>
-                    <strong style={{ color: selVacMax === 0 ? 'var(--red)' : '#34c759' }}>
+                    <strong style={{ color: selVacMax === 0 ? 'var(--red)' : '#6F8F6A' }}>
                       {selVacMax === 0 ? 'ยังไม่มีสิทธิ (ทำงานไม่ครบ 1 ปี)' : `ต่อเนื่องได้ไม่เกิน ${selVacMax} วัน/ครั้ง`}
                     </strong>
                   </div>
@@ -594,8 +594,8 @@ export default function EmployeesPage() {
               </select>
               {form.leave_type === 'ลาพักร้อน' && form.employee_code && (
                 <div style={{ marginTop: 8, padding: '9px 13px', borderRadius: 8, fontSize: 12.5, fontWeight: 500,
-                  background: vacBlocked ? '#ff375f11' : '#34c75915',
-                  border: `1px solid ${vacBlocked ? '#ff375f44' : '#34c75944'}`,
+                  background: vacBlocked ? '#ff375f11' : '#6F8F6A15',
+                  border: `1px solid ${vacBlocked ? '#ff375f44' : '#6F8F6A44'}`,
                   color: vacBlocked ? 'var(--red)' : '#1a7f37' }}>
                   {selTenure == null
                     ? '❌ ไม่พบวันเริ่มงานในระบบ — ยังไม่มีสิทธิลาพักร้อน บันทึกไม่ได้ (ใส่วันเริ่มงานในหมวดพนักงานก่อน)'
@@ -613,7 +613,7 @@ export default function EmployeesPage() {
                 <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 5 }}>ใบรับรองแพทย์ <span style={{ color: 'var(--ink-4)' }}>(ไม่บังคับ — แนบทีหลังได้)</span></label>
                 <input type="file" accept="image/*,application/pdf" onChange={e => setCertFile(e.target.files?.[0] || null)}
                   style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
-                {certFile && <div style={{ fontSize: 12, color: '#34c759', marginTop: 5 }}>✓ เลือกไฟล์: {certFile.name}</div>}
+                {certFile && <div style={{ fontSize: 12, color: '#6F8F6A', marginTop: 5 }}>✓ เลือกไฟล์: {certFile.name}</div>}
               </div>
             )}
 

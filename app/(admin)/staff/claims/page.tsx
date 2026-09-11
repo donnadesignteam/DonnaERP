@@ -43,9 +43,9 @@ const baht = (v: number) => v ? '฿' + Math.round(v).toLocaleString('th-TH') : 
 const PENDING = 'รอตรวจสอบ'
 const REVIEWS = ['ตรวจสอบแล้วไม่พบความผิด', 'ตรวจสอบแล้วผิดจริง']
 const REVIEW_COLOR: Record<string, string> = {
-  [PENDING]: '#f59e0b',
-  'ตรวจสอบแล้วไม่พบความผิด': '#22c55e',
-  'ตรวจสอบแล้วผิดจริง': '#ef4444',
+  [PENDING]: '#C79A4B',
+  'ตรวจสอบแล้วไม่พบความผิด': '#6F8F6A',
+  'ตรวจสอบแล้วผิดจริง': '#C0563F',
 }
 
 const th: React.CSSProperties = { padding: '9px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: 'var(--ink-3)', whiteSpace: 'nowrap', borderBottom: '1px solid var(--border)' }
@@ -269,8 +269,8 @@ export default function StaffClaimsPage() {
                       <td style={{ ...td, fontWeight: 700 }} colSpan={10}>
                         {g.name}
                         <span style={{ fontWeight: 400, color: 'var(--ink-4)', fontSize: 12 }}> · {g.list.length} เคส</span>
-                        {g.pending > 0 && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: REVIEW_COLOR[PENDING], background: '#f59e0b22', borderRadius: 10, padding: '1px 8px' }}>รอตรวจสอบ {g.pending}</span>}
-                        {g.guilty > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: REVIEW_COLOR['ตรวจสอบแล้วผิดจริง'], background: '#ef444422', borderRadius: 10, padding: '1px 8px' }}>ผิดจริง {g.guilty}</span>}
+                        {g.pending > 0 && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: REVIEW_COLOR[PENDING], background: '#C79A4B22', borderRadius: 10, padding: '1px 8px' }}>รอตรวจสอบ {g.pending}</span>}
+                        {g.guilty > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: REVIEW_COLOR['ตรวจสอบแล้วผิดจริง'], background: '#C0563F22', borderRadius: 10, padding: '1px 8px' }}>ผิดจริง {g.guilty}</span>}
                         {g.appeal > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: '#2563eb', background: '#2563eb22', borderRadius: 10, padding: '1px 8px' }}>ยื่นอุทธรณ์ {g.appeal}</span>}
                         {g.cost > 0 && (
                           <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: 'var(--ink)', background: 'var(--border)', borderRadius: 10, padding: '1px 8px' }}>

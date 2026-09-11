@@ -116,7 +116,7 @@ function LoginForm() {
             style={{
               marginTop: 14,
               fontSize: 13,
-              color: '#DC2626',
+              color: '#C0563F',
               background: '#FEF2F2',
               border: '1px solid #FECACA',
               borderRadius: 8,
@@ -136,7 +136,7 @@ function LoginForm() {
             padding: '11px 0',
             borderRadius: 9,
             border: 'none',
-            background: loading ? '#B8915F' : 'linear-gradient(135deg, #C47E3A, #9D6025)',
+            background: loading ? '#B8915F' : 'linear-gradient(135deg, #A87452, #8A6142)',
             color: '#fff',
             fontSize: 15,
             fontWeight: 600,

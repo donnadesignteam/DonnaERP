@@ -71,10 +71,10 @@ export default function TopBar() {
         <div style={{
           width: 30, height: 30,
           borderRadius: '50%',
-          background: 'linear-gradient(135deg, #2563EB, #4F46E5)',
+          background: 'linear-gradient(135deg, #A87452, #8A6142)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           color: '#fff', fontSize: 12, fontWeight: 700,
-          boxShadow: '0 1px 4px rgba(79,70,229,0.4)',
+          boxShadow: '0 1px 4px rgba(120,86,58,0.35)',
           flexShrink: 0,
         }}>
           D

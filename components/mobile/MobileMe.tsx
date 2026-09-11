@@ -45,7 +45,7 @@ const baht = (v: number) => (v ? '฿' + Math.round(v).toLocaleString('th-TH') :
 // สถานะผลตรวจสอบเคสที่ถูกลงชื่อว่า "ผิดโดย" คนนี้ — พนักงานเห็นอย่างเดียว เปลี่ยนได้เฉพาะบัญชีร้าน (/staff/claims)
 const CLAIM_PENDING = 'รอตรวจสอบ'
 const CLAIM_REVIEW_COLOR: Record<string, string> = {
-  [CLAIM_PENDING]: '#f59e0b',
+  [CLAIM_PENDING]: '#C79A4B',
   'ตรวจสอบแล้วไม่พบความผิด': 'var(--green)',
   'ตรวจสอบแล้วผิดจริง': 'var(--red)',
 }
@@ -481,7 +481,7 @@ export default function MobileMe() {
 
             {/* แจ้งลาเอง — กดแล้วเด้งป๊อปอัปขึ้นมาจากล่างจอ (ตัวฟอร์มอยู่ท้ายไฟล์) */}
             {leaveDone && !leaveForm && (
-              <div style={{ ...card, marginTop: 10, background: '#34c75915', borderColor: 'var(--green)', color: 'var(--green)', fontSize: 12.5, fontWeight: 600 }}>
+              <div style={{ ...card, marginTop: 10, background: '#6F8F6A15', borderColor: 'var(--green)', color: 'var(--green)', fontSize: 12.5, fontWeight: 600 }}>
                 {leaveDone}
               </div>
             )}

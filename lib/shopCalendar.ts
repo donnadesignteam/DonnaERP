@@ -9,7 +9,7 @@ export const CAMPAIGNS: Record<string, string> = {'2026-07-25':'Payday','2026-08
 
 export const LEAVE_STATUS_COLOR: Record<string, string> = {
   'ใบลาเรียบร้อย': '#30c759', 'อนุมัติ': '#30c759', 'รออนุมัติ': '#a1a1aa',
-  'ยังไม่เขียนไปลา': '#f59e0b', 'ไม่อนุมัติ': '#ff375f',
+  'ยังไม่เขียนไปลา': '#C79A4B', 'ไม่อนุมัติ': '#ff375f',
 }
 
 // สถานะงานติดตั้ง + สี (ให้ตรงกับ app/(admin)/installations)
@@ -18,9 +18,9 @@ export const INSTALL_STATUS_COLOR: Record<string, string> = {
   'นัดหมายแล้ว': '#5ac8fa',
   'วัดหน้างาน': '#5ac8fa',
   'วัดหน้างานแล้ว': '#30b0c7',
-  'ติดตั้ง': '#ff9f0a',
-  'ติดตั้งเสร็จ': '#34c759',
-  'ติดตั้ง50%': '#bf5af2',
+  'ติดตั้ง': '#C79A4B',
+  'ติดตั้งเสร็จ': '#6F8F6A',
+  'ติดตั้ง50%': '#9A7BA0',
   'รอแก้': 'var(--red)',
 }
 

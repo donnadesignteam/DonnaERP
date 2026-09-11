@@ -1,60 +1,78 @@
 @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap');
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg:       #FAF8F5;
-  --surface:  #FFFFFF;
-  --border:   #EAE5DF;
-  --border-2: #D9D2C8;
-  --ink:      #1A1008;
-  --ink-2:    #3D2E1E;
-  --ink-3:    #7A6A58;
-  --ink-4:    #A89880;
-  --blue:     #C47E3A;
-  --blue-bg:  #FDF5EC;
-  --red:      #DC2626;
-  --red-bg:   #FEF2F2;
-  --green:    #16A34A;
-  --yellow:   #CA8A04;
-  --purple:   #7C3AED;
-  --radius:   8px;
-  --radius-sm:4px;
-  --shadow:   0 1px 2px rgba(0,0,0,0.05);
-  --shadow-md:0 4px 8px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04);
-  /* ช่องวันในปฏิทิน (วันหยุดร้าน / วันอาทิตย์) — เดิม hardcode สีขาวในไฟล์มือถือ พังตอนโหมดมืด */
-  --cal-holiday: #FFF9E6;
-  --cal-holiday-ink: #B45309;
-  --cal-sunday:  rgba(0,0,0,0.035);
-  /* ช่วงห้ามลา (Red Zone) — ทั้งช่องเป็นสีแดงอ่อน ไม่ใช่แค่ขีดบน */
-  --cal-redzone: #FDE8E8;
-  --cal-redzone-border: #F0B4B4;
+  /* ── โทนสีแบรนด์ Donna Design (อ้างอิงบอร์ดสีในภาพ) ──
+     #A87452 น้ำตาลหลัก · #D9B89A น้ำตาลอ่อน · #F6E8DA ครีมอ่อน · #F9F5EF ครีมขาว · #E7C9B6 เบจชมพู */
+  --bg:       #F8F1EA;
+  --surface:  #FBF7F1;
+  --border:   #F1E8DE;   /* เส้นขอบจาง ๆ ตามภาพต้นแบบ */
+  --border-2: #E4D6C6;
+  --ink:      #3D2B1F;
+  --ink-2:    #5C4534;
+  --ink-3:    #8B7460;
+  --ink-4:    #B39B84;
+  --blue:     #9E6A49;   /* สีเน้นของแบรนด์ (ชื่อตัวแปรเดิม ใช้ทั้งเว็บ) */
+  --blue-bg:  #F6E8DA;
+  --brand:      #9E6A49;
+  --ink-soft: #797979;   /* ดำอ่อน (เทากลาง) สำหรับเนื้อหาในตาราง */
+  --hairline: rgba(138,97,66,0.11);   /* เส้นคั่นแถวในตาราง — จางสุด */
+  --brand-soft: #D9B89A;
+  --cream:      #F0E0D0;
+  --cream-2:    #F9F5EF;
+  --blush:      #E7C9B6;
+  --red:      #C0563F;
+  --red-bg:   #FBEDE8;
+  --green:    #6F8F6A;
+  --yellow:   #C79A4B;
+  --purple:   #9A7BA0;
+  --radius:   14px;
+  --radius-sm:10px;
+  --shadow:   0 2px 8px rgba(120,86,58,0.09);
+  --shadow-md:0 6px 20px rgba(120,86,58,0.13), 0 1px 3px rgba(120,86,58,0.06);
+  /* ช่องวันในปฏิทิน (วันหยุดร้าน / วันอาทิตย์) */
+  --cal-holiday: #FBF0DC;
+  --cal-holiday-ink: #9A6B33;
+  --cal-sunday:  rgba(168,116,82,0.05);
+  /* ช่วงห้ามลา (Red Zone) */
+  --cal-redzone: #F8E3DC;
+  --cal-redzone-border: #E2B9A8;
 }
 
 html.dark {
-  --bg:       #0E0A06;
-  --surface:  #181008;
-  --border:   #2E2218;
-  --border-2: #3E3020;
-  --ink:      #FAF6F0;
-  --ink-2:    #E8DDD0;
-  --ink-3:    #A89278;
-  --ink-4:    #7A6A58;
-  --blue-bg:  #3A2010;
-  --red-bg:   #3B1219;
+  --bg:       #17100B;
+  --surface:  #1F1610;
+  --border:   #34261B;
+  --border-2: #463322;
+  --ink:      #F7EFE5;
+  --ink-2:    #E4D3C0;
+  --ink-3:    #B49C85;
+  --ink-4:    #8A745F;
+  --blue:     #C79268;
+  --blue-bg:  #3A2718;
+  --brand:      #C79268;
+  --ink-soft: #A0A0A0;
+  --hairline: rgba(255,255,255,0.07);
+  --brand-soft: #8A6142;
+  --cream:      #2C2016;
+  --cream-2:    #241A12;
+  --blush:      #3A251C;
+  --red-bg:   #3A1B14;
   --shadow:   0 1px 2px rgba(0,0,0,0.4);
-  --shadow-md:0 4px 12px rgba(0,0,0,0.5);
-  --cal-holiday: #2A1F0C;
-  --cal-holiday-ink: #E0A94A;
-  --cal-sunday:  rgba(255,255,255,0.045);
-  --cal-redzone: #3A1418;
-  --cal-redzone-border: #6B2229;
+  --shadow-md:0 6px 18px rgba(0,0,0,0.5);
+  --cal-holiday: #2E2110;
+  --cal-holiday-ink: #DCA85A;
+  --cal-sunday:  rgba(255,255,255,0.04);
+  --cal-redzone: #3A1B18;
+  --cal-redzone-border: #6B342A;
 }
 
 body {
   background: var(--bg);
   color: var(--ink);
-  font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+  font-family: 'Prompt', 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -76,6 +94,14 @@ input, select, textarea, button { font-family: inherit; font-size: 14px; }
 .m-card-tap { transition: transform 0.12s ease, background 0.12s ease; }
 .m-card-tap:active { transform: scale(0.985); background: var(--blue-bg); }
 
+/* ใบปริ้นที่แปะไว้ที่ body ตรงๆ — ซ่อนบนหน้าจอ ตอนปริ้นจะยุบทุกอย่างที่ไม่ใช่ใบนี้
+   (ยุบด้วย display ไม่ใช่ visibility ไม่งั้นเนื้อหาหน้าจอยังกินพื้นที่จนได้กระดาษเปล่าตามมา) */
+.print-only { display: none; }
+@media print {
+  body > *:not(.print-only) { display: none !important; }
+  .print-only { display: block !important; }
+}
+
 /* ปริ้นเฉพาะส่วน .print-area (เช่น ปฏิทิน) ซ่อนที่เหลือทั้งหมด */
 @media print {
   body * { visibility: hidden !important; }
@@ -96,3 +122,80 @@ input, select, textarea, button { font-family: inherit; font-size: 14px; }
    (กดที่ตัวเลขยังเปิดปฏิทินได้ ผ่าน showPicker() ที่ผูกไว้ในคอมโพเนนต์) */
 .date-inline::-webkit-calendar-picker-indicator { display: none; -webkit-appearance: none; }
 .date-inline::-webkit-inner-spin-button { display: none; }
+
+/* ── ธีม Donna: การ์ด/แผงมาตรฐาน ── */
+.dn-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); }
+.dn-stat { position: relative; overflow: hidden; border-radius: 18px; padding: 20px 22px; text-align: left;
+           cursor: pointer; border: 1px solid transparent; transition: box-shadow 0.15s ease, border-color 0.15s ease; }
+.dn-stat { box-shadow: 0 4px 14px rgba(120,86,58,0.11); }
+/* ภาพลายเส้นพื้นหลังของการ์ด (กล่อง / รถส่งของ / นาฬิกา) */
+.dn-stat .dn-art { position: absolute; right: 18px; bottom: 4px; opacity: 0.26;
+                   pointer-events: none; display: block; }
+.dn-stat:hover { box-shadow: var(--shadow-md); }
+/* ป้ายสถานะงาน — กว้างเท่ากันทุกแถวเพื่อให้เรียงตรงกันเป็นแนวเดียว (ตามภาพต้นแบบ) */
+.dn-pill { display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+           min-width: 100px; border-radius: 10px; padding: 4px 12px;
+           font-size: 12px; font-weight: 700; }
+/* หัวข้อ = Bold · ตัวเลข = Bold/SemiBold · เนื้อหา = Regular (ตามบอร์ดดีไซน์ของแบรนด์) */
+h1, h2, h3 { font-weight: 700; }
+.dn-table td { font-weight: 500; }
+.dn-table th { font-weight: 500; }
+.dn-field { background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
+            height: 46px; padding: 0 18px; font-size: 13px; color: var(--ink); outline: none; box-shadow: var(--shadow); }
+.dn-field:focus { border-color: var(--brand-soft); }
+/* แถบหัวตาราง = แผ่นครีมมุมมน ไม่ชิดขอบแผง (พื้นอยู่ที่ th เพื่อให้มุมโค้งได้) */
+.dn-table thead tr { background: transparent; }
+.dn-table th { background: var(--cream); font-weight: 600; color: #8A6142; }
+.dn-table thead th:first-child { border-radius: 10px 0 0 10px; }
+.dn-table thead th:last-child  { border-radius: 0 10px 10px 0; }
+/* แถวในตารางสีเดียวกันหมด ไม่สลับสี */
+.dn-table tbody tr { background: transparent; }
+.dn-table tbody tr:hover { background: var(--cream); }
+
+/* แผงเนื้อหาหลัก (หัวข้อ + ตาราง + แถบเลขหน้า อยู่ในกล่องเดียวกัน เหมือนภาพต้นแบบ) */
+.dn-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; box-shadow: 0 4px 16px rgba(120,86,58,0.10); overflow: hidden; }
+.dn-panel > .dn-panel-head { display: flex; align-items: center; gap: 10px; padding: 14px 20px; }
+.dn-panel > .dn-panel-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 20px; flex-wrap: wrap; }
+/* ปุ่มควบคุมบนแถบตัวกรอง — สูงเท่ากันหมด ให้แถวดูสมมาตร */
+.dn-ctrl { height: 46px; display: flex; align-items: center; gap: 10px; padding: 0 18px; border-radius: 999px;
+           background: var(--surface); border: 1px solid var(--border); color: var(--brand); font-size: 13px;
+           cursor: pointer; white-space: nowrap; font-weight: 500; box-shadow: var(--shadow); }
+.dn-ctrl:hover { border-color: var(--brand-soft); }
+.dn-ctrl.is-on { border-color: var(--brand); color: var(--brand); }
+/* ปุ่มคัดลอก: กดแล้วตัวหนังสือจางหาย วงกลมเด้งขึ้น + ขีดติ๊กถูกวาดตัวเอง (ปุ่มกว้างเท่าเดิม ไม่กระตุก) */
+.dn-copy { position: relative; justify-content: center; }
+.dn-copy .dn-copy-label { transition: opacity .15s; }
+.dn-copy.is-done .dn-copy-label { opacity: 0; }
+.dn-copy .dn-copy-check { position: absolute; inset: 0; margin: auto; width: 24px; height: 24px; pointer-events: none; }
+.dn-copy .dn-copy-check circle { fill: var(--brand); transform-origin: center; transform-box: fill-box;
+                                 animation: copy-pop .32s cubic-bezier(.34,1.56,.64,1) both; }
+.dn-copy .dn-copy-check path { fill: none; stroke: #FFF8F0; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round;
+                               stroke-dasharray: 14; stroke-dashoffset: 14; animation: copy-draw .28s .18s ease-out forwards; }
+@keyframes copy-pop  { from { transform: scale(0); } to { transform: scale(1); } }
+@keyframes copy-draw { to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .dn-copy .dn-copy-check circle, .dn-copy .dn-copy-check path { animation: none; stroke-dashoffset: 0; }
+}
+.dn-page { width: 32px; height: 32px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface);
+           color: var(--ink-2); font-size: 12.5px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+           box-shadow: var(--shadow); }
+.dn-page.is-on { background: var(--brand); border-color: var(--brand); color: #FFF8F0; font-weight: 700;
+                 box-shadow: 0 3px 10px rgba(158,106,73,0.35); }
+.dn-page:disabled { opacity: 0.4; cursor: default; }
+
+/* ── ข้อความเด้งบนหัวจอ (แจ้งเตือนช่างสแกนงาน) เลียนแบบ push notification ในมือถือ ── */
+@keyframes toast-in  { from { opacity: 0; transform: translateY(-18px) scale(0.97); }
+                       to   { opacity: 1; transform: none; } }
+@keyframes toast-out { to   { opacity: 0; transform: translateY(-12px) scale(0.97); } }
+
+.toast-stack { position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+               z-index: 2000; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+.toast { pointer-events: auto; min-width: 260px; max-width: calc(100vw - 32px); cursor: pointer;
+         display: flex; align-items: center; gap: 14px; padding: 11px 18px;
+         background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+         box-shadow: 0 10px 30px rgba(90,60,38,0.20), 0 2px 6px rgba(90,60,38,0.10);
+         animation: toast-in 0.30s cubic-bezier(0.2, 0.9, 0.2, 1); }
+.toast.is-out { animation: toast-out 0.25s ease forwards; }
+.toast-icon { width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+              display: inline-flex; align-items: center; justify-content: center; }
+@media (max-width: 480px) { .toast-stack { left: 16px; right: 16px; transform: none; } }

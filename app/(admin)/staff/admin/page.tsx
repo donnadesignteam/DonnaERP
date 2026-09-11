@@ -144,7 +144,7 @@ export default function AdminWorkPage() {
         <Tile label="ออเดอร์ทั้งหมด" value={String(view.totalOrders)} sub={month ? 'เดือนที่เลือก' : 'ทุกเดือนรวมกัน'} color="var(--blue)" />
         <Tile label="ยอดขายรวม" value={fmtBaht(view.totalSales)} color="#0f766e" />
         <Tile label="เฉลี่ยต่อใบ" value={view.totalOrders ? fmtBaht(view.totalSales / view.totalOrders) : '—'} color="var(--ink)" />
-        <Tile label="ยังไม่มีชื่อแอดมิน" value={String(view.noAdmin)} sub="ใบที่ระบบยังไม่รู้ว่าใครทำ" color={view.noAdmin ? 'var(--yellow, #eab308)' : 'var(--ink)'} />
+        <Tile label="ยังไม่มีชื่อแอดมิน" value={String(view.noAdmin)} sub="ใบที่ระบบยังไม่รู้ว่าใครทำ" color={view.noAdmin ? 'var(--yellow, #C79A4B)' : 'var(--ink)'} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14, marginBottom: 18 }}>

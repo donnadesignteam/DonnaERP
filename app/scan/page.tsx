@@ -714,7 +714,7 @@ function ScanContent() {
 
         {shipToast && phase === 'scanning' && (
           <div style={{ position: 'absolute', top: 16, left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
-            <div style={{ background: '#16a34a', color: '#fff', borderRadius: 10, padding: '8px 18px', fontSize: 14, fontWeight: 700, boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }}>{shipToast}</div>
+            <div style={{ background: '#5F7F5A', color: '#fff', borderRadius: 10, padding: '8px 18px', fontSize: 14, fontWeight: 700, boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }}>{shipToast}</div>
           </div>
         )}
 
@@ -741,7 +741,7 @@ function ScanContent() {
             {shipNos.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
                 {shipNos.map(x => (
-                  <span key={x.no} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#16a34a', color: '#fff', borderRadius: 8, padding: '4px 6px 4px 10px', fontSize: 12, fontWeight: 700 }}>
+                  <span key={x.no} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#5F7F5A', color: '#fff', borderRadius: 8, padding: '4px 6px 4px 10px', fontSize: 12, fontWeight: 700 }}>
                     ✓ {x.no}
                     <select value={x.carrier} onChange={e => setShipCarrier(x.no, e.target.value)}
                       style={{ border: 'none', borderRadius: 6, background: 'rgba(255,255,255,0.25)', color: '#fff', fontSize: 11, fontWeight: 600, padding: '2px 4px', outline: 'none', cursor: 'pointer' }}>
@@ -771,7 +771,7 @@ function ScanContent() {
                 ข้าม
               </button>
               <button onClick={() => finishBarcode(true)} disabled={shipSaving || shipNos.length === 0}
-                style={{ flex: 2, padding: 12, borderRadius: 12, border: 'none', background: shipNos.length === 0 ? '#475569' : '#16a34a', color: '#fff', fontSize: 15, fontWeight: 800, cursor: shipNos.length === 0 ? 'not-allowed' : 'pointer' }}>
+                style={{ flex: 2, padding: 12, borderRadius: 12, border: 'none', background: shipNos.length === 0 ? '#475569' : '#5F7F5A', color: '#fff', fontSize: 15, fontWeight: 800, cursor: shipNos.length === 0 ? 'not-allowed' : 'pointer' }}>
                 {shipSaving ? 'กำลังบันทึก…' : shipNos.length > 0 ? `บันทึก ${shipNos.length} เลข ✓` : 'ยังไม่มีเลขพัสดุ'}
               </button>
             </div>
@@ -821,7 +821,7 @@ function PhotoPreview({ preview, onCancel, onConfirm }: {
           ✕ เลือกใหม่
         </button>
         <button onClick={onConfirm}
-          style={{ flex: 2, padding: 13, borderRadius: 12, border: 'none', background: '#16a34a', color: '#fff', fontSize: 15, fontWeight: 800, cursor: 'pointer' }}>
+          style={{ flex: 2, padding: 13, borderRadius: 12, border: 'none', background: '#5F7F5A', color: '#fff', fontSize: 15, fontWeight: 800, cursor: 'pointer' }}>
           ✓ ยืนยันอัพโหลด
         </button>
       </div>
@@ -848,12 +848,12 @@ function PhotoUpload({ slots, uploading, counts, err, onPick, photos, delBusy, o
           const done = counts[s.tag] || 0
           const busy = uploading === s.tag
           return (
-            <label key={s.tag} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: done ? '1.5px solid #16a34a' : '1.5px dashed #94a3b8', background: done ? '#f0fdf4' : '#f8fafc', borderRadius: 12, padding: '12px 14px', cursor: busy ? 'wait' : 'pointer', fontSize: 14, fontWeight: 600, color: '#1a1a1a' }}>
+            <label key={s.tag} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: done ? '1.5px solid #5F7F5A' : '1.5px dashed #94a3b8', background: done ? '#f0fdf4' : '#f8fafc', borderRadius: 12, padding: '12px 14px', cursor: busy ? 'wait' : 'pointer', fontSize: 14, fontWeight: 600, color: '#1a1a1a' }}>
               {/* ไม่ใส่ capture → มือถือให้เลือกได้ทั้งถ่ายใหม่และรูปในเครื่อง */}
               <input type="file" accept="image/*" disabled={busy} style={{ display: 'none' }}
                 onChange={e => { const f = e.target.files?.[0]; if (f) onPick(f, s.tag); e.target.value = '' }} />
               <span>{busy ? '⏳ กำลังอัพโหลด…' : s.label}</span>
-              <span style={{ fontSize: 12, color: done ? '#16a34a' : '#94a3b8', fontWeight: 700 }}>
+              <span style={{ fontSize: 12, color: done ? '#5F7F5A' : '#94a3b8', fontWeight: 700 }}>
                 {done > 0 ? `✓ ${done} รูป · เพิ่มอีก` : 'ถ่าย/เลือกรูป'}
               </span>
             </label>
@@ -876,7 +876,7 @@ function PhotoUpload({ slots, uploading, counts, err, onPick, photos, delBusy, o
           </div>
         </div>
       )}
-      {err && <p style={{ color: '#dc2626', fontSize: 12, marginTop: 8 }}>ไม่สำเร็จ: {err}</p>}
+      {err && <p style={{ color: '#C0563F', fontSize: 12, marginTop: 8 }}>ไม่สำเร็จ: {err}</p>}
     </div>
   )
 }
@@ -899,12 +899,12 @@ function Result({ phase, order, msg, stage, onUndo, undoing, joinInfo, onJoin, o
   if (phase === 'done') return (
     <>
       <div style={{ fontSize: 54, marginBottom: 8 }}>✅</div>
-      <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6, color: '#16a34a' }}>{order?.isClaim ? (order?.order_status || stage?.status) : stage?.status}</h1>
+      <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6, color: '#5F7F5A' }}>{order?.isClaim ? (order?.order_status || stage?.status) : stage?.status}</h1>
       <p style={{ fontSize: 15 }}>{order?.isClaim ? '' : 'ออเดอร์ '}<b>{order?.order_number}</b></p>
       <p style={{ fontSize: 14, color: '#666' }}>{order?.customer_name}</p>
       {onUndo && (
         <button onClick={onUndo} disabled={undoing}
-          style={{ marginTop: 16, border: '1px solid #dc2626', background: undoing ? '#fca5a5' : '#fff', color: '#dc2626', borderRadius: 10, padding: '9px 18px', fontSize: 14, fontWeight: 700, cursor: undoing ? 'default' : 'pointer' }}>
+          style={{ marginTop: 16, border: '1px solid #C0563F', background: undoing ? '#fca5a5' : '#fff', color: '#C0563F', borderRadius: 10, padding: '9px 18px', fontSize: 14, fontWeight: 700, cursor: undoing ? 'default' : 'pointer' }}>
           {undoing ? 'กำลังยกเลิก…' : 'ยกเลิก'}
         </button>
       )}
@@ -913,7 +913,7 @@ function Result({ phase, order, msg, stage, onUndo, undoing, joinInfo, onJoin, o
   if (phase === 'undone') return (
     <>
       <div style={{ fontSize: 54, marginBottom: 8 }}>↩️</div>
-      <h1 style={{ fontSize: 20, fontWeight: 800, marginBottom: 6, color: '#dc2626' }}>ยกเลิกการสแกนแล้ว</h1>
+      <h1 style={{ fontSize: 20, fontWeight: 800, marginBottom: 6, color: '#C0563F' }}>ยกเลิกการสแกนแล้ว</h1>
       <p style={{ fontSize: 15 }}>{order?.isClaim ? '' : 'ออเดอร์ '}<b>{order?.order_number}</b></p>
       <p style={{ fontSize: 14, color: '#666' }}>สถานะกลับเป็น: <b>{order?.order_status || 'รอดำเนินการ'}</b></p>
     </>
@@ -944,7 +944,7 @@ function Result({ phase, order, msg, stage, onUndo, undoing, joinInfo, onJoin, o
               ไม่ใช่
             </button>
             <button onClick={onJoin} disabled={joining}
-              style={{ flex: 2, padding: 12, borderRadius: 12, border: 'none', background: joining ? '#c7c7c7' : '#16a34a', color: '#fff', fontSize: 15, fontWeight: 800, cursor: joining ? 'default' : 'pointer' }}>
+              style={{ flex: 2, padding: 12, borderRadius: 12, border: 'none', background: joining ? '#c7c7c7' : '#5F7F5A', color: '#fff', fontSize: 15, fontWeight: 800, cursor: joining ? 'default' : 'pointer' }}>
               {joining ? 'กำลังบันทึก…' : 'ยืนยัน ลงชื่อเพิ่ม'}
             </button>
           </div>
@@ -955,14 +955,14 @@ function Result({ phase, order, msg, stage, onUndo, undoing, joinInfo, onJoin, o
   if (phase === 'joined') return (
     <>
       {/* ไม่มีอีโมจิหน้านี้ (ผู้ใช้สั่งเอาออก) — เว้นระยะบนแทนให้การ์ดไม่ดูชิดขอบ */}
-      <h1 style={{ fontSize: 20, fontWeight: 800, margin: '10px 0 6px', color: '#16a34a' }}>บันทึกว่าช่วยทำแล้ว</h1>
+      <h1 style={{ fontSize: 20, fontWeight: 800, margin: '10px 0 6px', color: '#5F7F5A' }}>บันทึกว่าช่วยทำแล้ว</h1>
       <p style={{ fontSize: 15 }}>{order?.isClaim ? '' : 'ออเดอร์ '}<b>{order?.order_number}</b></p>
       <p style={{ fontSize: 13, color: '#666', marginTop: 6 }}>
         ขั้น <b style={{ color: '#1a1a1a' }}>{joinInfo?.stage}</b> — {(joinInfo?.people ?? []).join(', ')}
       </p>
       {onUndo && (
         <button onClick={onUndo} disabled={undoing}
-          style={{ marginTop: 16, border: '1px solid #dc2626', background: undoing ? '#fca5a5' : '#fff', color: '#dc2626', borderRadius: 10, padding: '9px 18px', fontSize: 14, fontWeight: 700, cursor: undoing ? 'default' : 'pointer' }}>
+          style={{ marginTop: 16, border: '1px solid #C0563F', background: undoing ? '#fca5a5' : '#fff', color: '#C0563F', borderRadius: 10, padding: '9px 18px', fontSize: 14, fontWeight: 700, cursor: undoing ? 'default' : 'pointer' }}>
           {undoing ? 'กำลังยกเลิก…' : 'ยกเลิก'}
         </button>
       )}
@@ -971,14 +971,14 @@ function Result({ phase, order, msg, stage, onUndo, undoing, joinInfo, onJoin, o
   if (phase === 'noorder') return (
     <>
       <div style={{ fontSize: 54, marginBottom: 8 }}>❓</div>
-      <h1 style={{ fontSize: 19, fontWeight: 800, marginBottom: 6, color: '#dc2626' }}>ไม่พบออเดอร์</h1>
+      <h1 style={{ fontSize: 19, fontWeight: 800, marginBottom: 6, color: '#C0563F' }}>ไม่พบออเดอร์</h1>
       <p style={{ fontSize: 14, color: '#666' }}>{order?.order_number || 'QR ไม่ถูกต้อง'}</p>
     </>
   )
   if (phase === 'error') return (
     <>
       <div style={{ fontSize: 54, marginBottom: 8 }}>⚠️</div>
-      <h1 style={{ fontSize: 19, fontWeight: 800, marginBottom: 6, color: '#dc2626' }}>เกิดข้อผิดพลาด</h1>
+      <h1 style={{ fontSize: 19, fontWeight: 800, marginBottom: 6, color: '#C0563F' }}>เกิดข้อผิดพลาด</h1>
       <p style={{ fontSize: 13, color: '#666' }}>{msg}</p>
     </>
   )

@@ -27,8 +27,8 @@ type PO = {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  'รอของ': '#ff9f0a',
-  'ของเข้าแล้ว': '#34c759',
+  'รอของ': '#C79A4B',
+  'ของเข้าแล้ว': '#6F8F6A',
 }
 
 const empty = (): Omit<PO, 'id' | 'created_at' | 'updated_at'> => ({
