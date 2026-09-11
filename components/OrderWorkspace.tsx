@@ -631,15 +631,41 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   useEffect(() => { load() }, [])
 
   // อัปเดตสด: สแกน/แก้จากเครื่องอื่นแล้วตารางนี้เปลี่ยนเองโดยไม่ต้องรีเฟรช
+  // ‼️ 11ก.ย.69 เดิม INSERT/DELETE สั่ง load() = ดึงออเดอร์+งานติดตั้ง+เคลม "ทั้งตาราง" ใหม่ทุกเครื่องที่เปิดหน้านี้
+  //    ต่อออเดอร์ 1 ใบ (อัพไฟล์ Shopee 40 ใบ = 40 รอบ × ทุกเครื่อง) → กิน Egress ของ Supabase จนเกินโควตาฟรี
+  //    ตอนนี้ใช้แถวที่ realtime ส่งมาเลย: เพิ่ม/ลบใบเดียว + ดึงงานติดตั้งของใบนั้นใบเดียว
+  const daysSortRef = useRef(daysSort)
+  useEffect(() => { daysSortRef.current = daysSort }, [daysSort])
   useEffect(() => {
+    // งานติดตั้งที่ผูกกับออเดอร์ใหม่ (ถ้ามี) — ให้แท็บงานติดตั้ง/การซ่อนงานวัดหน้างานถูกเหมือนตอน load()
+    const loadInstFor = async (orderId: string) => {
+      const { data } = await supabase.from('installations')
+        .select('id, source_order_id, work_type, serial_no, installation_status, install_zone, technician_type').eq('source_order_id', orderId)
+      const i = (data ?? [])[0] as (InstMeta & { source_order_id: string | null }) | undefined
+      if (!i) return
+      setInstMeta(m => ({ ...m, [orderId]: { id: i.id, work_type: i.work_type, serial_no: i.serial_no, installation_status: i.installation_status,
+        install_zone: i.install_zone, technician_type: i.technician_type } }))
+      if (i.work_type !== 'งานติดตั้ง') setNonOrderIds(s => new Set(s).add(orderId))
+    }
     const ch = supabase
       .channel('order_entries_live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'order_entries' }, (payload) => {
         if (payload.eventType === 'UPDATE') {
           const row = payload.new as Entry
           setRows(prev => prev.map(r => r.id === row.id ? { ...r, ...row } : r))
-        } else {
-          load()   // INSERT/DELETE — โหลดใหม่ให้ลำดับถูก (เกิดไม่บ่อย)
+        } else if (payload.eventType === 'INSERT') {
+          const row = payload.new as Entry
+          setRows(prev => {
+            const next = prev.some(r => r.id === row.id)
+              ? prev.map(r => r.id === row.id ? { ...r, ...row } : r)
+              : [row, ...prev]
+            setSortOrder(computeSortOrder(next, daysSortRef.current))   // ใบใหม่เข้าที่ตามวันผลิตที่เหลือ ไม่ตกไปท้ายตาราง
+            return next
+          })
+          void loadInstFor(row.id)
+        } else if (payload.eventType === 'DELETE') {
+          const id = (payload.old as { id?: string }).id
+          if (id) setRows(prev => prev.filter(r => r.id !== id))
         }
       })
       .subscribe()
