@@ -12,7 +12,7 @@ import { FIELD_TH } from '@/lib/activityText'
 import { PlatformIcon, CourierIcon } from './BrandMark'
 import { itemBlockLines, itemPrice, type RawItem } from '@/lib/itemFormat'
 import OrderHistory from './OrderHistory'
-import { OUTSIDE_PLATFORMS } from '@/lib/orderTabs'
+import { OUTSIDE_PLATFORMS, PLATFORM_NAMES } from '@/lib/orderTabs'
 
 type Row = Record<string, unknown>
 type Item = Record<string, unknown>
@@ -201,7 +201,11 @@ export function OrderDetailBody({ row, afterShipping }: { row: Row; afterShippin
   const steps: Hist[] = []
   for (const h of hist) if (!steps.some(x => x.status === h.status)) steps.push(h)
 
+  // งานแพลตฟอร์ม (Shopee/Tiktok/Lazada) ลูกค้าจ่ายผ่านแพลตฟอร์มแล้วทุกใบ — ช่อง "การชำระ" ค้าง "ยังไม่ชำระ" ชวนเข้าใจผิด
+  // (หมวดออเดอร์แท็บงานแพลตฟอร์มก็ไม่มีคอลัมน์นี้) · ‼️ ...-Chat / งานนอก ยังโชว์ เพราะชำระนอกแพลตฟอร์ม
+  const isMarketplace = PLATFORM_NAMES.includes(String(row.platform ?? ''))
   const fields0 = Object.entries(row).filter(([k, v]) => !HIDE.has(k) && fmt(k, v) !== ''
+    && !(isMarketplace && k === 'payment_status')
     // มีชื่อแอดมินแล้ว ไม่ต้องโชว์รหัส DN ซ้ำ
     && !(k === 'admin_code' && (row.admin_name || row.created_by_name)))
   // เวลานัดอยู่ใต้วันติดตั้งเสมอ — ตารางเป็น grid จำนวนคอลัมน์เปลี่ยนตามความกว้าง
