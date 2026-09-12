@@ -5,18 +5,24 @@
 // วิดีโอตอนแกะ + รูป อัพตรงเข้า R2 (โฟลเดอร์ returns/<id>/) แล้วบันทึก URL ลงแถวทันที
 // ช่อง "จากออเดอร์" = ผูกกับงานเคลม (claims) — กดแล้วพิมพ์ค้นเหมือนช่องอื่น (เลขออเดอร์เดิม/ชื่อลูกค้า/เลขพัสดุส่งคืน/เบอร์)
 // ตาราง: sql/create_return_parcels.sql + sql/add_return_parcels_claim.sql (คอลัมน์ claim_id)
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { tUpdate, tInsert, tDelete, prevOf } from '@/lib/trackedDb'
 import { CARRIER_OPTIONS, detectCarrier } from '@/lib/carriers'
 import { compressImage } from '@/lib/packingPhotos'
+import { compressVideo } from '@/lib/videoCompress'
 import { useConfirm } from '@/components/ConfirmDialog'
+import { nextSerial } from '@/lib/serialNo'
+import { buildCustomerBook, type CustomerEntry } from '@/lib/customerBook'
+import CustomerPickStep from '@/components/CustomerPickStep'
 
 type Media = { url: string; name?: string; caption?: string }
 type Parcel = {
   id: string
+  serial_no?: string | null    // เลขที่ใบพัสดุตีกลับ BP0001 — ออกตอนสร้าง ไม่เปลี่ยนอีก (ดู lib/serialNo.ts)
   sender_name: string | null
   items: string | null
   carrier: string | null
@@ -132,13 +138,44 @@ export default function ReturnParcelsPage() {
     }
   }
 
-  const addRow = async () => {
+  // ===== เพิ่มพัสดุส่งกลับ: ถามชื่อผู้ส่ง (ลูกค้า) ก่อนเป็นอย่างแรก =====
+  // ‼️ กันลงชื่อลูกค้าคนเดียวกันคนละแบบจนโฟลเดอร์ลูกค้าแตก — ค้นจากชื่อที่เคยลงไว้ในใบออเดอร์
+  //    ดึงรายชื่อตอนกดเพิ่มครั้งแรกครั้งเดียว และดึงแค่ 4 ช่อง (ประหยัด Egress ของ Supabase)
+  const [custStep, setCustStep] = useState(false)
+  const [orderNames, setOrderNames] = useState<{ name: string | null; phone: string | null; order_number: string | null; date: string | null }[] | null>(null)
+
+  const customerBook: CustomerEntry[] = useMemo(() => buildCustomerBook([
+    ...(orderNames ?? []),
+    ...rows.map(r => ({ name: r.sender_name, phone: r.phone, order_number: r.orig_order_number, date: r.created_at })),
+  ]), [orderNames, rows])
+
+  const openAdd = async () => {
+    setCustStep(true)
+    if (orderNames === null) {
+      const { data } = await supabase.from('order_entries').select('customer_name, phone, order_number, entry_date')
+      setOrderNames((data ?? []).map(r => {
+        const o = r as { customer_name: string | null; phone: string | null; order_number: string | null; entry_date: string | null }
+        return { name: o.customer_name, phone: o.phone, order_number: o.order_number, date: o.entry_date }
+      }))
+    }
+  }
+
+  const addRow = async (senderName = '', senderPhone = '') => {
+    setCustStep(false)
     setError('')
     try {
-      const saved = await tInsert(TABLE, { videos: [], photos: [] }, 'เพิ่มพัสดุส่งกลับ', load) as Parcel
+      // เลขที่ใบ BP0001 — ถามเลขล่าสุดจากฐานตอนกดเพิ่ม (แอดมินหลายคนเปิดค้างพร้อมกัน)
+      const { data: usedSerials, error: serErr } = await supabase.from(TABLE).select('serial_no').not('serial_no', 'is', null)
+      // ยังไม่ได้รัน sql/add_serial_no.sql (ไม่มีคอลัมน์) → ข้ามไป เพิ่มแถวได้ตามปกติ ไม่พัง
+      const serialPatch = serErr ? {} : { serial_no: nextSerial('return', (usedSerials ?? []).map(x => (x as { serial_no: string | null }).serial_no)) }
+      const saved = await tInsert(TABLE, {
+        videos: [], photos: [], ...serialPatch,
+        ...(senderName ? { sender_name: senderName } : {}),
+        ...(senderPhone ? { phone: senderPhone } : {}),
+      }, 'เพิ่มพัสดุส่งกลับ', load) as Parcel
       setRows(prev => [saved, ...prev])
       setSearch('')
-      setEditing(`${saved.id}:sender_name`)   // เปิดช่องแรกให้พิมพ์ต่อได้เลย
+      setEditing(`${saved.id}:${senderName ? 'items' : 'sender_name'}`)   // ได้ชื่อแล้วเปิดช่องถัดไปให้พิมพ์ต่อ
     } catch (e) {
       setError(`เพิ่มแถวไม่สำเร็จ: ${errMsg(e)}`)
     }
@@ -197,7 +234,11 @@ export default function ReturnParcelsPage() {
     try {
       const list = Array.from(files)
       for (let i = 0; i < list.length; i++) {
-        const f = kind === 'photos' ? await compressImage(list[i]) : list[i]
+        const prefix0 = list.length > 1 ? `${i + 1}/${list.length} · ` : ''
+        // ย่อไฟล์ก่อนอัพ — รูปย่อทันที · คลิปใหญ่ต้องเล่นแล้วอัดใหม่ เลยมีแถบบอกความคืบหน้าแยก
+        const f = kind === 'photos'
+          ? await compressImage(list[i])
+          : await compressVideo(list[i], pct => setUploading(u => ({ ...u, [tag]: `${prefix0}ย่อคลิป ${pct}%` })))
         const ext = (f.name.split('.').pop() || (kind === 'photos' ? 'jpg' : 'mp4')).toLowerCase()
         const key = mediaKey(r.id, ext)
         const prefix = list.length > 1 ? `${i + 1}/${list.length} · ` : ''
@@ -236,11 +277,17 @@ export default function ReturnParcelsPage() {
           <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px' }}>พัสดุส่งกลับ</h1>
           <p style={{ fontSize: 14, color: 'var(--ink-3)', marginTop: 4 }}>{rows.length} รายการ</p>
         </div>
-        <button onClick={addRow}
+        <button onClick={openAdd}
           style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,122,255,0.3)' }}>
           + เพิ่มพัสดุ
         </button>
       </div>
+
+      {custStep && (
+        <CustomerPickStep book={customerBook}
+          onPick={(name, phone) => addRow(name, phone)}
+          onClose={() => setCustStep(false)} />
+      )}
 
       {error && (
         <div style={{ background: '#ff375f11', border: '1px solid #ff375f44', borderRadius: 10, padding: '12px 16px', marginBottom: 16, color: 'var(--red)', fontSize: 13, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
@@ -274,6 +321,7 @@ export default function ReturnParcelsPage() {
             <thead>
               <tr>
                 <th style={th}>วันที่ลง</th>
+                <th style={th}>Serial</th>
                 {COLS.map(c => <th key={c.key} style={th}>{c.label}</th>)}
                 <th style={th}>วิดีโอตอนแกะ</th>
                 <th style={th}>รูป</th>
@@ -289,9 +337,13 @@ export default function ReturnParcelsPage() {
                     <td style={{ ...td, padding: '12px', whiteSpace: 'nowrap', color: 'var(--ink-3)', fontSize: 12 }}>
                       {new Date(r.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}
                     </td>
+                    <td style={{ ...td, padding: '12px', whiteSpace: 'nowrap', fontWeight: 700, color: 'var(--ink)', fontSize: 12 }}>
+                      {r.serial_no || <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>—</span>}
+                    </td>
                     {COLS.map(c => (
                       <td key={c.key} style={{ ...td, minWidth: c.w, maxWidth: c.w + 80 }}>
                         <EditCell value={r[c.key] ?? ''} multiline={c.multiline} carrier={c.carrier} label={c.label}
+                          customerLink={c.key === 'sender_name'}
                           editing={editing === `${r.id}:${c.key}`}
                           onStart={() => setEditing(`${r.id}:${c.key}`)}
                           onDone={v => {
@@ -352,7 +404,6 @@ export default function ReturnParcelsPage() {
       })()}
 
       {/* ชี้เมาส์ที่ช่อง = ขึ้นกรอบจางๆ บอกว่ากดแก้ได้ */}
-      <style>{`.rp-cell:hover{background:var(--bg);box-shadow:inset 0 0 0 1px var(--border)}`}</style>
 
       {/* กล่องยืนยัน — ต้องอยู่ท้ายสุดเพื่อทับทุกหน้าต่าง */}
       {confirmDialog}
@@ -361,13 +412,20 @@ export default function ReturnParcelsPage() {
 }
 
 // ── ช่องข้อความที่กดแล้วพิมพ์ได้ในตาราง ──
-function EditCell({ value, editing, onStart, onDone, multiline, carrier, label }: {
+function EditCell({ value, editing, onStart, onDone, multiline, carrier, label, customerLink }: {
   value: string; editing: boolean; onStart: () => void; onDone: (v: string) => void; multiline?: boolean; carrier?: boolean; label: string
+  customerLink?: boolean   // ชื่อลูกค้า: โชว์เป็นลิงก์เข้าโฟลเดอร์ออเดอร์เหมือนหมวดออเดอร์ (แก้ชื่อ = ดับเบิลคลิก)
 }) {
   if (editing) return <CellEditor value={value} onDone={onDone} multiline={multiline} carrier={carrier} />
+  if (customerLink && value) return (
+    <div onDoubleClick={onStart} style={{ minHeight: 18, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+      <Link href={`/customers?name=${encodeURIComponent(value)}`} title="เปิดโฟลเดอร์ออเดอร์ของลูกค้า (ดับเบิลคลิกที่ช่องเพื่อแก้ชื่อ)"
+        style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>{value}</Link>
+    </div>
+  )
   return (
-    <div onClick={onStart} title={`กดเพื่อแก้${label}`} className="rp-cell"
-      style={{ padding: '6px 8px', borderRadius: 6, cursor: 'text', minHeight: 20, whiteSpace: multiline ? 'pre-wrap' : 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-word', color: value ? 'var(--ink)' : 'var(--ink-4)' }}>
+    <div onClick={onStart} title={value || `กดเพื่อแก้${label}`} className="rp-cell"
+      style={{ cursor: 'text', minHeight: 18, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: value ? 'var(--ink)' : 'var(--ink-4)' }}>
       {value || '—'}
     </div>
   )
@@ -378,14 +436,14 @@ function CellEditor({ value, onDone, multiline, carrier }: { value: string; onDo
   const [draft, setDraft] = useState(value)
   const cancelled = useRef(false)
 
-  const box: React.CSSProperties = { width: '100%', border: '1px solid var(--blue)', borderRadius: 6, padding: '6px 8px', fontSize: 13, outline: 'none', boxSizing: 'border-box', background: '#fff', fontFamily: 'inherit' }
+  // สไตล์เดียวกับช่องแก้ข้อความในตารางหมวดออเดอร์ (textCell ใน OrderWorkspace) — เส้นใต้สีน้ำเงิน พื้นโปร่ง ไม่ดันความสูงแถว
+  const box: React.CSSProperties = { width: '100%', border: 'none', borderBottom: '1px solid var(--blue)', borderRadius: 0, padding: '2px 0', fontSize: 13, outline: 'none', boxSizing: 'border-box', background: 'transparent', fontFamily: 'inherit', color: 'var(--ink)' }
   const finish = () => { if (cancelled.current) { cancelled.current = false; onDone(value); return } onDone(draft) }
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') { cancelled.current = true; (e.target as HTMLElement).blur() }
     if (e.key === 'Enter' && !(multiline && e.shiftKey)) { e.preventDefault(); (e.target as HTMLElement).blur() }
   }
 
-  if (multiline) return <textarea autoFocus value={draft} rows={3} onChange={e => setDraft(e.target.value)} onBlur={finish} onKeyDown={onKey} style={{ ...box, resize: 'vertical' }} />
   return (
     <>
       <input autoFocus value={draft} onChange={e => setDraft(e.target.value)} onBlur={finish} onKeyDown={onKey}

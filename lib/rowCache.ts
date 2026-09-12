@@ -11,7 +11,7 @@ import { fetchAllRows } from './fetchAll'
 
 const DB_NAME = 'donna-row-cache'
 const STORE = 'kv'
-const FORMAT = 1                       // เปลี่ยนเลขนี้ = ทุกเครื่องทิ้งแคชแล้วดึงเต็มใหม่
+const FORMAT = 2                       // เปลี่ยนเลขนี้ = ทุกเครื่องทิ้งแคชแล้วดึงเต็มใหม่ (2 = เพิ่มคอลัมน์ serial_no)
 const MAX_AGE_MS = 3 * 24 * 3600 * 1000 // ดึงเต็มอย่างน้อยทุก 3 วัน กันแคชเพี้ยนสะสม
 const OVERLAP_MS = 2 * 60 * 1000       // ย้อนเผื่อแถวที่ commit ช้ากว่าเวลาที่ trigger จด
 const CHUNK = 150                      // จำนวน id ต่อคำขอ (กัน URL ยาวเกิน)

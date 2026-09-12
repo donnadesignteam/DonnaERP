@@ -58,10 +58,10 @@ export const rowColor = (ins: { installation_status?: string | null; work_type?:
 // และตารางรายการใต้ปฏิทินงานติดตั้ง (ทั้งสองหน้ามีปุ่ม "คอลัมน์" ติ๊กซ่อน/โชว์เอง)
 // ‼️ เพิ่ม/ย้ายคอลัมน์ที่นี่ที่เดียว แล้วไปเติมเซลล์ให้ครบทั้ง 2 หน้า
 export const INSTALL_COLUMNS: { id: string; label: string }[] = [
-  { id: 'days', label: 'วันผลิตที่เหลือ' }, { id: 'serial', label: 'Serial' },
+  { id: 'days', label: 'วันผลิตที่เหลือ' },
   { id: 'deadline', label: 'วันที่นัดหมาย' }, { id: 'work', label: 'งาน' },
   { id: 'print', label: 'ปริ้น' },
-  { id: 'customer', label: 'ลูกค้า' }, { id: 'platform', label: 'แพลตฟอร์ม' },
+  { id: 'serial', label: 'Serial' }, { id: 'customer', label: 'ลูกค้า' }, { id: 'platform', label: 'แพลตฟอร์ม' },
   { id: 'items', label: 'รายการ' }, { id: 'total', label: 'ยอดทั้งหมด' },
   { id: 'payment', label: 'ชำระ' }, { id: 'paid', label: 'ชำระแล้ว' },
   { id: 'paybefore', label: 'ยอดชำระหลังติดตั้ง' },

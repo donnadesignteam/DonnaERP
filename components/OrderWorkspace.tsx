@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { flushSync } from 'react-dom'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -10,6 +10,9 @@ import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, ITEM_FIELDS, ITEM_FIELD_OPTIONS, shownFields, visibleItemCols, itemInputValue, emptyItem as emptyRawItem } from '@/lib/itemFormat'
 import { railLink } from '@/lib/rail'
+import { installSerial, nextSerial } from '@/lib/serialNo'
+import { buildCustomerBook } from '@/lib/customerBook'
+import CustomerPickStep from '@/components/CustomerPickStep'
 import { TECH_OPTIONS } from '@/lib/techs'
 import { OUTSIDE_PLATFORMS, PLATFORM_NAMES, PROD_STATUSES, INSTALL_STATUSES, PROD_STATUS_COLOR, matchQuickTab, effectiveDueDate, cmpDaysSort, cmpDeadlineSort, type QuickTab } from '@/lib/orderTabs'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
@@ -137,6 +140,7 @@ type Entry = {
   last_content_at?: string | null
   // แถวที่ดึงมาจากหน้าเคลม (ตาราง claims) — ไม่ใช่ใบออเดอร์จริง แก้ได้เฉพาะสถานะ/งานเสร็จ/จัดส่ง/ปริ้น/หมายเหตุ
   claim_id?: string | null
+  serial_no?: string | null      // เลขที่ใบ: งานนอก DR0001 · งานเคลม DM0001 (งานติดตั้งใช้ของ installations) — ดู lib/serialNo.ts
   // ปักหมุดออเดอร์สำคัญ (sql/add_pinned_column.sql) — ลอยขึ้นบนสุดของทุกแท็บ เห็นร่วมกันทั้งทีม
   pinned?: boolean | null
   pinned_at?: string | null
@@ -166,11 +170,13 @@ type ClaimSource = {
   technician?: string | null
   estimated_price: number | null; created_at?: string | null; updated_at?: string | null
   pinned?: boolean | null; pinned_at?: string | null
+  serial_no?: string | null
 }
 const claimToEntry = (c: ClaimSource): Entry => ({
   ...emptyForm(),
   id: c.id,
   claim_id: c.id,
+  serial_no: c.serial_no ?? null,
   entry_date: c.claim_date,
   deadline: c.deadline,
   platform: `เคลม:${c.channel || 'หน้าร้าน'}`,
@@ -363,7 +369,7 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
   outside: [
     { id: 'days', label: 'วันผลิตที่เหลือ' }, { id: 'deadline', label: 'ต้องส่งภายใน' },
     { id: 'print', label: 'ปริ้น' },
-    { id: 'customer', label: 'ลูกค้า' }, { id: 'platform', label: 'แพลตฟอร์ม' },
+    { id: 'serial', label: 'Serial' }, { id: 'customer', label: 'ลูกค้า' }, { id: 'platform', label: 'แพลตฟอร์ม' },
     { id: 'items', label: 'รายการ' }, { id: 'total', label: 'ยอดทั้งหมด' },
     { id: 'payment', label: 'ชำระ' }, { id: 'paid', label: 'ชำระแล้ว' },
     { id: 'paybefore', label: 'ยอดชำระก่อนจัดส่ง' },
@@ -567,7 +573,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [openAllFilter, setOpenAllFilter] = useState<'days'|'deadline'|'platform'|'courier'|'status'|'done'|'updated'|null>(null)
   const [addType, setAddType] = useState<'platform' | 'outside' | 'install' | 'claim' | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
-  const [orderPasteText, setOrderPasteText] = useState('')      // วางข้อความไลน์ → autofill ทั้งฟอร์ม
+  // ===== ขั้นแรกของ "เพิ่มรายการ": เลือกลูกค้าก่อนกรอกอย่างอื่น =====
+  // ‼️ แอดมินแต่ละคนเคยลงชื่อลูกค้าคนเดียวกันคนละแบบ (ชื่อไลน์ / ชื่อ Shopee / ชื่อจริง) → ใบของลูกค้าคนเดียวแตกเป็นหลายโฟลเดอร์
+  //    เลยบังคับให้ค้นชื่อเดิมก่อนเสมอ เจอแล้วกดเลือก (ได้ชื่อสะกดเดิมเป๊ะ) ไม่เจอค่อยกดเพิ่มลูกค้าใหม่
+  const [custStep, setCustStep] = useState<{ type: 'platform' | 'outside' | 'install' | 'claim'; extra: object; keepModal?: boolean } | null>(null)
   const [orderParsing, setOrderParsing] = useState(false)
   const [orderParseError, setOrderParseError] = useState('')
   const [formParseLoading, setFormParseLoading] = useState(false)
@@ -617,7 +626,9 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
         install_zone: i.install_zone, technician_type: i.technician_type }])))
     // งานเคลมจากหน้าเคลม (ตาราง claims) → โชว์ปนในหมวดออเดอร์ด้วย จะได้เรียงวันที่เหลือรวมกัน
     const CLAIM_COLS = 'id, claim_date, channel, customer_username, original_order_number, items, status, is_urgent, notes, courier, printed_at, shipped_at, admin_name, estimated_price, created_at, updated_at'
-    let claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(`${CLAIM_COLS}, deadline, technician, pinned, pinned_at`).order('id', { ascending: true }))
+    let claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(`${CLAIM_COLS}, deadline, technician, pinned, pinned_at, serial_no`).order('id', { ascending: true }))
+    // ยังไม่ได้รัน sql/add_serial_no.sql → ดึงแบบไม่มีเลขที่ใบไปก่อน (คอลัมน์ Serial ของงานเคลมจะขึ้น —)
+    if (claimRes.error) claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(`${CLAIM_COLS}, deadline, technician, pinned, pinned_at`).order('id', { ascending: true }))
     // ยังไม่ได้รัน sql/add_pinned_column.sql → ดึงแบบไม่มีคอลัมน์ปักหมุดไปก่อน
     if (claimRes.error) claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(`${CLAIM_COLS}, deadline, technician`).order('id', { ascending: true }))
     // ยังไม่ได้รัน scripts/add_claim_deadline.sql / add_claim_technician.sql → ดึงแบบไม่มี 2 คอลัมน์นั้นไปก่อน (งานเคลมยังโชว์ได้)
@@ -803,6 +814,13 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     }
     const oname = (payload.order_number || payload.customer_name || '').toString()
     if (modal.mode === 'add') {
+      // เลขที่ใบงานนอก DR0001 — ออกเฉพาะงานนอก (งานติดตั้งใช้เลขของปฏิทิน · งานแพลตฟอร์มไม่มีเลข)
+      // ‼️ ถามเลขล่าสุดจากฐานตอนกดบันทึก ไม่ใช้เลขในหน้าจอ (แอดมินหลายคนเปิดค้างไว้พร้อมกัน)
+      if (!payload.is_installation && OUTSIDE_PLATFORMS.includes(String(payload.platform ?? '')) && !isClaimRow(payload.platform)) {
+        const { data: used, error: serErr } = await supabase.from('order_entries').select('serial_no').like('serial_no', 'DR%')
+        // ยังไม่ได้รัน sql/add_serial_no.sql (ไม่มีคอลัมน์) → ข้ามไป บันทึกได้ตามปกติ ไม่พัง
+        if (!serErr) (payload as Record<string, unknown>).serial_no = nextSerial('outside', (used ?? []).map(x => (x as { serial_no: string | null }).serial_no))
+      }
       const res = await oeInsert(payload).select().single()
       if (res.error) { setSaving(false); setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
       const saved = res.data as Entry
@@ -1869,17 +1887,6 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     }
   })
 
-  // วางข้อความไลน์ก้อนเดียว → autofill ทั้งฟอร์ม (ลูกค้า/แพลตฟอร์ม/เลขออเดอร์/รายการ) เหมือนงานเคลม
-  const parseOrderFromLine = async () => {
-    if (!orderPasteText.trim()) return
-    setOrderParsing(true); setOrderParseError('')
-    try {
-      await parseOrderText(orderPasteText)
-    } finally {
-      setOrderParsing(false)
-    }
-  }
-
   // แปลงข้อความ (จากช่องวางข้อความ หรือจาก PDF ใบเสนอราคา) → กรอกลงฟอร์ม
   const parseOrderText = async (text: string) => {
     try {
@@ -1887,7 +1894,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       const data = await res.json()
       if (!res.ok || data.error) throw new Error(data.error || 'แปลงไม่สำเร็จ')
       const o = data.order || {}
-      if (o.customer_name) set('customer_name', String(o.customer_name))
+      // ‼️ ไม่เติม customer_name จาก AI — ชื่อลูกค้าเลือกจากทะเบียนในขั้นแรกแล้ว (กัน AI อ่านชื่อเพี้ยนจนโฟลเดอร์ลูกค้าแตก)
       if (o.platform) set('platform', String(o.platform))
       if (o.order_number) set('order_number', String(o.order_number))
       if (o.deadline) set('deadline', String(o.deadline))
@@ -1914,8 +1921,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       const res = await fetch('/api/parse-pdf', { method: 'POST', body: fd })
       const data = await res.json()
       if (!res.ok || data.error) throw new Error(data.error || 'อ่านไฟล์ไม่สำเร็จ')
-      setOrderPasteText(data.text)
-      await parseOrderText(data.text)   // แปลงต่อให้เลย (ข้อความยังอยู่ในช่อง กดแปลงซ้ำเองได้)
+      await parseOrderText(data.text)
     } catch (e: unknown) {
       setOrderParseError(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด')
     } finally {
@@ -2199,8 +2205,38 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     ph.begin([], null)
     setModalItems(Array.isArray(r.items) ? (r.items as Item[]).map(it => ({ ...it })) : [])
     setItemsPasteText('')
-    setOrderPasteText('')
     setOrderParseError('')
+  }
+
+  // ทะเบียนลูกค้าจากออเดอร์ที่มีอยู่ (ตรรกะการค้นอยู่ที่ lib/customerBook.ts)
+  const customerBook = useMemo(
+    () => buildCustomerBook(rows.map(r => ({ name: r.customer_name, phone: r.phone, order_number: r.order_number, date: r.entry_date }))),
+    [rows])
+
+  // ได้ชื่อลูกค้าแล้ว → เปิดฟอร์มกรอกออเดอร์ตามปกติ (เบอร์เดิมเติมให้ แก้ทับได้)
+  const openAddFormFor = (type: 'platform' | 'outside' | 'install' | 'claim', extra: object, name: string, phone: string) => {
+    setAddType(type)
+    setModalTab('form')
+    setModal({ mode: 'add', data: { ...emptyForm(), shipping_datetime: '', ...extra, ...(name ? { customer_name: name } : {}), ...(phone ? { phone } : {}) } })
+    ph.begin([], null)
+    setModalItems([])
+    setItemsPasteText('')
+    setOrderParseError('')
+    setCustStep(null)
+  }
+  // แท็บไหนติดไฟอยู่ — หน้า "วาง Copy" ไม่มีปุ่มแล้ว แต่เป็นหน้าที่โชว์ผลหลังวางไฟล์ จึงนับเป็นแท็บ Drop ไฟล์
+  const tabOn = (t: 'form' | 'paste' | 'file') => modalTab === t || (t === 'file' && modalTab === 'paste')
+
+  const openAddForm = (name: string, phone: string) => {
+    if (!custStep) return
+    // เข้ามาทางแท็บ Drop ไฟล์ แล้วขอไปกรอกฟอร์ม → เติมชื่อลงกล่องที่เปิดค้างอยู่ ไม่เปิดใหม่ทับของที่กรอกไว้
+    if (custStep.keepModal) {
+      setModal(m => m ? { ...m, data: { ...m.data, customer_name: name, ...(phone && !m.data.phone ? { phone } : {}) } } : m)
+      setModalTab('form')
+      setCustStep(null)
+      return
+    }
+    openAddFormFor(custStep.type, custStep.extra, name, phone)
   }
 
   // ช่องเลือกโซน/ช่าง ในแท็บงานติดตั้ง (ค่าอยู่ตาราง installations)
@@ -2953,9 +2989,6 @@ ${body}
                   </button>
                 </th>
                 )}
-                {quickFilter === 'install' && showCol('serial') && (
-                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>Serial</th>
-                )}
                 {showCol('deadline') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap' }}>
                   <button onClick={e => openOutFilter(e, 'out-deadline')}
@@ -2968,6 +3001,9 @@ ${body}
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>งาน</th>
                 )}
                 {showCol('print') && printHeader()}
+                {showCol('serial') && (
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>Serial</th>
+                )}
                 {showCol('customer') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ลูกค้า</th>
                 )}
@@ -3260,11 +3296,6 @@ ${body}
                       ) : <span style={{ color: 'var(--ink-4)' }}>รอกำหนด</span>}
                     </td>
                     )}
-                    {quickFilter === 'install' && showCol('serial') && (
-                    <td style={{ padding: '8px 14px', fontWeight: 700, color: 'var(--blue)', whiteSpace: 'nowrap' }}>
-                      {ins?.serial_no || <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>—</span>}
-                    </td>
-                    )}
                     {showCol('deadline') && (
                     <td style={{ padding: '8px 14px' }}>
                       {isCancelled ? <span style={{ color: 'var(--ink-4)' }}>-</span>
@@ -3288,6 +3319,12 @@ ${body}
                     </td>
                     )}
                     {showCol('print') && printCell(r)}
+                    {showCol('serial') && (
+                    <td style={{ padding: '8px 14px', fontWeight: 700, color: 'var(--ink)', whiteSpace: 'nowrap' }}>
+                      {(quickFilter === 'install' ? installSerial(ins?.serial_no) : r.serial_no)
+                        || <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>—</span>}
+                    </td>
+                    )}
                     {showCol('customer') && (
                     <td style={{ padding: '8px 14px', minWidth: 100 }}>
                       {r.customer_name
@@ -3554,6 +3591,9 @@ ${body}
                 {quickFilter === 'shipped' && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>เลขออเดอร์</th>
                 )}
+                {quickFilter === 'claim' && (
+                <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>Serial</th>
+                )}
                 {showCol('customer') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>ลูกค้า</th>
                 )}
@@ -3698,6 +3738,11 @@ ${body}
                     {showCol('print') && printCell(r)}
                     {quickFilter === 'shipped' && (
                     <td style={{ padding: '12px 14px', color: 'var(--ink)', fontWeight: 600, whiteSpace: 'nowrap' }}>{r.order_number || '-'}</td>
+                    )}
+                    {quickFilter === 'claim' && (
+                    <td style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--ink)', whiteSpace: 'nowrap' }}>
+                      {r.serial_no || <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>—</span>}
+                    </td>
                     )}
                     {showCol('customer') && (
                     <td style={{ padding: '12px 14px' }}>
@@ -4588,10 +4633,21 @@ ${body}
             ) : (
               <div style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
                 {/* งานแพลตฟอร์ม: วาง Copy + Drop ไฟล์ (xlsx/csv) · งานนอก: Drop ไฟล์ = PDF ใบเสนอราคา */}
-                {(['form', ...(addType === 'platform' ? ['paste', 'file'] : (addType === 'outside' || addType === 'install') ? ['file'] : [])] as ('form'|'paste'|'file')[]).map(t => (
-                  <button key={t} onClick={() => { setModalTab(t); setPasteRows([]); setIncomeRows([]); setFileParseError('') }}
-                    style={{ flex: 1, padding: '16px 0', fontSize: 14, fontWeight: modalTab === t ? 600 : 400, border: 'none', borderBottom: modalTab === t ? '2px solid var(--blue)' : '2px solid transparent', background: 'transparent', cursor: 'pointer', color: modalTab === t ? 'var(--blue)' : 'var(--ink-3)', transition: 'all 0.15s' }}>
-                    {t === 'form' ? 'กรอกฟอร์ม' : t === 'paste' ? 'วาง Copy' : 'Drop ไฟล์'}
+                {/* ‼️ ไม่มีปุ่มแท็บ "วาง Copy" แล้ว — แต่หน้านั้นยังใช้อยู่ ระบบสลับไปเองเพื่อโชว์ผลหลังวางไฟล์ (ดู setModalTab('paste'))
+                    งานแพลตฟอร์ม: ใส่ชื่อลูกค้าแล้ว = ลงทีละใบ จึงไม่มีแท็บ Drop ไฟล์ (ไฟล์เป็นการลงทีเดียวหลายใบ ชื่อมาจากไฟล์) */}
+                {(['form', ...(addType === 'platform'
+                  ? ((modal.data.customer_name ?? '').trim() ? [] : ['file'])
+                  : (addType === 'outside' || addType === 'install') ? ['file'] : [])] as ('form'|'paste'|'file')[]).map(t => (
+                  <button key={t} onClick={() => {
+                    // ‼️ เข้าแท็บกรอกฟอร์มต้องมีชื่อลูกค้าก่อนเสมอ (เข้ามาทาง Drop ไฟล์จะยังไม่มี) — ถามชื่อก่อน
+                    if (t === 'form' && modal.mode === 'add' && !(modal.data.customer_name ?? '').trim() && addType) {
+                      setCustStep({ type: addType, extra: {}, keepModal: true })
+                      return
+                    }
+                    setModalTab(t); setPasteRows([]); setIncomeRows([]); setFileParseError('')
+                  }}
+                    style={{ flex: 1, padding: '16px 0', fontSize: 14, fontWeight: tabOn(t) ? 600 : 400, border: 'none', borderBottom: tabOn(t) ? '2px solid var(--blue)' : '2px solid transparent', background: 'transparent', cursor: 'pointer', color: tabOn(t) ? 'var(--blue)' : 'var(--ink-3)', transition: 'all 0.15s' }}>
+                    {t === 'form' ? 'กรอกฟอร์ม' : 'Drop ไฟล์'}
                   </button>
                 ))}
               </div>
@@ -4837,20 +4893,6 @@ ${body}
             {/* ---- Form tab ---- */}
             {(modal.mode === 'edit' || modalTab === 'form') && (
             <div>
-            {modal.mode === 'add' && (
-              <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, padding: 14, marginBottom: 18 }}>
-                <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 6 }}>วางข้อความจากไลน์</label>
-                <textarea value={orderPasteText} onChange={e => { setOrderPasteText(e.target.value); setOrderParseError('') }} rows={4}
-                  style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit' }} />
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
-                  <button type="button" onClick={parseOrderFromLine} disabled={orderParsing || !orderPasteText.trim()}
-                    style={{ background: orderParsing || !orderPasteText.trim() ? 'var(--border)' : 'var(--blue)', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 18px', fontSize: 13, fontWeight: 600, cursor: orderParsing ? 'default' : 'pointer' }}>
-                    {orderParsing ? 'กำลังแปลงข้อมูล…' : '✨ แปลงข้อมูล'}
-                  </button>
-                  {orderParseError && <span style={{ color: 'var(--red)', fontSize: 12 }}>{orderParseError}</span>}
-                </div>
-              </div>
-            )}
             {(() => {
               const ft = modal.mode === 'add' ? addType
                 : modal.data.is_installation ? 'install'
@@ -5047,6 +5089,18 @@ ${body}
       )}
 
       {/* Add type picker */}
+      {/* ขั้นที่ 2 ของเพิ่มรายการ: เลือกลูกค้าก่อนกรอกอย่างอื่น (งานแพลตฟอร์มข้ามขั้นนี้ — ชื่อมาจากไฟล์ที่นำเข้า) */}
+      {custStep && (
+        <CustomerPickStep book={customerBook}
+          onPick={openAddForm}
+          altLabel={custStep.type === 'platform' && !custStep.keepModal ? 'Drop ไฟล์' : undefined}
+          onAlt={custStep.type === 'platform' && !custStep.keepModal
+            ? () => { openAddFormFor('platform', custStep.extra, '', ''); setModalTab('file') }
+            : undefined}
+          onBack={custStep.keepModal ? undefined : () => { setCustStep(null); setAddTypeModal(true) }}
+          onClose={() => setCustStep(null)} />
+      )}
+
       {addTypeModal && (
         <div onClick={() => setAddTypeModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: 400, padding: '28px 32px' }}>
@@ -5059,15 +5113,10 @@ ${body}
                 ['งานติดตั้ง', '🔨', 'สั่งพร้อมติดตั้ง', 'install', { is_installation: true }],
               ] as [string, string, string, 'platform'|'outside'|'install'|'claim', object][]).map(([label, icon, desc, type, extra]) => (
                 <button key={label} onClick={() => {
+                  // ขั้นถัดไปคือถามชื่อลูกค้าก่อน (ดู custStep) ฟอร์มจะเปิดหลังได้ชื่อแล้ว
+                  // งานแพลตฟอร์มมีทางเลือก "นำเข้าจากไฟล์" ในกล่องนั้นด้วย (ชื่อลูกค้าอยู่ในไฟล์อยู่แล้ว)
                   setAddTypeModal(false)
-                  setAddType(type)
-                  setModalTab('form')
-                  setModal({ mode: 'add', data: { ...emptyForm(), shipping_datetime: '', ...extra } })
-                  ph.begin([], null)
-                  setModalItems([])
-                  setItemsPasteText('')
-                  setOrderPasteText('')
-                  setOrderParseError('')
+                  setCustStep({ type, extra })
                 }}
                   style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', textAlign: 'left', transition: 'border-color 0.15s' }}
                   onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--blue)')}
