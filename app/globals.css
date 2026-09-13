@@ -235,8 +235,10 @@ h1, h2, h3 { font-weight: 700; }
 .ow-select .cs-value { flex: 1; color: var(--ink-2); white-space: nowrap; }
 .cs-chev { flex-shrink: 0; transition: transform 160ms ease; }
 [data-open] > .cs-chev { transform: rotate(180deg); }
-.ow-pill { display: inline-flex; align-items: center; gap: 6px; border: none; border-radius: 10px; padding: 5px 10px 5px 12px;
+.ow-pill { display: inline-flex; align-items: center; justify-content: center; gap: 4px; width: 124px; border: none; border-radius: 10px; padding: 5px 8px 5px 12px;
   font-family: inherit; font-size: 12px; font-weight: 700; white-space: nowrap; cursor: pointer; }
+/* ป้ายสถานะกว้างเท่ากันทุกแถว เรียงเป็นแนวเดียวแบบหน้าภาพรวม (.dn-pill) — ชื่ออยู่กลาง ลูกศรชิดขวา */
+.ow-pill > span:first-child { flex: 1; text-align: center; }
 .ow-pill:focus-visible, .ow-select:focus-visible { outline: 2px solid var(--brand-soft); outline-offset: 2px; }
 
 /* รายการที่เลื่อนลงมา — ครีม มุมมน เงานุ่ม (ใช้กับ CreamSelect + เมนูลอยเดิมในหน้าออเดอร์ .ow-drop) */
