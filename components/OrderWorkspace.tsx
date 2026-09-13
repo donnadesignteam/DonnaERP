@@ -38,7 +38,7 @@ import { parseMoney } from '@/lib/money'
 import { formatOrderText, formatOrderHtml } from '@/lib/orderPrint'
 import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
-import { PlatformIcon } from '@/components/BrandMark'
+import { PlatformIcon, CourierIcon } from '@/components/BrandMark'
 import CreamSelect from '@/components/CreamSelect'
 
 type Item = {
@@ -3663,6 +3663,7 @@ ${body}
                       {['งานติดตั้ง', ...new Set(rows.map(r => r.courier).filter(Boolean))].map(c => (
                         <label key={c} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: allCourierFilters.includes(c!) ? 'var(--blue-bg)' : 'transparent' }}>
                           <input type="checkbox" checked={allCourierFilters.includes(c!)} onChange={() => setAllCourierFilters(toggleArr(allCourierFilters, c!))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
+                          <CourierIcon name={c === 'งานติดตั้ง' ? null : c!} install={c === 'งานติดตั้ง'} size={16} />
                           {c === 'งานติดตั้ง' ? <span style={{ color: '#B5715A', fontWeight: 600 }}>งานติดตั้ง</span> : c}
                         </label>
                       ))}
@@ -3793,7 +3794,11 @@ ${body}
                     )}
                     {showCol('courier') && (
                     <td style={{ padding: '12px 14px', color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
-                      {r.is_installation ? <span style={{ color: '#B5715A', fontWeight: 600 }}>งานติดตั้ง</span> : r.courier || <span style={{ color: 'var(--ink-4)' }}>-</span>}
+                      {r.is_installation
+                        ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#B5715A', fontWeight: 600 }}><CourierIcon name={null} install size={18} />งานติดตั้ง</span>
+                        : r.courier
+                          ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><CourierIcon name={r.courier} size={18} />{r.courier}</span>
+                          : <span style={{ color: 'var(--ink-4)' }}>-</span>}
                     </td>
                     )}
                     {showCol('status') && statusCell(r)}
@@ -3982,6 +3987,7 @@ ${body}
                       {[...new Set([...rows.map(r => r.courier).filter(Boolean), 'Flash Express Bulky', 'LEX TH', 'J&T Express'])].sort().map(c => (
                         <label key={c} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--ink)', fontWeight: 400, background: courierFilters.includes(c!) ? 'var(--blue-bg)' : 'transparent' }}>
                           <input type="checkbox" checked={courierFilters.includes(c!)} onChange={() => setCourierFilters(toggleArr(courierFilters, c!))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
+                          <CourierIcon name={c!} size={16} />
                           {c}
                         </label>
                       ))}
@@ -4209,8 +4215,11 @@ ${body}
                     <td style={{ padding: '12px 14px', color: 'var(--ink-2)' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>{r.platform && <PlatformIcon name={r.platform} size={18} />}{r.platform || '-'}</span></td>
                     )}
                     {showCol('courier') && (
-                    <td style={{ padding: '12px 14px', color: 'var(--ink-3)', maxWidth: 140 }}>
-                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.courier || '-'}</div>
+                    <td style={{ padding: '12px 14px', color: 'var(--ink-3)', maxWidth: 170 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                        {r.courier && <CourierIcon name={r.courier} size={18} />}
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.courier || '-'}</span>
+                      </div>
                     </td>
                     )}
                     {showCol('pay_date') && (
