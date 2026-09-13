@@ -223,7 +223,9 @@ h1, h2, h3 { font-weight: 700; }
 .ow-card table thead th:first-child { border-radius: 10px 0 0 10px; }
 .ow-card table thead th:last-child { border-radius: 0 10px 10px 0; }
 .ow-card table tbody td { padding-top: 12px !important; padding-bottom: 12px !important; border-bottom: 1px solid var(--hairline); }
-.ow-card table tbody tr:hover { background: var(--cream-2) !important; }
+.ow-card table tbody tr:not(.is-pinned):hover { background: var(--cream-2) !important; }
+/* แถวปักหมุด — พื้นครีมเข้ม (#F1E2D2) เห็นชัดว่าลอยอยู่บนสุด · ชี้แล้วเข้มขึ้นอีกนิด */
+.ow-card table tbody tr.is-pinned:hover { background: #EBD7C3 !important; }
 .ow-card table input[type="checkbox"] { width: 16px !important; height: 16px !important; accent-color: var(--brand); }
 .pg-btn { min-width: 32px; height: 32px; padding: 0 8px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface);
   color: var(--ink-2); font-size: 12.5px; cursor: pointer; font-variant-numeric: tabular-nums; font-family: inherit; box-shadow: var(--shadow); }
