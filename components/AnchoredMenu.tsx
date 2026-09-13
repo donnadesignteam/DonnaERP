@@ -9,11 +9,12 @@ import { useLayoutEffect, useRef, useState, type ReactNode, type CSSProperties }
 const GAP = 2
 const EDGE = 8   // เว้นขอบจอ
 
-export default function AnchoredMenu({ rect, children, minWidth = 130, style }: {
+export default function AnchoredMenu({ rect, children, minWidth = 130, style, className }: {
   rect: DOMRect
   children: ReactNode
   minWidth?: number
   style?: CSSProperties
+  className?: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ top: number; maxHeight?: number }>({ top: rect.bottom + GAP })
@@ -31,7 +32,7 @@ export default function AnchoredMenu({ rect, children, minWidth = 130, style }: 
   }, [rect])
 
   return (
-    <div ref={ref}
+    <div ref={ref} className={className}
       style={{
         position: 'fixed', top: pos.top, right: Math.max(EDGE, window.innerWidth - rect.right),
         maxHeight: pos.maxHeight, overflowY: pos.maxHeight ? 'auto' : undefined,

@@ -39,6 +39,7 @@ import { formatOrderText, formatOrderHtml } from '@/lib/orderPrint'
 import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
 import { PlatformIcon } from '@/components/BrandMark'
+import CreamSelect from '@/components/CreamSelect'
 
 type Item = {
   type: string
@@ -1065,13 +1066,13 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
         {(() => {
           const c = PROD_STATUS_COLOR[r.order_status] ?? '#B39B84'
           return (
-            <span className="ow-pill" style={{ color: c, background: `color-mix(in srgb, ${c} 14%, var(--surface))` }}>
-              <select value={r.order_status || ''} onChange={e => updateField(r.id, 'order_status', e.target.value)}>
-                <option value="">—</option>
-                {flow.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" /></svg>
-            </span>
+            <CreamSelect value={r.order_status || ''} onChange={v => updateField(r.id, 'order_status', v)}
+              className="ow-pill" style={{ color: c, background: `color-mix(in srgb, ${c} 14%, var(--surface))` }} menuMinWidth={170}
+              options={[{ value: '', label: '—' }, ...flow.map(s => ({ value: s, label: s, color: PROD_STATUS_COLOR[s] }))]}
+              renderValue={o => <>
+                <span>{o?.label ?? '—'}</span>
+                <svg className="cs-chev" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" /></svg>
+              </>} />
           )
         })()}
         {changedAt && (
@@ -2715,23 +2716,22 @@ ${body}
             </button>
           )}
         </div>
-        <label className="ow-select" data-on={month !== 'all' || undefined}>
-        <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2.5" /><path strokeLinecap="round" d="M3.5 10h17M8 3v4M16 3v4" /></svg>
-        <select value={month} onChange={e => setMonth(e.target.value)} title="เดือนที่รับออเดอร์">
-          <option value="all">ทุกเดือน</option>
-          {monthOptions.ym.map(k => <option key={k} value={k}>{monthLabel(k)}</option>)}
-          {monthOptions.hasNone && <option value="none">{monthLabel('none')}</option>}
-        </select>
-        </label>
+        <CreamSelect value={month} onChange={setMonth} title="เดือนที่รับออเดอร์" className="ow-select" style={month !== 'all' ? { borderColor: 'var(--brand)' } : undefined}
+          options={[{ value: 'all', label: 'ทุกเดือน' }, ...monthOptions.ym.map(k => ({ value: k, label: monthLabel(k) })), ...(monthOptions.hasNone ? [{ value: 'none', label: monthLabel('none') }] : [])]}
+          renderValue={o => <>
+            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2.5" /><path strokeLinecap="round" d="M3.5 10h17M8 3v4M16 3v4" /></svg>
+            <span className="cs-value">{o?.label}</span>
+            <svg className="cs-chev" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" /></svg>
+          </>} />
         {/* เรียงตามวันที่สร้าง — ใช้ได้ทุกแท็บ (ทับการเรียงของหัวคอลัมน์เมื่อเลือกไว้) */}
-        <label className="ow-select" data-on={createdSort || undefined}>
-        <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M7 4v16M3.5 16.5L7 20l3.5-3.5M14 6h7M14 11h5M14 16h3" /></svg>
-        <select value={createdSort ?? ''} onChange={e => { setCreatedSort((e.target.value || null) as 'asc' | 'desc' | null); setShipDateSort(null) }} title="เรียงตามวันที่สร้าง">
-          <option value="">เรียงตามค่าเริ่มต้น</option>
-          <option value="desc">วันที่สร้าง: ใหม่สุด → เก่าสุด</option>
-          <option value="asc">วันที่สร้าง: เก่าสุด → ใหม่สุด</option>
-        </select>
-        </label>
+        <CreamSelect value={createdSort ?? ''} onChange={v => { setCreatedSort((v || null) as 'asc' | 'desc' | null); setShipDateSort(null) }} title="เรียงตามวันที่สร้าง"
+          className="ow-select" style={createdSort ? { borderColor: 'var(--brand)' } : undefined} menuMinWidth={240} align="right"
+          options={[{ value: '', label: 'เรียงตามค่าเริ่มต้น' }, { value: 'desc', label: 'วันที่สร้าง: ใหม่สุด → เก่าสุด' }, { value: 'asc', label: 'วันที่สร้าง: เก่าสุด → ใหม่สุด' }]}
+          renderValue={o => <>
+            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M7 4v16M3.5 16.5L7 20l3.5-3.5M14 6h7M14 11h5M14 16h3" /></svg>
+            <span className="cs-value">{o?.label}</span>
+            <svg className="cs-chev" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" /></svg>
+          </>} />
       </div>
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 18, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -2842,7 +2842,7 @@ ${body}
             {openColMenu && (
               <>
                 <div onClick={() => setOpenColMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 150 }} />
-                <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 200, maxHeight: 360, overflowY: 'auto' }}>
+                <div className="ow-drop" style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 200, maxHeight: 360, overflowY: 'auto' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 12px 8px', borderBottom: '1px solid var(--border)', marginBottom: 4 }}>
                     <span style={{ fontSize: 11, color: 'var(--ink-4)', fontWeight: 600 }}>ติ๊กออก = ซ่อน</span>
                     {tabHidden.length > 0 && (
@@ -2867,7 +2867,7 @@ ${body}
         {outFilterPos && openFilter && (() => {
           const dropStyle = { position: 'absolute' as const, top: outFilterPos.top + 4, left: outFilterPos.left, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0' }
           if (openFilter === 'out-days') return (
-            <div style={{ ...dropStyle, minWidth: 140 }}>
+            <div className="ow-drop" style={{ ...dropStyle, minWidth: 140 }}>
               {([['น้อยไปมาก', 'asc'], ['มากไปน้อย', 'desc']] as [string, 'asc'|'desc'][]).map(([label, val]) => (
                 <div key={label} onClick={() => { setOutDaysSort(val); setOutUpdatedSort(null); setCreatedSort(null); setOpenFilter(null); setOutFilterPos(null) }}
                   style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: outDaysSort === val ? 600 : 400, color: outDaysSort === val ? 'var(--blue)' : 'var(--ink)', background: outDaysSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
@@ -2882,7 +2882,7 @@ ${body}
             </div>
           )
           if (openFilter === 'out-deadline') return (
-            <div style={{ ...dropStyle, padding: '12px 14px', minWidth: 220 }}>
+            <div className="ow-drop" style={{ ...dropStyle, padding: '12px 14px', minWidth: 220 }}>
               <div style={{ marginBottom: 8 }}>
                 <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>ตั้งแต่</label>
                 <input type="date" lang="en-GB" value={outDeadlineFrom} onChange={e => setOutDeadlineFrom(e.target.value)} style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
@@ -2897,7 +2897,7 @@ ${body}
             </div>
           )
           if (openFilter === 'out-platform') return (
-            <div style={{ ...dropStyle, minWidth: 180, maxHeight: 260, overflowY: 'auto' }}>
+            <div className="ow-drop" style={{ ...dropStyle, minWidth: 180, maxHeight: 260, overflowY: 'auto' }}>
               {OUTSIDE_PLATFORMS.map(p => (
                 <label key={p} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: outPlatformFilters.includes(p) ? 'var(--blue-bg)' : 'transparent' }}>
                   <input type="checkbox" checked={outPlatformFilters.includes(p)} onChange={() => setOutPlatformFilters(toggleArr(outPlatformFilters, p))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
@@ -2907,7 +2907,7 @@ ${body}
             </div>
           )
           if (openFilter === 'out-payment') return (
-            <div style={{ ...dropStyle, minWidth: 150 }}>
+            <div className="ow-drop" style={{ ...dropStyle, minWidth: 150 }}>
               {PAYMENT_STATUSES.map(s => (
                 <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: outPaymentFilters.includes(s) ? 'var(--blue-bg)' : 'transparent' }}>
                   <input type="checkbox" checked={outPaymentFilters.includes(s)} onChange={() => setOutPaymentFilters(toggleArr(outPaymentFilters, s))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
@@ -2917,7 +2917,7 @@ ${body}
             </div>
           )
           if (openFilter === 'out-assigned') return (
-            <div style={{ ...dropStyle, minWidth: 160 }}>
+            <div className="ow-drop" style={{ ...dropStyle, minWidth: 160 }}>
               {ORDER_ASSIGNED.map(o => (
                 <label key={o} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: outAssignedFilters.includes(o) ? 'var(--blue-bg)' : 'transparent' }}>
                   <input type="checkbox" checked={outAssignedFilters.includes(o)} onChange={() => setOutAssignedFilters(toggleArr(outAssignedFilters, o))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
@@ -2927,7 +2927,7 @@ ${body}
             </div>
           )
           if (openFilter === 'out-admin') return (
-            <div style={{ ...dropStyle, minWidth: 160 }}>
+            <div className="ow-drop" style={{ ...dropStyle, minWidth: 160 }}>
               {adminNames.map(a => (
                 <label key={a} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: outAdminFilters.includes(a) ? 'var(--blue-bg)' : 'transparent' }}>
                   <input type="checkbox" checked={outAdminFilters.includes(a)} onChange={() => setOutAdminFilters(toggleArr(outAdminFilters, a))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
@@ -2937,7 +2937,7 @@ ${body}
             </div>
           )
           if (openFilter === 'out-status') return (
-            <div style={{ ...dropStyle, minWidth: 150 }}>
+            <div className="ow-drop" style={{ ...dropStyle, minWidth: 150 }}>
               {PROD_STATUSES.map(s => (
                 <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: outStatusFilters.includes(s) ? 'var(--blue-bg)' : 'transparent' }}>
                   <input type="checkbox" checked={outStatusFilters.includes(s)} onChange={() => setOutStatusFilters(toggleArr(outStatusFilters, s))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
@@ -2948,7 +2948,7 @@ ${body}
             </div>
           )
           if (openFilter === 'out-done') return (
-            <div style={{ ...dropStyle, minWidth: 150 }}>
+            <div className="ow-drop" style={{ ...dropStyle, minWidth: 150 }}>
               {([['ทั้งหมด', null], ['งานเสร็จเท่านั้น', true], ['ยังไม่เสร็จ', false]] as [string, boolean|null][]).map(([label, val]) => (
                 <button key={String(label)} onClick={() => { setOutDoneFilter(val); setOpenFilter(null); setOutFilterPos(null) }}
                   style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', fontSize: 12, border: 'none', cursor: 'pointer', background: outDoneFilter === val ? 'var(--blue-bg)' : 'transparent', color: outDoneFilter === val ? 'var(--blue)' : 'var(--ink)', fontWeight: outDoneFilter === val ? 600 : 400 }}>
@@ -2958,7 +2958,7 @@ ${body}
             </div>
           )
           if (openFilter === 'out-installed') return (
-            <div style={{ ...dropStyle, minWidth: 150 }}>
+            <div className="ow-drop" style={{ ...dropStyle, minWidth: 150 }}>
               {([['ทั้งหมด', null], ['ติดตั้งแล้ว', true], ['ยังไม่ติดตั้ง', false]] as [string, boolean|null][]).map(([label, val]) => (
                 <button key={String(label)} onClick={() => { setOutInstalledFilter(val); setOpenFilter(null); setOutFilterPos(null) }}
                   style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', fontSize: 12, border: 'none', cursor: 'pointer', background: outInstalledFilter === val ? 'var(--blue-bg)' : 'transparent', color: outInstalledFilter === val ? 'var(--blue)' : 'var(--ink)', fontWeight: outInstalledFilter === val ? 600 : 400 }}>
@@ -2968,7 +2968,7 @@ ${body}
             </div>
           )
           if (openFilter === 'out-created') return (
-            <div style={{ ...dropStyle, minWidth: 170 }}>
+            <div className="ow-drop" style={{ ...dropStyle, minWidth: 170 }}>
               {([['ใหม่สุด → เก่าสุด', 'desc'], ['เก่าสุด → ใหม่สุด', 'asc'], ['ไม่เรียง', null]] as [string, 'asc'|'desc'|null][]).map(([label, val]) => (
                 <div key={label} onClick={() => { setCreatedSort(val); setShipDateSort(null); setOpenFilter(null); setOutFilterPos(null) }}
                   style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: createdSort === val ? 600 : 400, color: createdSort === val ? 'var(--blue)' : 'var(--ink)', background: createdSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
@@ -2978,7 +2978,7 @@ ${body}
             </div>
           )
           if (openFilter === 'out-updated') return (
-            <div style={{ ...dropStyle, minWidth: 160 }}>
+            <div className="ow-drop" style={{ ...dropStyle, minWidth: 160 }}>
               {([['ใหม่สุด-เก่าสุด', 'desc'], ['เก่าสุด-ใหม่สุด', 'asc']] as [string, 'asc'|'desc'][]).map(([label, val]) => (
                 <div key={label} onClick={() => { setOutUpdatedSort(val); setOutDaysSort(null); setCreatedSort(null); setOpenFilter(null); setOutFilterPos(null) }}
                   style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: outUpdatedSort === val ? 600 : 400, color: outUpdatedSort === val ? 'var(--blue)' : 'var(--ink)', background: outUpdatedSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
@@ -2990,7 +2990,7 @@ ${body}
           return null
         })()}
         {rowPlatformDropdown && (
-          <div style={{ position: 'absolute', top: rowPlatformDropdown.pos.top + 4, left: rowPlatformDropdown.pos.left, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 160, maxHeight: 260, overflowY: 'auto', padding: '6px 0' }}>
+          <div className="ow-drop" style={{ position: 'absolute', top: rowPlatformDropdown.pos.top + 4, left: rowPlatformDropdown.pos.left, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 160, maxHeight: 260, overflowY: 'auto', padding: '6px 0' }}>
             {OUTSIDE_PLATFORMS.map(p => (
               <div key={p} onClick={() => { updateField(rowPlatformDropdown.id, 'platform', p); setRowPlatformDropdown(null) }}
                 style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, color: 'var(--ink)', background: 'transparent' }}
@@ -3585,7 +3585,7 @@ ${body}
                     วันผลิตที่เหลือ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openAllFilter === 'days' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 140 }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 140 }}>
                       {([['น้อยไปมาก', 'asc'], ['มากไปน้อย', 'desc']] as [string, 'asc'|'desc'][]).map(([label, val]) => (
                         <div key={val} onClick={() => { setAllDaysSort(val); setAllUpdatedSort(null); setCreatedSort(null); setOpenAllFilter(null) }}
                           style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: allDaysSort === val ? 600 : 400, color: allDaysSort === val ? 'var(--blue)' : 'var(--ink)', background: allDaysSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
@@ -3608,7 +3608,7 @@ ${body}
                     ต้องส่งภายใน <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openAllFilter === 'deadline' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '12px 14px', minWidth: 220 }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '12px 14px', minWidth: 220 }}>
                       <div style={{ marginBottom: 8 }}>
                         <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>ตั้งแต่</label>
                         <input type="date" value={allDeadlineFrom} onChange={e => setAllDeadlineFrom(e.target.value)} style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, outline: 'none', boxSizing: 'border-box' as const }} />
@@ -3641,7 +3641,7 @@ ${body}
                     แพลตฟอร์ม{allPlatformFilters.length > 0 && ` (${allPlatformFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openAllFilter === 'platform' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 180, maxHeight: 280, overflowY: 'auto', padding: '6px 0' }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 180, maxHeight: 280, overflowY: 'auto', padding: '6px 0' }}>
                       {PLATFORMS.concat(OUTSIDE_PLATFORMS.filter(p => !PLATFORMS.includes(p))).map(p => (
                         <label key={p} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: allPlatformFilters.includes(p) ? 'var(--blue-bg)' : 'transparent' }}>
                           <input type="checkbox" checked={allPlatformFilters.includes(p)} onChange={() => setAllPlatformFilters(toggleArr(allPlatformFilters, p))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
@@ -3659,7 +3659,7 @@ ${body}
                     บริษัทจัดส่ง{allCourierFilters.length > 0 && ` (${allCourierFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openAllFilter === 'courier' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 200, maxHeight: 260, overflowY: 'auto', padding: '6px 0' }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 200, maxHeight: 260, overflowY: 'auto', padding: '6px 0' }}>
                       {['งานติดตั้ง', ...new Set(rows.map(r => r.courier).filter(Boolean))].map(c => (
                         <label key={c} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: allCourierFilters.includes(c!) ? 'var(--blue-bg)' : 'transparent' }}>
                           <input type="checkbox" checked={allCourierFilters.includes(c!)} onChange={() => setAllCourierFilters(toggleArr(allCourierFilters, c!))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
@@ -3677,7 +3677,7 @@ ${body}
                     สถานะงาน{allStatusFilters.length > 0 && ` (${allStatusFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openAllFilter === 'status' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 160, padding: '6px 0' }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 160, padding: '6px 0' }}>
                       {[...PROD_STATUSES, ...INSTALL_STATUSES.filter(s => !PROD_STATUSES.includes(s))].map(s => (
                         <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: allStatusFilters.includes(s) ? 'var(--blue-bg)' : 'transparent' }}>
                           <input type="checkbox" checked={allStatusFilters.includes(s)} onChange={() => setAllStatusFilters(toggleArr(allStatusFilters, s))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
@@ -3696,7 +3696,7 @@ ${body}
                     งานเสร็จ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openAllFilter === 'done' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 150, padding: '6px 0' }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 150, padding: '6px 0' }}>
                       {([['ทั้งหมด', null], ['งานเสร็จเท่านั้น', true], ['ยังไม่เสร็จ', false]] as [string, boolean|null][]).map(([label, val]) => (
                         <button key={String(label)} onClick={() => { setAllDoneFilter(val); setOpenAllFilter(null) }}
                           style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', fontSize: 12, border: 'none', cursor: 'pointer', background: allDoneFilter === val ? 'var(--blue-bg)' : 'transparent', color: allDoneFilter === val ? 'var(--blue)' : 'var(--ink)', fontWeight: allDoneFilter === val ? 600 : 400 }}>
@@ -3723,7 +3723,7 @@ ${body}
                     แก้ไขล่าสุด <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openAllFilter === 'updated' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 160 }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 160 }}>
                       {([['ใหม่สุด-เก่าสุด', 'desc'], ['เก่าสุด-ใหม่สุด', 'asc']] as [string, 'asc'|'desc'][]).map(([label, val]) => (
                         <div key={val} onClick={() => { setAllUpdatedSort(val); setAllDaysSort(null); setCreatedSort(null); setOpenAllFilter(null) }}
                           style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: allUpdatedSort === val ? 600 : 400, color: allUpdatedSort === val ? 'var(--blue)' : 'var(--ink)', background: allUpdatedSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
@@ -3896,7 +3896,7 @@ ${body}
                     วันผลิตที่เหลือ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openFilter === 'days' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 140 }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 140 }}>
                       {([['น้อยไปมาก', 'asc'], ['มากไปน้อย', 'desc']] as [string, 'asc' | 'desc'][]).map(([label, val]) => (
                         <div key={label} onClick={() => { setSortOrder(computeSortOrder(rows, val)); setDaysSort(val); setUpdatedSort(null); setCreatedSort(null); setShipDateSort(null); setOpenFilter(null) }}
                           style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: daysSort === val ? 600 : 400, color: daysSort === val ? 'var(--blue)' : 'var(--ink)', background: daysSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
@@ -3919,7 +3919,7 @@ ${body}
                     ต้องส่งภายใน <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openFilter === 'shipping' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '12px 14px', minWidth: 220 }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '12px 14px', minWidth: 220 }}>
                       <div style={{ marginBottom: 10 }}>
                         <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>ตั้งแต่วันที่</label>
                         <input type="date" value={shippingDateFrom} onChange={e => setShippingDateFrom(e.target.value)}
@@ -3960,7 +3960,7 @@ ${body}
                     แพลตฟอร์ม{platformFilters.length > 0 && ` (${platformFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openFilter === 'platform' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 180, maxHeight: 280, overflowY: 'auto', padding: '6px 0' }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 180, maxHeight: 280, overflowY: 'auto', padding: '6px 0' }}>
                       {PLATFORMS.map(p => (
                         <label key={p} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--ink)', fontWeight: 400, background: platformFilters.includes(p) ? 'var(--blue-bg)' : 'transparent' }}>
                           <input type="checkbox" checked={platformFilters.includes(p)} onChange={() => setPlatformFilters(toggleArr(platformFilters, p))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
@@ -3978,7 +3978,7 @@ ${body}
                     บริษัทส่ง{courierFilters.length > 0 && ` (${courierFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openFilter === 'courier' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 260, maxHeight: 280, overflowY: 'auto', padding: '6px 0' }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 260, maxHeight: 280, overflowY: 'auto', padding: '6px 0' }}>
                       {[...new Set([...rows.map(r => r.courier).filter(Boolean), 'Flash Express Bulky', 'LEX TH', 'J&T Express'])].sort().map(c => (
                         <label key={c} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--ink)', fontWeight: 400, background: courierFilters.includes(c!) ? 'var(--blue-bg)' : 'transparent' }}>
                           <input type="checkbox" checked={courierFilters.includes(c!)} onChange={() => setCourierFilters(toggleArr(courierFilters, c!))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
@@ -3996,7 +3996,7 @@ ${body}
                     วันที่ชำระ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openFilter === 'pay-date' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 170 }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 170 }}>
                       {([['ใหม่สุด → เก่าสุด', 'desc'], ['เก่าสุด → ใหม่สุด', 'asc'], ['ไม่เรียง', null]] as [string, 'asc'|'desc'|null][]).map(([label, val]) => (
                         <div key={label} onClick={() => { setCreatedSort(val); setShipDateSort(null); setOpenFilter(null) }}
                           style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: createdSort === val ? 600 : 400, color: createdSort === val ? 'var(--blue)' : 'var(--ink)', background: createdSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
@@ -4014,7 +4014,7 @@ ${body}
                     วันที่ต้องส่ง <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openFilter === 'ship-date' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 170 }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 170 }}>
                       {([['ใหม่สุด → เก่าสุด', 'desc'], ['เก่าสุด → ใหม่สุด', 'asc'], ['ไม่เรียง', null]] as [string, 'asc'|'desc'|null][]).map(([label, val]) => (
                         <div key={label} onClick={() => { setShipDateSort(val); setCreatedSort(null); setOpenFilter(null) }}
                           style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: shipDateSort === val ? 600 : 400, color: shipDateSort === val ? 'var(--blue)' : 'var(--ink)', background: shipDateSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
@@ -4032,7 +4032,7 @@ ${body}
                     แอดมิน{adminFilters.length > 0 && ` (${adminFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openFilter === 'admin' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 140, padding: '6px 0' }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 140, padding: '6px 0' }}>
                       {adminNames.map(a => (
                         <label key={a} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--ink)', fontWeight: 400, background: adminFilters.includes(a) ? 'var(--blue-bg)' : 'transparent' }}>
                           <input type="checkbox" checked={adminFilters.includes(a)} onChange={() => setAdminFilters(toggleArr(adminFilters, a))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
@@ -4050,7 +4050,7 @@ ${body}
                     ช่าง{techFilters.length > 0 && ` (${techFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openFilter === 'tech' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 160, padding: '6px 0' }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 160, padding: '6px 0' }}>
                       {TECHS.map(t => (
                         <label key={t} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--ink)', fontWeight: 400, background: techFilters.includes(t) ? 'var(--blue-bg)' : 'transparent' }}>
                           <input type="checkbox" checked={techFilters.includes(t)} onChange={() => setTechFilters(toggleArr(techFilters, t))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
@@ -4068,7 +4068,7 @@ ${body}
                     สถานะงาน{statusFilters.length > 0 && ` (${statusFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openFilter === 'status' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 160, padding: '6px 0' }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 160, padding: '6px 0' }}>
                       {PROD_STATUSES.map(s => (
                         <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--ink)', fontWeight: 400, background: statusFilters.includes(s) ? 'var(--blue-bg)' : 'transparent' }}>
                           <input type="checkbox" checked={statusFilters.includes(s)} onChange={() => setStatusFilters(toggleArr(statusFilters, s))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
@@ -4090,7 +4090,7 @@ ${body}
                     งานเสร็จ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openFilter === 'urgent' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 150, padding: '6px 0' }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 150, padding: '6px 0' }}>
                       {[['ทั้งหมด', null], ['งานเสร็จเท่านั้น', true], ['ยังไม่เสร็จ', false]].map(([label, val]) => (
                         <button key={String(label)} onClick={() => { setUrgentFilter(val as boolean); setOpenFilter(null) }}
                           style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', fontSize: 12, border: 'none', cursor: 'pointer', background: urgentFilter === val ? 'var(--blue-bg)' : 'transparent', color: urgentFilter === val ? 'var(--blue)' : 'var(--ink)', fontWeight: urgentFilter === val ? 600 : 400 }}>
@@ -4123,7 +4123,7 @@ ${body}
                     เวลาที่แก้ไข <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openFilter === 'updated' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 150 }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 150 }}>
                       {([['ใหม่สุด-เก่าสุด', 'desc'], ['เก่าสุด-ใหม่สุด', 'asc']] as [string, 'asc' | 'desc'][]).map(([label, val]) => (
                         <div key={label} onClick={() => { setUpdatedSort(val); setDaysSort(null); setCreatedSort(null); setShipDateSort(null); setOpenFilter(null) }}
                           style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: updatedSort === val ? 600 : 400, color: updatedSort === val ? 'var(--blue)' : 'var(--ink)', background: updatedSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
@@ -4396,7 +4396,7 @@ ${body}
         const r = rows.find(row => row.id === openAction)
         if (!r) return null
         return (
-          <AnchoredMenu rect={actionRect}>
+          <AnchoredMenu rect={actionRect} className="ow-drop">
             {/* ปักหมุด — ใบที่ปักไว้ลอยขึ้นบนสุดของแท็บ + พื้นหลังเทาจาง (เห็นตรงกันทั้งทีม) */}
             <button onClick={() => { setOpenAction(null); setActionRect(null); void togglePin(r.id) }}
               style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: r.pinned ? 'var(--red)' : 'var(--ink)' }}>
