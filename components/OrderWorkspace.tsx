@@ -391,6 +391,7 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
 // คอลัมน์รายการโชว์ได้ไม่เกินกี่บรรทัด (เกินนี้ขึ้น "+ อีก N รายการ" แทน แถวจะได้ไม่ยืด)
 const ITEM_LINE_MAX = 3
 const PAGE_SIZE = 50
+const DEMO_LOCAL_TICKS = true   // เฉพาะโคลน donnaweb-design — ดู demoTicks
 
 const isClaimRow = (platform: string | null | undefined) => (platform ?? '').startsWith('เคลม:')
 
@@ -557,6 +558,11 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [quickFilter, setQuickFilter] = useState<'all' | 'platform' | 'outside' | 'install' | 'claim' | 'shipped' | 'cancelled'>('all')
   // แบ่งหน้าตาราง หน้าละ PAGE_SIZE แถว (13ก.ย.69 ดีไซน์ใหม่) — เปลี่ยนแท็บ/ค้นหา/เดือน กลับหน้า 1
   const [page, setPage] = useState(1)
+  // ‼️ โคลนอ่านอย่างเดียว: ติ๊กแล้วบันทึกไม่ได้ ช่องเลยเด้งกลับ → จำค่าที่ติ๊กไว้บนจอเฉยๆ ให้ลองกดดูหน้าตา/อนิเมชั่นได้
+  //    ไม่ส่งอะไรไปฐานข้อมูล · รีเฟรชหน้า = กลับเป็นค่าจริง · ปิดด้วย DEMO_LOCAL_TICKS = false
+  const [demoTicks, setDemoTicks] = useState<Record<string, boolean>>({})
+  const tickVal = (id: string, f: string, real: boolean) => demoTicks[`${id}:${f}`] ?? real
+  const tickSet = (id: string, f: string, v: boolean) => setDemoTicks(m => ({ ...m, [`${id}:${f}`]: v }))
   const [hiddenCols, setHiddenCols] = useState<Record<string, string[]>>(() => {
     if (typeof window === 'undefined') return {}
     try { return JSON.parse(localStorage.getItem(`ow_hidden_cols_${scope}`) || '{}') } catch { return {} }
@@ -1083,7 +1089,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   // ช่องคอลัมน์ "ปริ้น": ติ๊กถูก = ปริ้นแล้ว + โชว์วันเวลาที่ปริ้น (auto ติ๊กเมื่อกดปริ้นในเมนู ···)
   const printCell = (r: Entry) => (
     <td style={{ padding: '8px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-      <input type="checkbox" checked={!!r.printed_at} onChange={e => togglePrinted(r.id, e.target.checked)}
+      <input type="checkbox" checked={tickVal(r.id, 'printed', !!r.printed_at)} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'printed', e.target.checked) : togglePrinted(r.id, e.target.checked)}
         style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
       {r.printed_at && (
         <div style={{ fontSize: 10, color: '#A8744F', fontWeight: 600, marginTop: 3 }}>
@@ -3436,7 +3442,7 @@ ${body}
                     {showCol('done') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                        <input type="checkbox" checked={!!r.is_urgent} onChange={e => toggleDone(r.id, e.target.checked)}
+                        <input type="checkbox" checked={tickVal(r.id, 'done', !!r.is_urgent)} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'done', e.target.checked) : toggleDone(r.id, e.target.checked)}
                           style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                         {timeStamp(r, 'done_at')}
                       </div>
@@ -3445,7 +3451,7 @@ ${body}
                     {quickFilter !== 'install' && showCol('shipped') && (
                       <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                          <input type="checkbox" checked={r.order_status === 'จัดส่งแล้ว'} onChange={e => toggleShipped(r.id, e.target.checked)}
+                          <input type="checkbox" checked={tickVal(r.id, 'shipped', r.order_status === 'จัดส่งแล้ว')} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'shipped', e.target.checked) : toggleShipped(r.id, e.target.checked)}
                             style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                           {shippedStamp(r)}
                           {Array.isArray(r.shipments) && r.shipments.length > 0 && (
@@ -3482,7 +3488,7 @@ ${body}
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       {hasRail(r) ? (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                          <input type="checkbox" checked={!!r.rail_packed} onChange={e => toggleRailPacked(r.id, e.target.checked)}
+                          <input type="checkbox" checked={tickVal(r.id, 'rail', !!r.rail_packed)} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'rail', e.target.checked) : toggleRailPacked(r.id, e.target.checked)}
                             style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                           {r.rail_packed && r.rail_packed_at && (
                             <span style={{ color: '#6F8F6A', fontSize: 10, lineHeight: 1.3 }}>
@@ -3790,7 +3796,7 @@ ${body}
                     {showCol('done') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                        <input type="checkbox" checked={!!r.is_urgent} onChange={e => toggleDone(r.id, e.target.checked)}
+                        <input type="checkbox" checked={tickVal(r.id, 'done', !!r.is_urgent)} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'done', e.target.checked) : toggleDone(r.id, e.target.checked)}
                           style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                         {timeStamp(r, 'done_at')}
                       </div>
@@ -3802,7 +3808,7 @@ ${body}
                         <span style={{ color: 'var(--ink-4)' }}>-</span>
                       ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                          <input type="checkbox" checked={r.order_status === 'จัดส่งแล้ว'} onChange={e => toggleShipped(r.id, e.target.checked)}
+                          <input type="checkbox" checked={tickVal(r.id, 'shipped', r.order_status === 'จัดส่งแล้ว')} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'shipped', e.target.checked) : toggleShipped(r.id, e.target.checked)}
                             style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                           {shippedStamp(r)}
                           {Array.isArray(r.shipments) && r.shipments.length > 0 && (
@@ -3819,7 +3825,7 @@ ${body}
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       {hasRail(r) ? (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                          <input type="checkbox" checked={!!r.rail_packed} onChange={e => toggleRailPacked(r.id, e.target.checked)}
+                          <input type="checkbox" checked={tickVal(r.id, 'rail', !!r.rail_packed)} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'rail', e.target.checked) : toggleRailPacked(r.id, e.target.checked)}
                             style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                           {r.rail_packed && r.rail_packed_at && (
                             <span style={{ color: '#6F8F6A', fontSize: 10, lineHeight: 1.3 }}>
@@ -4241,14 +4247,14 @@ ${body}
                     {showCol('status') && statusCell(r)}
                     {showCol('dropoff') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center' }}>
-                      <input type="checkbox" checked={!!r.is_dropoff} onChange={e => updateField(r.id, 'is_dropoff', e.target.checked)}
+                      <input type="checkbox" checked={tickVal(r.id, 'dropoff', !!r.is_dropoff)} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'dropoff', e.target.checked) : updateField(r.id, 'is_dropoff', e.target.checked)}
                         style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#7B7FA3' }} />
                     </td>
                     )}
                     {showCol('done') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                        <input type="checkbox" checked={!!r.is_urgent} onChange={e => toggleDone(r.id, e.target.checked)}
+                        <input type="checkbox" checked={tickVal(r.id, 'done', !!r.is_urgent)} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'done', e.target.checked) : toggleDone(r.id, e.target.checked)}
                           style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                         {timeStamp(r, 'done_at')}
                       </div>
@@ -4257,7 +4263,7 @@ ${body}
                     {showCol('shipped') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                        <input type="checkbox" checked={r.order_status === 'จัดส่งแล้ว'} onChange={e => toggleShipped(r.id, e.target.checked)}
+                        <input type="checkbox" checked={tickVal(r.id, 'shipped', r.order_status === 'จัดส่งแล้ว')} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'shipped', e.target.checked) : toggleShipped(r.id, e.target.checked)}
                           style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                         {shippedStamp(r)}
                         {Array.isArray(r.shipments) && r.shipments.length > 0 && (
@@ -4273,7 +4279,7 @@ ${body}
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       {hasRail(r) ? (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                          <input type="checkbox" checked={!!r.rail_packed} onChange={e => toggleRailPacked(r.id, e.target.checked)}
+                          <input type="checkbox" checked={tickVal(r.id, 'rail', !!r.rail_packed)} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'rail', e.target.checked) : toggleRailPacked(r.id, e.target.checked)}
                             style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                           {r.rail_packed && r.rail_packed_at && (
                             <span style={{ color: '#6F8F6A', fontSize: 10, lineHeight: 1.3 }}>
