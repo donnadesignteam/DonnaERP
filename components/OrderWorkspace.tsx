@@ -1068,7 +1068,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
           return (
             <CreamSelect value={r.order_status || ''} onChange={v => updateField(r.id, 'order_status', v)}
               className="ow-pill" style={{ color: c, background: `color-mix(in srgb, ${c} 14%, var(--surface))` }} menuMinWidth={170}
-              options={[{ value: '', label: '—' }, ...flow.map(s => ({ value: s, label: s, color: PROD_STATUS_COLOR[s] }))]}
+              options={flow.map(s => ({ value: s, label: s, color: PROD_STATUS_COLOR[s] }))}
               renderValue={o => <>
                 <span>{o?.label ?? '—'}</span>
                 <svg className="cs-chev" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" /></svg>

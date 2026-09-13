@@ -243,13 +243,19 @@ h1, h2, h3 { font-weight: 700; }
 .cs-menu, .ow-drop {
   background: var(--surface) !important; border: 1px solid var(--border) !important; border-radius: 14px !important;
   box-shadow: 0 12px 32px rgba(120,86,58,0.16), 0 2px 6px rgba(120,86,58,0.06) !important;
-  transform-origin: top center; animation: cs-drop 180ms cubic-bezier(.2,.8,.2,1) both;
+  transform-origin: top center; animation: cs-drop 300ms cubic-bezier(.22,1,.36,1) both;
 }
 .cs-menu { z-index: 10000; padding: 6px; overflow-y: auto; }
 .cs-menu.is-up { transform-origin: bottom center; animation-name: cs-rise; }
 .ow-drop { overflow: hidden; }
-@keyframes cs-drop { from { opacity: 0; transform: translateY(-8px) scaleY(0.94); } to { opacity: 1; transform: none; } }
-@keyframes cs-rise { from { opacity: 0; transform: translateY(8px) scaleY(0.94); } to { opacity: 1; transform: none; } }
+/* ม่านคลี่ลงจากขอบบน (clip-path) + เลื่อนลงนิดหน่อย · รายการข้างในไหลตามทีละข้อ */
+@keyframes cs-drop { from { opacity: 0.4; clip-path: inset(0 0 100% 0 round 14px); transform: translateY(-10px); } to { opacity: 1; clip-path: inset(0 0 0 0 round 14px); transform: none; } }
+@keyframes cs-rise { from { opacity: 0.4; clip-path: inset(100% 0 0 0 round 14px); transform: translateY(10px); } to { opacity: 1; clip-path: inset(0 0 0 0 round 14px); transform: none; } }
+.cs-menu .cs-item, .ow-drop > * { animation: cs-item-in 260ms cubic-bezier(.22,1,.36,1) both; }
+.ow-drop > *:nth-child(2) { animation-delay: 22ms; } .ow-drop > *:nth-child(3) { animation-delay: 44ms; }
+.ow-drop > *:nth-child(4) { animation-delay: 66ms; } .ow-drop > *:nth-child(5) { animation-delay: 88ms; }
+.ow-drop > *:nth-child(6) { animation-delay: 110ms; } .ow-drop > *:nth-child(n+7) { animation-delay: 132ms; }
+@keyframes cs-item-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
 .cs-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 10px; font-size: 13px;
   color: var(--ink-2); cursor: pointer; white-space: nowrap; }
 .cs-item[data-hi] { background: var(--cream-2); }
@@ -257,4 +263,4 @@ h1, h2, h3 { font-weight: 700; }
 .cs-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 /* ข้อในเมนูลอยเดิม: ชี้แล้วพื้นครีม */
 .ow-drop > div:hover, .ow-drop > label:hover, .ow-drop > button:hover { background: var(--cream-2) !important; }
-@media (prefers-reduced-motion: reduce) { .cs-menu, .ow-drop { animation: none; } .cs-chev { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .cs-menu, .ow-drop, .cs-menu .cs-item, .ow-drop > * { animation: none; } .cs-chev { transition: none; } }

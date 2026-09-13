@@ -82,6 +82,7 @@ export default function CreamSelect({ value, options, onChange, className, style
           {options.map((o, i) => (
             <div key={o.value} role="option" aria-selected={o.value === value}
               className="cs-item" data-selected={o.value === value || undefined} data-hi={i === hi || undefined}
+              style={{ animationDelay: `${Math.min(i, 10) * 22}ms` }}
               onMouseEnter={() => setHi(i)} onClick={() => pick(o.value)}>
               {o.color && <span className="cs-dot" style={{ background: o.color }} />}
               <span style={{ flex: 1, color: o.color }}>{o.label}</span>
