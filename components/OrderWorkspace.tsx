@@ -1065,7 +1065,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
         {(() => {
           const c = PROD_STATUS_COLOR[r.order_status] ?? '#B39B84'
           return (
-            <span className="ow-pill" style={{ color: c, background: `color-mix(in srgb, ${c} 13%, #fff)` }}>
+            <span className="ow-pill" style={{ color: c, background: `color-mix(in srgb, ${c} 14%, var(--surface))` }}>
               <select value={r.order_status || ''} onChange={e => updateField(r.id, 'order_status', e.target.value)}>
                 <option value="">—</option>
                 {flow.map(s => <option key={s} value={s}>{s}</option>)}
@@ -2686,11 +2686,11 @@ ${body}
                 requestPrint(rows.filter(r => selectedIds.has(r.id)))
               } else { setPrintModalCols(false); setPrintModal(true) }
             }}
-            style={{ background: '#fff', color: 'var(--ink-2)', border: '1px solid rgba(138,97,66,0.12)', borderRadius: 999, padding: '11px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 2px 10px rgba(120,86,58,0.06)' }}>
+            style={{ background: 'var(--surface)', color: 'var(--brand)', border: '1px solid var(--border)', borderRadius: 999, height: 46, padding: '0 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: 'var(--shadow)' }}>
             🖨️ ปริ้น{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
           </button>
           <button onClick={() => { if (scope === 'claims') { setAddType('claim'); setModalTab('form'); setModal({ mode: 'add', data: { ...emptyForm(), shipping_datetime: '' } }); ph.begin([], null); setModalItems([]); setItemsPasteText('') } else setAddTypeModal(true) }}
-            style={{ background: '#A8744F', color: '#fff', border: 'none', borderRadius: 999, padding: '12px 26px', fontSize: 15, fontWeight: 600, cursor: 'pointer', boxShadow: '0 6px 16px rgba(120,86,58,0.25)' }}>
+            style={{ background: 'var(--brand)', color: '#FFF8F0', border: 'none', borderRadius: 999, height: 46, padding: '0 26px', fontSize: 14.5, fontWeight: 600, cursor: 'pointer', boxShadow: '0 3px 10px rgba(158,106,73,0.35)' }}>
             ＋ เพิ่มรายการ
           </button>
         </div>
@@ -2707,7 +2707,7 @@ ${body}
         <div style={{ position: 'relative', flex: '1 1 260px', minWidth: 0 }}>
           <svg width="18" height="18" fill="none" stroke="#8B7460" strokeWidth="1.8" viewBox="0 0 24 24" style={{ position: 'absolute', left: 18, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}><circle cx="11" cy="11" r="7" /><path strokeLinecap="round" d="M20 20l-3.5-3.5" /></svg>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ชื่อลูกค้า / เลขคำสั่งซื้อ…" className="ow-field"
-            style={{ width: '100%', border: '1px solid rgba(138,97,66,0.08)', borderRadius: 16, padding: '14px 16px 14px 46px', paddingRight: search ? 40 : 16, fontSize: 14, outline: 'none', boxSizing: 'border-box', background: '#fff', boxShadow: '0 4px 16px rgba(120,86,58,0.05)' }} />
+            style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 999, height: 46, padding: '0 16px 0 46px', paddingRight: search ? 40 : 16, fontSize: 13.5, outline: 'none', boxSizing: 'border-box', background: 'var(--surface)', color: 'var(--ink)', boxShadow: 'var(--shadow)' }} />
           {search && (
             <button onClick={() => setSearch('')}
               style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'var(--border)', color: 'var(--ink-3)', borderRadius: '50%', width: 20, height: 20, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, padding: 0 }}>
@@ -2863,7 +2863,7 @@ ${body}
         )}
       </div>
 
-      <div ref={tableCardRef} className="ow-card" style={{ background: '#FFFDFB', border: '1px solid rgba(138,97,66,0.08)', borderRadius: 20, boxShadow: '0 8px 30px rgba(120,86,58,0.07)', position: 'relative' }}>
+      <div ref={tableCardRef} className="ow-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 20, boxShadow: '0 4px 16px rgba(120,86,58,0.10)', position: 'relative' }}>
         {outFilterPos && openFilter && (() => {
           const dropStyle = { position: 'absolute' as const, top: outFilterPos.top + 4, left: outFilterPos.left, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0' }
           if (openFilter === 'out-days') return (
@@ -3313,7 +3313,7 @@ ${body}
                 const isDone = r.order_status === 'เสร็จสิ้น'
                 const isCancelled = r.order_status === 'ยกเลิก'
                 return (
-                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : r.pinned ? '#F2F2F2' : 'transparent' }}>
+                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : r.pinned ? 'var(--cream-2)' : 'transparent' }}>
                     <td style={{ padding: '12px 14px' }}>
                       <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)}
                         style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
@@ -3743,7 +3743,7 @@ ${body}
                 const allEffective = effectiveDueDate(r)   // งานนอก/ติดตั้ง=deadline · แพลตฟอร์ม=effShipping (lib/orderTabs.ts)
                 const allDays = allEffective ? daysRemaining(allEffective) : null
                 return (
-                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : r.pinned ? '#F2F2F2' : 'transparent' }}>
+                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : r.pinned ? 'var(--cream-2)' : 'transparent' }}>
                     <td style={{ padding: '12px 14px' }}>
                       <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)}
                         style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
@@ -4142,7 +4142,7 @@ ${body}
                 const effectiveShipping = effShipping(r)
                 const days = effectiveShipping ? daysRemaining(effectiveShipping) : null
                 return (
-                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : r.pinned ? '#F2F2F2' : 'transparent' }}>
+                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : r.pinned ? 'var(--cream-2)' : 'transparent' }}>
                     <td style={{ padding: '12px 14px' }}>
                       <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)}
                         style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
