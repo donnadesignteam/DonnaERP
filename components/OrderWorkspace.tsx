@@ -443,6 +443,14 @@ const isStatusStale = (r: Entry) => {
 // สถานะติดตั้ง: แถวเก่าที่ติ๊ก checkbox ไว้ (is_dropoff) ให้ถือเป็น "ติดตั้งแล้ว"
 const installStatusOf = (r: Entry) => r.install_status || (r.is_dropoff ? 'ติดตั้งแล้ว' : '')
 const INSTALL_STATUS_OPTIONS = ['ติดตั้งแล้ว', 'ติดตั้ง50%']
+// พื้นป้าย "งาน" / "สถานะ" ของแท็บงานติดตั้ง — โทนพาสเทลชุดเดียวกับ PILL_BG ของหน้าภาพรวม (components/OrderDetailModal.tsx)
+// ตัวหนังสือใช้ #6B4326 หนา 700 เหมือนป้ายสถานะงาน (.dn-pill)
+const WORK_PILL_BG: Record<string, string> = { 'งานวัดหน้างาน': '#CFE0EA', 'งานติดตั้ง': '#F9E0C3', 'งานแก้': '#F0C0B7' }
+const INST_PILL_BG: Record<string, string> = {
+  'รอนัดหมาย': '#F9E0C3', 'นัดหมายแล้ว': '#CFE0EA', 'วัดหน้างานแล้ว': '#CFE6DE',
+  'ติดตั้งเสร็จ': '#D5E6C6', 'ติดตั้ง50%': '#E2D5EC', 'รอแก้': '#F0C0B7',
+  'รอติดตั้ง': '#F0C0B7',   // ป้ายของ "รอนัดหมาย" ในงานติดตั้ง — สีเดียวกับสถานะงาน "รอติดตั้ง" (แถวเดียวกันจะได้ไม่คนละสี)
+}
 const linkHref = (l: string) => /^https?:\/\//i.test(l) ? l : `https://${l}`
 
 // แถวที่ id ซ้ำ เก็บอันแรกไว้ (ไม่มีซ้ำ = คืนอาร์เรย์เดิม)
@@ -3336,13 +3344,11 @@ ${body}
                     {quickFilter === 'install' && showCol('work') && (
                     <td style={{ padding: '8px 14px' }}>
                       {ins ? (
-                        // ชิปสีชุดเดียวกับหน้าปฏิทินติดตั้ง (สีตามสถานะของแถวนั้น)
-                        <select value={ins.work_type ?? ''} onChange={e => changeInstWork(r.id, e.target.value)}
-                          style={{ background: instColor(ins) + '22', color: instColor(ins), padding: '3px 8px', borderRadius: 980, fontWeight: 600, fontSize: 11, border: 'none', outline: 'none', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none' }}>
-                          {Array.from(new Set([...WORK_TYPE_OPTIONS, ins.work_type].filter(Boolean))).map(w => (
-                            <option key={w} value={w as string} style={{ background: '#fff', color: 'var(--ink)' }}>{w}</option>
-                          ))}
-                        </select>
+                        // ป้ายแบบหน้าภาพรวม (.dn-pill) — พื้นตามลักษณะงาน กดแล้วเลือกได้
+                        <CreamSelect value={ins.work_type ?? ''} onChange={v => changeInstWork(r.id, v)}
+                          className="dn-pill ow-pill" style={{ color: '#6B4326', background: WORK_PILL_BG[ins.work_type ?? ''] ?? '#EFE3D4' }} menuMinWidth={170}
+                          options={Array.from(new Set([...WORK_TYPE_OPTIONS, ins.work_type].filter(Boolean))).map(w => ({ value: w as string, label: w as string }))}
+                          renderValue={o => <span>{o?.label ?? '—'}</span>} />
                       ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
                     )}
@@ -3475,12 +3481,10 @@ ${body}
                     {quickFilter === 'install' && showCol('inststatus') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center' }}>
                       {ins ? (
-                        <select value={normStatus(ins.installation_status)} onChange={e => saveInstMeta(r.id, { installation_status: e.target.value })}
-                          style={{ background: instColor(ins) + '22', color: instColor(ins), padding: '3px 8px', borderRadius: 980, fontWeight: 600, fontSize: 11, border: 'none', outline: 'none', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none' }}>
-                          {Array.from(new Set([...statusOptions(ins.work_type), normStatus(ins.installation_status)])).map(st => (
-                            <option key={st} value={st} style={{ background: '#fff', color: 'var(--ink)' }}>{statusLabel(st, ins.work_type)}</option>
-                          ))}
-                        </select>
+                        <CreamSelect value={normStatus(ins.installation_status)} onChange={v => saveInstMeta(r.id, { installation_status: v })}
+                          className="dn-pill ow-pill" style={{ color: '#6B4326', background: INST_PILL_BG[statusLabel(normStatus(ins.installation_status), ins.work_type)] ?? INST_PILL_BG[normStatus(ins.installation_status)] ?? '#EFE3D4' }} menuMinWidth={170}
+                          options={Array.from(new Set([...statusOptions(ins.work_type), normStatus(ins.installation_status)])).filter(Boolean).map(st => ({ value: st, label: statusLabel(st, ins.work_type) }))}
+                          renderValue={o => <span>{o?.label ?? '—'}</span>} />
                       ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
                     )}
