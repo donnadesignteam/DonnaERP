@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback, type SetStateAction } from 'react'
 import { flushSync } from 'react-dom'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -440,6 +440,13 @@ const installStatusOf = (r: Entry) => r.install_status || (r.is_dropoff ? 'ต�
 const INSTALL_STATUS_OPTIONS = ['ติดตั้งแล้ว', 'ติดตั้ง50%']
 const linkHref = (l: string) => /^https?:\/\//i.test(l) ? l : `https://${l}`
 
+// แถวที่ id ซ้ำ เก็บอันแรกไว้ (ไม่มีซ้ำ = คืนอาร์เรย์เดิม)
+function uniqById<T extends { id: string }>(rs: T[]): T[] {
+  const seen = new Set<string>()
+  const out = rs.filter(r => (seen.has(r.id) ? false : (seen.add(r.id), true)))
+  return out.length === rs.length ? rs : out
+}
+
 export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' | 'claims' }) {
   const router = useRouter()
   const selectAllRef = useRef<HTMLInputElement>(null)
@@ -447,7 +454,11 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const tableCardRef = useRef<HTMLDivElement>(null)
   // เปิดหน้าซ้ำ → โชว์ข้อมูลรอบก่อนทันที แล้ว load() ดึงของใหม่เบื้องหลัง (stale-while-revalidate)
   const cached = getPageCache<{ rows: Entry[]; sortOrder: string[] }>('order_entries')
-  const [rows, setRows] = useState<Entry[]>(cached?.rows ?? [])
+  const [rows, setRowsRaw] = useState<Entry[]>(() => uniqById(cached?.rows ?? []))
+  // ‼️ 13ก.ย.69 ออเดอร์ขึ้นซ้ำ 2-4 แถว (ลบอันเดียวหายหมด เพราะ id เดียวกัน): realtime INSERT มาถึงระหว่างรอ
+  //    syncInstallation/อัปรูป แล้วหน้าต่างเพิ่มออเดอร์ต่อท้ายใบเดิมซ้ำอีกรอบ → ทุกครั้งที่ตั้งค่าแถว ตัด id ซ้ำทิ้ง
+  const setRows = useCallback((u: SetStateAction<Entry[]>) =>
+    setRowsRaw(prev => uniqById(typeof u === 'function' ? u(prev) : u)), [])
   // แถวไม่เด้งหนีตอนติ๊ก/เปลี่ยนสถานะ — กรอง+เรียงด้วย stable() แต่แสดงผลด้วย live() (ดู lib/useStableView.ts)
   const { snapshot, stable, live } = useStableView<Entry>(rows)
   const [loading, setLoading] = useState(!cached)
@@ -828,7 +839,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       if (payload.is_installation) await saveOrderPhotos(saved.id)
       if (outsourceVal) await syncOutsourcePO(saved.id, payload.customer_name, payload.order_number, outsourceVal, modalItems)
       setSaving(false)
-      setRows(prev => [saved, ...prev])
+      setRows(prev => prev.some(r => r.id === saved.id) ? prev.map(r => r.id === saved.id ? { ...r, ...saved } : r) : [saved, ...prev])
       recordAction({
         label: `เพิ่มออเดอร์ ${oname}`,
         // ย้อน = ลบออเดอร์ + งานติดตั้ง/สั่งซื้อที่ผูกกัน (source_order_id)
@@ -1668,9 +1679,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     }
 
     setPasteSaving(false)
+    const insertedIds = new Set(insertedRows.map(r => r.id))
     setRows(prev => [
       ...insertedRows,
-      ...prev.map(r => {
+      ...prev.filter(r => !insertedIds.has(r.id)).map(r => {
         const shipped = shippedApplied.get(r.id)
         const cancelled = cancelApplied.get(r.id)
         const dropoff = updatedIds.includes(r.id) ? { is_dropoff: true, dropoff_at: new Date().toISOString() } : null
