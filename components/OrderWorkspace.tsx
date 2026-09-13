@@ -3298,7 +3298,7 @@ ${body}
                 const isDone = r.order_status === 'เสร็จสิ้น'
                 const isCancelled = r.order_status === 'ยกเลิก'
                 return (
-                  <tr key={r.id} className={r.pinned ? 'is-pinned' : undefined} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : r.pinned ? '#F5EBE0' : 'transparent' }}>
+                  <tr key={r.id} className={r.pinned ? 'is-pinned' : undefined} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : r.pinned ? '#F7F0E8' : 'transparent' }}>
                     <td style={{ padding: '12px 14px' }}>
                       <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)}
                         style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
@@ -3729,7 +3729,7 @@ ${body}
                 const allEffective = effectiveDueDate(r)   // งานนอก/ติดตั้ง=deadline · แพลตฟอร์ม=effShipping (lib/orderTabs.ts)
                 const allDays = allEffective ? daysRemaining(allEffective) : null
                 return (
-                  <tr key={r.id} className={r.pinned ? 'is-pinned' : undefined} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : r.pinned ? '#F5EBE0' : 'transparent' }}>
+                  <tr key={r.id} className={r.pinned ? 'is-pinned' : undefined} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : r.pinned ? '#F7F0E8' : 'transparent' }}>
                     <td style={{ padding: '12px 14px' }}>
                       <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)}
                         style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
@@ -4133,7 +4133,7 @@ ${body}
                 const effectiveShipping = effShipping(r)
                 const days = effectiveShipping ? daysRemaining(effectiveShipping) : null
                 return (
-                  <tr key={r.id} className={r.pinned ? 'is-pinned' : undefined} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : r.pinned ? '#F5EBE0' : 'transparent' }}>
+                  <tr key={r.id} className={r.pinned ? 'is-pinned' : undefined} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : r.pinned ? '#F7F0E8' : 'transparent' }}>
                     <td style={{ padding: '12px 14px' }}>
                       <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)}
                         style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
