@@ -38,6 +38,7 @@ import { parseMoney } from '@/lib/money'
 import { formatOrderText, formatOrderHtml } from '@/lib/orderPrint'
 import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
+import { PlatformIcon } from '@/components/BrandMark'
 
 type Item = {
   type: string
@@ -387,6 +388,7 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
 
 // คอลัมน์รายการโชว์ได้ไม่เกินกี่บรรทัด (เกินนี้ขึ้น "+ อีก N รายการ" แทน แถวจะได้ไม่ยืด)
 const ITEM_LINE_MAX = 3
+const PAGE_SIZE = 50
 
 const isClaimRow = (platform: string | null | undefined) => (platform ?? '').startsWith('เคลม:')
 
@@ -551,6 +553,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   // ข้อมูลจากปฏิทินติดตั้ง (installations) ของใบออเดอร์ที่ผูกกันไว้ — orderId → แถวติดตั้ง
   const [instMeta, setInstMeta] = useState<Record<string, InstMeta>>({})
   const [quickFilter, setQuickFilter] = useState<'all' | 'platform' | 'outside' | 'install' | 'claim' | 'shipped' | 'cancelled'>('all')
+  // แบ่งหน้าตาราง หน้าละ PAGE_SIZE แถว (13ก.ย.69 ดีไซน์ใหม่) — เปลี่ยนแท็บ/ค้นหา/เดือน กลับหน้า 1
+  const [page, setPage] = useState(1)
   const [hiddenCols, setHiddenCols] = useState<Record<string, string[]>>(() => {
     if (typeof window === 'undefined') return {}
     try { return JSON.parse(localStorage.getItem(`ow_hidden_cols_${scope}`) || '{}') } catch { return {} }
@@ -1058,11 +1062,18 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const changedAt = [...hist].reverse().find(h => h.status === (r.order_status || ''))?.at
     return (
       <td style={{ padding: '8px 14px' }}>
-        <select value={r.order_status || ''} onChange={e => updateField(r.id, 'order_status', e.target.value)}
-          style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PROD_STATUS_COLOR[r.order_status] ?? 'var(--ink-4)', padding: 0 }}>
-          <option value="">—</option>
-          {flow.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
+        {(() => {
+          const c = PROD_STATUS_COLOR[r.order_status] ?? '#B39B84'
+          return (
+            <span className="ow-pill" style={{ color: c, background: `color-mix(in srgb, ${c} 13%, #fff)` }}>
+              <select value={r.order_status || ''} onChange={e => updateField(r.id, 'order_status', e.target.value)}>
+                <option value="">—</option>
+                {flow.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" /></svg>
+            </span>
+          )
+        })()}
         {changedAt && (
           <div style={{ fontSize: 10, color: 'var(--ink-4)', marginTop: 2, whiteSpace: 'nowrap' }}>
             {new Date(changedAt).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
@@ -1891,6 +1902,11 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     : (quickFilter === 'outside' || quickFilter === 'install') ? displayedOut
     : displayed
 
+  const pageCount = Math.max(1, Math.ceil(activeDisplayed.length / PAGE_SIZE))
+  const curPage = Math.min(page, pageCount)
+  const pageSlice = <T,>(rs: T[]) => rs.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE)
+  useEffect(() => { setPage(1) }, [quickFilter, search, month])
+
   useEffect(() => {
     if (selectAllRef.current) {
       const some = activeDisplayed.some(r => selectedIds.has(r.id))
@@ -2651,8 +2667,8 @@ ${body}
       {(openFilter || openAction || rowPlatformDropdown || openAllFilter) && <div onClick={() => { setOpenFilter(null); setOutFilterPos(null); setOpenAction(null); setActionRect(null); setRowPlatformDropdown(null); setOpenAllFilter(null) }} style={{ position: 'fixed', inset: 0, zIndex: 150 }} />}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
         <div>
-          <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px' }}>{scope === 'claims' ? 'งานเคลม' : 'ออเดอร์'}</h1>
-          <p style={{ fontSize: 14, color: 'var(--ink-3)', marginTop: 4 }}>
+          <h1 style={{ fontSize: 32, fontWeight: 700, color: '#4A3122', letterSpacing: '-0.5px' }}>{scope === 'claims' ? 'งานเคลม' : 'ออเดอร์'}</h1>
+          <p style={{ fontSize: 15, color: 'var(--ink-2)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
             {month === 'all'
               ? `${scopedRows.length} รายการ`
               : `${scopedRows.filter(r => monthKey(r) === month).length} รายการ · ${monthLabel(month)} (ทั้งหมด ${scopedRows.length})`}
@@ -2670,12 +2686,12 @@ ${body}
                 requestPrint(rows.filter(r => selectedIds.has(r.id)))
               } else { setPrintModalCols(false); setPrintModal(true) }
             }}
-            style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+            style={{ background: '#fff', color: 'var(--ink-2)', border: '1px solid rgba(138,97,66,0.12)', borderRadius: 999, padding: '11px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 2px 10px rgba(120,86,58,0.06)' }}>
             🖨️ ปริ้น{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
           </button>
           <button onClick={() => { if (scope === 'claims') { setAddType('claim'); setModalTab('form'); setModal({ mode: 'add', data: { ...emptyForm(), shipping_datetime: '' } }); ph.begin([], null); setModalItems([]); setItemsPasteText('') } else setAddTypeModal(true) }}
-            style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,122,255,0.3)' }}>
-            + เพิ่มรายการ
+            style={{ background: '#A8744F', color: '#fff', border: 'none', borderRadius: 999, padding: '12px 26px', fontSize: 15, fontWeight: 600, cursor: 'pointer', boxShadow: '0 6px 16px rgba(120,86,58,0.25)' }}>
+            ＋ เพิ่มรายการ
           </button>
         </div>
       </div>
@@ -2687,10 +2703,11 @@ ${body}
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 14, marginBottom: 18, flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: '1 1 260px', minWidth: 0 }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ชื่อลูกค้า / เลขคำสั่งซื้อ…"
-            style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', paddingRight: search ? 36 : 14, fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+          <svg width="18" height="18" fill="none" stroke="#8B7460" strokeWidth="1.8" viewBox="0 0 24 24" style={{ position: 'absolute', left: 18, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}><circle cx="11" cy="11" r="7" /><path strokeLinecap="round" d="M20 20l-3.5-3.5" /></svg>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ชื่อลูกค้า / เลขคำสั่งซื้อ…" className="ow-field"
+            style={{ width: '100%', border: '1px solid rgba(138,97,66,0.08)', borderRadius: 16, padding: '14px 16px 14px 46px', paddingRight: search ? 40 : 16, fontSize: 14, outline: 'none', boxSizing: 'border-box', background: '#fff', boxShadow: '0 4px 16px rgba(120,86,58,0.05)' }} />
           {search && (
             <button onClick={() => setSearch('')}
               style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'var(--border)', color: 'var(--ink-3)', borderRadius: '50%', width: 20, height: 20, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, padding: 0 }}>
@@ -2698,28 +2715,36 @@ ${body}
             </button>
           )}
         </div>
-        <select value={month} onChange={e => setMonth(e.target.value)} title="เดือนที่รับออเดอร์"
-          style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontSize: 14, outline: 'none', background: month === 'all' ? 'var(--surface)' : 'var(--blue-bg)', color: 'var(--ink)', fontWeight: month === 'all' ? 400 : 600, cursor: 'pointer', flexShrink: 0 }}>
+        <label className="ow-select" data-on={month !== 'all' || undefined}>
+        <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2.5" /><path strokeLinecap="round" d="M3.5 10h17M8 3v4M16 3v4" /></svg>
+        <select value={month} onChange={e => setMonth(e.target.value)} title="เดือนที่รับออเดอร์">
           <option value="all">ทุกเดือน</option>
           {monthOptions.ym.map(k => <option key={k} value={k}>{monthLabel(k)}</option>)}
           {monthOptions.hasNone && <option value="none">{monthLabel('none')}</option>}
         </select>
+        </label>
         {/* เรียงตามวันที่สร้าง — ใช้ได้ทุกแท็บ (ทับการเรียงของหัวคอลัมน์เมื่อเลือกไว้) */}
-        <select value={createdSort ?? ''} onChange={e => { setCreatedSort((e.target.value || null) as 'asc' | 'desc' | null); setShipDateSort(null) }} title="เรียงตามวันที่สร้าง"
-          style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontSize: 14, outline: 'none', background: createdSort ? 'var(--blue-bg)' : 'var(--surface)', color: 'var(--ink)', fontWeight: createdSort ? 600 : 400, cursor: 'pointer', flexShrink: 0 }}>
+        <label className="ow-select" data-on={createdSort || undefined}>
+        <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M7 4v16M3.5 16.5L7 20l3.5-3.5M14 6h7M14 11h5M14 16h3" /></svg>
+        <select value={createdSort ?? ''} onChange={e => { setCreatedSort((e.target.value || null) as 'asc' | 'desc' | null); setShipDateSort(null) }} title="เรียงตามวันที่สร้าง">
           <option value="">เรียงตามค่าเริ่มต้น</option>
           <option value="desc">วันที่สร้าง: ใหม่สุด → เก่าสุด</option>
           <option value="asc">วันที่สร้าง: เก่าสุด → ใหม่สุด</option>
         </select>
+        </label>
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        {scope === 'orders' && ([['all', 'ทั้งหมด'], ['platform', 'งานแพลตฟอร์ม'], ['outside', 'งานนอก'], ['install', 'งานติดตั้ง'], ['claim', 'งานเคลม'], ['shipped', 'จัดส่งแล้ว'], ['cancelled', 'ยกเลิก']] as [typeof quickFilter, string][]).map(([val, label]) => (
-          <button key={val} onClick={() => setQuickFilter(val)}
-            style={{ padding: '6px 16px', borderRadius: 20, border: quickFilter === val ? 'none' : '1px solid var(--border)', background: quickFilter === val ? 'var(--blue)' : 'var(--surface)', color: quickFilter === val ? '#fff' : 'var(--ink-3)', fontSize: 13, fontWeight: quickFilter === val ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            {label}
-          </button>
-        ))}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 18, alignItems: 'center', flexWrap: 'wrap' }}>
+        {scope === 'orders' && ([['all', 'ทั้งหมด'], ['platform', 'งานแพลตฟอร์ม'], ['outside', 'งานนอก'], ['install', 'งานติดตั้ง'], ['claim', 'งานเคลม'], ['shipped', 'จัดส่งแล้ว'], ['cancelled', 'ยกเลิก']] as [typeof quickFilter, string][]).map(([val, label]) => {
+          const on = quickFilter === val
+          const n = scopedRows.filter(r => matchQuickTab(r, val as QuickTab)).length   // ตรงกับจำนวนแถวในแท็บ (ทั้งหมด = ไม่รวมจัดส่งแล้ว/ยกเลิก)
+          return (
+            <button key={val} onClick={() => setQuickFilter(val)} className="ow-tab" data-active={on || undefined}>
+              {label}
+              <span className="ow-tab-n">{n.toLocaleString()}</span>
+            </button>
+          )
+        })}
         {searching && (
           <span style={{ fontSize: 12, color: 'var(--ink-3)', whiteSpace: 'nowrap' }} title={quickFilter === 'all' ? 'ค้นทุกใบ รวมจัดส่งแล้ว/ยกเลิก' : `ค้นเฉพาะแท็บ "${tabLabel}" — อยากค้นทุกงานให้กดแท็บ "ทั้งหมด"`}>
             {quickFilter === 'all' ? 'ค้นทุกใบ (รวมจัดส่งแล้ว/ยกเลิก)' : <>ค้นในแท็บ “{tabLabel}”</>}
@@ -2838,7 +2863,7 @@ ${body}
         )}
       </div>
 
-      <div ref={tableCardRef} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', position: 'relative' }}>
+      <div ref={tableCardRef} className="ow-card" style={{ background: '#FFFDFB', border: '1px solid rgba(138,97,66,0.08)', borderRadius: 20, boxShadow: '0 8px 30px rgba(120,86,58,0.07)', position: 'relative' }}>
         {outFilterPos && openFilter && (() => {
           const dropStyle = { position: 'absolute' as const, top: outFilterPos.top + 4, left: outFilterPos.left, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0' }
           if (openFilter === 'out-days') return (
@@ -2986,7 +3011,7 @@ ${body}
         ) : (quickFilter === 'outside' || quickFilter === 'install') ? (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
+              <tr style={{ borderBottom: '1px solid var(--border)', background: 'transparent' }}>
                 <th style={{ padding: '10px 14px', width: 36 }}>
                   <input type="checkbox" ref={selectAllRef}
                     checked={activeDisplayed.length > 0 && activeDisplayed.every(r => selectedIds.has(r.id))}
@@ -3143,7 +3168,7 @@ ${body}
               </tr>
             </thead>
             <tbody>
-              {displayedOut.map(r => {
+              {pageSlice(displayedOut).map(r => {
                 const isEditing = (f: string) => editCell?.id === r.id && editCell.field === f
                 const numCell = (field: 'price' | 'deposit' | 'paid_amount') => {
                   const val = r[field]
@@ -3352,7 +3377,7 @@ ${body}
                         const pos = { top: btnR.bottom - (cardR?.top ?? 0), left: btnR.left - (cardR?.left ?? 0) }
                         setRowPlatformDropdown(d => d?.id === r.id ? null : { id: r.id, pos })
                       }} style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.platform ? 'var(--ink-3)' : 'var(--ink-4)', padding: 0, maxWidth: 140, textAlign: 'left' }}>
-                        {r.platform || '—'}
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>{r.platform && <PlatformIcon name={r.platform} size={18} />}{r.platform || '—'}</span>
                       </button>
                     </td>
                     )}
@@ -3546,7 +3571,7 @@ ${body}
         ) : (quickFilter === 'all' || quickFilter === 'claim' || quickFilter === 'shipped') ? (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
+              <tr style={{ borderBottom: '1px solid var(--border)', background: 'transparent' }}>
                 <th style={{ padding: '10px 14px', width: 36 }}>
                   <input type="checkbox" ref={selectAllRef}
                     checked={activeDisplayed.length > 0 && activeDisplayed.every(r => selectedIds.has(r.id))}
@@ -3713,7 +3738,7 @@ ${body}
               </tr>
             </thead>
             <tbody>
-              {displayedAll.map(r => {
+              {pageSlice(displayedAll).map(r => {
                 const isOutsideRow = OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation
                 const allEffective = effectiveDueDate(r)   // งานนอก/ติดตั้ง=deadline · แพลตฟอร์ม=effShipping (lib/orderTabs.ts)
                 const allDays = allEffective ? daysRemaining(allEffective) : null
@@ -3764,7 +3789,7 @@ ${body}
                     </td>
                     )}
                     {showCol('platform') && (
-                    <td style={{ padding: '12px 14px', color: 'var(--ink-3)' }}>{r.platform || '-'}</td>
+                    <td style={{ padding: '12px 14px', color: 'var(--ink-2)' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>{r.platform && <PlatformIcon name={r.platform} size={18} />}{r.platform || '-'}</span></td>
                     )}
                     {showCol('courier') && (
                     <td style={{ padding: '12px 14px', color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
@@ -3856,7 +3881,7 @@ ${body}
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
+              <tr style={{ borderBottom: '1px solid var(--border)', background: 'transparent' }}>
                 <th style={{ padding: '10px 14px', width: 36 }}>
                   <input type="checkbox"
                     ref={selectAllRef}
@@ -4113,7 +4138,7 @@ ${body}
               </tr>
             </thead>
             <tbody>
-              {displayed.map(r => {
+              {pageSlice(displayed).map(r => {
                 const effectiveShipping = effShipping(r)
                 const days = effectiveShipping ? daysRemaining(effectiveShipping) : null
                 return (
@@ -4181,7 +4206,7 @@ ${body}
                     </td>
                     )}
                     {showCol('platform') && (
-                    <td style={{ padding: '12px 14px', color: 'var(--ink-3)' }}>{r.platform || '-'}</td>
+                    <td style={{ padding: '12px 14px', color: 'var(--ink-2)' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>{r.platform && <PlatformIcon name={r.platform} size={18} />}{r.platform || '-'}</span></td>
                     )}
                     {showCol('courier') && (
                     <td style={{ padding: '12px 14px', color: 'var(--ink-3)', maxWidth: 140 }}>
@@ -4342,6 +4367,28 @@ ${body}
           </table>
         )}
         </div>
+        {!loading && activeDisplayed.length > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 22px', borderTop: '1px solid var(--hairline)', flexWrap: 'wrap', gap: 10 }}>
+            <span style={{ fontSize: 12.5, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>
+              แสดง {((curPage - 1) * PAGE_SIZE + 1).toLocaleString()} - {Math.min(curPage * PAGE_SIZE, activeDisplayed.length).toLocaleString()} จากทั้งหมด {activeDisplayed.length.toLocaleString()} รายการ
+            </span>
+            {pageCount > 1 && (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <button className="pg-btn" disabled={curPage === 1} onClick={() => setPage(curPage - 1)} aria-label="หน้าก่อน">‹</button>
+                {(() => {
+                  // โชว์หน้าแรก/สุดท้าย + รอบหน้าปัจจุบัน ที่เว้นใส่ …
+                  const nums = [...new Set([1, curPage - 1, curPage, curPage + 1, pageCount])].filter(n => n >= 1 && n <= pageCount).sort((a, b) => a - b)
+                  const out: (number | '…')[] = []
+                  nums.forEach((n, i) => { if (i && n - nums[i - 1] > 1) out.push('…'); out.push(n) })
+                  return out.map((n, i) => n === '…'
+                    ? <span key={`g${i}`} style={{ color: 'var(--ink-4)', padding: '0 2px' }}>…</span>
+                    : <button key={n} className="pg-btn" data-active={n === curPage || undefined} onClick={() => setPage(n)}>{n}</button>)
+                })()}
+                <button className="pg-btn" disabled={curPage === pageCount} onClick={() => setPage(curPage + 1)} aria-label="หน้าถัดไป">›</button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Global action dropdown */}

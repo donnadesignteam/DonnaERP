@@ -34,7 +34,7 @@ export default function HistoryBar() {
   }, [doUndo, doRedo])
 
   return (
-    <div style={{ position: 'fixed', left: 76, bottom: 18, zIndex: 500, display: 'flex', gap: 6, alignItems: 'center' }}>
+    <div style={{ position: 'fixed', left: 220, bottom: 18, zIndex: 500, display: 'flex', gap: 6, alignItems: 'center' }}>
       <div style={{ display: 'flex', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 6px 20px rgba(0,0,0,0.14)', overflow: 'hidden' }}>
         <button onClick={doUndo} disabled={!snap.canUndo}
           title={snap.undoLabel ? `เลิกทำ: ${snap.undoLabel}  (Ctrl+Z)` : 'ไม่มีอะไรให้เลิกทำ'}
