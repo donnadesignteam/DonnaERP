@@ -40,6 +40,7 @@ import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
 import { PlatformIcon, CourierIcon } from '@/components/BrandMark'
 import CreamSelect from '@/components/CreamSelect'
+import { pillBg } from '@/components/OrderDetailModal'
 
 type Item = {
   type: string
@@ -1064,15 +1065,12 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     return (
       <td style={{ padding: '8px 14px' }}>
         {(() => {
-          const c = PROD_STATUS_COLOR[r.order_status] ?? '#B39B84'
           return (
+            // ป้ายหน้าตาเดียวกับหน้าภาพรวม (.dn-pill: กว้าง 100 · ตัวน้ำตาลเข้ม · พื้นสีตามขั้นจาก pillBg) — กดแล้วเลือกสถานะได้
             <CreamSelect value={r.order_status || ''} onChange={v => updateField(r.id, 'order_status', v)}
-              className="ow-pill" style={{ color: c, background: `color-mix(in srgb, ${c} 14%, var(--surface))` }} menuMinWidth={170}
+              className="dn-pill ow-pill" style={{ color: '#6B4326', background: pillBg(r.order_status || '') }} menuMinWidth={170}
               options={flow.map(s => ({ value: s, label: s, color: PROD_STATUS_COLOR[s] }))}
-              renderValue={o => <>
-                <span>{o?.label ?? '—'}</span>
-                <svg className="cs-chev" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" /></svg>
-              </>} />
+              renderValue={o => <span>{o?.label ?? '—'}</span>} />
           )
         })()}
         {changedAt && (
