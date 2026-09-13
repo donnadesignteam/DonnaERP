@@ -200,9 +200,6 @@ h1, h2, h3 { font-weight: 700; }
               display: inline-flex; align-items: center; justify-content: center; }
 @media (max-width: 480px) { .toast-stack { left: 16px; right: 16px; transform: none; } }
 
-/* แถบเมนูซ้ายแบบกว้าง (components/Sidebar.tsx) — ชี้แล้วพื้นเข้มขึ้นนิดเดียว */
-.sb-link { transition: background 120ms, color 120ms; }
-.sb-link:not([data-active]):hover { background: rgba(232,214,196,0.55); color: #5C3B25 !important; }
 
 /* ── หน้าออเดอร์ ดีไซน์ใหม่ (components/OrderWorkspace.tsx) ── */
 .ow-field::placeholder { color: #A8927E; }

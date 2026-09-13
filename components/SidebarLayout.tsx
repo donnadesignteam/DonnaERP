@@ -1,6 +1,6 @@
 'use client'
 
-import Sidebar, { SIDEBAR_W } from './Sidebar'
+import Sidebar from './Sidebar'
 import HistoryBar from './HistoryBar'
 import HubButton from './HubButton'
 
@@ -11,7 +11,7 @@ export default function SidebarLayout({ children }: { children: React.ReactNode 
       <main style={{
         flex: 1,
         minWidth: 0,
-        marginLeft: SIDEBAR_W,
+        marginLeft: 64,
         minHeight: '100vh',
       }}>
         <div style={{ padding: '32px 36px' }}>

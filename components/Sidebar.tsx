@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
+import { useState } from 'react'
 import { usePathname } from 'next/navigation'
 
 const nav = [
@@ -18,58 +19,97 @@ const nav = [
   { href: '/settings',       label: 'ตั้งค่า',      icon: <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.43l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"/><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg> },
 ]
 
-// ‼️ 13ก.ย.69 ดีไซน์ใหม่ตามภาพต้นแบบ (Downloadsbe6f782-...png): แถบกว้างพื้นครีม ไอคอน+ชื่อโชว์ตลอด ไม่ต้องชี้เมาส์
-//    ความกว้างใช้ SIDEBAR_W ร่วมกับ components/SidebarLayout.tsx
-export const SIDEBAR_W = 208
+// icon จะอยู่ที่ตำแหน่ง x=24 จากขอบซ้ายเสมอ (กลาง 64px = 32, ลบ icon 8px = 24)
+const ICON_X = 24
 
 export default function Sidebar() {
   const pathname = usePathname()
+  const [expanded, setExpanded] = useState(false)
 
   return (
-    <aside style={{
-      width: SIDEBAR_W, minHeight: '100vh', background: '#F3E9DF',
-      borderRight: '1px solid rgba(138,97,66,0.10)',
-      display: 'flex', flexDirection: 'column',
-      position: 'fixed', top: 0, left: 0, bottom: 0,
-      overflowY: 'auto', overflowX: 'hidden', zIndex: 40,
-    }}>
-      {/* โลโก้ DONNA DESIGN — ป้ายน้ำตาลมุมมน */}
-      <Link href="/dashboard" style={{ display: 'flex', justifyContent: 'center', padding: '28px 0 26px', flexShrink: 0 }}>
-        <Image src="/donna-logo.jpg" alt="Donna Design" width={92} height={92} priority
-          style={{ width: 92, height: 92, borderRadius: 20, objectFit: 'cover', boxShadow: '0 6px 18px rgba(120,86,58,0.22)' }} />
+    <aside
+      onMouseEnter={() => setExpanded(true)}
+      onMouseLeave={() => setExpanded(false)}
+      style={{
+        width: expanded ? 224 : 64,
+        minHeight: '100vh',
+        background: '#946343',
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'fixed',
+        top: 0, left: 0, bottom: 0,
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        transition: 'width 0.22s ease',
+        zIndex: 40,
+        boxShadow: expanded ? '4px 0 28px rgba(120,86,58,0.28)' : 'none',
+      }}
+    >
+      {/* Brand — โลโก้ DONNA DESIGN (หุบ = เฉพาะรูปบ้าน · กาง = โลโก้เต็มพร้อมตัวอักษร) */}
+      <Link href="/dashboard" style={{
+        textDecoration: 'none',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: expanded ? 112 : 64,
+        padding: expanded ? '14px 24px 6px' : '0',
+        transition: 'height 0.22s ease, padding 0.22s ease',
+        flexShrink: 0,
+        overflow: 'hidden',
+      }}>
+        <Image
+          src={expanded ? '/donna-mark.png' : '/donna-house.png'}
+          alt="Donna Design"
+          width={expanded ? 96 : 30}
+          height={expanded ? 95 : 19}
+          priority
+          style={{ objectFit: 'contain', width: expanded ? 96 : 30, height: 'auto' }}
+        />
       </Link>
 
-      <nav style={{ flex: 1, padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+      {/* Divider */}
+      <div style={{ height: 1, background: 'rgba(255,255,255,0.18)', margin: '0 12px 6px', flexShrink: 0 }} />
+
+      {/* Nav */}
+      <nav style={{ flex: 1, padding: '4px 0' }}>
         {nav.map(({ href, label, icon }) => {
           const active = pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
           return (
-            <Link key={href} href={href} className="sb-link" data-active={active || undefined} style={{
-              display: 'flex', alignItems: 'center', gap: 14,
-              padding: '10px 14px', borderRadius: 14, textDecoration: 'none',
-              fontSize: 14, fontWeight: active ? 600 : 500,
-              color: active ? '#5C3B25' : '#6B5040',
-              background: active ? '#E8D6C4' : 'transparent',
-              whiteSpace: 'nowrap',
-            }}>
-              <span style={{ display: 'flex', flexShrink: 0, width: 20, justifyContent: 'center', transform: 'scale(1.2)' }}>{icon}</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
-            </Link>
+            <div key={href} style={{ padding: '1px 8px' }}>
+              <Link href={href} title={!expanded ? label : undefined} style={{
+                display: 'flex',
+                alignItems: 'center',
+                paddingLeft: ICON_X - 8,   /* 8px มาจาก padding ของ div wrapper */
+                paddingTop: 9,
+                paddingBottom: 9,
+                borderRadius: 12,
+                textDecoration: 'none',
+                fontSize: 13,
+                fontWeight: active ? 600 : 400,
+                color: active ? '#9E6A49' : 'rgba(255,251,245,0.86)',
+                background: active ? '#FEFDFA' : 'transparent',
+                boxShadow: active ? '0 2px 8px rgba(90,60,38,0.18)' : 'none',
+                transition: 'background 0.12s, box-shadow 0.12s',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+              }}>
+                <span style={{ opacity: active ? 1 : 0.85, flexShrink: 0, display: 'flex', width: 16 }}>{icon}</span>
+                <span style={{ paddingLeft: 9, maxWidth: expanded ? 160 : 0, overflow: 'hidden', transition: 'max-width 0.22s ease', display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <span style={{ whiteSpace: 'nowrap' }}>{label}</span>
+                </span>
+              </Link>
+            </div>
           )
         })}
       </nav>
 
-      {/* ข้อความลายมือ + กิ่งไม้เส้นบาง ด้านล่าง */}
-      <div style={{ position: 'relative', padding: '28px 22px 26px', flexShrink: 0, color: '#B08A6E' }}>
-        <div style={{ fontFamily: '"Segoe Script", "Brush Script MT", cursive', fontSize: 13, lineHeight: 1.5, transform: 'rotate(-8deg)', transformOrigin: 'left bottom', opacity: 0.85 }}>
-          Small details<br />make a big home ♡
+      {/* Footer */}
+      <div style={{ borderTop: '1px solid rgba(255,255,255,0.14)', flexShrink: 0 }}>
+        <div style={{ paddingLeft: ICON_X, paddingTop: 10, paddingBottom: 14, maxWidth: expanded ? 200 : 0, overflow: 'hidden', transition: 'max-width 0.22s ease' }}>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', fontStyle: 'italic', whiteSpace: 'nowrap', lineHeight: 1.35 }}>Small details</div>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', fontStyle: 'italic', whiteSpace: 'nowrap', lineHeight: 1.35 }}>make a big home ♡</div>
+          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', letterSpacing: '0.02em', whiteSpace: 'nowrap', marginTop: 6 }}>v1.0.0</div>
         </div>
-        <svg width="54" height="70" viewBox="0 0 54 70" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"
-          style={{ position: 'absolute', right: 26, bottom: 10, opacity: 0.55 }}>
-          <path d="M14 69 C20 50 26 34 44 6" />
-          <path d="M22 50 C12 48 6 40 5 30 C14 32 20 40 22 50Z" />
-          <path d="M27 38 C36 36 44 30 47 20 C38 22 30 28 27 38Z" />
-          <path d="M33 26 C26 22 22 14 23 5 C31 9 34 17 33 26Z" />
-        </svg>
       </div>
     </aside>
   )
