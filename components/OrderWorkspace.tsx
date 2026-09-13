@@ -1086,7 +1086,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       <input type="checkbox" checked={!!r.printed_at} onChange={e => togglePrinted(r.id, e.target.checked)}
         style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
       {r.printed_at && (
-        <div style={{ fontSize: 10, color: '#C79A4B', fontWeight: 600, marginTop: 2 }}>
+        <div style={{ fontSize: 10, color: '#A8744F', fontWeight: 600, marginTop: 3 }}>
           {new Date(r.printed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
           {new Date(r.printed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
         </div>
