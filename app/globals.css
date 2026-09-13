@@ -290,3 +290,6 @@ h1, h2, h3 { font-weight: 700; }
 /* ข้อในเมนูลอยเดิม: ชี้แล้วพื้นครีม */
 .ow-drop > div:hover, .ow-drop > label:hover, .ow-drop > button:hover { background: var(--cream-2) !important; }
 @media (prefers-reduced-motion: reduce) { .cs-menu, .ow-drop, .cs-menu .cs-item, .ow-drop > * { animation: none; } .cs-chev { transition: none; } }
+
+/* ช่องแอดมิน/ช่างเย็บที่ยังไม่เลือกชื่อ — ป้ายพีชครีมมุมมนรอบช่องเลือก (เดิมระบายเหลืองเต็มช่องตาราง) */
+.ow-card td.ow-empty > select { background: #F6DFC6 !important; border-radius: 999px; padding: 5px 12px !important; min-width: 64px; color: #8A6142 !important; font-weight: 600; }

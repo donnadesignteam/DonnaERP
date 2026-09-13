@@ -238,8 +238,7 @@ const COURIERS = [
 const ADMINS = ['กาย', 'แพท', 'หนูนา', 'ยุน', 'ส้ม', 'เก๋']
 const TECHS = TECH_OPTIONS   // แก้รายชื่อช่างที่ lib/techs.ts (หน้าเคลมใช้ชุดเดียวกัน)
 
-// ไฮไลต์ช่องที่ยังไม่ได้ลงข้อมูล (คอลัมน์แอดมิน/ช่าง) — สีส้มชุดเดียวกับสถานะ "รอดำเนินการ" (#C79A4B ใน PROD_STATUS_COLOR)
-const EMPTY_HL = '#F6DFC6'   // 13ก.ย.69 เดิมเหลืองสด rgba(245,158,11,0.42) → พีชครีม เข้าธีม แต่ยังเด่นกว่าพื้นแถว
+// ไฮไลต์ช่องที่ยังไม่ได้ลงข้อมูล (คอลัมน์แอดมิน/ช่าง) — ป้ายพีชครีมมุมมน อยู่ที่คลาส .ow-empty ใน app/globals.css
 
 const TIMES = ['8:00','9:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00']
 
@@ -3435,7 +3434,7 @@ ${body}
                     )}
                     {/* แอดมิน — ช่องเดียวกับงานแพลตฟอร์ม (เลือกเองได้ · ระบบทับให้เมื่อแอดมินหลักแก้เนื้อออเดอร์) */}
                     {showCol('admin') && (
-                    <td style={{ padding: '8px 14px', background: r.admin_name ? undefined : EMPTY_HL }}>
+                    <td className={r.admin_name ? undefined : 'ow-empty'} style={{ padding: '8px 14px' }}>
                       <select value={r.admin_name || ''} onChange={e => updateField(r.id, 'admin_name', e.target.value)}
                         title="เลือกเองได้ · ระบบจะเปลี่ยนให้เองเมื่อมีแอดมินหลักมาแก้เนื้อออเดอร์"
                         style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.admin_name ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 80 }}>
@@ -3522,7 +3521,7 @@ ${body}
                     {/* ช่างเย็บ = ช่อง technician ของใบออเดอร์ (ตัวเลือกชุดเดียวกับคอลัมน์ "ช่าง" ในงานแพลตฟอร์ม)
                         คนละช่องกับ "ช่างติดตั้ง" ที่อยู่ในตาราง installations */}
                     {quickFilter === 'install' && showCol('tech') && (
-                    <td style={{ padding: '8px 14px', background: r.technician ? undefined : EMPTY_HL }}>
+                    <td className={r.technician ? undefined : 'ow-empty'} style={{ padding: '8px 14px' }}>
                       <select value={r.technician || ''} onChange={e => updateField(r.id, 'technician', e.target.value)}
                         style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.technician ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 100 }}>
                         <option value="">—</option>
@@ -4230,7 +4229,7 @@ ${body}
                     {showCol('admin') && (
                     // เลือกเองได้เหมือนเดิม + ระบบเปลี่ยนให้เองเมื่อมีแอดมินหลักมาแก้เนื้อออเดอร์ (lib/adminActor.ts)
                     // ยังไม่ได้ลงชื่อ = ไฮไลต์เหลืองให้เห็นว่าตกหล่น (user สั่ง 4 ส.ค. 69)
-                    <td style={{ padding: '8px 14px', background: r.admin_name ? undefined : EMPTY_HL }}>
+                    <td className={r.admin_name ? undefined : 'ow-empty'} style={{ padding: '8px 14px' }}>
                       <select value={r.admin_name || ''} onChange={e => updateField(r.id, 'admin_name', e.target.value)}
                         title="เลือกเองได้ · ระบบจะเปลี่ยนให้เองเมื่อมีแอดมินหลักมาแก้เนื้อออเดอร์"
                         style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.admin_name ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 80 }}>
@@ -4240,7 +4239,7 @@ ${body}
                     </td>
                     )}
                     {showCol('tech') && (
-                    <td style={{ padding: '8px 14px', background: r.technician ? undefined : EMPTY_HL }}>
+                    <td className={r.technician ? undefined : 'ow-empty'} style={{ padding: '8px 14px' }}>
                       <select value={r.technician || ''} onChange={e => updateField(r.id, 'technician', e.target.value)}
                         style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.technician ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 100 }}>
                         <option value="">—</option>
