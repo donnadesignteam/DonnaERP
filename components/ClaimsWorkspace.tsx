@@ -4,6 +4,9 @@ import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { claimUpdate, claimInsert } from '@/lib/adminActor'
+import { nextSerial } from '@/lib/serialNo'
+import { buildCustomerBook, type CustomerEntry } from '@/lib/customerBook'
+import CustomerPickStep from '@/components/CustomerPickStep'
 import { useConfirm } from '@/components/ConfirmDialog'
 import AnchoredMenu from '@/components/AnchoredMenu'
 import { usePrintColumns, PrintColumnPicker, printTableHtml, type PrintCol } from '@/components/PrintColumnPicker'
@@ -35,6 +38,7 @@ type Shipment = { no: string; carrier: string }
 
 type Claim = {
   id: string
+  serial_no?: string | null    // เลขที่ใบเคลม DM0001 — ออกตอนสร้าง ไม่เปลี่ยนอีก (ดู lib/serialNo.ts)
   claim_date: string | null
   deadline: string | null      // กำหนดส่งงานเคลม — ใช้คิด "วันที่เหลือ" ในหมวดออเดอร์ด้วย
   channel: string | null
@@ -280,7 +284,34 @@ export default function ClaimsWorkspace() {
   // รูปงานเคลม — ใช้คอมโพเนนต์กลางตัวเดียวกับรูปหน้างานของงานติดตั้ง (ไฟล์อยู่บน R2 โฟลเดอร์ claims/)
   const ph = useInstallPhotos({ prefix: 'claims', title: 'รูปงานเคลม' })
 
-  const openAdd = () => { setPasteText(''); setParseError(''); setItemsPaste(''); setItemsParseErr(''); ph.begin([], null); setModal({ mode: 'add', data: emptyClaim() }) }
+  // ===== เพิ่มเคลม: ถามชื่อลูกค้าก่อนเป็นอย่างแรก =====
+  // ‼️ กันลงชื่อลูกค้าคนเดียวกันคนละแบบจนโฟลเดอร์ลูกค้าแตก — ค้นจากชื่อที่เคยลงไว้ทั้งในใบออเดอร์และใบเคลม
+  //    รายชื่อจากใบออเดอร์ดึงตอนเปิดกล่องครั้งแรกเท่านั้น (ดึงแค่ 3 ช่อง — ประหยัด Egress ของ Supabase)
+  const [custStep, setCustStep] = useState(false)
+  const [orderNames, setOrderNames] = useState<{ name: string | null; phone: string | null; order_number: string | null; date: string | null }[] | null>(null)
+
+  const customerBook: CustomerEntry[] = useMemo(() => buildCustomerBook([
+    ...(orderNames ?? []),
+    ...rows.map(r => ({ name: r.customer_username, phone: r.ship_phone, order_number: r.original_order_number, date: r.claim_date })),
+  ]), [orderNames, rows])
+
+  const openAdd = async () => {
+    setCustStep(true)
+    if (orderNames === null) {
+      const { data } = await supabase.from('order_entries').select('customer_name, phone, order_number, entry_date')
+      setOrderNames((data ?? []).map(r => {
+        const o = r as { customer_name: string | null; phone: string | null; order_number: string | null; entry_date: string | null }
+        return { name: o.customer_name, phone: o.phone, order_number: o.order_number, date: o.entry_date }
+      }))
+    }
+  }
+
+  // ได้ชื่อลูกค้าแล้ว → เปิดฟอร์มเคลมตามปกติ (เบอร์เดิมเติมให้ในช่องเบอร์ผู้รับ แก้ทับได้)
+  const openAddForm = (name: string, phone: string) => {
+    setCustStep(false)
+    setPasteText(''); setParseError(''); setItemsPaste(''); setItemsParseErr(''); ph.begin([], null)
+    setModal({ mode: 'add', data: { ...emptyClaim(), customer_username: name, ...(phone ? { ship_phone: phone } : {}) } })
+  }
   const openEdit = (c: Claim) => { setPasteText(c.raw_text ?? ''); setParseError(''); setItemsPaste(''); setItemsParseErr(''); ph.begin(c.photos, c.id); setModal({ mode: 'edit', data: { ...c } }) }
   // ทำซ้ำ — เปิดกล่องเพิ่มเคสที่กรอกค่าจากเคสเดิมไว้ให้ ตรวจ/แก้ก่อนกดบันทึกเป็นเคสใหม่
   // ‼️ ไม่ก๊อป: เลขพัสดุ/วันจัดส่ง · เวลาปริ้น · การปิดงาน · รูป (ของเคสเดิมทั้งนั้น)
@@ -322,7 +353,10 @@ export default function ClaimsWorkspace() {
         if (!m) return null
         const d = { ...m.data }
         const apply = (k: keyof Claim, v: unknown) => { if (v !== undefined && v !== null && v !== '') (d as Record<string, unknown>)[k] = v }
-        apply('channel', c.channel); apply('customer_username', c.customer_username)
+        // ‼️ ไม่ทับ "ลูกค้า (username)" ที่เลือกจากทะเบียนมาแล้ว — AI อ่านชื่อเพี้ยนทีเดียวโฟลเดอร์ลูกค้าแตกทันที
+        //    (ช่องยังว่าง เช่นเปิดกล่องจากเคสเก่า → เติมให้ตามเดิม)
+        apply('channel', c.channel)
+        if (!(d.customer_username ?? '').trim()) apply('customer_username', c.customer_username)
         apply('original_order_number', c.original_order_number); apply('claim_type', c.claim_type)
         apply('fault', c.fault); apply('cause', c.cause)
         apply('ship_name', c.ship_name); apply('ship_address', c.ship_address); apply('ship_phone', c.ship_phone)
@@ -367,6 +401,10 @@ export default function ClaimsWorkspace() {
     const claimErr = (msg: string) => /photos/.test(msg) ? photoSaveError(msg, 'migrations/add_claim_photos.sql') : `บันทึกไม่สำเร็จ: ${msg}`
     const name = (d.customer_username || d.original_order_number || '').toString()
     if (modal.mode === 'add') {
+      // เลขที่ใบเคลม DM0001 — ถามเลขล่าสุดจากฐานตอนกดบันทึก (แอดมินหลายคนเปิดค้างพร้อมกัน)
+      const { data: usedSerials, error: serErr } = await supabase.from('claims').select('serial_no').not('serial_no', 'is', null)
+      // ยังไม่ได้รัน sql/add_serial_no.sql (ไม่มีคอลัมน์) → ข้ามไป บันทึกได้ตามปกติ ไม่พัง
+      if (!serErr) (payload as Record<string, unknown>).serial_no = nextSerial('claim', (usedSerials ?? []).map(x => (x as { serial_no: string | null }).serial_no))
       const res = await claimInsert(payload).select().single()
       setSaving(false)
       if (res.error) { setError(claimErr(res.error.message)); return }
@@ -860,6 +898,10 @@ ${body}
         </button>
       </div>
 
+      {custStep && (
+        <CustomerPickStep book={customerBook} onPick={openAddForm} onClose={() => setCustStep(false)} />
+      )}
+
       {/* Status tabs (workflow) */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' }}>
         {([['all', 'ทั้งหมด', 'var(--ink-3)'], ...WORKFLOW.map(w => [w.key, w.key, w.color] as [string, string, string])] as [string, string, string][]).map(([key, label, color]) => {
@@ -891,7 +933,7 @@ ${body}
                       onChange={e => setSelectedIds(e.target.checked ? new Set(displayed.map(r => r.id)) : new Set())}
                       style={{ cursor: 'pointer', width: 15, height: 15 }} />
                   </th>
-                  {['วันที่', 'กำหนดส่ง', 'แพลตฟอร์ม', 'ลูกค้า', 'ประเภท', 'ผิดโดย', 'วิธีแก้ไข', 'รายการ', 'ยอดชำระ', 'สถานะ', 'แอดมิน', 'ช่าง', 'ปิดงาน', 'ชื่อผู้รับ', 'ที่อยู่จัดส่ง', 'จัดส่ง', 'ค่าส่งกลับ', 'ค่าส่งคืน', 'ราคาประเมิน', 'หมายเหตุ', 'แก้ไขล่าสุด', ''].map((h, i) => {
+                  {['วันที่', 'กำหนดส่ง', 'แพลตฟอร์ม', 'Serial', 'ลูกค้า', 'ประเภท', 'ผิดโดย', 'วิธีแก้ไข', 'รายการ', 'ยอดชำระ', 'สถานะ', 'แอดมิน', 'ช่าง', 'ปิดงาน', 'ชื่อผู้รับ', 'ที่อยู่จัดส่ง', 'จัดส่ง', 'ค่าส่งกลับ', 'ค่าส่งคืน', 'ราคาประเมิน', 'หมายเหตุ', 'แก้ไขล่าสุด', ''].map((h, i) => {
                     // 3 คอลัมน์เงิน โชว์ยอดรวมของเคสที่กรองอยู่ต่อท้ายชื่อคอลัมน์เลย (เดิมเป็นการ์ดแดชบอร์ดข้างบน)
                     const sum = h === 'ค่าส่งกลับ' ? totals.back : h === 'ค่าส่งคืน' ? totals.ret : h === 'ราคาประเมิน' ? totals.est : null
                     return (
@@ -924,6 +966,9 @@ ${body}
                         style={{ border: 'none', background: 'transparent', fontSize: 12, outline: 'none', padding: 0, color: r.deadline ? 'var(--ink)' : 'var(--ink-4)', cursor: 'pointer' }} />
                     </td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', color: 'var(--ink)' }}>{r.channel || '-'}</td>
+                    <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', fontWeight: 700, color: 'var(--ink)' }}>
+                      {r.serial_no || <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>—</span>}
+                    </td>
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
                       <div>
                         {r.customer_username

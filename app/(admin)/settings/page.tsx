@@ -7,6 +7,7 @@ import ClientVersions from '@/components/ClientVersions'
 import { CHANGELOG } from '@/lib/changelog'
 import { readStaffSession } from '@/lib/staffSession'
 import { fetchStaffOne } from '@/lib/staffDb'
+import { clearRowCache } from '@/lib/rowCache'
 
 const fmtChangeDate = (d: string) =>
   new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -29,6 +30,7 @@ export default function SettingsPage() {
 
   async function logout() {
     setLoggingOut(true)
+    clearRowCache()   // ล้างออเดอร์ที่จำไว้ในเครื่อง (มีชื่อ/ที่อยู่/เบอร์ลูกค้า)
     try {
       await fetch('/api/logout', { method: 'POST' })
     } catch {

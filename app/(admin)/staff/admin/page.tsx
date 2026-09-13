@@ -6,6 +6,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { syncRows, byIdDesc } from '@/lib/rowCache'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import StaffTabs from '@/components/StaffTabs'
@@ -67,9 +68,14 @@ export default function AdminWorkPage() {
   useEffect(() => {
     ;(async () => {
       const [o, c] = await Promise.all([
-        fetchAllRows<OrderRow>(() => supabase.from('order_entries')
-          .select('id, order_number, customer_name, created_at, price, admin_name, admin_code, is_installation, order_status')
-          .order('id', { ascending: false })),
+        // จำไว้ในเครื่อง ขอเฉพาะใบที่เปลี่ยน (lib/rowCache.ts)
+        syncRows<OrderRow>({
+          key: 'staff-admin', table: 'order_entries', sort: byIdDesc,
+          select: 'id, order_number, customer_name, created_at, price, admin_name, admin_code, is_installation, order_status',
+          full: () => supabase.from('order_entries')
+            .select('id, order_number, customer_name, created_at, price, admin_name, admin_code, is_installation, order_status')
+            .order('id', { ascending: false }),
+        }),
         fetchAllRows<ClaimRow>(() => supabase.from('claims')
           .select('id, created_at, admin_name')
           .order('id', { ascending: false })),

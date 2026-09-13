@@ -14,6 +14,7 @@ import { prevOf } from '@/lib/trackedDb'
 import { useStableView } from '@/lib/useStableView'
 import { oeUpdate, instUpdate, instInsert } from '@/lib/adminActor'
 import { useConfirm } from '@/components/ConfirmDialog'
+import { installSerial, serialNum } from '@/lib/serialNo'
 import { usePrintColumns, PrintColumnPicker, printTableHtml, type PrintCol } from '@/components/PrintColumnPicker'
 import { createOrderForInstall, orderPatchFromInstall } from '@/lib/installOrderSync'
 import { PROD_STATUS_COLOR, INSTALL_STATUSES, daysRemaining, daysLabel, cmpDaysSort, cmpDeadlineSort } from '@/lib/orderTabs'
@@ -399,7 +400,7 @@ export default function InstallationsPage() {
   }, [])
 
   // รัน serial ต่อจากเลขสูงสุดที่มี (กันชนกับเลขที่ sync มาจากออเดอร์)
-  const nextSerial = () => pad(installs.reduce((mx, r) => Math.max(mx, parseInt(r.serial_no, 10) || 0), 0) + 1)
+  const nextSerial = () => pad(installs.reduce((mx, r) => Math.max(mx, serialNum(r.serial_no)), 0) + 1)
 
   const openAdd = () => {
     setApptDate('')
@@ -433,6 +434,14 @@ export default function InstallationsPage() {
       ? { technician_type: TECH_BY_ZONE[String(v)] } : null
     return { ...m, data: { ...m.data, [k]: v, ...auto } }
   })
+
+  // ‼️ ช่อง "ชื่อลูกค้า" มีช่องเดียว แต่ในฐานมี 2 คอลัมน์ (customer_id = ชื่อไลน์/บัญชี · customer_real_name = ชื่อจริง)
+  //    ทุกที่ที่แสดงผลและ sync ไปใบออเดอร์อ่าน customer_real_name ก่อนเสมอ
+  //    เดิมช่องนี้เขียนแค่ customer_id → แถวที่มีชื่อจริงอยู่แล้ว แก้ชื่อแล้วไม่ขึ้นที่ไหนเลย (ทั้งปฏิทินและใบออเดอร์)
+  //    แก้เป็น: โชว์/แก้ "ชื่อที่ใช้จริง" — มีชื่อจริงอยู่ก็เขียนทับชื่อจริง ไม่มีค่อยเขียน customer_id (ชื่อไลน์ไม่โดนทับ)
+  const customerNameKey = (d: Record<string, unknown>) =>
+    String(d.customer_real_name ?? '').trim() ? 'customer_real_name' : 'customer_id'
+  const setCustomerName = (v: string) => setModal(m => m ? { ...m, data: { ...m.data, [customerNameKey(m.data)]: v } } : m)
 
   // รูปหน้างาน — ตรรกะทั้งหมดอยู่ในคอมโพเนนต์กลาง components/InstallPhotos.tsx (ใช้ร่วมกับหมวดออเดอร์)
   const ph = useInstallPhotos()
@@ -915,7 +924,7 @@ export default function InstallationsPage() {
         const d = due ? daysRemaining(due) : null
         return d === null ? 'รอกำหนด' : esc(d === 0 ? 'ต้องติดตั้งวันนี้' : daysLabel(d))
       },
-      serial: r => esc(r.serial_no),
+      serial: r => esc(installSerial(r.serial_no)),
       deadline: r => {
         const dt = r.appointment_datetime ? new Date(r.appointment_datetime) : null
         return dt && !isNaN(dt.getTime())
@@ -1004,7 +1013,7 @@ export default function InstallationsPage() {
       ? `${DAYS[(dt.getDay() + 6) % 7]} ${dt.getDate()} ${TH_MONTHS[dt.getMonth()]} ${dt.getFullYear() + 543} ${dt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.`
       : 'ยังไม่ได้นัดหมาย'
 
-    const head: PrintLine[] = [{ t: `${ins.work_type || 'งานติดตั้ง'}${ins.serial_no ? ` #${ins.serial_no}` : ''} · ${apptText}` }]
+    const head: PrintLine[] = [{ t: `${ins.work_type || 'งานติดตั้ง'}${ins.serial_no ? ` ${installSerial(ins.serial_no)}` : ''} · ${apptText}` }]
     const techLine = [ins.technician_type, ins.install_zone, ins.province].filter(Boolean).join(' · ')
     if (techLine) head.push({ t: techLine })
     head.push({ t: '' })
@@ -1108,7 +1117,7 @@ export default function InstallationsPage() {
   const byZone = zoneFilter.length ? byMonth.filter(ins => zoneFilter.includes(ins.install_zone)) : byMonth
   const q = search.trim().toLowerCase()
   const filtered = !q ? byZone : byZone.filter(ins =>
-    [ins.serial_no, ins.customer_real_name, ins.customer_id, ins.platform, ins.province, ins.install_zone, ins.phone, ins.installation_status, ins.notes]
+    [ins.serial_no, installSerial(ins.serial_no), ins.customer_real_name, ins.customer_id, ins.platform, ins.province, ins.install_zone, ins.phone, ins.installation_status, ins.notes]
       .some(v => (v ?? '').toLowerCase().includes(q))
   )
   // เรียงตามลำดับที่ตรึงไว้ตอนโหลด (ชุดเดียวกับหมวดออเดอร์) — แถวที่เพิ่งเพิ่มยังไม่มีในลำดับ ไปต่อท้าย
@@ -1332,7 +1341,7 @@ export default function InstallationsPage() {
                         {outDays === 0 ? 'ต้องติดตั้งวันนี้' : daysLabel(outDays)}
                       </span>
                     ) : <span style={{ color: 'var(--ink-4)' }}>รอกำหนด</span>,
-                  serial: <span style={{ fontWeight: 700, color: 'var(--blue)' }}>{ins.serial_no}</span>,
+                  serial: <span style={{ fontWeight: 700, color: 'var(--ink)' }}>{installSerial(ins.serial_no)}</span>,
                   deadline: editAppt?.id === ins.id ? (
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                       <input type="date" autoFocus value={/^\d{4}-\d{2}-\d{2}$/.test(editAppt.date) ? editAppt.date : ''}
@@ -1915,7 +1924,7 @@ export default function InstallationsPage() {
               return (
                 <div key={ins.id} style={{ borderLeft: `4px solid ${bg}`, borderRadius: 10, padding: '14px 16px', background: 'var(--bg)', marginBottom: 12 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{ fontWeight: 700, color: 'var(--blue)' }}>{ins.serial_no}</span>
+                    <span style={{ fontWeight: 700, color: 'var(--ink)' }}>{installSerial(ins.serial_no)}</span>
                     <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>
                       {ins.appointment_datetime ? new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : ''}
                     </span>
@@ -2068,7 +2077,7 @@ export default function InstallationsPage() {
               </div>
               {noPrice.length > 0 && (
                 <div style={{ background: '#fff9e6', border: '1px solid #f0d98c', borderRadius: 10, padding: '10px 14px', marginBottom: 16, color: '#b45309', fontSize: 12, fontWeight: 600 }}>
-                  ⚠️ งานติดตั้งเสร็จ {noPrice.length} งานยังไม่ลงราคา — ยอดรวมยังไม่นับงานพวกนี้ ({noPrice.map(i => i.serial_no).join(', ')})
+                  ⚠️ งานติดตั้งเสร็จ {noPrice.length} งานยังไม่ลงราคา — ยอดรวมยังไม่นับงานพวกนี้ ({noPrice.map(i => installSerial(i.serial_no)).join(', ')})
                 </div>
               )}
               {done.length === 0 ? (
@@ -2085,7 +2094,7 @@ export default function InstallationsPage() {
                   <tbody>
                     {done.map(ins => (
                       <tr key={ins.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td style={{ padding: '10px 14px', fontWeight: 700, color: 'var(--blue)' }}>{ins.serial_no}</td>
+                        <td style={{ padding: '10px 14px', fontWeight: 700, color: 'var(--ink)' }}>{installSerial(ins.serial_no)}</td>
                         <td style={{ padding: '10px 14px' }}>
                           {(ins.customer_real_name || ins.customer_id)
                             ? <Link href={`/customers?name=${encodeURIComponent(ins.customer_real_name || ins.customer_id)}`} title="เปิดโฟลเดอร์ออเดอร์" style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>{ins.customer_real_name || ins.customer_id}</Link>
@@ -2188,7 +2197,7 @@ export default function InstallationsPage() {
               {sel('ผู้ลงข้อมูล', 'entered_by', ENTERED_BY)}
               {/* ชื่อลูกค้า — พิมพ์แล้วเดาชื่อจากลูกค้าที่เคยมีในระบบ (ไม่สนตัวพิมพ์เล็ก/ใหญ่) */}
               {(() => {
-                const val = String(modal.data.customer_id ?? '')
+                const val = String(modal.data.customer_real_name || modal.data.customer_id || '')
                 const key = val.trim().toLowerCase()
                 const sugs = key
                   ? customerNames
@@ -2200,14 +2209,14 @@ export default function InstallationsPage() {
                   <div style={{ marginBottom: 12, position: 'relative' }}>
                     <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>ชื่อลูกค้า</label>
                     <input type="text" autoComplete="off" value={val}
-                      onChange={e => { set('customer_id', e.target.value); setNameSugOpen(true) }}
+                      onChange={e => { setCustomerName(e.target.value); setNameSugOpen(true) }}
                       onFocus={() => setNameSugOpen(true)}
                       onBlur={() => setTimeout(() => setNameSugOpen(false), 120)}
                       style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
                     {nameSugOpen && sugs.length > 0 && (
                       <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 7, boxShadow: '0 4px 16px rgba(0,0,0,0.14)', zIndex: 30, maxHeight: 190, overflowY: 'auto', marginTop: 2 }}>
                         {sugs.map(n => (
-                          <div key={n} onMouseDown={e => { e.preventDefault(); set('customer_id', n); setNameSugOpen(false) }}
+                          <div key={n} onMouseDown={e => { e.preventDefault(); setCustomerName(n); setNameSugOpen(false) }}
                             style={{ padding: '7px 10px', fontSize: 13, cursor: 'pointer', color: 'var(--ink)' }}
                             onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = 'var(--bg)' }}
                             onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = '#fff' }}>
