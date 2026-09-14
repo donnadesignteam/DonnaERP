@@ -183,7 +183,9 @@ export default function OrderDetailModal({ id, onClose }: { id: string; onClose:
 
 // เนื้อหารายละเอียดออเดอร์ (การ์ดทั้งหมด) — ใช้ร่วม 2 ที่: ป๊อปอัปหน้าภาพรวม + โฟลเดอร์ลูกค้า (ทุกออเดอร์หน้าตาเดียวกัน)
 // row = ทุกคอลัมน์ของ order_entries 1 แถว · afterShipping = การ์ดเพิ่มเฉพาะที่ ต่อท้ายการ์ดจัดส่ง (เช่น รูปแพ็คในโฟลเดอร์)
-export function OrderDetailBody({ row, afterShipping }: { row: Row; afterShipping?: React.ReactNode }) {
+// wide = จอกว้าง (โฟลเดอร์ลูกค้า) → ใต้สรุป/ไทม์ไลน์แบ่ง 2 คอลัมน์: ซ้าย สินค้า·จัดส่ง·พัสดุ·รูปแพ็ค / ขวา ข้อมูลออเดอร์·ประวัติ
+// ไม่ wide (ป๊อปอัป) = เรียงต่อกันคอลัมน์เดียวเหมือนเดิม (wrapper เป็น display: contents)
+export function OrderDetailBody({ row, afterShipping, wide }: { row: Row; afterShipping?: React.ReactNode; wide?: boolean }) {
   const id = String(row.id)
   const [copied, setCopied] = useState(false)
 
@@ -299,6 +301,8 @@ export function OrderDetailBody({ row, afterShipping }: { row: Row; afterShippin
         </div>
       )}
 
+      <div className={wide ? 'odb-cols' : undefined} style={wide ? undefined : { display: 'contents' }}>
+      <div style={wide ? { minWidth: 0 } : { display: 'contents' }}>
       {/* ══ รายการสินค้า ══ */}
       {items.length > 0 && (
         <Card title={`รายการสินค้า (${items.length})`} icon={BOX_ICON}>
@@ -408,6 +412,8 @@ export function OrderDetailBody({ row, afterShipping }: { row: Row; afterShippin
       </Card>
 
       {afterShipping}
+      </div>
+      <div style={wide ? { minWidth: 0 } : { display: 'contents' }}>
 
       {/* ══ ข้อมูลใบออเดอร์ ══ */}
       <Card title="ข้อมูลออเดอร์" icon={ICON.doc}>
@@ -434,6 +440,8 @@ export function OrderDetailBody({ row, afterShipping }: { row: Row; afterShippin
       {/* ══ ประวัติการแก้ไข ══ */}
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: '12px 18px' }}>
         <OrderHistory orderId={id} />
+      </div>
+      </div>
       </div>
     </>
   )

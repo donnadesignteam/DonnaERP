@@ -200,7 +200,7 @@ function CustomerFolder() {
   }
 
   return (
-    <div style={{ maxWidth: 920 }}>
+    <div>
       <Link
         href="/order-entry"
         style={{ color: 'var(--ink-3)', fontSize: 13, textDecoration: 'none', display: 'inline-block', marginBottom: 14 }}>
@@ -220,7 +220,7 @@ function CustomerFolder() {
       </div>
 
       {/* สรุป */}
-      <div style={{ display: 'flex', gap: 12, margin: '18px 0 24px', flexWrap: 'wrap' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, margin: '18px 0 24px' }}>
         {[
           ['จำนวนออเดอร์', `${orders.length}`],
           ['ยอดรวมทั้งหมด', `฿${total.toLocaleString('th-TH')}`],
@@ -260,6 +260,7 @@ function CustomerFolder() {
               </div>
 
               <OrderDetailBody
+                wide
                 row={o as unknown as Record<string, unknown>}
                 afterShipping={<>
                   {/* สถานะพัสดุ — เฉพาะออเดอร์ที่ใส่เลขพัสดุแล้ว (สถานะ = ที่เช็คล่าสุดจากหน้าออเดอร์) กดเลขเปิดหน้าเช็คของขนส่ง */}
