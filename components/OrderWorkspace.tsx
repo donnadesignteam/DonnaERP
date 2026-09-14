@@ -40,7 +40,7 @@ import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
 import { PlatformIcon, CourierIcon } from '@/components/BrandMark'
 import CreamSelect from '@/components/CreamSelect'
-import { pillBg, pillInk, ShippedCheck } from '@/components/OrderDetailModal'
+import { pillBg, pillInk } from '@/components/OrderDetailModal'
 
 type Item = {
   type: string
@@ -1078,7 +1078,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
         <CreamSelect value={r.order_status || ''} onChange={v => updateField(r.id, 'order_status', v)}
           className="dn-pill ow-pill" style={{ color: pillInk(r.order_status || ''), background: pillBg(r.order_status || '') }} menuMinWidth={170}
           options={flow.map(s => ({ value: s, label: s, color: PROD_STATUS_COLOR[s] }))}
-          renderValue={o => <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{o?.value === 'จัดส่งแล้ว' && <ShippedCheck />}{o?.label ?? '—'}</span>} />
+          renderValue={o => <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{o?.label ?? '—'}</span>} />
       </td>
     )
   }

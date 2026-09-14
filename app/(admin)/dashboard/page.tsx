@@ -12,7 +12,7 @@ import { oeUpdate } from '@/lib/adminActor'
 import { todayYmd } from '@/lib/thaiDate'
 import { PlatformIcon, CourierIcon } from '@/components/BrandMark'
 import NotifyBell from '@/components/NotifyBell'
-import OrderDetailModal, { ShippedCheck } from '@/components/OrderDetailModal'
+import OrderDetailModal from '@/components/OrderDetailModal'
 import ScanToast from '@/components/ScanToast'
 
 
@@ -895,7 +895,7 @@ export default function DashboardPage() {
                       <td style={{ padding: isFs ? '14px 16px' : '8px 14px' }}>
                         <span className="dn-pill" style={{ color: o.order_status === 'จัดส่งแล้ว' ? '#1F8A3B' : '#6B4326', fontSize: isFs ? 16 : undefined, minWidth: isFs ? 132 : undefined,
                                      background: pillBg(o.order_status) }}>
-                          {o.order_status === 'จัดส่งแล้ว' && <ShippedCheck />}{o.order_status || '—'}
+                          {o.order_status || '—'}
                         </span>
                       </td>
                       <td style={{ padding: isFs ? '18px 16px' : '12px 14px', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: o.notes ? 'var(--ink-soft)' : 'var(--ink-4)' }}>

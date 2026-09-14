@@ -241,7 +241,7 @@ export function OrderDetailBody({ row, afterShipping, wide }: { row: Row; afterS
 
         <div style={{ borderLeft: '1px solid var(--hairline)', paddingLeft: 18 }}>
           <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginBottom: 8 }}>สถานะปัจจุบัน</div>
-          <span className="dn-pill" style={{ color: pillInk(status), background: pillBg(status) }}>{status === 'จัดส่งแล้ว' && <ShippedCheck />}{status || '—'}</span>
+          <span className="dn-pill" style={{ color: pillInk(status), background: pillBg(status) }}>{status || '—'}</span>
         </div>
 
         <div style={{ borderLeft: '1px solid var(--hairline)', paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 10 }}>
