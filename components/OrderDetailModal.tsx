@@ -362,9 +362,11 @@ export function OrderDetailBody({ row, afterShipping, wide }: { row: Row; afterS
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>สถานะ</span>
-              <span className="dn-pill" style={{ minWidth: 0, fontSize: 11.5, padding: '2px 10px', color: '#6B4326', background: pillBg(status) }}>
-                {status === 'จัดส่งแล้ว' ? 'จัดส่งสำเร็จ' : (status || '—')}
-              </span>
+              {status === 'จัดส่งแล้ว' ? <DeliveredPill /> : (
+                <span className="dn-pill" style={{ minWidth: 0, fontSize: 11.5, padding: '2px 10px', color: '#6B4326', background: pillBg(status) }}>
+                  {status || '—'}
+                </span>
+              )}
             </div>
             {tracking && (
               <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 5 }}>
@@ -454,5 +456,14 @@ const PILL_BG: Record<string, string> = {
   'กำลังรีด': '#F6D5DE', 'รีดแล้ว': '#F6D5DE', 'กำลังแพ็ค': '#CFE6DE', 'แพ็คแล้ว': '#CFE6DE',
   'รอจัดส่ง': '#DBBEA7', 'งานเสร็จ': '#D5E6C6', 'จัดส่งแล้ว': '#D5E6C6',
   'รอติดตั้ง': '#F0C0B7', 'ยกเลิก': '#E6D9D5',
+}
+// ป้าย "จัดส่งสำเร็จ" — เขียวอ่อน + วงกลมเขียวติ๊กถูก (ตามภาพที่ user ส่ง 14ก.ย.69) · ใช้ร่วมกับสถานะพัสดุในโฟลเดอร์ลูกค้า
+export function DeliveredPill({ label = 'จัดส่งสำเร็จ' }: { label?: string }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#E3F3E0', color: '#1F8A3B', borderRadius: 999, padding: '3px 12px 3px 4px', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>
+      <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="12" r="11" fill="#22A447" /><path d="M7 12.5l3.2 3.2L17 9" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      {label}
+    </span>
+  )
 }
 export function pillBg(st: string) { return PILL_BG[st] ?? '#EFE3D4' }

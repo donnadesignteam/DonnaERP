@@ -9,7 +9,7 @@ import { deletePackingFile } from '@/lib/packingPhotos'
 import { thaiTrackStatus } from '@/lib/trackExtract'
 import { useConfirm } from '@/components/ConfirmDialog'
 // ‼️ แต่ละออเดอร์ใช้การ์ดชุดเดียวกับป๊อปอัปรายละเอียดออเดอร์ (หน้าภาพรวม) — แก้หน้าตาที่ components/OrderDetailModal.tsx ที่เดียว
-import { OrderDetailBody, Card, CAMERA_ICON } from '@/components/OrderDetailModal'
+import { OrderDetailBody, Card, CAMERA_ICON, DeliveredPill } from '@/components/OrderDetailModal'
 
 type Item = RawItem
 
@@ -271,7 +271,9 @@ function CustomerFolder() {
                           <div key={k} style={{ display: 'flex', alignItems: 'baseline', gap: 10, fontSize: 13, flexWrap: 'wrap' }}>
                             <span style={{ color: 'var(--ink-3)', minWidth: 100 }}>{s.carrier || 'ไม่ระบุขนส่ง'}</span>
                             <a href={carrierTrackUrl(s)} target="_blank" rel="noreferrer" style={{ fontWeight: 600, color: 'var(--brand)', textDecoration: 'none', fontVariantNumeric: 'tabular-nums' }}>{s.no} ↗</a>
-                            {s.status ? (
+                            {s.status && /เซ็นรับ|สำเร็จ|ถึงมือ|delivered/i.test(s.status) ? (
+                              <DeliveredPill label={thaiTrackStatus(s.status)} />
+                            ) : s.status ? (
                               <span className="dn-pill" style={{ minWidth: 0, fontSize: 11.5, padding: '2px 10px', color: '#6B4326',
                                     background: /เซ็นรับ|สำเร็จ|ถึงมือ|delivered/i.test(s.status) ? '#D5E6C6' : '#EFE3D4' }}>{thaiTrackStatus(s.status)}</span>
                             ) : (
