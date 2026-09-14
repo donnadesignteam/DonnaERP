@@ -198,7 +198,8 @@ function ScanContent() {
     const claimId = extractClaimId(decoded)
     if (claimId) {
       await runClaimScan(tech, claimId)
-      if (!askJoinRef.current) {
+      // แผนกที่อัพรูปได้ → ค้างหน้าผลให้อัพรูปก่อน (เหมือนออเดอร์ปกติ)
+      if ((UPLOAD_SLOTS[tech.stageKey] ?? []).length === 0 && !askJoinRef.current) {
         resumeTimerRef.current = setTimeout(() => { try { html5.resume() } catch {}; busyRef.current = false; setPhase('scanning') }, 4000)
       }
       return
@@ -406,11 +407,26 @@ function ScanContent() {
   }
 
   // อัพโหลดรูปเข้า Cloudflare R2 แล้ว append URL เข้า order_entries.packing_photos
+  // งานเคลม → เก็บลง claims.photos ({url, caption=ชื่อช่อง}) โชว์ในหน้าต่างแก้ไขเคลมที่ /claims
   async function uploadPhoto(file: File, tag: string) {
     if (!order?.id) return
     setUploading(tag); setUploadErr('')
     try {
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+      if (order.isClaim) {
+        const publicUrl = await uploadPackingFile(file, `claims/${order.id}/${tag}-${Date.now()}.${ext}`)
+        const label = (UPLOAD_SLOTS[tech?.stageKey || ''] ?? []).find(s => s.tag === tag)?.label || ''
+        const { data: row, error: rErr } = await supabase.from('claims').select('photos').eq('id', order.id).single()
+        if (rErr) throw rErr
+        const cur = Array.isArray(row?.photos) ? row.photos : []
+        const { error: err } = await supabase.from('claims')
+          .update({ photos: [...cur, { url: publicUrl, caption: label }] }).eq('id', order.id)
+        if (err) throw err
+        setUploadedCnt(c => ({ ...c, [tag]: (c[tag] || 0) + 1 }))
+        setPhotos(p => [...p, publicUrl])
+        setUploading(null)
+        return
+      }
       const key = `${order.id}/${tag}-${Date.now()}.${ext}`
       const publicUrl = await uploadPackingFile(file, key)
       const { data: row } = await supabase.from('order_entries').select('packing_photos').eq('id', order.id).single()
@@ -429,10 +445,21 @@ function ScanContent() {
   // ลบรูปออกจากโฟลเดอร์ออเดอร์: ลบไฟล์ (R2/Supabase ตามที่มา) + เอา URL ออกจาก packing_photos
   async function deletePhoto(url: string) {
     if (!order?.id) return
-    if (!(await ask('ลบรูปนี้ออกจากออเดอร์?', { okText: 'ลบ', danger: true }))) return
+    if (!(await ask(order.isClaim ? 'ลบรูปนี้ออกจากงานเคลม?' : 'ลบรูปนี้ออกจากออเดอร์?', { okText: 'ลบ', danger: true }))) return
     setDelBusy(url); setUploadErr('')
     try {
       await deletePackingFile(url)
+      if (order.isClaim) {
+        const { data: row, error: rErr } = await supabase.from('claims').select('photos').eq('id', order.id).single()
+        if (rErr) throw rErr
+        const cur = Array.isArray(row?.photos) ? row.photos : []
+        const { error: err } = await supabase.from('claims')
+          .update({ photos: cur.filter((x: any) => x?.url !== url) }).eq('id', order.id)
+        if (err) throw err
+        setPhotos(p => p.filter(u => u !== url))
+        setDelBusy(null)
+        return
+      }
       const { data: row } = await supabase.from('order_entries').select('packing_photos').eq('id', order.id).single()
       const cur = Array.isArray(row?.packing_photos) ? row.packing_photos : []
       const { error: err } = await supabase.from('order_entries')
@@ -469,6 +496,9 @@ function ScanContent() {
       order_status: cl.status,
     }
     setOrder(base)
+    // รูปที่อัพไว้แล้วของงานเคลม (claims.photos) — แยก query เผื่อยังไม่ได้รัน migrations/add_claim_photos.sql จะได้ไม่พังการสแกน
+    supabase.from('claims').select('photos').eq('id', cl.id).single()
+      .then(({ data: pr }) => { if (Array.isArray(pr?.photos)) setPhotos(pr.photos.map((x: any) => x?.url).filter(Boolean)) })
 
     const { data, error } = await supabase.rpc('claim_scan_advance', {
       p_claim_id: cl.id,
@@ -647,8 +677,8 @@ function ScanContent() {
 
   const stage = resolveStage(tech.stageKey)
   const stageColor = '#2563eb'
-  // งานเคลมยังไม่มีที่เก็บรูป (packing_photos อยู่ที่ตารางออเดอร์) → ไม่โชว์ปุ่มอัพรูป
-  const slots = order?.isClaim ? [] : (UPLOAD_SLOTS[tech.stageKey] ?? [])
+  // งานเคลมใช้ช่องรูปชุดเดียวกับออเดอร์ (เก็บลง claims.photos แทน packing_photos)
+  const slots = UPLOAD_SLOTS[tech.stageKey] ?? []
   // อัพรูปได้เมื่อเจอออเดอร์แล้ว (done หรือ already — เผื่อสแกนซ้ำเพื่อเพิ่มรูป)
   const canUpload = slots.length > 0 && (phase === 'done' || phase === 'already' || phase === 'joined') && order?.id
 
