@@ -332,134 +332,120 @@ function CustomerFolder() {
 
       {/* งานติดตั้ง/วัดหน้างานของลูกค้าคนนี้ (จากหมวดปฏิทินงานติดตั้ง) — โชว์เฉพาะเมื่อมี */}
       {!loading && installs.length > 0 && (
-        <div style={{ marginTop: 28 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 700, color: '#74401E' }}>งานติดตั้ง / วัดหน้างาน</h2>
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#C79A4B', background: '#C79A4B15', border: '1px solid #C79A4B33', borderRadius: 12, padding: '2px 10px' }}>{installs.length} รายการ</span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {installs.map(ins => {
-              const sc = INSTALL_STATUS_COLOR[ins.installation_status ?? ''] ?? 'var(--ink-3)'
-              return (
-                <div key={ins.id} style={{ ...card, padding: '16px 18px', borderLeft: `4px solid ${sc}` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-4)' }}>#{ins.serial_no}</span>
-                        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{ins.work_type || 'งานติดตั้ง'}</span>
-                        {ins.province && (
-                          <span style={{ fontSize: 11, color: 'var(--ink-3)', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12, padding: '2px 8px' }}>{ins.province}</span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4 }}>
-                        {ins.appointment_datetime
-                          ? <>นัด {fmtDate(ins.appointment_datetime)} {new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.</>
-                          : 'ยังไม่นัดวัน'}
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      {ins.installation_status && (
-                        <span style={{ background: sc + '22', color: sc, padding: '3px 10px', borderRadius: 980, fontSize: 11, fontWeight: 700 }}>{ins.installation_status}</span>
-                      )}
-                      {ins.price != null && ins.price > 0 && (
-                        <div style={{ fontSize: 13, fontWeight: 700, marginTop: 6, color: 'var(--ink)' }}>{ins.price.toLocaleString('th-TH')} ฿</div>
-                      )}
-                    </div>
-                  </div>
-                  {ins.work_details && (
-                    <div style={{ margin: '12px 0 0', padding: '12px 0 0', borderTop: '1px solid var(--border)', fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-line' }}>{ins.work_details}</div>
-                  )}
-                  {ins.notes && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 10, fontStyle: 'italic' }}>📝 {ins.notes}</div>}
-                </div>
-              )
-            })}
-          </div>
-        </div>
+        <FolderGroup title="งานติดตั้ง / วัดหน้างาน" icon={ICON_TOOL} count={installs.length}>
+          {installs.map(ins => (
+            <FolderItem key={ins.id}
+              title={ins.work_type || 'งานติดตั้ง'}
+              tags={[ins.serial_no ? `IN${String(ins.serial_no).replace(/^IN/, '')}` : '', ins.province || '']}
+              sub={ins.appointment_datetime
+                ? `นัด ${fmtDate(ins.appointment_datetime)} ${new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.`
+                : 'ยังไม่นัดวัน'}
+              status={ins.installation_status} statusColor={INSTALL_STATUS_COLOR[ins.installation_status ?? '']}
+              amount={ins.price != null && ins.price > 0 ? `฿${ins.price.toLocaleString('th-TH')}` : null}
+              body={ins.work_details ? <div style={{ whiteSpace: 'pre-line' }}>{ins.work_details}</div> : null}
+              note={ins.notes} />
+          ))}
+        </FolderGroup>
       )}
 
       {/* รายการสั่งซื้อของลูกค้าคนนี้ (จากหมวดสั่งซื้อ) — โชว์เฉพาะเมื่อมี */}
       {!loading && pos.length > 0 && (
-        <div style={{ marginTop: 28 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 700, color: '#74401E' }}>รายการสั่งซื้อ</h2>
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--blue)', background: 'rgba(196,126,58,0.10)', border: '1px solid rgba(196,126,58,0.25)', borderRadius: 12, padding: '2px 10px' }}>{pos.length} รายการ</span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {pos.map(p => {
-              const sc = PO_STATUS_COLOR[p.status] ?? 'var(--ink-3)'
-              return (
-                <div key={p.id} style={{ ...card, padding: '16px 18px', borderLeft: `4px solid ${sc}` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{p.order_number || 'ไม่มีเลขคำสั่งซื้อ'}</span>
-                        {p.supplier && (
-                          <span style={{ fontSize: 11, color: 'var(--ink-3)', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12, padding: '2px 8px' }}>{p.supplier}</span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4 }}>{fmtDate(p.created_at)}</div>
-                    </div>
-                    <span style={{ background: sc + '22', color: sc, padding: '3px 10px', borderRadius: 980, fontSize: 11, fontWeight: 700 }}>{p.status}</span>
-                  </div>
-                  {p.items && (
-                    <div style={{ margin: '12px 0 0', padding: '12px 0 0', borderTop: '1px solid var(--border)', fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-line' }}>{p.items}</div>
-                  )}
-                  {p.notes && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 10, fontStyle: 'italic' }}>📝 {p.notes}</div>}
-                </div>
-              )
-            })}
-          </div>
-        </div>
+        <FolderGroup title="รายการสั่งซื้อ" icon={ICON_CART} count={pos.length}>
+          {pos.map(po => (
+            <FolderItem key={po.id}
+              title={po.order_number || 'ไม่มีเลขคำสั่งซื้อ'}
+              tags={[po.supplier || '']}
+              sub={fmtDate(po.created_at)}
+              status={po.status} statusColor={PO_STATUS_COLOR[po.status]}
+              body={po.items ? <div style={{ whiteSpace: 'pre-line' }}>{po.items}</div> : null}
+              note={po.notes} />
+          ))}
+        </FolderGroup>
       )}
 
       {/* งานเคลมของลูกค้าคนนี้ — โชว์เฉพาะเมื่อมี */}
       {!loading && claims.length > 0 && (
-        <div style={{ marginTop: 28 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 700, color: '#74401E' }}>งานเคลม</h2>
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)', background: '#ff375f15', border: '1px solid #ff375f33', borderRadius: 12, padding: '2px 10px' }}>{claims.length} รายการ</span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {claims.map(c => {
-              const sc = CLAIM_STATUS_COLOR[c.status] ?? 'var(--ink-3)'
-              return (
-                <div key={c.id} style={{ ...card, padding: '16px 18px', borderLeft: `4px solid ${sc}` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{c.claim_type || 'งานเคลม'}</span>
-                        {c.channel && (
-                          <span style={{ fontSize: 11, color: 'var(--ink-3)', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12, padding: '2px 8px' }}>{c.channel}</span>
-                        )}
-                        {c.original_order_number && <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>#{c.original_order_number}</span>}
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4 }}>{fmtDate(c.claim_date)}{c.fault ? ` · ความผิด: ${c.fault}` : ''}</div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <span style={{ background: sc + '22', color: sc, padding: '3px 10px', borderRadius: 980, fontSize: 11, fontWeight: 700 }}>{c.status}</span>
-                      {c.refund_amount != null && c.money_direction && (
-                        <div style={{ fontSize: 13, fontWeight: 700, marginTop: 6, color: c.money_direction === 'เก็บลูกค้า' ? '#6F8F6A' : 'var(--red)' }}>
-                          {c.money_direction === 'เก็บลูกค้า' ? '+' : '−'}{Number(c.refund_amount).toLocaleString('th-TH')} ฿ ({c.money_direction})
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  {(c.cause || c.resolution) && (
-                    <div style={{ margin: '12px 0 0', padding: '12px 0 0', borderTop: '1px solid var(--border)', fontSize: 13, lineHeight: 1.6 }}>
-                      {c.cause && <div><span style={{ color: 'var(--ink-4)' }}>สาเหตุ:</span> {c.cause}</div>}
-                      {c.resolution && <div><span style={{ color: 'var(--ink-4)' }}>การแก้ไข:</span> {c.resolution}</div>}
-                    </div>
-                  )}
-                  {c.notes && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 10, fontStyle: 'italic' }}>📝 {c.notes}</div>}
-                </div>
-              )
-            })}
-          </div>
-        </div>
+        <FolderGroup title="งานเคลม" icon={ICON_CLAIM} count={claims.length}>
+          {claims.map(c => (
+            <FolderItem key={c.id}
+              title={c.claim_type || 'งานเคลม'}
+              tags={[c.channel || '', c.original_order_number ? `#${c.original_order_number}` : '']}
+              sub={`${fmtDate(c.claim_date)}${c.fault ? ` · ความผิด: ${c.fault}` : ''}`}
+              status={c.status} statusColor={CLAIM_STATUS_COLOR[c.status]}
+              amount={c.refund_amount != null && c.money_direction
+                ? <span style={{ color: c.money_direction === 'เก็บลูกค้า' ? '#1F8A3B' : 'var(--red)' }}>{c.money_direction === 'เก็บลูกค้า' ? '+' : '−'}฿{Number(c.refund_amount).toLocaleString('th-TH')} <small style={{ fontWeight: 500, color: 'var(--ink-3)' }}>({c.money_direction})</small></span>
+                : null}
+              body={(c.cause || c.resolution) ? <>
+                {c.cause && <div><span style={{ color: 'var(--ink-3)' }}>สาเหตุ:</span> {c.cause}</div>}
+                {c.resolution && <div><span style={{ color: 'var(--ink-3)' }}>การแก้ไข:</span> {c.resolution}</div>}
+              </> : null}
+              note={c.notes} />
+          ))}
+        </FolderGroup>
       )}
 
       {/* กล่องยืนยัน (ลบรูปแพ็ค) — ต้องอยู่ท้ายสุดเพื่อทับทุกโมดัล */}
       {confirmDialog}
+    </div>
+  )
+}
+
+// ── กล่องรายการท้ายโฟลเดอร์ (งานติดตั้ง / สั่งซื้อ / เคลม) — ธีมเดียวกับการ์ดออเดอร์ด้านบน ──
+const ICON_TOOL = 'M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085'
+const ICON_CART = 'M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z'
+const ICON_CLAIM = 'M8.25 9.75h4.875a2.625 2.625 0 010 5.25H12M8.25 9.75L10.5 7.5M8.25 9.75L10.5 12m9-7.243V21.75l-3.75-1.5-3.75 1.5-3.75-1.5-3.75 1.5V4.757c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0c1.1.128 1.907 1.077 1.907 2.185z'
+
+function FolderGroup({ title, icon, count, children }: { title: string; icon: string; count: number; children: React.ReactNode }) {
+  return (
+    <section style={{ marginTop: 36, background: 'var(--cream-2)', border: '1px solid var(--border-2)', borderRadius: 22, padding: '16px 18px 18px', boxShadow: '0 6px 20px rgba(120,86,58,0.10)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 14 }}>
+        <svg width="19" height="19" fill="none" stroke="#8A5C3A" strokeWidth="1.6" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
+          <path strokeLinecap="round" strokeLinejoin="round" d={icon} />
+        </svg>
+        <h2 style={{ fontSize: 16, fontWeight: 700, color: '#74401E' }}>{title}</h2>
+        <span style={{ fontSize: 12, fontWeight: 600, color: '#8A6142', background: 'var(--cream)', borderRadius: 999, padding: '2px 10px' }}>{count} รายการ</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 420px), 1fr))', gap: 12 }}>
+        {children}
+      </div>
+    </section>
+  )
+}
+
+function FolderItem({ title, tags, sub, status, statusColor, amount, body, note }: {
+  title: string; tags: string[]; sub: string; status?: string | null; statusColor?: string
+  amount?: React.ReactNode; body?: React.ReactNode; note?: string | null
+}) {
+  return (
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: '14px 18px 16px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{title}</span>
+            {tags.filter(Boolean).map(t => (
+              <span key={t} style={{ fontSize: 11.5, color: '#8A6142', background: 'var(--cream)', borderRadius: 999, padding: '1px 9px' }}>{t}</span>
+            ))}
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 4 }}>{sub}</div>
+        </div>
+        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+          {status && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#6B4326', background: 'var(--cream)', borderRadius: 999, padding: '3px 11px', whiteSpace: 'nowrap' }}>
+              <i style={{ width: 7, height: 7, borderRadius: 999, background: statusColor || 'var(--ink-4)', display: 'inline-block' }} />
+              {status}
+            </span>
+          )}
+          {amount && <div style={{ fontSize: 14, fontWeight: 700, marginTop: 6, color: 'var(--brand)', fontVariantNumeric: 'tabular-nums' }}>{amount}</div>}
+        </div>
+      </div>
+      {body && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--hairline)', fontSize: 13, lineHeight: 1.65, color: 'var(--ink-2)' }}>{body}</div>
+      )}
+      {note && (
+        <div style={{ marginTop: 10, background: 'var(--cream-2)', borderRadius: 10, padding: '8px 12px', fontSize: 12.5, color: 'var(--ink-3)' }}>
+          <span style={{ fontWeight: 600, color: '#8A6142' }}>หมายเหตุ</span> · {note}
+        </div>
+      )}
     </div>
   )
 }
