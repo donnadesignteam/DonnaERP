@@ -1256,7 +1256,6 @@ export default function InstallationsPage() {
           if (y !== year || m !== month) { setYear(y); setMonth(m) }
           setDayModal({ day: d, items })
         }} />
-        <div className="sc-sign" aria-hidden>Donna Design</div>
       </div>
 
       {/* List */}

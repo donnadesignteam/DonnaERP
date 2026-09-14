@@ -401,7 +401,6 @@ export default function EmployeesPage() {
             })}
           </div>
         )}
-        <div className="sc-sign" aria-hidden>Donna Design</div>
       </div>
 
       {/* Leave list */}

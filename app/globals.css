@@ -1,6 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap');
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -345,7 +344,6 @@ h1, h2, h3 { font-weight: 700; }
 .sc-dayview-head { font-size: 15px; font-weight: 600; color: var(--ink-2); margin-bottom: 4px; }
 .sc-big { padding: 14px 16px; cursor: pointer; } .sc-big .sc-chip-title { font-size: 14px; } .sc-big .sc-chip-sub { font-size: 12.5px; }
 .sc-empty { color: var(--ink-4); font-size: 13px; padding: 30px 0; text-align: center; }
-.sc-sign { position: absolute; right: 34px; bottom: 26px; font-family: 'Great Vibes', cursive; font-size: 26px; color: var(--ink-4); opacity: 0.55; transform: rotate(-12deg); pointer-events: none; }
 html.dark .sc-redzone { background: #3A2320; } html.dark .sc-campaign { background: #3A2B1B; } html.dark .sc-holiday { background: #33261B; }
 html.dark .sc-leave { background: #2F2319; } html.dark .sc-closed { background: #2A2624; }
 @media (max-width: 1100px) { .sc-toolbar { grid-template-columns: 1fr; justify-items: start; } .sc-legend { justify-self: start; } }
