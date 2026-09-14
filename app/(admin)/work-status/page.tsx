@@ -110,7 +110,7 @@ export default function WorkStatusPage() {
           {workStatus.length > 0 && (
             <div style={{ marginTop: 40 }}>
               <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 16, color: 'var(--ink)' }}>บันทึกสถานะแผนก</h2>
-              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
+              <div className="dn-list-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
                 <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>

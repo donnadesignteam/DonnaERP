@@ -46,7 +46,7 @@ export default function PricingPage() {
           <div style={{ fontSize: 14, color: 'var(--ink-3)' }}>เพิ่มข้อมูลใน Supabase ตาราง pricing</div>
         </div>
       ) : (
-        <div style={{ ...glassCard, overflow: 'hidden' }}>
+        <div className="dn-list-card" style={{ ...glassCard, overflow: 'hidden' }}>
           <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>

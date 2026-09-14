@@ -307,7 +307,7 @@ export default function ReturnParcelsPage() {
       </div>
 
       {/* คอลัมน์เยอะเกินจอ → เลื่อนทั้งหน้าแนวนอนเหมือนหมวดออเดอร์ (ไม่มีกล่องเลื่อนแยก หัวตารางค้างบนจอตอนเลื่อนลง) */}
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', width: 'max-content', minWidth: '100%' }}>
+      <div className="dn-list-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', width: 'max-content', minWidth: '100%' }}>
         {loading ? (
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>กำลังโหลด…</div>
         ) : displayed.length === 0 ? (

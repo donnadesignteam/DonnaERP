@@ -402,7 +402,7 @@ export default function StockPage() {
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา รหัสผ้า / ชื่อสี / รหัสร้าน / ร้าน / ลักษณะผ้า…"
         style={{ ...inputStyle, marginBottom: 16 }} />
 
-      <div ref={tableCardRef} style={{ ...cardStyle, position: 'relative' }}>
+      <div className="dn-list-card" ref={tableCardRef} style={{ ...cardStyle, position: 'relative' }}>
         <div style={{ overflowX: 'auto' }}>
         {loading ? (
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>กำลังโหลด…</div>
