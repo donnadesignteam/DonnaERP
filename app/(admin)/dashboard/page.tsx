@@ -12,7 +12,7 @@ import { oeUpdate } from '@/lib/adminActor'
 import { todayYmd } from '@/lib/thaiDate'
 import { PlatformIcon, CourierIcon } from '@/components/BrandMark'
 import NotifyBell from '@/components/NotifyBell'
-import OrderDetailModal from '@/components/OrderDetailModal'
+import OrderDetailModal, { ShippedCheck } from '@/components/OrderDetailModal'
 import ScanToast from '@/components/ScanToast'
 
 
@@ -55,7 +55,7 @@ const PILL_BG: Record<string, string> = {
   'แพ็คแล้ว':    '#CFE6DE',
   'รอจัดส่ง':    '#DBBEA7',   // น้ำตาลอ่อน
   'งานเสร็จ':    '#D5E6C6',   // เขียว
-  'จัดส่งแล้ว':  '#D5E6C6',
+  'จัดส่งแล้ว':  '#E3F3E0',
   'รอติดตั้ง':   '#F0C0B7',   // ส้มอิฐอ่อน
   'ยกเลิก':      '#E6D9D5',   // เทาอมชมพู
 }
@@ -893,9 +893,9 @@ export default function DashboardPage() {
                         </span>
                       </td>
                       <td style={{ padding: isFs ? '14px 16px' : '8px 14px' }}>
-                        <span className="dn-pill" style={{ color: '#6B4326', fontSize: isFs ? 16 : undefined, minWidth: isFs ? 132 : undefined,
+                        <span className="dn-pill" style={{ color: o.order_status === 'จัดส่งแล้ว' ? '#1F8A3B' : '#6B4326', fontSize: isFs ? 16 : undefined, minWidth: isFs ? 132 : undefined,
                                      background: pillBg(o.order_status) }}>
-                          {o.order_status || '—'}
+                          {o.order_status === 'จัดส่งแล้ว' && <ShippedCheck />}{o.order_status || '—'}
                         </span>
                       </td>
                       <td style={{ padding: isFs ? '18px 16px' : '12px 14px', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: o.notes ? 'var(--ink-soft)' : 'var(--ink-4)' }}>
