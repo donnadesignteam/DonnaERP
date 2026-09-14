@@ -193,59 +193,85 @@ const TH_MONTHS = ['มกราคม','กุมภาพันธ์','มี
 
 function pad(n: number) { return String(n).padStart(4, '0') }
 
-function Calendar({ year, month, installs, onDayClick }: {
-  year: number; month: number; installs: Installation[]; onDayClick: (day: number) => void
+// สีพื้นการ์ดพาสเทลตามสีประจำงาน (rowColor) — ดีไซน์ปฏิทินชุดเดียวกับปฏิทินร้าน (คลาส .sc-* ใน globals.css)
+const CHIP_BG: Record<string, string> = {
+  '#5ac8fa': '#E3EEF2', '#30b0c7': '#DFEDEF', '#C79A4B': '#FBEAD7', '#6F8F6A': '#E6EEE3',
+  '#9A7BA0': '#EFE6EF', 'var(--red)': '#F9E4E1', '#8e8e93': '#ECE9E7',
+}
+const ymdOf = (y: number, m: number, d: number) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+
+function Calendar({ year, month, selDay, view, installs, onDayClick }: {
+  year: number; month: number; selDay: number; view: 'month' | 'week' | 'day'; installs: Installation[]
+  onDayClick: (y: number, m: number, d: number) => void
 }) {
   const dim = new Date(year, month + 1, 0).getDate()
   const first = (new Date(year, month, 1).getDay() + 6) % 7
-  const cellCount = Math.ceil((first + dim) / 7) * 7
-  const cells = Array.from({ length: cellCount }, (_, i) => {
-    const d = i - first + 1
-    return d > 0 && d <= dim ? d : null
-  })
+  const weekStart = new Date(year, month, selDay - ((new Date(year, month, selDay).getDay() + 6) % 7))
+  const cells: ({ y: number; m: number; d: number } | null)[] = view === 'week'
+    ? Array.from({ length: 7 }, (_, i) => { const dt = new Date(weekStart); dt.setDate(dt.getDate() + i); return { y: dt.getFullYear(), m: dt.getMonth(), d: dt.getDate() } })
+    : Array.from({ length: Math.ceil((first + dim) / 7) * 7 }, (_, i) => { const d = i - first + 1; return d > 0 && d <= dim ? { y: year, m: month, d } : null })
 
+  // การ์ดของวัน: วันหยุด · ร้านปิด · นัดหมาย (เรียงตามเวลา)
+  const itemsOf = (y: number, m: number, d: number, big = false) => {
+    const holiday = HOLIDAYS[ymdOf(y, m, d)]
+    const isSunday = new Date(y, m, d).getDay() === 0
+    const list = installs.filter(ins => {
+      const dt = new Date(ins.appointment_datetime)
+      return dt.getDate() === d && dt.getMonth() === m && dt.getFullYear() === y
+    }).sort((a, b) => a.appointment_datetime.localeCompare(b.appointment_datetime))
+    const out: React.ReactNode[] = []
+    if (holiday) out.push(<Chip key="h" bg="#F6E9DB" dot="#D9AE86" title={holiday} sub="วันหยุดร้าน" big={big} />)
+    if (isSunday) out.push(<Chip key="s" bg="#ECE9E7" dot="#9A9AA6" title="ร้านปิด" sub="วันอาทิตย์" big={big} />)
+    list.forEach(ins => {
+      const c = rowColor(ins)
+      const t = new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+      out.push(<Chip key={ins.id} bg={CHIP_BG[c] ?? '#F1E4D8'} dot={c} big={big}
+        title={ins.customer_real_name || ins.customer_id || '-'}
+        sub={[t, (ins.work_type || '').replace(/^งาน/, ''), big ? ins.province : ''].filter(Boolean).join(' · ')} />)
+    })
+    return out
+  }
+
+  if (view === 'day') {
+    const items = itemsOf(year, month, selDay, true)
+    return (
+      <div className="sc-dayview" onClick={() => onDayClick(year, month, selDay)} style={{ cursor: 'pointer' }}>
+        <div className="sc-dayview-head">{DAYS[(new Date(year, month, selDay).getDay() + 6) % 7]} {selDay} {TH_MONTHS[month]} {year + 543}</div>
+        {items.length === 0 ? <div className="sc-empty">ไม่มีนัดหมายในวันนี้</div> : items}
+      </div>
+    )
+  }
+
+  const todayKey = ymdOf(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())
   return (
-    <div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2, marginBottom: 4 }}>
-        {DAYS.map(d => (
-          <div key={d} style={{ textAlign: 'center', fontSize: 12, fontWeight: 600, color: 'var(--ink-3)', padding: '6px 0' }}>{d}</div>
-        ))}
+    <div className="sc-grid">
+      {DAYS.map(d => <div key={d} className="sc-dow">{d}</div>)}
+      {cells.map((c, i) => {
+        if (!c) return <div key={i} className="sc-cell sc-out" />
+        const items = itemsOf(c.y, c.m, c.d)
+        const max = view === 'week' ? 99 : 3
+        return (
+          <div key={i} onClick={() => onDayClick(c.y, c.m, c.d)}
+            className={`sc-cell${view === 'week' ? ' sc-tall' : ''}${ymdOf(c.y, c.m, c.d) === todayKey ? ' sc-today' : ''}${c.m !== month ? ' sc-dim' : ''}`}>
+            <div className="sc-num">{c.d}</div>
+            {items.slice(0, max)}
+            {items.length > max && <div className="sc-more">+{items.length - max} รายการ</div>}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function Chip({ bg, dot, title, sub, big }: { bg: string; dot: string; title: string; sub?: string; big?: boolean }) {
+  return (
+    <div className={`sc-chip${big ? ' sc-big' : ''}`} style={{ background: bg }} title={[title, sub].filter(Boolean).join(' · ')}>
+      <i className="sc-dot" style={{ background: dot }} />
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div className="sc-chip-title">{title}</div>
+        {sub && <div className="sc-chip-sub">{sub}</div>}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2 }}>
-        {cells.map((day, i) => {
-          const dayInstalls = day ? installs.filter(ins => {
-            const dt = new Date(ins.appointment_datetime)
-            return dt.getDate() === day && dt.getMonth() === month && dt.getFullYear() === year
-          }) : []
-          const isToday = day === new Date().getDate() && month === new Date().getMonth() && year === new Date().getFullYear()
-          const holiday = day ? HOLIDAYS[`${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`] : undefined
-          const isSunday = day ? new Date(year, month, day).getDay() === 0 : false
-          return (
-            <div key={i} onClick={() => day && onDayClick(day)}
-              style={{ minHeight: 90, background: day ? (holiday ? '#fff9e6' : isSunday ? '#f4f4f5' : '#fff') : 'transparent', borderRadius: 8, padding: '6px 8px', cursor: day ? 'pointer' : 'default', border: isToday ? '2px solid var(--blue)' : '1px solid rgba(0,0,0,0.06)', transition: 'background 0.1s' }}>
-              {day && (
-                <>
-                  <div style={{ fontSize: 13, fontWeight: isToday ? 700 : 400, color: isToday ? 'var(--blue)' : 'var(--ink)', marginBottom: 4 }}>{day}</div>
-                  {isSunday && <div style={{ fontSize: 9, color: '#6b7280', fontWeight: 600, lineHeight: 1.3, marginBottom: 2 }}>ร้านปิด</div>}
-                  {holiday && <div style={{ fontSize: 9, color: '#b45309', fontWeight: 600, lineHeight: 1.3, marginBottom: 2 }}>{holiday}</div>}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    {dayInstalls.slice(0, 3).map(ins => {
-                      const t = new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
-                      const bg = rowColor(ins)
-                      return (
-                        <div key={ins.id} style={{ background: bg + '22', borderLeft: `3px solid ${bg}`, borderRadius: 3, padding: '2px 5px', fontSize: 10, color: bg, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {t} {ins.customer_real_name || ins.customer_id}
-                        </div>
-                      )
-                    })}
-                    {dayInstalls.length > 3 && <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>+{dayInstalls.length - 3}</div>}
-                  </div>
-                </>
-              )}
-            </div>
-          )
-        })}
-      </div>
+      <svg className="sc-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
     </div>
   )
 }
@@ -269,6 +295,8 @@ export default function InstallationsPage() {
   const [month, setMonth] = useState(new Date().getMonth())
   const [modal, setModal] = useState<{ mode: 'add' | 'edit'; data: Partial<Installation> } | null>(null)
   const [dayModal, setDayModal] = useState<{ day: number; items: Installation[] } | null>(null)
+  const [calView, setCalView] = useState<'month' | 'week' | 'day'>('month')
+  const [selDay, setSelDay] = useState(new Date().getDate())   // วันที่ยึดของมุมมองสัปดาห์/วัน
   const [saving, setSaving] = useState(false)
   const [apptDate, setApptDate] = useState('')
   const [apptTime, setApptTime] = useState('9:00')
@@ -1056,6 +1084,21 @@ export default function InstallationsPage() {
   }
 
   const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y - 1) } else setMonth(m => m - 1) }
+  // ── ปฏิทิน: เลื่อนตามมุมมอง (เดือน/สัปดาห์/วัน) ──
+  const goToDate = (dt: Date) => { setYear(dt.getFullYear()); setMonth(dt.getMonth()); setSelDay(dt.getDate()) }
+  const shiftCal = (dir: number) => {
+    if (calView === 'month') goToDate(new Date(year, month + dir, 1))
+    else goToDate(new Date(year, month, selDay + dir * (calView === 'week' ? 7 : 1)))
+  }
+  const calTitle = (() => {
+    if (calView === 'day') return `${selDay} ${TH_MONTHS[month]} ${year + 543}`
+    if (calView === 'month') return `${TH_MONTHS[month]} ${year + 543}`
+    const st = new Date(year, month, selDay - ((new Date(year, month, selDay).getDay() + 6) % 7))
+    const en = new Date(st); en.setDate(en.getDate() + 6)
+    return st.getMonth() === en.getMonth()
+      ? `${st.getDate()}–${en.getDate()} ${TH_MONTHS[en.getMonth()]} ${en.getFullYear() + 543}`
+      : `${st.getDate()} ${TH_MONTHS[st.getMonth()].slice(0, 3)}. – ${en.getDate()} ${TH_MONTHS[en.getMonth()].slice(0, 3)}. ${en.getFullYear() + 543}`
+  })()
   const nextMonth = () => { if (month === 11) { setMonth(0); setYear(y => y + 1) } else setMonth(m => m + 1) }
 
   // ── สรุปงานติดตั้ง: รวมงานที่ยังไม่เสร็จตั้งแต่วันนี้เป็นต้นไป จัดกลุ่มรายวัน ตามฟอร์แมตที่ทีมใช้ส่งไลน์ ──
@@ -1156,21 +1199,15 @@ export default function InstallationsPage() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px' }}>งานติดตั้ง</h1>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={() => setBonusModal(true)}
-            style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border-2)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-            ยอดติดตั้ง
-          </button>
-          <button onClick={openSummary}
-            style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border-2)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-            สรุปงานติดตั้ง
-          </button>
-          <button onClick={() => { setPrintColStep(false); setPrintAsk(true) }}
-            style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border-2)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-            🖨️ ปริ้น
-          </button>
+      <div className="sc-head">
+        <div>
+          <h1 className="sc-title">งานติดตั้ง</h1>
+          <p className="sc-sub">นัดวัดหน้างาน ติดตั้ง และงานแก้ของทีมช่าง ในที่เดียว</p>
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button className="sc-btn-ghost" onClick={() => setBonusModal(true)}>ยอดติดตั้ง</button>
+          <button className="sc-btn-ghost" onClick={openSummary}>สรุปงานติดตั้ง</button>
+          <button className="sc-btn-ghost" onClick={() => { setPrintColStep(false); setPrintAsk(true) }}>🖨️ ปริ้น</button>
         </div>
       </div>
 
@@ -1181,31 +1218,45 @@ export default function InstallationsPage() {
         </div>
       )}
 
-      {/* Calendar */}
-      <div className="print-area" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '24px', marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-          <button className="no-print" onClick={prevMonth} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 14, background: '#fff' }}>‹</button>
-          <h2 style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', flex: 1, textAlign: 'center' }}>
-            {TH_MONTHS[month]} {year + 543}
-          </h2>
-          <button className="no-print" onClick={nextMonth} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 14, background: '#fff' }}>›</button>
+      {/* Calendar — ดีไซน์ชุดเดียวกับปฏิทินร้าน: แท็บ เดือน/สัปดาห์/วัน · การ์ดพาสเทลมีจุดสี */}
+      <div className="print-area sc-card">
+        <div className="sc-toolbar">
+          <div className="sc-seg no-print">
+            {([['month', 'เดือน'], ['week', 'สัปดาห์'], ['day', 'วัน']] as const).map(([k, l]) => (
+              <button key={k} className={calView === k ? 'on' : ''} onClick={() => setCalView(k)}>{l}</button>
+            ))}
+          </div>
+          <div className="sc-nav">
+            <button className="sc-circle no-print" onClick={() => shiftCal(-1)} aria-label="ก่อนหน้า">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+            </button>
+            <h2 className="sc-month">{calTitle}</h2>
+            <button className="sc-circle no-print" onClick={() => shiftCal(1)} aria-label="ถัดไป">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+            </button>
+            <label className="sc-circle no-print" title="เลือกเดือน" style={{ position: 'relative' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="16" rx="2.5" /><path d="M3 10h18M8 3v4M16 3v4" /></svg>
+              <input type="month" value={`${year}-${String(month + 1).padStart(2, '0')}`}
+                onChange={e => { const [y, m] = e.target.value.split('-').map(Number); if (y && m) goToDate(new Date(y, m - 1, 1)) }}
+                style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
+            </label>
+            <button className="sc-pill no-print" onClick={() => goToDate(new Date())}>วันนี้</button>
+          </div>
+          <div className="sc-legend">
+            {[['#5ac8fa', 'วัดหน้างาน'], ['#C79A4B', 'ติดตั้ง'], ['#C0564A', 'รอแก้'], ['#D9AE86', 'วันหยุด'], ['#9A9AA6', 'ร้านปิด (อา.)']].map(([c, l]) => (
+              <span key={l}><i style={{ background: c }} />{l}</span>
+            ))}
+          </div>
         </div>
-        <Calendar year={year} month={month} installs={calendarInstalls} onDayClick={day => {
+        <Calendar year={year} month={month} selDay={selDay} view={calView} installs={calendarInstalls} onDayClick={(y, m, d) => {
           const items = calendarInstalls.filter(ins => {
-            const d = new Date(ins.appointment_datetime)
-            return d.getDate() === day && d.getMonth() === month && d.getFullYear() === year
+            const dt = new Date(ins.appointment_datetime)
+            return dt.getDate() === d && dt.getMonth() === m && dt.getFullYear() === y
           })
-          setDayModal({ day, items })
+          if (y !== year || m !== month) { setYear(y); setMonth(m) }
+          setDayModal({ day: d, items })
         }} />
-        {/* Legend */}
-        <div style={{ display: 'flex', gap: 16, marginTop: 16, flexWrap: 'wrap' }}>
-          {[['#5ac8fa', 'วัดหน้างาน'], ['#C79A4B', 'ติดตั้ง'], ['var(--red)', 'รอแก้'], ['#C79A4B', 'วันหยุด'], ['#9ca3af', 'ร้านปิด (อา.)']].map(([c, l]) => (
-            <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: c, display: 'inline-block' }} />
-              <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{l}</span>
-            </div>
-          ))}
-        </div>
+        <div className="sc-sign" aria-hidden>Donna Design</div>
       </div>
 
       {/* List */}
