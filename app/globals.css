@@ -393,6 +393,8 @@ table.dn-list thead th:first-child { border-radius: 10px 0 0 10px; }
 table.dn-list thead th:last-child { border-radius: 0 10px 10px 0; }
 table.dn-list tbody tr { border-bottom: none !important; }
 table.dn-list tbody td { padding: 12px 14px !important; border-bottom: 1px solid var(--hairline) !important; font-size: 12.5px !important; line-height: 1.5; }
+/* ตัวหนา/ลิงก์ในช่องไม่ให้ใหญ่กว่าตัวหนังสือตาราง (บางหน้าตั้ง 13-15px ไว้เอง) */
+table.dn-list tbody td > b, table.dn-list tbody td > strong, table.dn-list tbody td > a, table.dn-list tbody td > span > b { font-size: inherit !important; }
 table.dn-list tbody tr:last-child td { border-bottom: none !important; }
 table.dn-list tbody tr:hover { background: var(--cream-2) !important; }
 table.dn-list input[type="checkbox"] { appearance: none; -webkit-appearance: none; width: 18px; height: 18px; border-radius: 6px; border: 1.5px solid var(--border-2); background: var(--cream-2); cursor: pointer; position: relative; vertical-align: middle; margin: 0; }

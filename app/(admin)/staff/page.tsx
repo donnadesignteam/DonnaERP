@@ -15,7 +15,7 @@ function Bal({ left, avail, used }: { left: number | null; avail: number | null;
   const low = left != null && avail != null && left <= avail * 0.25
   return (
     <span>
-      <b style={{ color: low ? 'var(--red)' : 'var(--ink)', fontSize: 14 }}>{n(left)}</b>
+      <b style={{ color: low ? 'var(--red)' : 'var(--ink)', fontSize: 12.5 }}>{n(left)}</b>
       <span style={{ color: 'var(--ink-4)', fontSize: 11 }}>/{n(avail)}</span>
       {used != null && used > 0 && <span style={{ color: 'var(--ink-3)', fontSize: 11 }}> · ใช้ {used}</span>}
     </span>
@@ -179,7 +179,7 @@ export default function StaffPage() {
                 <th style={{ ...th, textAlign: 'center' }}>ลาป่วย</th>
                 <th style={{ ...th, textAlign: 'center' }}>ลากิจ</th>
                 <th style={{ ...th, textAlign: 'center' }}>ลาพักร้อน</th>
-                <th style={{ ...th, textAlign: 'center' }}>WOP<br /><span style={{ fontWeight: 400 }}>เต็ม/ครึ่ง/ชม.</span></th>
+                <th style={{ ...th, textAlign: 'center' }}>WOP <span style={{ fontWeight: 400 }}>(เต็ม/ครึ่ง/ชม.)</span></th>
                 <th style={{ ...th, textAlign: 'center' }}>มาสาย</th>
                 <th style={{ ...th, textAlign: 'center' }}>ใบเตือน</th>
                 <th style={th}>หมายเหตุ</th>
