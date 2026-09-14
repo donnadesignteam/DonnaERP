@@ -475,7 +475,7 @@ export default function StaffDetailPage() {
             <>
               <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink)', marginBottom: 12 }}>ออเดอร์ที่ทำ (จากการสแกน) · {work.scans.length}</h2>
               <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'auto', boxShadow: 'var(--shadow)', marginBottom: 26 }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
+                <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
                   <thead><tr>
                     <th style={th}>ออเดอร์</th><th style={th}>ลูกค้า</th><th style={th}>ขั้นที่ทำ</th><th style={th}>สถานะปัจจุบัน</th><th style={th}>ล่าสุด</th>
                   </tr></thead>
@@ -522,7 +522,7 @@ export default function StaffDetailPage() {
                 <>
                   <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink)', margin: '12px 0' }}>ยอดขายรายเดือน</h2>
                   <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'auto', boxShadow: 'var(--shadow)', marginBottom: 26 }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 400 }}>
+                    <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 400 }}>
                       <thead><tr>
                         <th style={th}>เดือน</th><th style={{ ...th, textAlign: 'right' }}>ออเดอร์</th><th style={{ ...th, textAlign: 'right' }}>ยอดขาย</th>
                       </tr></thead>
@@ -564,7 +564,7 @@ export default function StaffDetailPage() {
                 )}
               </div>
               <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'auto', boxShadow: 'var(--shadow)', marginBottom: 26 }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+                <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
                   <thead><tr>
                     <th style={th}>วันที่</th><th style={th}>ออเดอร์</th><th style={th}>ลูกค้า</th><th style={th}>ประเภท</th><th style={th}>แพลตฟอร์ม</th><th style={th}>สถานะ</th><th style={{ ...th, textAlign: 'right' }}>ยอดขาย</th>
                   </tr></thead>
@@ -598,7 +598,7 @@ export default function StaffDetailPage() {
             <>
               <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink)', marginBottom: 12 }}>งานเคลม · {work.claims.length}</h2>
               <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'auto', boxShadow: 'var(--shadow)', marginBottom: 26 }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
+                <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
                   <thead><tr><th style={th}>ออเดอร์เดิม</th><th style={th}>ลูกค้า</th><th style={th}>ประเภทเคลม</th><th style={th}>สถานะ</th></tr></thead>
                   <tbody>
                     {work.claims.map((c, i) => (
@@ -623,7 +623,7 @@ export default function StaffDetailPage() {
 
           <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink)', marginBottom: 12 }}>ประวัติการลา ({leaves.length})</h2>
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'auto', boxShadow: 'var(--shadow)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+            <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
               <thead>
                 <tr>
                   <th style={th}>วันที่ลา</th>

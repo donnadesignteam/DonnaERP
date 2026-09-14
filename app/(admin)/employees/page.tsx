@@ -432,7 +432,7 @@ export default function EmployeesPage() {
         ) : shownLeaves.length === 0 ? (
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>{pendingFilter ? 'ไม่มีใบลาที่รออนุมัติ' : 'ไม่มีรายการลา'}</div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
                 {['รหัส','ชื่อ-นามสกุล','ชื่อเล่น','แผนก','วันที่ลา','ประเภท','เหตุผล','ใบรับรอง','สถานะ','หัวหน้า','บุคคล',''].map(h => (

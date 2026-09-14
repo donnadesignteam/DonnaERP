@@ -247,7 +247,7 @@ export default function StaffClaimsPage() {
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: '#FAFAFA' }}>
                   <th style={th}>ชื่อ / เคส</th>

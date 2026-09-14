@@ -381,3 +381,21 @@ html.dark .sc-leave { background: #2F2319; } html.dark .sc-closed { background: 
 .sc-modal label { color: var(--ink-3) !important; }
 .sc-mcancel { border-radius: 999px !important; background: var(--cream-2) !important; border: 1px solid var(--border-2) !important; color: var(--ink-2) !important; padding: 12px !important; font-family: inherit; }
 .sc-msave { border-radius: 999px !important; background: var(--brand) !important; color: #FFF8F0 !important; padding: 12px !important; box-shadow: 0 6px 16px rgba(158,106,73,0.25); font-family: inherit; }
+
+/* ════ ตารางรายการทุกหน้า — หน้าตาเดียวกับตารางหน้าออเดอร์/ภาพรวม (ใส่ className="dn-list" ที่ <table>) ════ */
+table.dn-list { border-collapse: separate !important; border-spacing: 0 !important; }
+*:has(> table.dn-list) { border-radius: 20px; }
+*:has(> table.dn-list) { padding: 10px 12px 4px; }
+table.dn-list thead tr { background: transparent !important; border-bottom: none !important; }
+table.dn-list thead th { background: var(--cream) !important; color: #8A6142 !important; font-weight: 600 !important; font-size: 12.5px !important; padding-top: 12px !important; padding-bottom: 12px !important; border-bottom: none !important; white-space: nowrap; }
+table.dn-list thead th > button { color: inherit !important; font-size: inherit !important; font-weight: inherit !important; font-family: inherit; }
+table.dn-list thead th:first-child { border-radius: 10px 0 0 10px; }
+table.dn-list thead th:last-child { border-radius: 0 10px 10px 0; }
+table.dn-list tbody tr { border-bottom: none !important; }
+table.dn-list tbody td { padding-top: 12px !important; padding-bottom: 12px !important; border-bottom: 1px solid var(--hairline) !important; font-weight: 500; }
+table.dn-list tbody tr:last-child td { border-bottom: none !important; }
+table.dn-list tbody tr:hover { background: var(--cream-2) !important; }
+table.dn-list input[type="checkbox"] { appearance: none; -webkit-appearance: none; width: 18px; height: 18px; border-radius: 6px; border: 1.5px solid var(--border-2); background: var(--cream-2); cursor: pointer; position: relative; vertical-align: middle; margin: 0; }
+table.dn-list input[type="checkbox"]:hover:not(:disabled) { border-color: var(--brand); }
+table.dn-list input[type="checkbox"]:checked { background: var(--brand); border-color: var(--brand); }
+table.dn-list input[type="checkbox"]:checked::after { content: ''; position: absolute; left: 5px; top: 1.5px; width: 5px; height: 10px; border: solid #FFF8F0; border-width: 0 2px 2px 0; transform: rotate(45deg); }

@@ -47,7 +47,7 @@ export default function PricingPage() {
         </div>
       ) : (
         <div style={{ ...glassCard, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
                 {columns.map(col => (

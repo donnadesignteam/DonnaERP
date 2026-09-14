@@ -173,7 +173,7 @@ export default function AdminWorkPage() {
       </div>
 
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: 'var(--shadow)', overflow: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
+        <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
           <thead>
             <tr>
               <th style={th}>แอดมิน</th>

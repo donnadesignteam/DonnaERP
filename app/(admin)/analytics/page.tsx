@@ -392,7 +392,7 @@ export default function AnalyticsPage() {
             <p style={{ color: 'var(--ink-3)', fontSize: 12.5, textAlign: 'center', padding: '12px 0' }}>ไม่มีข้อมูล</p>
           ) : (
             <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
                   <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--ink-3)', fontWeight: 500, fontSize: 11.5 }}>ชื่อ</th>

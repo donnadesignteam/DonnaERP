@@ -924,7 +924,7 @@ ${body}
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>ยังไม่มีเคสเคลม — กด “+ เพิ่มเคลม” แล้ววางข้อความจากไลน์ได้เลย</div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
                   <th style={{ padding: '10px 8px 10px 14px', width: 32 }}>

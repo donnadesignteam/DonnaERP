@@ -111,7 +111,7 @@ export default function WorkStatusPage() {
             <div style={{ marginTop: 40 }}>
               <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 16, color: 'var(--ink)' }}>บันทึกสถานะแผนก</h2>
               <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
                       <th style={{ textAlign: 'left', padding: '14px 20px', color: 'var(--ink-3)', fontWeight: 500 }}>เลขที่ออเดอร์</th>

@@ -1335,7 +1335,7 @@ export default function InstallationsPage() {
         ) : displayed.length === 0 ? (
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>ไม่มีรายการ</div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
                 {/* หัวตาราง = COLS (ชุด/ลำดับเดียวกับแท็บงานติดตั้งในหมวดออเดอร์ ยกเว้นวันผลิตที่เหลือ) */}

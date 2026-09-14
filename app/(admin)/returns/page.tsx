@@ -317,7 +317,7 @@ export default function ReturnParcelsPage() {
                : <>ยังไม่มีพัสดุส่งกลับ — กด &quot;+ เพิ่มพัสดุ&quot; ด้านบนเพื่อเริ่มลงรายการแรก</>}
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 13 }}>
+          <table className="dn-list" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 13 }}>
             <thead>
               <tr>
                 <th style={th}>วันที่ลง</th>
