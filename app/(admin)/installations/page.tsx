@@ -1953,49 +1953,61 @@ export default function InstallationsPage() {
 
       {/* Day modal */}
       {dayModal && (
-        <div onClick={() => setDayModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 560, maxHeight: '80vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
-              <h2 style={{ fontSize: 17, fontWeight: 700 }}>วันที่ {dayModal.day} {TH_MONTHS[month]} {year + 543}</h2>
-              <button onClick={() => setDayModal(null)} style={{ border: 'none', background: 'rgba(0,0,0,0.10)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>✕</button>
+        <div className="sc-mback" onClick={() => setDayModal(null)}>
+          <div className="sc-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 560 }}>
+            <div className="sc-mhead">
+              <div className="sc-mdate">
+                <div className="sc-mday">{dayModal.day}</div>
+                <div>
+                  <div className="sc-mdow">{['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'][new Date(year, month, dayModal.day).getDay()]}</div>
+                  <div className="sc-mmon">{TH_MONTHS[month]} {year + 543}</div>
+                </div>
+              </div>
+              <button className="sc-mclose" onClick={() => setDayModal(null)} aria-label="ปิด">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+              </button>
             </div>
+
             {(() => {
               const h = HOLIDAYS[`${year}-${String(month + 1).padStart(2, '0')}-${String(dayModal.day).padStart(2, '0')}`]
-              return h ? (
-                <div style={{ background: '#fff9e6', border: '1px solid #f0d98c', borderRadius: 10, padding: '10px 14px', marginBottom: 16, color: '#b45309', fontSize: 13, fontWeight: 600 }}>
-                  🏖️ วันหยุดร้าน · {h}
+              const sun = new Date(year, month, dayModal.day).getDay() === 0
+              return (h || sun) ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {sun && <div className="sc-chip" style={{ background: '#ECE9E7', padding: '10px 14px' }}><i className="sc-dot" style={{ background: '#9A9AA6' }} /><div className="sc-chip-title" style={{ fontSize: 13, flex: 1 }}>ร้านปิด</div><div className="sc-chip-sub" style={{ marginTop: 0, fontSize: 12 }}>วันอาทิตย์</div></div>}
+                  {h && <div className="sc-chip" style={{ background: '#F6E9DB', padding: '10px 14px' }}><i className="sc-dot" style={{ background: '#D9AE86' }} /><div className="sc-chip-title" style={{ fontSize: 13, flex: 1 }}>{h}</div><div className="sc-chip-sub" style={{ marginTop: 0, fontSize: 12 }}>วันหยุดร้าน</div></div>}
                 </div>
               ) : null
             })()}
+
+            <div className="sc-msec">นัดหมาย <span>{dayModal.items.length}</span></div>
             {dayModal.items.length === 0 ? (
-              <p style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 24 }}>ไม่มีนัดหมาย</p>
-            ) : dayModal.items.map(ins => {
+              <div className="sc-mempty">ไม่มีนัดหมาย</div>
+            ) : [...dayModal.items].sort((x, y) => x.appointment_datetime.localeCompare(y.appointment_datetime)).map(ins => {
               const bg = rowColor(ins)
               return (
-                <div key={ins.id} style={{ borderLeft: `4px solid ${bg}`, borderRadius: 10, padding: '14px 16px', background: 'var(--bg)', marginBottom: 12 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{ fontWeight: 700, color: 'var(--ink)' }}>{installSerial(ins.serial_no)}</span>
-                    <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>
-                      {ins.appointment_datetime ? new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : ''}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>{ins.customer_real_name || ins.customer_id}</div>
-                  <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>{ins.work_type} · {ins.province}</div>
-                  {ins.phone && <div style={{ fontSize: 13, marginTop: 4 }}>📞 {ins.phone}</div>}
-                  {ins.location_link && <a href={ins.location_link} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: 'var(--blue)', display: 'block', marginTop: 4 }}>📍 ดูแผนที่</a>}
-                  <div style={{ marginTop: 8 }}>
-                    <span style={{ background: bg + '22', color: bg, padding: '2px 8px', borderRadius: 980, fontSize: 11, fontWeight: 600 }}>{statusLabel(normStatus(ins.installation_status), ins.work_type)}</span>
+                <div key={ins.id} className="sc-mitem" style={{ background: CHIP_BG[bg] ?? 'var(--cream-2)' }}>
+                  <i className="sc-dot" style={{ background: bg }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+                      <span className="sc-mname">{ins.customer_real_name || ins.customer_id} <small>{installSerial(ins.serial_no)}</small></span>
+                      <span className="sc-mtime">{ins.appointment_datetime ? new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.' : ''}</span>
+                    </div>
+                    <div className="sc-mnote" style={{ marginTop: 3 }}>{[ins.work_type, ins.province, ins.install_zone].filter(Boolean).join(' · ')}</div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 8 }}>
+                      <span className="sc-mpill" style={{ color: bg, background: 'rgba(255,255,255,0.65)' }}>{statusLabel(normStatus(ins.installation_status), ins.work_type)}</span>
+                      {ins.phone && <a href={`tel:${ins.phone}`} className="sc-mpill" style={{ textDecoration: 'none', background: 'rgba(255,255,255,0.65)' }}>📞 {ins.phone}</a>}
+                      {ins.location_link && <a href={ins.location_link} target="_blank" rel="noreferrer" className="sc-mpill" style={{ textDecoration: 'none', background: 'rgba(255,255,255,0.65)' }}>📍 ดูแผนที่</a>}
+                    </div>
                   </div>
                 </div>
               )
             })}
-            <button onClick={() => {
+            <button className="sc-madd" onClick={() => {
               const d = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayModal.day).padStart(2, '0')}`
               setDayModal(null)
               openAdd()
               setApptDate(d)
-            }}
-              style={{ marginTop: 8, width: '100%', padding: '10px', borderRadius: 10, border: '1px dashed var(--border-2)', background: 'var(--surface)', color: 'var(--blue)', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
+            }}>
               + เพิ่มรายการวันนี้
             </button>
           </div>
@@ -2176,9 +2188,9 @@ export default function InstallationsPage() {
 
       {/* Add/Edit modal */}
       {modal && (
-        <div onMouseDown={e => { if (e.target === e.currentTarget) closeModal() }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 1000, padding: 24 }}>
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 680, maxHeight: '90vh', overflowY: 'auto' }}>
-            <h2 style={{ fontSize: 17, fontWeight: 700, marginBottom: 20 }}>
+        <div className="sc-mback" onMouseDown={e => { if (e.target === e.currentTarget) closeModal() }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 1000, padding: 24 }}>
+          <div className="sc-modal" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 680, maxHeight: '90vh', overflowY: 'auto' }}>
+            <h2 className="sc-mtitle">
               {modal.mode === 'add' ? '+ เพิ่มรายการติดตั้ง' : 'แก้ไขรายการ'}
             </h2>
             {modal.mode === 'add' && (
@@ -2299,9 +2311,9 @@ export default function InstallationsPage() {
             {ph.trigger()}
 
             <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-              <button onClick={closeModal}
+              <button className="sc-mcancel" onClick={closeModal}
                 style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ยกเลิก</button>
-              <button onClick={save} disabled={saving}
+              <button className="sc-msave" onClick={save} disabled={saving}
                 style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
                 {saving ? 'กำลังบันทึก…' : 'บันทึก'}
               </button>

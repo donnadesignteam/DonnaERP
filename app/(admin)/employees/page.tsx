@@ -505,48 +505,52 @@ export default function EmployeesPage() {
 
       {/* Day detail modal (คลิกวันในปฏิทิน) */}
       {dayModal && (
-        <div onClick={() => setDayModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 520, maxHeight: '80vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-              <h2 style={{ fontSize: 17, fontWeight: 700 }}>วันที่ {dayModal.day} {TH_MONTHS[month]} {year + 543}</h2>
-              <button onClick={() => setDayModal(null)} style={{ border: 'none', background: 'rgba(0,0,0,0.10)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>✕</button>
+        <div className="sc-mback" onClick={() => setDayModal(null)}>
+          <div className="sc-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
+            <div className="sc-mhead">
+              <div className="sc-mdate">
+                <div className="sc-mday">{dayModal.day}</div>
+                <div>
+                  <div className="sc-mdow">{['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'][new Date(dayModal.ymd + 'T00:00').getDay()]}</div>
+                  <div className="sc-mmon">{TH_MONTHS[month]} {year + 543}</div>
+                </div>
+              </div>
+              <button className="sc-mclose" onClick={() => setDayModal(null)} aria-label="ปิด">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+              </button>
             </div>
 
-            {/* แถบสถานะวัน */}
-            {new Date(dayModal.ymd + 'T00:00').getDay() === 0 && (
-              <div style={{ background: '#f4f4f5', border: '1px solid #e4e4e7', borderRadius: 10, padding: '9px 14px', marginBottom: 10, color: '#52525b', fontSize: 13, fontWeight: 600 }}>🏪 ร้านปิด (วันอาทิตย์)</div>
-            )}
-            {HOLIDAYS[dayModal.ymd] && (
-              <div style={{ background: '#fff9e6', border: '1px solid #f0d98c', borderRadius: 10, padding: '9px 14px', marginBottom: 10, color: '#b45309', fontSize: 13, fontWeight: 600 }}>🏖️ วันหยุดร้าน · {HOLIDAYS[dayModal.ymd]}</div>
-            )}
-            {CAMPAIGNS[dayModal.ymd] && (
-              <div style={{ background: '#fff3e6', border: '1px solid #f0c89c', borderRadius: 10, padding: '9px 14px', marginBottom: 10, color: '#c2510a', fontSize: 13, fontWeight: 600 }}>📣 แคมเปญ · {CAMPAIGNS[dayModal.ymd]}</div>
-            )}
-            {RED_ZONES.has(dayModal.ymd) && (
-              <div style={{ background: '#fff0f0', border: '1px solid #f5b5b5', borderRadius: 10, padding: '9px 14px', marginBottom: 10, color: 'var(--red)', fontSize: 13, fontWeight: 600 }}>🔴 ช่วงห้ามลา (Red Zone)</div>
-            )}
+            {/* แถบสถานะวัน — การ์ดสีเดียวกับในปฏิทิน */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {new Date(dayModal.ymd + 'T00:00').getDay() === 0 && <ModalTag kind="closed" title="ร้านปิด" sub="วันอาทิตย์" />}
+              {HOLIDAYS[dayModal.ymd] && <ModalTag kind="holiday" title={HOLIDAYS[dayModal.ymd]} sub="วันหยุดร้าน" />}
+              {CAMPAIGNS[dayModal.ymd] && <ModalTag kind="campaign" title={CAMPAIGNS[dayModal.ymd]} sub="แคมเปญ" />}
+              {RED_ZONES.has(dayModal.ymd) && <ModalTag kind="redzone" title="RedZone" sub="ช่วงห้ามลา" />}
+            </div>
 
-            <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 600, margin: '14px 0 8px' }}>การลา ({dayModal.leaves.length})</div>
+            <div className="sc-msec">การลา <span>{dayModal.leaves.length}</span></div>
             {dayModal.leaves.length === 0 ? (
-              <p style={{ color: 'var(--ink-3)', textAlign: 'center', padding: '18px 0', fontSize: 13 }}>ไม่มีการลาในวันนี้</p>
+              <div className="sc-mempty">ไม่มีการลาในวันนี้</div>
             ) : dayModal.leaves.map(l => (
-              <div key={l.id} style={{ borderLeft: '4px solid var(--blue)', borderRadius: 10, padding: '12px 14px', background: 'var(--bg)', marginBottom: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
-                  <span style={{ fontWeight: 700 }}>{l.employee_nickname || l.employee_name} <span style={{ fontWeight: 400, color: 'var(--ink-3)', fontSize: 13 }}>{l.employee_code}{l.department ? ` · ${l.department}` : ''}</span></span>
-                  {l.leave_time && <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{l.leave_time}</span>}
+              <div key={l.id} className="sc-mitem">
+                <i className="sc-dot" style={{ background: '#A8714F' }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+                    <span className="sc-mname">{l.employee_nickname || l.employee_name} <small>{l.employee_code}{l.department ? ` · ${l.department}` : ''}</small></span>
+                    {l.leave_time && <span className="sc-mtime">{l.leave_time}</span>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 6 }}>
+                    <span className="sc-mpill">{l.leave_type}</span>
+                    {l.leave_status && <span className="sc-mpill" style={{ color: STATUS_COLOR[l.leave_status] || 'var(--ink-3)', background: (STATUS_COLOR[l.leave_status] || '#8B7460') + '1f' }}>{l.leave_status}</span>}
+                    {l.leave_end_date && l.leave_end_date !== l.leave_date && <span className="sc-mtime">{rangeDays(l.leave_date, l.leave_end_date)} วัน</span>}
+                  </div>
+                  {l.reason && <div className="sc-mnote">{l.reason}</div>}
+                  {l.medical_cert_url && <a href={l.medical_cert_url} target="_blank" rel="noreferrer" className="sc-mlink">📄 ใบรับรองแพทย์</a>}
                 </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <span style={{ background: 'var(--blue)22', color: 'var(--blue)', padding: '2px 9px', borderRadius: 980, fontSize: 11, fontWeight: 600 }}>{l.leave_type}</span>
-                  {l.leave_status && <span style={{ fontSize: 12, color: STATUS_COLOR[l.leave_status] || 'var(--ink-3)', fontWeight: 600 }}>{l.leave_status}</span>}
-                  {l.leave_end_date && l.leave_end_date !== l.leave_date && <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>({rangeDays(l.leave_date, l.leave_end_date)} วัน)</span>}
-                </div>
-                {l.reason && <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 6 }}>{l.reason}</div>}
-                {l.medical_cert_url && <a href={l.medical_cert_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: 'var(--blue)', display: 'inline-block', marginTop: 6, textDecoration: 'none' }}>📄 ใบรับรองแพทย์</a>}
               </div>
             ))}
 
-            <button onClick={() => { setForm(f => ({ ...f, leave_date: dayModal.ymd, leave_end_date: dayModal.ymd })); setDayModal(null); setModal(true) }}
-              style={{ marginTop: 8, width: '100%', padding: '10px', borderRadius: 10, border: '1px dashed var(--border-2)', background: 'var(--surface)', color: 'var(--blue)', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
+            <button className="sc-madd" onClick={() => { setForm(f => ({ ...f, leave_date: dayModal.ymd, leave_end_date: dayModal.ymd })); setDayModal(null); setModal(true) }}>
               + เพิ่มลาในวันนี้
             </button>
           </div>
@@ -555,9 +559,9 @@ export default function EmployeesPage() {
 
       {/* Add leave modal */}
       {modal && (
-        <div onClick={() => { setModal(false); setCertFile(null) }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto' }}>
-            <h2 style={{ fontSize: 17, fontWeight: 700, marginBottom: 20 }}>+ เพิ่มรายการลา</h2>
+        <div className="sc-mback" onClick={() => { setModal(false); setCertFile(null) }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+          <div className="sc-modal" onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto' }}>
+            <h2 className="sc-mtitle">+ เพิ่มรายการลา</h2>
 
             <div style={{ marginBottom: 14, position: 'relative' }}>
               <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 5 }}>ชื่อพนักงาน (ชื่อเล่น / ชื่อจริง / รหัส)</label>
@@ -671,9 +675,9 @@ export default function EmployeesPage() {
             </div>
 
             <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-              <button onClick={() => { setModal(false); setCertFile(null) }}
+              <button className="sc-mcancel" onClick={() => { setModal(false); setCertFile(null) }}
                 style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ยกเลิก</button>
-              <button onClick={save} disabled={saving || !form.employee_code || !form.leave_date || !form.leave_type || vacBlocked}
+              <button className="sc-msave" onClick={save} disabled={saving || !form.employee_code || !form.leave_date || !form.leave_type || vacBlocked}
                 style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', cursor: vacBlocked ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 600, opacity: (!form.employee_code || !form.leave_date || !form.leave_type || vacBlocked) ? 0.5 : 1 }}>
                 {saving ? 'กำลังบันทึก…' : 'บันทึก'}
               </button>
@@ -700,6 +704,19 @@ function EventChip({ it, big, onClick }: { it: CalItem; big?: boolean; onClick?:
         {it.sub && <div className="sc-chip-sub">{it.sub}</div>}
       </div>
       <svg className="sc-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+    </div>
+  )
+}
+
+// แถบสถานะวันในหน้าต่างรายละเอียดวัน (สีเดียวกับการ์ดในปฏิทิน)
+function ModalTag({ kind, title, sub }: { kind: CalItem['kind']; title: string; sub: string }) {
+  return (
+    <div className={`sc-chip sc-${kind}`} style={{ padding: '10px 14px', cursor: 'default' }}>
+      <i className="sc-dot" />
+      <div style={{ minWidth: 0, flex: 1, display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+        <div className="sc-chip-title" style={{ fontSize: 13 }}>{title}</div>
+        <div className="sc-chip-sub" style={{ marginTop: 0, fontSize: 12 }}>{sub}</div>
+      </div>
     </div>
   )
 }
