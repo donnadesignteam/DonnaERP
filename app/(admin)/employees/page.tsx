@@ -91,6 +91,8 @@ export default function EmployeesPage() {
   const [dayModal, setDayModal] = useState<{ ymd: string; day: number; leaves: Leave[] } | null>(null)
   // กล่อง "รออนุมัติ" เหนือรายการลา — แบบเดียวกับปุ่มกรอง "ข้อมูลไม่ครบ / ยังไม่ปริ้น" ในหมวดออเดอร์
   const [pendingFilter, setPendingFilter] = useState(false)
+  const [view, setView] = useState<'month' | 'week' | 'day'>('month')
+  const [selDay, setSelDay] = useState(new Date().getDate())   // วันที่ยึดของมุมมองสัปดาห์/วัน
 
   const load = async () => {
     setError('')
@@ -284,76 +286,122 @@ export default function EmployeesPage() {
   const pendingLeaves = leaves.filter(isPending)
   const shownLeaves = pendingFilter ? pendingLeaves : leaves
 
+  // ── ปฏิทิน: เลื่อน/ไปวันที่ ──
+  const goTo = (dt: Date) => { setYear(dt.getFullYear()); setMonth(dt.getMonth()); setSelDay(dt.getDate()) }
+  const shift = (dir: number) => {
+    if (view === 'month') goTo(new Date(year, month + dir, 1))
+    else goTo(new Date(year, month, selDay + dir * (view === 'week' ? 7 : 1)))
+  }
+  const openDay = (ymd: string, d: number, y = year, m = month) => {
+    const dayLeaves = leaves.filter(l => ymd >= l.leave_date && ymd <= (l.leave_end_date || l.leave_date))
+    if (y !== year || m !== month) { setYear(y); setMonth(m) }
+    setDayModal({ ymd, day: d, leaves: dayLeaves })
+  }
+  const weekStart = new Date(year, month, selDay - ((new Date(year, month, selDay).getDay() + 6) % 7))
+  const navTitle = view === 'week'
+    ? (() => { const e = new Date(weekStart); e.setDate(e.getDate() + 6)
+        return weekStart.getMonth() === e.getMonth()
+          ? `${weekStart.getDate()}–${e.getDate()} ${TH_MONTHS[e.getMonth()]} ${e.getFullYear() + 543}`
+          : `${weekStart.getDate()} ${TH_MONTHS[weekStart.getMonth()].slice(0, 3)}. – ${e.getDate()} ${TH_MONTHS[e.getMonth()].slice(0, 3)}. ${e.getFullYear() + 543}` })()
+    : view === 'day' ? `${selDay} ${TH_MONTHS[month]} ${year + 543}`
+    : `${TH_MONTHS[month]} ${year + 543}`
+  // เดือน = เฉพาะแถวที่มีวันจริง (ไม่ต้องครบ 6 แถว) · สัปดาห์ = 7 ช่องของสัปดาห์ที่เลือก
+  const gridCells: ({ y: number; m: number; d: number } | null)[] = view === 'week'
+    ? Array.from({ length: 7 }, (_, i) => { const dt = new Date(weekStart); dt.setDate(dt.getDate() + i); return { y: dt.getFullYear(), m: dt.getMonth(), d: dt.getDate() } })
+    : Array.from({ length: Math.ceil((first + dim) / 7) * 7 }, (_, i) => { const d = i - first + 1; return d > 0 && d <= dim ? { y: year, m: month, d } : null })
+  // รายการของวัน → การ์ดในช่อง (ลำดับ: วันหยุด · ร้านปิด · แคมเปญ · RedZone · ใบลา)
+  const dayItems = (ymd: string): CalItem[] => {
+    const [yy, mm, dd] = ymd.split('-').map(Number)
+    const out: CalItem[] = []
+    if (HOLIDAYS[ymd]) out.push({ key: 'h', kind: 'holiday', title: HOLIDAYS[ymd], sub: 'วันหยุดร้าน' })
+    if (new Date(yy, mm - 1, dd).getDay() === 0) out.push({ key: 's', kind: 'closed', title: 'ร้านปิด', sub: 'วันอาทิตย์' })
+    if (CAMPAIGNS[ymd]) out.push({ key: 'c', kind: 'campaign', title: CAMPAIGNS[ymd], sub: 'แคมเปญ' })
+    if (RED_ZONES.has(ymd)) out.push({ key: 'r', kind: 'redzone', title: 'RedZone', sub: 'ช่วงห้ามลา' })
+    leaves.filter(l => ymd >= l.leave_date && ymd <= (l.leave_end_date || l.leave_date)).forEach(l => out.push({
+      key: l.id, kind: 'leave', title: l.employee_nickname || l.employee_name,
+      sub: [l.leave_type, l.leave_time].filter(Boolean).join(' · '), status: l.leave_status,
+    }))
+    return out
+  }
+
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px' }}>ปฏิทินร้าน</h1>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={() => window.print()}
-            style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border-2)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-            🖨️ ปริ้นปฏิทิน
-          </button>
-          <button onClick={() => setModal(true)}
-            style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,122,255,0.3)' }}>
-            + เพิ่มรายการ
-          </button>
+      <div className="sc-head">
+        <div>
+          <h1 className="sc-title">ปฏิทินร้าน</h1>
+          <p className="sc-sub">วันหยุด แคมเปญ ช่วงห้ามลา และใบลาของทีม ในที่เดียว</p>
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button className="sc-btn-ghost" onClick={() => window.print()}>🖨️ ปริ้นปฏิทิน</button>
+          <button className="sc-btn-main" onClick={() => setModal(true)}>+ เพิ่มรายการ</button>
         </div>
       </div>
 
-      {/* Calendar */}
-      <div className="print-area" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '24px', marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-          <button className="no-print" onClick={prevMonth} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 14, background: '#fff' }}>‹</button>
-          <h2 style={{ fontSize: 17, fontWeight: 600, flex: 1, textAlign: 'center', color: 'var(--ink)' }}>{TH_MONTHS[month]} {year + 543}</h2>
-          <button className="no-print" onClick={nextMonth} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 14, background: '#fff' }}>›</button>
+      {/* Calendar — ดีไซน์ตามภาพต้นแบบ: แท็บ เดือน/สัปดาห์/วัน · ช่องมีเส้นบาง · รายการเป็นการ์ดพาสเทลมีจุดสี */}
+      <div className="print-area sc-card">
+        <div className="sc-toolbar">
+          <div className="sc-seg no-print">
+            {([['month', 'เดือน'], ['week', 'สัปดาห์'], ['day', 'วัน']] as const).map(([k, l]) => (
+              <button key={k} className={view === k ? 'on' : ''} onClick={() => setView(k)}>{l}</button>
+            ))}
+          </div>
+          <div className="sc-nav">
+            <button className="sc-circle no-print" onClick={() => shift(-1)} aria-label="ก่อนหน้า">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+            </button>
+            <h2 className="sc-month">{navTitle}</h2>
+            <button className="sc-circle no-print" onClick={() => shift(1)} aria-label="ถัดไป">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+            </button>
+            <label className="sc-circle no-print" title="เลือกเดือน" style={{ position: 'relative' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="16" rx="2.5" /><path d="M3 10h18M8 3v4M16 3v4" /></svg>
+              <input type="month" value={`${year}-${String(month + 1).padStart(2, '0')}`}
+                onChange={e => { const [y, m] = e.target.value.split('-').map(Number); if (y && m) goTo(new Date(y, m - 1, 1)) }}
+                style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
+            </label>
+            <button className="sc-pill no-print" onClick={() => goTo(new Date())}>วันนี้</button>
+          </div>
+          <div className="sc-legend">
+            {[['#C0564A', 'RedZone'], ['#C79A4B', 'Campaign'], ['#D9AE86', 'วันหยุด'], ['#A8714F', 'ใบลา'], ['#9A9AA6', 'ร้านปิด (อา.)']].map(([c, l]) => (
+              <span key={l}><i style={{ background: c }} />{l}</span>
+            ))}
+          </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2, marginBottom: 4 }}>
-          {DAYS.map(d => <div key={d} style={{ textAlign: 'center', fontSize: 12, fontWeight: 600, color: 'var(--ink-3)', padding: '6px 0' }}>{d}</div>)}
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2 }}>
-          {cells.map((day, i) => {
-            if (!day) return <div key={i} />
-            const ymd = toYMD(year, month, day)
-            const isRedZone = RED_ZONES.has(ymd)
-            const campaign = CAMPAIGNS[ymd]
-            const holiday = HOLIDAYS[ymd]
-            const dayLeaves = leaves.filter(l => ymd >= l.leave_date && ymd <= (l.leave_end_date || l.leave_date))
-            const isToday = ymd === todayYmd()
-            const isSunday = new Date(year, month, day).getDay() === 0
-
-            let bg = '#fff'
-            if (holiday) bg = '#fff9e6'
-            else if (campaign) bg = '#fff3e6'
-            else if (isRedZone) bg = '#fff0f0'
-            else if (isSunday) bg = '#f4f4f5'
-
+        {view === 'day' ? (
+          (() => {
+            const ymd = toYMD(year, month, selDay)
+            const items = dayItems(ymd)
             return (
-              <div key={i} onClick={() => setDayModal({ ymd, day, leaves: dayLeaves })} style={{ minHeight: 85, background: bg, borderRadius: 8, padding: '6px 7px', border: isToday ? '2px solid var(--blue)' : '1px solid rgba(0,0,0,0.06)', position: 'relative', overflow: 'hidden', cursor: 'pointer' }}>
-                <div style={{ fontSize: 12, fontWeight: isToday ? 700 : 400, color: isToday ? 'var(--blue)' : 'var(--ink)', marginBottom: 2 }}>{day}</div>
-                {isSunday && <div style={{ fontSize: 9, color: '#6b7280', fontWeight: 600, lineHeight: 1.3, marginBottom: 2 }}>ร้านปิด</div>}
-                {holiday && <div style={{ fontSize: 9, color: '#b45309', fontWeight: 600, lineHeight: 1.3, marginBottom: 2 }}>{holiday}</div>}
-                {campaign && <div style={{ fontSize: 9, color: '#c2510a', fontWeight: 600, lineHeight: 1.3, marginBottom: 2 }}>{campaign}</div>}
-                {dayLeaves.slice(0, 2).map(l => (
-                  <div key={l.id} style={{ background: 'var(--blue)22', borderLeft: '2px solid var(--blue)', borderRadius: 2, padding: '1px 4px', fontSize: 9, color: 'var(--blue)', fontWeight: 600, marginBottom: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {l.employee_nickname} ({l.leave_type?.replace('ลา', '')})
-                  </div>
-                ))}
-                {dayLeaves.length > 2 && <div style={{ fontSize: 9, color: 'var(--ink-3)' }}>+{dayLeaves.length - 2}</div>}
+              <div className="sc-dayview">
+                <div className="sc-dayview-head">{DAYS[(new Date(year, month, selDay).getDay() + 6) % 7]} {selDay} {TH_MONTHS[month]} {year + 543}</div>
+                {items.length === 0
+                  ? <div className="sc-empty">ไม่มีรายการในวันนี้</div>
+                  : items.map(it => <EventChip key={it.key} it={it} big onClick={() => openDay(ymd, selDay)} />)}
               </div>
             )
-          })}
-        </div>
-
-        {/* Legend */}
-        <div style={{ display: 'flex', gap: 16, marginTop: 14, flexWrap: 'wrap' }}>
-          {[['var(--red)','RedZone'],['#C79A4B','Campaign'],['#C79A4B','วันหยุด'],['var(--blue)','ใบลา'],['#9ca3af','ร้านปิด (อา.)']].map(([c,l]) => (
-            <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: c, display: 'inline-block' }} />
-              <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{l}</span>
-            </div>
-          ))}
-        </div>
+          })()
+        ) : (
+          <div className="sc-grid">
+            {DAYS.map(d => <div key={d} className="sc-dow">{d}</div>)}
+            {gridCells.map((c, i) => {
+              if (!c) return <div key={i} className="sc-cell sc-out" />
+              const ymd = toYMD(c.y, c.m, c.d)
+              const items = dayItems(ymd)
+              const isToday = ymd === todayYmd()
+              const max = view === 'week' ? 99 : 3
+              return (
+                <div key={i} className={`sc-cell${view === 'week' ? ' sc-tall' : ''}${isToday ? ' sc-today' : ''}${c.m !== month ? ' sc-dim' : ''}`}
+                  onClick={() => openDay(ymd, c.d, c.y, c.m)}>
+                  <div className="sc-num">{c.d}</div>
+                  {items.slice(0, max).map(it => <EventChip key={it.key} it={it} />)}
+                  {items.length > max && <div className="sc-more">+{items.length - max} รายการ</div>}
+                </div>
+              )
+            })}
+          </div>
+        )}
+        <div className="sc-sign" aria-hidden>Donna Design</div>
       </div>
 
       {/* Leave list */}
@@ -637,6 +685,22 @@ export default function EmployeesPage() {
 
       {/* กล่องยืนยัน (ลบใบลา) — ต้องอยู่ท้ายสุดเพื่อทับทุกโมดัล */}
       {confirmDialog}
+    </div>
+  )
+}
+
+// ── การ์ดรายการในช่องปฏิทิน (สีตามชนิด เหมือนภาพต้นแบบ) ──
+type CalItem = { key: string; kind: 'holiday' | 'closed' | 'campaign' | 'redzone' | 'leave'; title: string; sub?: string; status?: string }
+function EventChip({ it, big, onClick }: { it: CalItem; big?: boolean; onClick?: () => void }) {
+  return (
+    <div className={`sc-chip sc-${it.kind}${big ? ' sc-big' : ''}`} onClick={onClick}
+      title={[it.title, it.sub, it.status].filter(Boolean).join(' · ')}>
+      <i className="sc-dot" />
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div className="sc-chip-title">{it.title}</div>
+        {it.sub && <div className="sc-chip-sub">{it.sub}</div>}
+      </div>
+      <svg className="sc-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
     </div>
   )
 }
