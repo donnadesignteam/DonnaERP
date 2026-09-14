@@ -1077,8 +1077,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
         {/* ป้ายหน้าตาเดียวกับหน้าภาพรวม (.dn-pill: กว้าง 100 · ตัวน้ำตาลเข้ม · พื้นสีตามขั้นจาก pillBg) — กดแล้วเลือกสถานะได้ */}
         <CreamSelect value={r.order_status || ''} onChange={v => updateField(r.id, 'order_status', v)}
           className="dn-pill ow-pill" style={{ color: pillInk(r.order_status || ''), background: pillBg(r.order_status || '') }} menuMinWidth={170}
-          options={flow.map(s => ({ value: s, label: s, color: PROD_STATUS_COLOR[s] }))}
-          renderValue={o => <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{o?.label ?? '—'}</span>} />
+          options={flow.map(s => ({ value: s, label: r.is_installation && s === 'จัดส่งแล้ว' ? 'ติดตั้งแล้ว' : s, color: PROD_STATUS_COLOR[s] }))}
+          renderValue={o => <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{o?.label ?? ((r.is_installation && r.order_status === 'จัดส่งแล้ว' ? 'ติดตั้งแล้ว' : r.order_status) || '—')}</span>} />
       </td>
     )
   }

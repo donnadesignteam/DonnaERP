@@ -194,6 +194,9 @@ export function OrderDetailBody({ row, afterShipping, wide }: { row: Row; afterS
   const shipments = (row.shipments as Shipment[] | null) ?? []
   const tracking = shipments.map(sp => sp?.no).filter(Boolean).join(', ')
   const status = String(row.order_status ?? '')
+  // งานติดตั้งที่ติ๊กเสร็จ ในระบบเก็บเป็น "จัดส่งแล้ว" (ขั้นเดียวกับออเดอร์ส่งของ) → โชว์เป็น "ติดตั้งแล้ว" ให้ตรงงาน
+  const isInstall = !!row.is_installation
+  const showStatus = (st: string) => (isInstall && st === 'จัดส่งแล้ว' ? 'ติดตั้งแล้ว' : st)
 
   // ไทม์ไลน์: เอาสถานะแรกสุดของแต่ละขั้นจาก status_history เรียงตามเวลา
   const hist = ((row.status_history as Hist[] | null) ?? [])
@@ -241,7 +244,7 @@ export function OrderDetailBody({ row, afterShipping, wide }: { row: Row; afterS
 
         <div style={{ borderLeft: '1px solid var(--hairline)', paddingLeft: 18 }}>
           <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginBottom: 8 }}>สถานะปัจจุบัน</div>
-          <span className="dn-pill" style={{ color: pillInk(status), background: pillBg(status) }}>{status || '—'}</span>
+          <span className="dn-pill" style={{ color: pillInk(status), background: pillBg(status) }}>{showStatus(status) || '—'}</span>
         </div>
 
         <div style={{ borderLeft: '1px solid var(--hairline)', paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -285,7 +288,7 @@ export function OrderDetailBody({ row, afterShipping, wide }: { row: Row; afterS
                   </div>
                   <div style={{ textAlign: 'center', marginTop: 8, fontSize: 12.5, fontWeight: last ? 700 : 500,
                                 color: last ? 'var(--brand)' : 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {h.status}
+                    {showStatus(h.status ?? '')}
                   </div>
                   <div style={{ textAlign: 'center', marginTop: 2, fontSize: 11, color: 'var(--ink-4)', whiteSpace: 'nowrap' }}>
                     {h.at ? fmtDate(h.at) : ''}
@@ -362,7 +365,7 @@ export function OrderDetailBody({ row, afterShipping, wide }: { row: Row; afterS
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>สถานะ</span>
-              {status === 'จัดส่งแล้ว' ? <DeliveredPill /> : (
+              {status === 'จัดส่งแล้ว' ? <DeliveredPill label={isInstall ? 'ติดตั้งแล้ว' : 'จัดส่งสำเร็จ'} /> : (
                 <span className="dn-pill" style={{ minWidth: 0, fontSize: 11.5, padding: '2px 10px', color: '#6B4326', background: pillBg(status) }}>
                   {status || '—'}
                 </span>
