@@ -241,6 +241,28 @@ export default function ClaimsWorkspace() {
     else setError('ไม่พบงานเคลมใบนี้ (อาจถูกลบไปแล้ว)')
   }, [fetched, rows, modal])   // eslint-disable-line react-hooks/exhaustive-deps
 
+  // มาจากหน้าพัสดุส่งกลับด้วยลิงก์ /claims?focus=<id> → ล้างตัวกรองให้แถวโผล่ เลื่อนไปหาแล้วกระพริบแถวนั้น (ไม่เปิดฟอร์ม)
+  const [flashId, setFlashId] = useState<string | null>(null)
+  useEffect(() => {
+    const want = new URLSearchParams(window.location.search).get('focus')
+    if (!want) return
+    if (!rows.some(r => r.id === want)) {
+      if (!fetched) return
+      window.history.replaceState(null, '', window.location.pathname)
+      setError('ไม่พบงานเคลมใบนี้ (อาจถูกลบไปแล้ว)')
+      return
+    }
+    window.history.replaceState(null, '', window.location.pathname)
+    setTab('all'); setMonth('all'); setSearch('')
+    setFlashId(want)
+  }, [fetched, rows])   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!flashId) return
+    const t0 = setTimeout(() => document.querySelector(`[data-claim-row="${flashId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
+    const t1 = setTimeout(() => setFlashId(null), 3200)
+    return () => { clearTimeout(t0); clearTimeout(t1) }
+  }, [flashId])
+
   // ช่องแอดมิน: ดึงชื่อพนักงานที่ยังทำงานอยู่ทุกคนจากตาราง staff — มีคนเข้า/ออกก็อัปเดตเองไม่ต้องแก้โค้ด
   useEffect(() => {
     fetchEmployeeOptions()
@@ -944,7 +966,7 @@ ${body}
               </thead>
               <tbody>
                 {displayed.map(r => (
-                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', verticalAlign: 'top', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : undefined }}>
+                  <tr key={r.id} data-claim-row={r.id} className={flashId === r.id ? 'claim-flash' : undefined} style={{ borderBottom: '1px solid var(--border)', verticalAlign: 'top', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : undefined }}>
                     <td style={{ padding: '8px 8px 8px 14px' }}>
                       <input type="checkbox" checked={selectedIds.has(r.id)}
                         onChange={e => setSelectedIds(prev => { const s = new Set(prev); if (e.target.checked) s.add(r.id); else s.delete(r.id); return s })}

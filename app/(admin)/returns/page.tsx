@@ -528,9 +528,9 @@ function ClaimCell({ claim, linked, editing, onStart, onCancel, onPick }: {
       {!linked ? <span style={{ color: 'var(--ink-4)' }}>—</span>
         : !claim ? <span style={{ color: 'var(--ink-4)' }}>กำลังโหลด…</span>
         : <>
-            {/* กดชื่อ → ไปหน้างานเคลมแล้วเปิดฟอร์มใบนั้นเลย (/claims?claim=<id>) · กดส่วนอื่นของช่อง = ค้นเปลี่ยนใบ */}
+            {/* กดชื่อ → ไปหน้างานเคลมแล้วกระพริบแถวใบนั้น (/claims?focus=<id>) · กดส่วนอื่นของช่อง = ค้นเปลี่ยนใบ */}
             <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              <Link href={`/claims?claim=${claim.id}`} onClick={e => e.stopPropagation()} title="เปิดงานเคลมใบนี้"
+              <Link href={`/claims?focus=${claim.id}`} onClick={e => e.stopPropagation()} title="เปิดงานเคลมใบนี้"
                 style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 2, cursor: 'pointer' }}>{claimLabel(claim)}</Link>
             </div>
             <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>

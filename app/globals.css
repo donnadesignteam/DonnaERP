@@ -71,6 +71,9 @@ input, select, textarea, button { font-family: inherit; font-size: 14px; }
 /* ── หน้ามือถือ /m/* (ใช้กับ components/mobile/mobileUi.tsx) ── */
 @keyframes m-spin  { to { transform: rotate(360deg); } }
 @keyframes m-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+/* แถวที่เด้งมาจากลิงก์ (เช่น พัสดุส่งกลับ → งานเคลม) กระพริบ 3 ครั้ง */
+@keyframes row-flash { 0%,100% { background-color: transparent; } 50% { background-color: #e8d5bf; } }
+tr.claim-flash, tr.claim-flash > td { animation: row-flash 1s ease-in-out 3; }
 
 /* การ์ดที่กดได้ — ยุบเล็กน้อยตอนแตะ ให้รู้ว่ากดติดแล้ว */
 .m-card-tap { transition: transform 0.12s ease, background 0.12s ease; }
