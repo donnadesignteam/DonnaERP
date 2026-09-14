@@ -3789,7 +3789,7 @@ ${body}
                     {showCol('courier') && (
                     <td style={{ padding: '12px 14px', color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
                       {r.is_installation
-                        ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#B5715A', fontWeight: 600 }}><CourierIcon name={null} install size={18} />งานติดตั้ง</span>
+                        ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><CourierIcon name={null} install size={18} />งานติดตั้ง</span>
                         : r.courier
                           ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><CourierIcon name={r.courier} size={18} />{r.courier}</span>
                           : <span style={{ color: 'var(--ink-4)' }}>-</span>}
