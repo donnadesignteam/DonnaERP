@@ -7,6 +7,7 @@ import { useInstallPhotos, photoSaveError, type InstallPhoto } from '@/component
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { HOLIDAYS } from '@/lib/holidays'
+import OrderDetailModal from '@/components/OrderDetailModal'
 import { formatItemLines, autoTapeHooks, ITEM_FIELDS, ITEM_FIELD_OPTIONS, visibleItemCols, itemInputValue, emptyItem, type RawItem } from '@/lib/itemFormat'
 import { syncOutsourcePO } from '@/lib/outsourceSync'
 import { recordAction } from '@/lib/history'
@@ -200,9 +201,10 @@ const CHIP_BG: Record<string, string> = {
 }
 const ymdOf = (y: number, m: number, d: number) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
 
-function Calendar({ year, month, selDay, view, installs, onDayClick }: {
+function Calendar({ year, month, selDay, view, installs, onDayClick, onOpen }: {
   year: number; month: number; selDay: number; view: 'month' | 'week' | 'day'; installs: Installation[]
   onDayClick: (y: number, m: number, d: number) => void
+  onOpen: (ins: Installation) => void   // กดการ์ดนัดหมาย → เปิดออเดอร์ของงานนั้น
 }) {
   const dim = new Date(year, month + 1, 0).getDate()
   const first = (new Date(year, month, 1).getDay() + 6) % 7
@@ -225,7 +227,7 @@ function Calendar({ year, month, selDay, view, installs, onDayClick }: {
     list.forEach(ins => {
       const c = rowColor(ins)
       const t = new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
-      out.push(<Chip key={ins.id} bg={CHIP_BG[c] ?? '#F1E4D8'} dot={c} big={big}
+      out.push(<Chip key={ins.id} bg={CHIP_BG[c] ?? '#F1E4D8'} dot={c} big={big} onClick={() => onOpen(ins)}
         title={ins.customer_real_name || ins.customer_id || '-'}
         sub={[t, (ins.work_type || '').replace(/^งาน/, ''), big ? ins.province : ''].filter(Boolean).join(' · ')} />)
     })
@@ -263,9 +265,11 @@ function Calendar({ year, month, selDay, view, installs, onDayClick }: {
   )
 }
 
-function Chip({ bg, dot, title, sub, big }: { bg: string; dot: string; title: string; sub?: string; big?: boolean }) {
+function Chip({ bg, dot, title, sub, big, onClick }: { bg: string; dot: string; title: string; sub?: string; big?: boolean; onClick?: () => void }) {
   return (
-    <div className={`sc-chip${big ? ' sc-big' : ''}`} style={{ background: bg }} title={[title, sub].filter(Boolean).join(' · ')}>
+    <div className={`sc-chip${big ? ' sc-big' : ''}${onClick ? ' sc-link' : ''}`} style={{ background: bg }}
+      title={onClick ? `${[title, sub].filter(Boolean).join(' · ')} — กดเพื่อเปิดออเดอร์` : [title, sub].filter(Boolean).join(' · ')}
+      onClick={onClick ? e => { e.stopPropagation(); onClick() } : undefined}>
       <i className="sc-dot" style={{ background: dot }} />
       <div style={{ minWidth: 0, flex: 1 }}>
         <div className="sc-chip-title">{title}</div>
@@ -296,6 +300,7 @@ export default function InstallationsPage() {
   const [modal, setModal] = useState<{ mode: 'add' | 'edit'; data: Partial<Installation> } | null>(null)
   const [dayModal, setDayModal] = useState<{ day: number; items: Installation[] } | null>(null)
   const [calView, setCalView] = useState<'month' | 'week' | 'day'>('month')
+  const [orderDetail, setOrderDetail] = useState<string | null>(null)   // กดการ์ดนัดหมาย → รายละเอียดออเดอร์ (ป๊อปอัปชุดเดียวกับหน้าภาพรวม)
   const [selDay, setSelDay] = useState(new Date().getDate())   // วันที่ยึดของมุมมองสัปดาห์/วัน
   const [saving, setSaving] = useState(false)
   const [apptDate, setApptDate] = useState('')
@@ -1084,6 +1089,15 @@ export default function InstallationsPage() {
   }
 
   const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y - 1) } else setMonth(m => m - 1) }
+  // กดการ์ดนัดหมาย: งานที่มาจากหมวดออเดอร์ → เปิดรายละเอียดออเดอร์ · งานที่ลงเองในหน้านี้ (ไม่มีออเดอร์) → เปิดฟอร์มแก้ไข
+  const openInstall = (ins: Installation) => {
+    setDayModal(null)
+    if (ins.source_order_id) { setOrderDetail(ins.source_order_id); return }
+    ph.begin(ins.photos, ins.id)
+    setModal({ mode: 'edit', data: { ...ins } })
+    setApptDate(ins.appointment_datetime?.split('T')[0] ?? '')
+    setApptTime(ins.appointment_datetime ? new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : '9:00')
+  }
   // ── ปฏิทิน: เลื่อนตามมุมมอง (เดือน/สัปดาห์/วัน) ──
   const goToDate = (dt: Date) => { setYear(dt.getFullYear()); setMonth(dt.getMonth()); setSelDay(dt.getDate()) }
   const shiftCal = (dir: number) => {
@@ -1248,7 +1262,7 @@ export default function InstallationsPage() {
             ))}
           </div>
         </div>
-        <Calendar year={year} month={month} selDay={selDay} view={calView} installs={calendarInstalls} onDayClick={(y, m, d) => {
+        <Calendar year={year} month={month} selDay={selDay} view={calView} installs={calendarInstalls} onOpen={openInstall} onDayClick={(y, m, d) => {
           const items = calendarInstalls.filter(ins => {
             const dt = new Date(ins.appointment_datetime)
             return dt.getDate() === d && dt.getMonth() === m && dt.getFullYear() === y
@@ -1952,6 +1966,8 @@ export default function InstallationsPage() {
       )}
 
       {/* Day modal */}
+      {orderDetail && <OrderDetailModal id={orderDetail} onClose={() => setOrderDetail(null)} />}
+
       {dayModal && (
         <div className="sc-mback" onClick={() => setDayModal(null)}>
           <div className="sc-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 560 }}>
@@ -1985,7 +2001,9 @@ export default function InstallationsPage() {
             ) : [...dayModal.items].sort((x, y) => x.appointment_datetime.localeCompare(y.appointment_datetime)).map(ins => {
               const bg = rowColor(ins)
               return (
-                <div key={ins.id} className="sc-mitem" style={{ background: CHIP_BG[bg] ?? 'var(--cream-2)' }}>
+                <div key={ins.id} className="sc-mitem sc-link" style={{ background: CHIP_BG[bg] ?? 'var(--cream-2)' }}
+                  title={ins.source_order_id ? 'กดเพื่อเปิดออเดอร์' : 'กดเพื่อแก้ไขรายการ'}
+                  onClick={e => { if ((e.target as HTMLElement).closest('a')) return; openInstall(ins) }}>
                   <i className="sc-dot" style={{ background: bg }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>

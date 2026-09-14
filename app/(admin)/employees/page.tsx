@@ -286,6 +286,22 @@ export default function EmployeesPage() {
   const pendingLeaves = leaves.filter(isPending)
   const shownLeaves = pendingFilter ? pendingLeaves : leaves
 
+  // กดชื่อคนลาในปฏิทิน → เลื่อนลงไปที่แถวใบลานั้นในรายการลา แล้วกระพริบ (ปิดตัวกรอง "รออนุมัติ" ก่อน เผื่อแถวถูกซ่อน)
+  const [flashLeave, setFlashLeave] = useState<string | null>(null)
+  const jumpToLeave = (id: string) => {
+    setDayModal(null)
+    if (pendingFilter && !pendingLeaves.some(l => l.id === id)) setPendingFilter(false)
+    setFlashLeave(null)
+    setTimeout(() => {
+      document.querySelector(`[data-leave-row="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setFlashLeave(id)
+    }, 60)
+  }
+  useEffect(() => {
+    if (!flashLeave) return
+    const t = setTimeout(() => setFlashLeave(null), 3200)
+    return () => clearTimeout(t)
+  }, [flashLeave])
   // ── ปฏิทิน: เลื่อน/ไปวันที่ ──
   const goTo = (dt: Date) => { setYear(dt.getFullYear()); setMonth(dt.getMonth()); setSelDay(dt.getDate()) }
   const shift = (dir: number) => {
@@ -377,7 +393,7 @@ export default function EmployeesPage() {
                 <div className="sc-dayview-head">{DAYS[(new Date(year, month, selDay).getDay() + 6) % 7]} {selDay} {TH_MONTHS[month]} {year + 543}</div>
                 {items.length === 0
                   ? <div className="sc-empty">ไม่มีรายการในวันนี้</div>
-                  : items.map(it => <EventChip key={it.key} it={it} big onClick={() => openDay(ymd, selDay)} />)}
+                  : items.map(it => <EventChip key={it.key} it={it} big onClick={it.kind === 'leave' ? () => jumpToLeave(it.key) : () => openDay(ymd, selDay)} />)}
               </div>
             )
           })()
@@ -394,7 +410,7 @@ export default function EmployeesPage() {
                 <div key={i} className={`sc-cell${view === 'week' ? ' sc-tall' : ''}${isToday ? ' sc-today' : ''}${c.m !== month ? ' sc-dim' : ''}`}
                   onClick={() => openDay(ymd, c.d, c.y, c.m)}>
                   <div className="sc-num">{c.d}</div>
-                  {items.slice(0, max).map(it => <EventChip key={it.key} it={it} />)}
+                  {items.slice(0, max).map(it => <EventChip key={it.key} it={it} onClick={it.kind === 'leave' ? () => jumpToLeave(it.key) : undefined} />)}
                   {items.length > max && <div className="sc-more">+{items.length - max} รายการ</div>}
                 </div>
               )
@@ -442,7 +458,7 @@ export default function EmployeesPage() {
             </thead>
             <tbody>
               {shownLeaves.map(l => (
-                <tr key={l.id} style={{ borderBottom: '1px solid var(--border)', background: isPending(l) ? '#C79A4B0f' : undefined }}>
+                <tr key={l.id} data-leave-row={l.id} className={flashLeave === l.id ? 'row-flash' : undefined} style={{ borderBottom: '1px solid var(--border)', background: isPending(l) ? '#C79A4B0f' : undefined }}>
                   <td style={{ padding: '11px 13px', fontWeight: 700, color: 'var(--blue)' }}>{l.employee_code}</td>
                   <td style={{ padding: '11px 13px' }}>{l.employee_name}</td>
                   <td style={{ padding: '11px 13px' }}>{l.employee_nickname}</td>
@@ -532,7 +548,8 @@ export default function EmployeesPage() {
             {dayModal.leaves.length === 0 ? (
               <div className="sc-mempty">ไม่มีการลาในวันนี้</div>
             ) : dayModal.leaves.map(l => (
-              <div key={l.id} className="sc-mitem">
+              <div key={l.id} className="sc-mitem sc-link" title="กดเพื่อไปที่ใบลานี้ในรายการลา"
+                onClick={e => { if ((e.target as HTMLElement).closest('a')) return; jumpToLeave(l.id) }}>
                 <i className="sc-dot" style={{ background: '#A8714F' }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
@@ -696,7 +713,8 @@ export default function EmployeesPage() {
 type CalItem = { key: string; kind: 'holiday' | 'closed' | 'campaign' | 'redzone' | 'leave'; title: string; sub?: string; status?: string }
 function EventChip({ it, big, onClick }: { it: CalItem; big?: boolean; onClick?: () => void }) {
   return (
-    <div className={`sc-chip sc-${it.kind}${big ? ' sc-big' : ''}`} onClick={onClick}
+    <div className={`sc-chip sc-${it.kind}${big ? ' sc-big' : ''}${onClick ? ' sc-link' : ''}`}
+      onClick={onClick ? e => { e.stopPropagation(); onClick() } : undefined}
       title={[it.title, it.sub, it.status].filter(Boolean).join(' · ')}>
       <i className="sc-dot" />
       <div style={{ minWidth: 0, flex: 1 }}>

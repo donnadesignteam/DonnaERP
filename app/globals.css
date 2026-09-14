@@ -401,3 +401,11 @@ table.dn-list input[type="checkbox"] { appearance: none; -webkit-appearance: non
 table.dn-list input[type="checkbox"]:hover:not(:disabled) { border-color: var(--brand); }
 table.dn-list input[type="checkbox"]:checked { background: var(--brand); border-color: var(--brand); }
 table.dn-list input[type="checkbox"]:checked::after { content: ''; position: absolute; left: 5px; top: 1.5px; width: 5px; height: 10px; border: solid #FFF8F0; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+
+/* การ์ดในปฏิทินที่กดแล้วไปต่อได้ (นัดหมาย → ออเดอร์ · ใบลา → แถวในรายการลา) */
+.sc-link { cursor: pointer; transition: transform .12s, box-shadow .12s, border-color .12s; }
+.sc-link:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(120,86,58,0.14); border-color: rgba(158,106,73,0.45); }
+.sc-mitem.sc-link { border: 1px solid transparent; }
+/* แถวที่เด้งมาจากลิงก์ กระพริบน้ำตาลอ่อน 3 ครั้ง */
+@keyframes row-flash { 0%,100% { background-color: transparent; } 50% { background-color: #e8d5bf; } }
+tr.row-flash, tr.row-flash > td { animation: row-flash 1s ease-in-out 3; }
