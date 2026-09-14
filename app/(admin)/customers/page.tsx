@@ -244,20 +244,33 @@ function CustomerFolder() {
           ไม่พบประวัติออเดอร์ของลูกค้านี้
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 36 }}>
           {orders.map((o, i) => {
             const ships = Array.isArray(o.shipments) ? o.shipments : []
             const photos = o.packing_photos ?? []
             return (
             // แต่ละออเดอร์ = กรอบครีมเหมือนตัวป๊อปอัป · หัวบอกลำดับ/เลขออเดอร์ · ข้างในเป็นการ์ดชุดเดียวกับป๊อปอัป
-            <section key={o.id} style={{ background: 'var(--cream-2)', border: '1px solid var(--border)', borderRadius: 22, padding: '16px 18px 18px' }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', margin: '0 2px 12px' }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-4)' }}>#{orders.length - i}</span>
-                <span style={{ fontSize: 17, fontWeight: 700, color: '#74401E' }}>
+            // แต่ละออเดอร์ = การ์ดแยกชัด: แถบหัวสีน้ำตาล (ลำดับ · เลขออเดอร์ · วันที่ · สถานะ · ยอด) + ตัวการ์ดครีม · เว้นระยะห่างระหว่างใบ
+            <section key={o.id} className="cf-order" style={{ background: 'var(--cream-2)', border: '1px solid var(--border-2)', borderRadius: 22, overflow: 'hidden', boxShadow: '0 6px 20px rgba(120,86,58,0.10)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '14px 20px', background: 'linear-gradient(90deg, #9E6A49, #B8845F)', color: '#FFF8F0' }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700, background: '#FFF8F0', color: '#8A5C3A', borderRadius: 999, padding: '4px 12px', whiteSpace: 'nowrap' }}>
+                  ออเดอร์ที่ {orders.length - i}{orders.length > 1 ? ` / ${orders.length}` : ''}
+                </span>
+                <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.2px' }}>
                   {o.order_number || (o.is_installation ? 'งานติดตั้ง' : 'ไม่มีเลขออเดอร์')}
                 </span>
-                <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{fmtDate(o.entry_date)}</span>
+                <span style={{ fontSize: 13, opacity: 0.85 }}>{fmtDate(o.entry_date)}{o.platform ? ` · ${o.platform}` : ''}</span>
+                <span style={{ flex: 1 }} />
+                {o.order_status && (
+                  <span style={{ fontSize: 12.5, fontWeight: 600, background: 'rgba(255,248,240,0.2)', border: '1px solid rgba(255,248,240,0.35)', borderRadius: 999, padding: '3px 12px', whiteSpace: 'nowrap' }}>
+                    {o.is_installation && o.order_status === 'จัดส่งแล้ว' ? 'ติดตั้งแล้ว' : o.order_status}
+                  </span>
+                )}
+                {typeof o.price === 'number' && (
+                  <span style={{ fontSize: 17, fontWeight: 700, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>฿{o.price.toLocaleString('th-TH')}</span>
+                )}
               </div>
+              <div style={{ padding: '16px 18px 4px' }}>
 
               <OrderDetailBody
                 wide
@@ -310,6 +323,7 @@ function CustomerFolder() {
                     )}
                   </Card>
                 </>} />
+              </div>
             </section>
             )
           })}
