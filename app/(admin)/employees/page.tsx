@@ -16,6 +16,7 @@ import { LEAVE_TYPES, rangeDays, vacationMaxDays, applyLeaveToStaff, isQuotaAppl
 import { todayYmd } from '@/lib/thaiDate'
 import { useStableView } from '@/lib/useStableView'
 import CreamSelect from '@/components/CreamSelect'
+import AnchoredMenu from '@/components/AnchoredMenu'
 import { useColumnFilters, useHiddenColumns, SearchPill, MonthSelect, SortSelect, ColumnPicker, Tab, type FilterDef } from '@/components/ListFilters'
 
 // คอลัมน์ของรายการลา (ซ่อน/โชว์ได้ + ตัวกรองหัวคอลัมน์ แบบเดียวกับหมวดออเดอร์)
@@ -113,6 +114,8 @@ export default function EmployeesPage() {
   // รายการลา: ค้นหา / เดือน / ตัวกรองหัวคอลัมน์ / ซ่อนคอลัมน์
   const [leaveSearch, setLeaveSearch] = useState('')
   const [leaveMonth, setLeaveMonth] = useState('all')
+  // เมนู ··· ท้ายแถวรายการลา (แบบเดียวกับหมวดออเดอร์/งานเคลม) — rect ของปุ่ม ให้ AnchoredMenu พลิกขึ้นเองถ้าชิดขอบล่าง
+  const [leaveMenu, setLeaveMenu] = useState<{ id: string; rect: DOMRect } | null>(null)
   const { snapshot, stable, live } = useStableView<Leave>(leaves)
   const hc = useHiddenColumns('leave_hidden_cols')
   const [view, setView] = useState<'month' | 'week' | 'day'>('month')
@@ -579,8 +582,11 @@ export default function EmployeesPage() {
                   </td>
                   )}
                   <td style={{ padding: '11px 13px' }}>
-                    <button onClick={() => del(l.id)}
-                      style={{ padding: '4px 10px', borderRadius: 6, border: 'none', background: '#ff375f22', color: 'var(--red)', cursor: 'pointer', fontSize: 11 }}>ลบ</button>
+                    <button onClick={e => { const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); setLeaveMenu(m => m?.id === l.id ? null : { id: l.id, rect }) }}
+                      title="ตัวเลือก"
+                      style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: leaveMenu?.id === l.id ? 'var(--bg)' : '#fff', cursor: 'pointer', fontSize: 16, color: 'var(--ink-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', letterSpacing: 1, padding: 0 }}>
+                      ···
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -588,6 +594,20 @@ export default function EmployeesPage() {
           </table>
         )}
       </div>
+
+      {/* เมนู ··· ของแถวรายการลา */}
+      {leaveMenu && (
+        <>
+          <div onClick={() => setLeaveMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 9998 }} />
+          <AnchoredMenu rect={leaveMenu.rect}>
+            <button onClick={() => { const id = leaveMenu.id; setLeaveMenu(null); del(id) }}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--red)' }}>
+              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
+              ลบ
+            </button>
+          </AnchoredMenu>
+        </>
+      )}
 
       {/* Day detail modal (คลิกวันในปฏิทิน) */}
       {dayModal && (
