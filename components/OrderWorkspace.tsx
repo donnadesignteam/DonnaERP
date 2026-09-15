@@ -28,7 +28,7 @@ import { stampInsert, oeUpdate, oeInsert, instUpdate, instInsert, claimUpdate } 
 import { useConfirm } from '@/components/ConfirmDialog'
 import AnchoredMenu from '@/components/AnchoredMenu'
 import { usePrintColumns, PrintColumnPicker, printTableHtml, type PrintCol } from '@/components/PrintColumnPicker'
-import { WORK_TYPE_OPTIONS, ZONES, TECHS as INST_TECHS, TECH_BY_ZONE, statusOptions, statusLabel, normStatus, rowColor as instColor, INSTALL_COLUMNS } from '@/lib/installMeta'
+import { WORK_TYPE_OPTIONS, ZONES, TECHS as INST_TECHS, TECH_BY_ZONE, statusOptions, statusLabel, normStatus, rowColor as instColor, INSTALL_COLUMNS, WORK_PILL_BG, INST_PILL_BG } from '@/lib/installMeta'
 import { orderPatchFromInstall, installPatchFromOrder } from '@/lib/installOrderSync'
 import { useStableView } from '@/lib/useStableView'
 import { TH_MONTHS } from '@/lib/shopCalendar'
@@ -444,12 +444,6 @@ const installStatusOf = (r: Entry) => r.install_status || (r.is_dropoff ? 'ต�
 const INSTALL_STATUS_OPTIONS = ['ติดตั้งแล้ว', 'ติดตั้ง50%']
 // พื้นป้าย "งาน" / "สถานะ" ของแท็บงานติดตั้ง — โทนพาสเทลชุดเดียวกับ PILL_BG ของหน้าภาพรวม (components/OrderDetailModal.tsx)
 // ตัวหนังสือใช้ #6B4326 หนา 700 เหมือนป้ายสถานะงาน (.dn-pill)
-const WORK_PILL_BG: Record<string, string> = { 'งานวัดหน้างาน': '#CFE0EA', 'งานติดตั้ง': '#F9E0C3', 'งานแก้': '#F0C0B7' }
-const INST_PILL_BG: Record<string, string> = {
-  'รอนัดหมาย': '#F9E0C3', 'นัดหมายแล้ว': '#CFE0EA', 'วัดหน้างานแล้ว': '#CFE6DE',
-  'ติดตั้งเสร็จ': '#D5E6C6', 'ติดตั้ง50%': '#E2D5EC', 'รอแก้': '#F0C0B7',
-  'รอติดตั้ง': '#F0C0B7',   // ป้ายของ "รอนัดหมาย" ในงานติดตั้ง — สีเดียวกับสถานะงาน "รอติดตั้ง" (แถวเดียวกันจะได้ไม่คนละสี)
-}
 const linkHref = (l: string) => /^https?:\/\//i.test(l) ? l : `https://${l}`
 
 // แถวที่ id ซ้ำ เก็บอันแรกไว้ (ไม่มีซ้ำ = คืนอาร์เรย์เดิม)

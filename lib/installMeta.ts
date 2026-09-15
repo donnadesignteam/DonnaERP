@@ -28,6 +28,14 @@ export const STATUS_LABEL_BY_WORK: Record<string, Record<string, string>> = {
 // ค่าเดิมของแถวเก่า → สถานะใหม่ที่ความหมายเดียวกัน (ยังไม่ได้ลงมือ = รอนัดหมาย)
 export const STATUS_ALIAS: Record<string, string> = { 'ติดตั้ง': 'รอนัดหมาย', 'วัดหน้างาน': 'รอนัดหมาย' }
 
+// สีพื้นป้าย (.dn-pill) ของคอลัมน์ "งาน" และ "สถานะ" — ชุดเดียวกันทั้งหมวดออเดอร์และตารางใต้ปฏิทินงานติดตั้ง
+export const WORK_PILL_BG: Record<string, string> = { 'งานวัดหน้างาน': '#CFE0EA', 'งานติดตั้ง': '#F9E0C3', 'งานแก้': '#F0C0B7' }
+export const INST_PILL_BG: Record<string, string> = {
+  'รอนัดหมาย': '#F9E0C3', 'นัดหมายแล้ว': '#CFE0EA', 'วัดหน้างานแล้ว': '#CFE6DE',
+  'ติดตั้งเสร็จ': '#D5E6C6', 'ติดตั้ง50%': '#E2D5EC', 'รอแก้': '#F0C0B7',
+  'รอติดตั้ง': '#F0C0B7',   // ป้ายของ "รอนัดหมาย" ในงานติดตั้ง — สีเดียวกับสถานะงาน "รอติดตั้ง" (แถวเดียวกันจะได้ไม่คนละสี)
+}
+
 export const normStatus = (s?: string | null) => STATUS_ALIAS[s ?? ''] ?? (s ?? '')
 export const statusLabel = (s: string, workType?: string | null) =>
   STATUS_LABEL_BY_WORK[workType ?? '']?.[s] ?? STATUS_LABEL[s] ?? s

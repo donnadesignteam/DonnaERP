@@ -25,9 +25,11 @@ import ProvinceSelect from '@/components/ProvinceSelect'
 import { formatOrderLines, linesToHtml, openFormPrintWindow, escPrintHtml, type PrintLine, type PrintableOrder } from '@/lib/orderPrint'
 import QRCode from 'qrcode'
 import { PlatformIcon } from '@/components/BrandMark'
+import CreamSelect from '@/components/CreamSelect'
+import { pillBg, pillInk } from '@/components/OrderDetailModal'
 import { useColumnFilters, SearchPill, MonthSelect, SortSelect, Tab, type FilterDef } from '@/components/ListFilters'
 import { parseMoney } from '@/lib/money'
-import { WORK_TYPES, WORK_TYPE_OPTIONS, ZONES, TECHS, TECH_BY_ZONE,
+import { WORK_PILL_BG, INST_PILL_BG, WORK_TYPES, WORK_TYPE_OPTIONS, ZONES, TECHS, TECH_BY_ZONE,
   normStatus, statusLabel, statusOptions, rowColor, INSTALL_COLUMNS } from '@/lib/installMeta'
 
 
@@ -1456,14 +1458,11 @@ export default function InstallationsPage() {
                     </span>
                   ),
                   work: (
-                    /* งาน — ชิปสีเดียวกับคอลัมน์สถานะของแถวนั้น */
-                    <select value={ins.work_type || ''} onChange={e => updateWorkType(ins.id, e.target.value)}
-                      style={{ background: bg + '22', color: bg, padding: '3px 8px', borderRadius: 980, fontWeight: 600, fontSize: 11, border: 'none', outline: 'none', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none' }}>
-                      <option value="" style={{ background: '#fff', color: 'var(--ink)' }}>—</option>
-                      {Array.from(new Set([...WORK_TYPE_OPTIONS, ins.work_type].filter(Boolean))).map(w => (
-                        <option key={w} value={w} style={{ background: '#fff', color: 'var(--ink)' }}>{w}</option>
-                      ))}
-                    </select>
+                    /* งาน — ป้าย .dn-pill ชุดเดียวกับแท็บงานติดตั้งในหมวดออเดอร์ (พื้นตามลักษณะงาน กดแล้วเลือกได้) */
+                    <CreamSelect value={ins.work_type ?? ''} onChange={v => updateWorkType(ins.id, v)}
+                      className="dn-pill ow-pill" style={{ color: '#6B4326', background: WORK_PILL_BG[ins.work_type ?? ''] ?? '#EFE3D4' }} menuMinWidth={170}
+                      options={Array.from(new Set([...WORK_TYPE_OPTIONS, ins.work_type].filter(Boolean))).map(w => ({ value: w as string, label: w as string }))}
+                      renderValue={o => <span>{o?.label ?? '—'}</span>} />
                   ),
                   /* ปริ้น = ติ๊กว่าปริ้นใบงานนี้แล้ว (ช่องเดียวกับหมวดออเดอร์ = order_entries.printed_at)
                      ปุ่มสั่งปริ้นจริงอยู่ในเมนู ··· ท้ายแถว */
@@ -1472,7 +1471,7 @@ export default function InstallationsPage() {
                       <input type="checkbox" checked={!!oe?.printed_at} onChange={e => togglePrinted(oid, e.target.checked)}
                         style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
                       {oe?.printed_at && (
-                        <div style={{ fontSize: 10, color: '#C79A4B', fontWeight: 600, marginTop: 2 }}>
+                        <div style={{ fontSize: 10, color: '#A8744F', fontWeight: 600, marginTop: 3, whiteSpace: 'nowrap' }}>
                           {new Date(oe.printed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
                           {new Date(oe.printed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                         </div>
@@ -1568,19 +1567,11 @@ export default function InstallationsPage() {
                     </select>
                   ) : <span style={{ color: 'var(--ink-3)' }}>{ins.entered_by || '-'}</span>,
                   status: oid ? (
-                    <>
-                      <select value={oe?.order_status || ''} onChange={e => saveOrder(oid, { order_status: e.target.value }, 'แก้สถานะงาน ' + (oe?.customer_name || ''))}
-                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PROD_STATUS_COLOR[oe?.order_status ?? ''] ?? 'var(--ink-4)', padding: 0 }}>
-                        <option value="">—</option>
-                        {INSTALL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                      {statusChangedAt && (
-                        <div style={{ fontSize: 10, color: 'var(--ink-4)', marginTop: 2, whiteSpace: 'nowrap' }}>
-                          {new Date(statusChangedAt).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
-                          {new Date(statusChangedAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      )}
-                    </>
+                    /* สถานะงาน — ป้าย .dn-pill ชุดเดียวกับหมวดออเดอร์ (statusCell) · จัดส่งแล้ว = ติดตั้งแล้ว */
+                    <CreamSelect value={oe?.order_status || ''} onChange={v => saveOrder(oid, { order_status: v }, 'แก้สถานะงาน ' + (oe?.customer_name || ''))}
+                      className="dn-pill ow-pill" style={{ color: pillInk(oe?.order_status || ''), background: pillBg(oe?.order_status || '') }} menuMinWidth={170}
+                      options={INSTALL_STATUSES.map(st => ({ value: st, label: st === 'จัดส่งแล้ว' ? 'ติดตั้งแล้ว' : st, color: PROD_STATUS_COLOR[st] }))}
+                      renderValue={o => <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{o?.label ?? ((oe?.order_status === 'จัดส่งแล้ว' ? 'ติดตั้งแล้ว' : oe?.order_status) || '—')}</span>} />
                   ) : noOrder,
                   done: oid ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
@@ -1608,12 +1599,11 @@ export default function InstallationsPage() {
                     </select>
                   ) : noOrder,
                   inststatus: (
-                    <select value={normStatus(ins.installation_status)} onChange={e => updateStatus(ins.id, e.target.value)}
-                      style={{ background: bg + '22', color: bg, padding: '3px 8px', borderRadius: 980, fontWeight: 600, fontSize: 11, border: 'none', outline: 'none', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none' }}>
-                      {Array.from(new Set([...statusOptions(ins.work_type), normStatus(ins.installation_status)])).map(st => (
-                        <option key={st} value={st} style={{ background: '#fff', color: 'var(--ink)' }}>{statusLabel(st, ins.work_type)}</option>
-                      ))}
-                    </select>
+                    /* สถานะ — ป้าย .dn-pill ชุดเดียวกับแท็บงานติดตั้งในหมวดออเดอร์ */
+                    <CreamSelect value={normStatus(ins.installation_status)} onChange={v => updateStatus(ins.id, v)}
+                      className="dn-pill ow-pill" style={{ color: '#6B4326', background: INST_PILL_BG[statusLabel(normStatus(ins.installation_status), ins.work_type)] ?? INST_PILL_BG[normStatus(ins.installation_status)] ?? '#EFE3D4' }} menuMinWidth={170}
+                      options={Array.from(new Set([...statusOptions(ins.work_type), normStatus(ins.installation_status)])).filter(Boolean).map(st => ({ value: st, label: statusLabel(st, ins.work_type) }))}
+                      renderValue={o => <span>{o?.label ?? '—'}</span>} />
                   ),
                   rail: !oid ? noOrder : hasRailItems(oid) ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
@@ -1685,7 +1675,7 @@ export default function InstallationsPage() {
                   ),
                   tech: oid ? (
                     <select value={oe?.technician || ''} onChange={e => saveOrder(oid, { technician: e.target.value || null }, 'แก้ช่างเย็บ ' + (oe?.customer_name || ''))}
-                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: oe?.technician ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 100 }}>
+                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: oe?.technician ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: '100%' }}>
                       <option value="">—</option>
                       {TECH_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
@@ -1773,7 +1763,8 @@ export default function InstallationsPage() {
                       <td key={c.id} className={cellEmpty[c.id] ? 'ow-empty' : undefined} style={{
                         padding: c.id === 'items' ? '6px 14px' : '12px 14px',
                         textAlign: COL_ALIGN[c.id] ?? 'left',
-                        ...(COL_W[c.id] != null ? { width: COL_W[c.id], minWidth: COL_W[c.id], maxWidth: COL_W[c.id] } : {}),
+                        // ความกว้างช่อง = ความกว้างเนื้อหา + padding ซ้ายขวา 28 (box-sizing: border-box) ไม่งั้นเนื้อหาล้นทับช่องถัดไป
+                        ...(COL_W[c.id] != null ? { width: COL_W[c.id] + 28, minWidth: COL_W[c.id] + 28, maxWidth: COL_W[c.id] + 28 } : {}),
                       }}>
                         {COL_W[c.id] != null ? (
                           <div title={titles[c.id] || undefined} style={{ width: COL_W[c.id], overflow: 'hidden', ...(CLIP_ONE_LINE(c.id) ? { whiteSpace: 'nowrap' as const, textOverflow: 'ellipsis' } : {}) }}>{cells[c.id]}</div>
