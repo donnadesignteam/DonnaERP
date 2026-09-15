@@ -485,6 +485,11 @@ export default function ReturnParcelsPage() {
 
       {/* แถวที่ 2 — ปุ่มคอลัมน์ชิดขวา ตำแหน่งเดียวกับแถวแท็บของหน้าออเดอร์ */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 18, alignItems: 'center', flexWrap: 'wrap' }}>
+        {/* แท็บ ทั้งหมด — แบบเดียวกับหมวดออเดอร์ · กดแล้วล้างตัวกรองคอลัมน์ (จำนวน = ตามเดือน/คำค้น/ตัวกรองที่ใช้อยู่) */}
+        <button onClick={clearColFilters} className="ow-tab" data-active title={anyColFilter ? 'กดเพื่อล้างตัวกรองคอลัมน์' : undefined}>
+          ทั้งหมด
+          <span className="ow-tab-n">{displayed.length.toLocaleString()}</span>
+        </button>
         {/* เลือกคอลัมน์ที่จะโชว์ — ติ๊กออก = ซ่อน */}
         <div style={{ position: 'relative', marginLeft: 'auto' }}>
           <button onClick={() => setOpenColPicker(v => !v)}
