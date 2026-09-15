@@ -20,6 +20,7 @@ import { buildCustomerBook, type CustomerEntry } from '@/lib/customerBook'
 import CustomerPickStep from '@/components/CustomerPickStep'
 import CreamSelect from '@/components/CreamSelect'
 import { useStableView } from '@/lib/useStableView'
+import { TH_MONTHS } from '@/lib/shopCalendar'
 
 type Media = { url: string; name?: string; caption?: string }
 type Parcel = {
@@ -140,6 +141,7 @@ export default function ReturnParcelsPage() {
   const saveHidden = (next: ColId[]) => { setHiddenCols(next); try { localStorage.setItem('returns_hidden_cols', JSON.stringify(next)) } catch {} }
   const showCol = (id: ColId) => !hiddenCols.includes(id)
   const [openColPicker, setOpenColPicker] = useState(false)
+  const [month, setMonth] = useState('all')   // 'all' | 'YYYY-MM' (เดือนที่ลงพัสดุ)
   const { ask, confirmDialog } = useConfirm()
 
   const load = async () => {
@@ -305,7 +307,12 @@ export default function ReturnParcelsPage() {
   }
 
   const q = search.trim().toLowerCase()
-  const stableRows = rows.map(stable)
+  // ตัวเลือกเดือน (ยึดวันที่ลงพัสดุ)
+  const monthKey = (r: Parcel) => r.created_at ? new Date(r.created_at).toLocaleDateString('en-CA').slice(0, 7) : ''
+  const monthOptions = useMemo(() => Array.from(new Set(rows.map(monthKey).filter(Boolean))).sort().reverse(), [rows])
+  const monthLabel = (k: string) => { const [y, m] = k.split('-'); return `${TH_MONTHS[Number(m) - 1]} ${Number(y) + 543}` }
+  const monthRows = rows.map(stable).filter(r => month === 'all' || monthKey(r) === month)
+  const stableRows = monthRows
   const filtered = stableRows.filter(r => {
     const c = r.claim_id ? claims[r.claim_id] : null
     const matchSearch = !q || [r.sender_name, r.items, r.carrier, r.tracking_no, r.orig_carrier, r.orig_tracking_no, r.orig_order_number, r.address, r.phone, c?.original_order_number, c?.customer_username]
@@ -345,6 +352,42 @@ export default function ReturnParcelsPage() {
     return vals.filter(v => v !== NONE).sort((a, b) => a.localeCompare(b, 'th')).concat(vals.includes(NONE) ? [NONE] : [])
   }
 
+  // ปริ้นตารางตามที่กรอง/เรียง/โชว์คอลัมน์อยู่บนจอ (วิดีโอ/รูป = จำนวน)
+  const printList = () => {
+    const esc = (v: unknown) => String(v ?? '').replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]!))
+    const cell = (r: Parcel, id: ColId): string => {
+      if (id === 'created') return esc(new Date(r.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' }))
+      if (id === 'serial') return esc(r.serial_no || '-')
+      if (id === 'videos') return r.videos?.length ? `${r.videos.length} คลิป` : '-'
+      if (id === 'photos') return r.photos?.length ? `${r.photos.length} รูป` : '-'
+      if (id === 'claim') { const c = r.claim_id ? claims[r.claim_id] : null; return c ? esc(claimLabel(c)) : '-' }
+      return esc(r[id] || '-').replace(/\n/g, '<br>')
+    }
+    const cols = ALL_COLS.filter(c => showCol(c.id))
+    const title = `พัสดุส่งกลับ ${displayed.length} รายการ${month !== 'all' ? ` · ${monthLabel(month)}` : ''}`
+    const win = window.open('', '_blank', 'width=1200,height=750')
+    if (!win) { setError('เบราว์เซอร์บล็อก popup — โปรดอนุญาต popup เพื่อปริ้น'); return }
+    win.document.open()
+    win.document.write(`<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><title>${esc(title)}</title><style>
+  body { font-family: 'Sarabun', 'Noto Sans Thai', sans-serif; font-size: 12px; color: #000; margin: 0; padding: 16px; }
+  h2 { font-size: 14px; margin: 0 0 10px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #aaa; padding: 5px 8px; text-align: left; vertical-align: top; }
+  th { background: #f0f0f0; font-weight: 700; white-space: nowrap; }
+  tr { break-inside: avoid; }
+  @page { margin: 0; }
+  @media print { body { padding: 14mm; } .toolbar { display: none !important; } }
+  .toolbar { position: fixed; top: 10px; right: 10px; background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 8px 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.18); }
+  .toolbar button { padding: 8px 20px; border-radius: 8px; border: none; background: #1a1a1a; color: #fff; cursor: pointer; font-size: 14px; font-weight: 700; font-family: inherit; }
+</style></head><body>
+<div class="toolbar"><button onclick="window.print()">🖨 ปริ้น</button></div>
+<h2>${esc(title)}</h2>
+<table><thead><tr><th>#</th>${cols.map(c => `<th>${esc(c.label)}</th>`).join('')}</tr></thead>
+<tbody>${displayed.map((r, i) => `<tr><td>${i + 1}</td>${cols.map(c => `<td>${cell(r, c.id)}</td>`).join('')}</tr>`).join('')}</tbody></table>
+</body></html>`)
+    win.document.close(); win.focus()
+  }
+
   // หัวคอลัมน์ — คอลัมน์ที่กรอง/เรียงได้เป็นปุ่มมี ▼
   const headCell = (id: ColId, style: React.CSSProperties) => {
     const def = FILTER_DEFS.find(d => d.id === id)
@@ -367,15 +410,24 @@ export default function ReturnParcelsPage() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+      {/* หัวหน้า — ชุดเดียวกับหน้าออเดอร์/งานเคลม: ชื่อหมวด + จำนวนรายการ · ปุ่มปริ้น / เพิ่มรายการ มุมขวา */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 28 }}>
         <div>
-          <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px' }}>พัสดุส่งกลับ</h1>
-          <p style={{ fontSize: 14, color: 'var(--ink-3)', marginTop: 4 }}>{rows.length} รายการ</p>
+          <h1 style={{ fontSize: 32, fontWeight: 700, color: '#4A3122', letterSpacing: '-0.5px' }}>พัสดุส่งกลับ</h1>
+          <p style={{ fontSize: 15, color: 'var(--ink-2)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
+            {month === 'all' ? `${rows.length} รายการ` : `${monthRows.length} รายการ · ${monthLabel(month)} (ทั้งหมด ${rows.length})`}
+          </p>
         </div>
-        <button onClick={openAdd}
-          style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,122,255,0.3)' }}>
-          + เพิ่มพัสดุ
-        </button>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button onClick={printList} disabled={displayed.length === 0}
+            style={{ background: 'var(--surface)', color: 'var(--brand)', border: '1px solid var(--border)', borderRadius: 999, height: 46, padding: '0 20px', fontSize: 14, fontWeight: 600, cursor: displayed.length ? 'pointer' : 'not-allowed', boxShadow: 'var(--shadow)' }}>
+            🖨️ ปริ้น
+          </button>
+          <button onClick={openAdd}
+            style={{ background: 'var(--brand)', color: '#FFF8F0', border: 'none', borderRadius: 999, height: 46, padding: '0 26px', fontSize: 14.5, fontWeight: 600, cursor: 'pointer', boxShadow: '0 3px 10px rgba(158,106,73,0.35)' }}>
+            ＋ เพิ่มรายการ
+          </button>
+        </div>
       </div>
 
       {custStep && (
@@ -391,16 +443,25 @@ export default function ReturnParcelsPage() {
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 12, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-      <div style={{ position: 'relative', flex: '1 1 260px', minWidth: 0 }}>
-        <input value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="ค้นหา ชื่อผู้ส่ง / เลขพัสดุ / เลขออเดอร์ / เบอร์ / ที่อยู่ / รายการ"
-          style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', paddingRight: search ? 36 : 14, fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
-        {search && (
-          <button onClick={() => setSearch('')}
-            style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'var(--border)', color: 'var(--ink-3)', borderRadius: '50%', width: 20, height: 20, cursor: 'pointer', fontSize: 12, lineHeight: 1, padding: 0 }}>✕</button>
-        )}
-      </div>
+      <div style={{ display: 'flex', gap: 14, marginBottom: 18, flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: '1 1 260px', minWidth: 0 }}>
+          <svg width="18" height="18" fill="none" stroke="#8B7460" strokeWidth="1.8" viewBox="0 0 24 24" style={{ position: 'absolute', left: 18, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}><circle cx="11" cy="11" r="7" /><path strokeLinecap="round" d="M20 20l-3.5-3.5" /></svg>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ชื่อผู้ส่ง / เลขพัสดุ / เลขออเดอร์ / เบอร์…" className="ow-field"
+            style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 999, height: 46, padding: '0 16px 0 46px', paddingRight: search ? 40 : 16, fontSize: 13.5, outline: 'none', boxSizing: 'border-box', background: 'var(--surface)', color: 'var(--ink)', boxShadow: 'var(--shadow)' }} />
+          {search && (
+            <button onClick={() => setSearch('')}
+              style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'var(--border)', color: 'var(--ink-3)', borderRadius: '50%', width: 20, height: 20, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, padding: 0 }}>
+              ✕
+            </button>
+          )}
+        </div>
+        <CreamSelect value={month} onChange={setMonth} title="เดือนที่ลงพัสดุ" className="ow-select" style={month !== 'all' ? { borderColor: 'var(--brand)' } : undefined}
+          options={[{ value: 'all', label: 'ทุกเดือน' }, ...monthOptions.map(k => ({ value: k, label: monthLabel(k) }))]}
+          renderValue={o => <>
+            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2.5" /><path strokeLinecap="round" d="M3.5 10h17M8 3v4M16 3v4" /></svg>
+            <span className="cs-value">{o?.label}</span>
+            <svg className="cs-chev" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" /></svg>
+          </>} />
         {/* เรียงลำดับ — ใช้ state เดียวกับการเรียงที่หัวคอลัมน์ */}
         <CreamSelect value={colSort ? `${colSort.key}:${colSort.dir}` : ''} title="เรียงลำดับ"
           onChange={v => { if (!v) setColSort(null); else { const [key, dir] = v.split(':'); setColSort({ key: key as ColId, dir: dir as 'asc' | 'desc' }) } }}
@@ -420,8 +481,12 @@ export default function ReturnParcelsPage() {
             <span className="cs-value">{o?.label}</span>
             <svg className="cs-chev" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" /></svg>
           </>} />
+      </div>
+
+      {/* แถวที่ 2 — ปุ่มคอลัมน์ชิดขวา ตำแหน่งเดียวกับแถวแท็บของหน้าออเดอร์ */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 18, alignItems: 'center', flexWrap: 'wrap' }}>
         {/* เลือกคอลัมน์ที่จะโชว์ — ติ๊กออก = ซ่อน */}
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative', marginLeft: 'auto' }}>
           <button onClick={() => setOpenColPicker(v => !v)}
             style={{ padding: '6px 14px', borderRadius: 20, border: hiddenCols.length ? 'none' : '1px solid var(--border)', background: hiddenCols.length ? 'var(--blue)' : 'var(--surface)', color: hiddenCols.length ? '#fff' : 'var(--ink-3)', fontSize: 13, fontWeight: hiddenCols.length ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
             คอลัมน์{hiddenCols.length > 0 && ` (ซ่อน ${hiddenCols.length})`} <span style={{ fontSize: 9, opacity: 0.7 }}>▼</span>
@@ -461,7 +526,7 @@ export default function ReturnParcelsPage() {
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)', fontSize: 14 }}>
             <div style={{ fontSize: 36, marginBottom: 12 }}>📦</div>
             {q ? <>ไม่เจอ &quot;{search}&quot; — <button onClick={() => setSearch('')} style={{ border: 'none', background: 'none', color: 'var(--blue)', cursor: 'pointer', fontSize: 14, padding: 0 }}>ล้างคำค้น</button></>
-               : <>ยังไม่มีพัสดุส่งกลับ — กด &quot;+ เพิ่มพัสดุ&quot; ด้านบนเพื่อเริ่มลงรายการแรก</>}
+               : <>ยังไม่มีพัสดุส่งกลับ — กด &quot;＋ เพิ่มรายการ&quot; ด้านบนเพื่อเริ่มลงรายการแรก</>}
           </div>
         ) : (
           <table className="dn-list" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 13 }}>
