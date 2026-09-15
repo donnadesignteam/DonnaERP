@@ -15,6 +15,7 @@ import { useConfirm } from '@/components/ConfirmDialog'
 import { LEAVE_TYPES, rangeDays, vacationMaxDays, applyLeaveToStaff, isQuotaApplied, isApproved } from '@/lib/leave'
 import { todayYmd } from '@/lib/thaiDate'
 import { useStableView } from '@/lib/useStableView'
+import CreamSelect from '@/components/CreamSelect'
 import { useColumnFilters, useHiddenColumns, SearchPill, MonthSelect, SortSelect, ColumnPicker, Tab, type FilterDef } from '@/components/ListFilters'
 
 // คอลัมน์ของรายการลา (ซ่อน/โชว์ได้ + ตัวกรองหัวคอลัมน์ แบบเดียวกับหมวดออเดอร์)
@@ -25,6 +26,13 @@ const LEAVE_COLS = [
   { id: 'supervisor', label: 'หัวหน้า' }, { id: 'hr', label: 'บุคคล' },
 ]
 const APPROVAL_OPTS = ['รออนุมัติ', 'อนุมัติ', 'ไม่อนุมัติ']
+const LEAVE_STATUS_OPTS = ['ใบลาเรียบร้อย', 'ยังไม่เขียนไปลา', 'รออนุมัติ']
+// ป้ายเลือกในรายการลา — .dn-pill ครีมมุมมนชุดเดียวกับป้ายสถานะหมวดออเดอร์ (เขียว = ผ่าน · ชมพู = ไม่ผ่าน/ยังไม่ทำ · ส้มครีม = รอ)
+const LEAVE_PILL: Record<string, { bg: string; dot: string }> = {
+  'ใบลาเรียบร้อย': { bg: '#D5E6C6', dot: '#6F8F6A' }, 'อนุมัติ': { bg: '#D5E6C6', dot: '#6F8F6A' },
+  'ยังไม่เขียนไปลา': { bg: '#F0C0B7', dot: '#C0563F' }, 'ไม่อนุมัติ': { bg: '#F0C0B7', dot: '#C0563F' },
+  'รออนุมัติ': { bg: '#F9E0C3', dot: '#C79A4B' },
+}
 
 type Leave = {
   id: string
@@ -322,6 +330,13 @@ export default function EmployeesPage() {
   const searchedLeaves = !lq ? monthLeaves : monthLeaves.filter(l =>
     [l.employee_code, l.employee_name, l.employee_nickname, l.department, l.leave_type, l.reason].some(v => (v ?? '').toLowerCase().includes(lq)))
   const shownLeaves = lf.apply(pendingFilter ? searchedLeaves.filter(isPending) : searchedLeaves).map(live)
+  // ช่องเลือกในรายการลา = ป้าย .dn-pill กดแล้วเมนูครีมคลี่ลง (CreamSelect ชุดเดียวกับหมวดออเดอร์)
+  const leavePill = (value: string, opts: string[], onPick: (v: string) => void) => (
+    <CreamSelect value={value || ''} onChange={v => { if (v !== value) onPick(v) }}
+      className="dn-pill ow-pill" style={{ color: '#6B4326', background: LEAVE_PILL[value]?.bg ?? '#EFE3D4' }} menuMinWidth={170}
+      options={Array.from(new Set([...opts, value].filter(Boolean))).map(o => ({ value: o, label: o, color: LEAVE_PILL[o]?.dot }))}
+      renderValue={o => <span>{o?.label ?? (value || '—')}</span>} />
+  )
 
   // กดชื่อคนลาในปฏิทิน → เลื่อนลงไปที่แถวใบลานั้นในรายการลา แล้วกระพริบ (ปิดตัวกรอง "รออนุมัติ" ก่อน เผื่อแถวถูกซ่อน)
   const [flashLeave, setFlashLeave] = useState<string | null>(null)
@@ -550,26 +565,17 @@ export default function EmployeesPage() {
                   )}
                   {hc.show('status') && (
                   <td style={{ padding: '11px 13px' }}>
-                    <select value={l.leave_status} onChange={e => updateLeave(l.id, 'leave_status', e.target.value)}
-                      style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 6px', fontSize: 11, outline: 'none' }}>
-                      {['ใบลาเรียบร้อย','ยังไม่เขียนไปลา','รออนุมัติ'].map(o => <option key={o}>{o}</option>)}
-                    </select>
+                    {leavePill(l.leave_status, LEAVE_STATUS_OPTS, v => updateLeave(l.id, 'leave_status', v))}
                   </td>
                   )}
                   {hc.show('supervisor') && (
                   <td style={{ padding: '11px 13px' }}>
-                    <select value={l.supervisor_approval} onChange={e => updateLeave(l.id, 'supervisor_approval', e.target.value)}
-                      style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 6px', fontSize: 11, outline: 'none', color: l.supervisor_approval === 'อนุมัติ' ? '#6F8F6A' : l.supervisor_approval === 'ไม่อนุมัติ' ? 'var(--red)' : 'var(--ink-3)' }}>
-                      {['รออนุมัติ','อนุมัติ','ไม่อนุมัติ'].map(o => <option key={o}>{o}</option>)}
-                    </select>
+                    {leavePill(l.supervisor_approval, APPROVAL_OPTS, v => updateLeave(l.id, 'supervisor_approval', v))}
                   </td>
                   )}
                   {hc.show('hr') && (
                   <td style={{ padding: '11px 13px' }}>
-                    <select value={l.hr_approval} onChange={e => updateLeave(l.id, 'hr_approval', e.target.value)}
-                      style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 6px', fontSize: 11, outline: 'none', color: l.hr_approval === 'อนุมัติ' ? '#6F8F6A' : l.hr_approval === 'ไม่อนุมัติ' ? 'var(--red)' : 'var(--ink-3)' }}>
-                      {['รออนุมัติ','อนุมัติ','ไม่อนุมัติ'].map(o => <option key={o}>{o}</option>)}
-                    </select>
+                    {leavePill(l.hr_approval, APPROVAL_OPTS, v => updateLeave(l.id, 'hr_approval', v))}
                   </td>
                   )}
                   <td style={{ padding: '11px 13px' }}>
