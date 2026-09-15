@@ -10,7 +10,7 @@ import { RED_ZONES, CAMPAIGNS, LEAVE_STATUS_COLOR as STATUS_COLOR, DAYS_TH as DA
 import { EMPLOYEES } from '@/lib/staff'
 import { fetchEmployeeOptions } from '@/lib/staffDb'
 import { recordAction } from '@/lib/history'
-import { tUpdate } from '@/lib/trackedDb'
+import { tUpdate, prevOf } from '@/lib/trackedDb'
 import { useConfirm } from '@/components/ConfirmDialog'
 import { LEAVE_TYPES, rangeDays, vacationMaxDays, applyLeaveToStaff, isQuotaApplied, isApproved } from '@/lib/leave'
 import { todayYmd } from '@/lib/thaiDate'
@@ -116,6 +116,8 @@ export default function EmployeesPage() {
   const [leaveMonth, setLeaveMonth] = useState('all')
   // เมนู ··· ท้ายแถวรายการลา (แบบเดียวกับหมวดออเดอร์/งานเคลม) — rect ของปุ่ม ให้ AnchoredMenu พลิกขึ้นเองถ้าชิดขอบล่าง
   const [leaveMenu, setLeaveMenu] = useState<{ id: string; rect: DOMRect } | null>(null)
+  // กำลังแก้ใบลาใบไหน (null = เพิ่มใหม่) — ใช้ฟอร์มเดียวกับ "+ เพิ่มรายการ"
+  const [editId, setEditId] = useState<string | null>(null)
   const { snapshot, stable, live } = useStableView<Leave>(leaves)
   const hc = useHiddenColumns('leave_hidden_cols')
   const [view, setView] = useState<'month' | 'week' | 'day'>('month')
@@ -189,6 +191,37 @@ export default function EmployeesPage() {
     setSaving(true)
     // แนบใบรับรองแพทย์ถ้ามี (ไม่บังคับ — ไม่แนบก็บันทึกได้)
     const certUrl = certFile ? await uploadCert(certFile, form.employee_code) : null
+
+    // ── แก้ไขใบเดิม ── ไม่แตะสถานะ/การอนุมัติ (แก้ในตารางได้อยู่แล้ว) · ใบรับรองเปลี่ยนเฉพาะตอนเลือกไฟล์ใหม่
+    if (editId) {
+      const old = leaves.find(x => x.id === editId)
+      const patch: Record<string, unknown> = {
+        employee_code: form.employee_code, employee_name: form.employee_name, employee_nickname: form.nickname,
+        department: form.department, leave_date: form.leave_date, leave_end_date: form.leave_end_date || form.leave_date,
+        leave_time: form.leave_time, leave_type: form.leave_type, reason: form.reason,
+        ...(certUrl ? { medical_cert_url: certUrl } : {}),
+      }
+      try {
+        await tUpdate('leave_requests', editId, patch, old ? prevOf(old as unknown as Record<string, unknown>, patch) : {}, `แก้ใบลา ${form.nickname}`, load)
+      } catch (e) {
+        setSaving(false)
+        alert('บันทึกการแก้ไขไม่สำเร็จ: ' + (e instanceof Error ? e.message : String(e)))
+        return
+      }
+      // ‼️ ใบที่หักสิทธิไปแล้ว + เปลี่ยนคน/ประเภท/จำนวนวัน → คืนสิทธิของเดิมแล้วหักของใหม่ (กติกาเดียวกับ updateLeave)
+      if (old && isQuotaApplied(old)) {
+        const oldDays = rangeDays(old.leave_date, old.leave_end_date || old.leave_date)
+        const newDays = rangeDays(form.leave_date, form.leave_end_date || form.leave_date)
+        if (old.employee_code !== form.employee_code || old.leave_type !== form.leave_type || oldDays !== newDays) {
+          await applyLeaveToStaff(old.employee_code, old.leave_type, oldDays, -1)
+          await applyLeaveToStaff(form.employee_code, form.leave_type, newDays, 1)
+        }
+      }
+      setSaving(false)
+      closeLeaveModal()
+      load()
+      return
+    }
     const payload = {
       employee_code: form.employee_code,
       employee_name: form.employee_name,
@@ -231,10 +264,32 @@ export default function EmployeesPage() {
       })
     }
     setSaving(false)
+    closeLeaveModal()
+    load()
+  }
+
+  // ปิดฟอร์ม (เพิ่ม/แก้ไข) แล้วล้างค่าให้พร้อมใช้รอบหน้า
+  const closeLeaveModal = () => {
     setModal(false)
+    setEditId(null)
     setForm({ nickname: '', employee_code: '', employee_name: '', department: '', leave_date: '', leave_end_date: '', leave_time: '08:00', leave_type: '', reason: '' })
     setCertFile(null)
-    load()
+    setConflict('')
+    setSuggestions([])
+  }
+
+  // เปิดฟอร์มแก้ใบลาเดิม — เติมค่าเดิมทุกช่อง
+  const openEditLeave = (l: Leave) => {
+    setEditId(l.id)
+    setForm({
+      nickname: l.employee_nickname || '', employee_code: l.employee_code || '', employee_name: l.employee_name || '',
+      department: l.department || '', leave_date: l.leave_date || '', leave_end_date: l.leave_end_date || l.leave_date || '',
+      leave_time: l.leave_time || '08:00', leave_type: l.leave_type || '', reason: l.reason || '',
+    })
+    setCertFile(null)
+    setConflict('')
+    setSuggestions([])
+    setModal(true)
   }
 
   // แนบ/เปลี่ยนใบรับรองแพทย์ทีหลังจากในตาราง
@@ -405,7 +460,7 @@ export default function EmployeesPage() {
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <button className="sc-btn-ghost" onClick={() => window.print()}>🖨️ ปริ้นปฏิทิน</button>
-          <button className="sc-btn-main" onClick={() => setModal(true)}>+ เพิ่มรายการ</button>
+          <button className="sc-btn-main" onClick={() => { setEditId(null); setModal(true) }}>+ เพิ่มรายการ</button>
         </div>
       </div>
 
@@ -600,6 +655,11 @@ export default function EmployeesPage() {
         <>
           <div onClick={() => setLeaveMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 9998 }} />
           <AnchoredMenu rect={leaveMenu.rect}>
+            <button onClick={() => { const l = leaves.find(x => x.id === leaveMenu.id); setLeaveMenu(null); if (l) openEditLeave(l) }}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)' }}>
+              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/></svg>
+              แก้ไข
+            </button>
             <button onClick={() => { const id = leaveMenu.id; setLeaveMenu(null); del(id) }}
               style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--red)' }}>
               <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
@@ -666,9 +726,9 @@ export default function EmployeesPage() {
 
       {/* Add leave modal */}
       {modal && (
-        <div className="sc-mback" onClick={() => { setModal(false); setCertFile(null) }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+        <div className="sc-mback" onClick={closeLeaveModal} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
           <div className="sc-modal" onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto' }}>
-            <h2 className="sc-mtitle">+ เพิ่มรายการลา</h2>
+            <h2 className="sc-mtitle">{editId ? 'แก้ไขรายการลา' : '+ เพิ่มรายการลา'}</h2>
 
             <div style={{ marginBottom: 14, position: 'relative' }}>
               <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 5 }}>ชื่อพนักงาน (ชื่อเล่น / ชื่อจริง / รหัส)</label>
@@ -782,7 +842,7 @@ export default function EmployeesPage() {
             </div>
 
             <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-              <button className="sc-mcancel" onClick={() => { setModal(false); setCertFile(null) }}
+              <button className="sc-mcancel" onClick={closeLeaveModal}
                 style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ยกเลิก</button>
               <button className="sc-msave" onClick={save} disabled={saving || !form.employee_code || !form.leave_date || !form.leave_type || vacBlocked}
                 style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', cursor: vacBlocked ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 600, opacity: (!form.employee_code || !form.leave_date || !form.leave_type || vacBlocked) ? 0.5 : 1 }}>
