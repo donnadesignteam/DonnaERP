@@ -95,19 +95,23 @@ input, select, textarea, button { font-family: inherit; font-size: 14px; }
 .m-card-tap:active { transform: scale(0.985); background: var(--blue-bg); }
 
 /* ใบปริ้นที่แปะไว้ที่ body ตรงๆ — ซ่อนบนหน้าจอ ตอนปริ้นจะยุบทุกอย่างที่ไม่ใช่ใบนี้
-   (ยุบด้วย display ไม่ใช่ visibility ไม่งั้นเนื้อหาหน้าจอยังกินพื้นที่จนได้กระดาษเปล่าตามมา) */
+   (ยุบด้วย display ไม่ใช่ visibility ไม่งั้นเนื้อหาหน้าจอยังกินพื้นที่จนได้กระดาษเปล่าตามมา)
+   ‼️ ต้องมี :has() — ยุบเฉพาะหน้าที่มีใบ .print-only อยู่จริง (หน้าภาพรวม) · เดิมยุบทุกหน้า
+      หน้าปฏิทินร้าน/ปฏิทินงานติดตั้งที่ปริ้นด้วย .print-area เลยได้กระดาษเปล่า */
 .print-only { display: none; }
 @media print {
-  body > *:not(.print-only) { display: none !important; }
+  body:has(> .print-only) > *:not(.print-only) { display: none !important; }
   .print-only { display: block !important; }
 }
 
 /* ปริ้นเฉพาะส่วน .print-area (เช่น ปฏิทิน) ซ่อนที่เหลือทั้งหมด */
 @media print {
-  body * { visibility: hidden !important; }
-  .print-area, .print-area * { visibility: visible !important; }
+  /* ยุบทุกอย่างที่ไม่ใช่ปฏิทินและไม่ได้ห่อปฏิทินอยู่ (display: none ไม่กินที่ → ไม่มีกระดาษเปล่าตามมา)
+     แล้วล้างระยะขอบของกล่องที่ห่อ (sidebar เว้นซ้าย 64 / padding หน้า) ให้ปฏิทินชิดมุมกระดาษ */
+  body:not(:has(> .print-only)) *:not(:has(.print-area)):not(.print-area):not(.print-area *) { display: none !important; }
+  body:not(:has(> .print-only)) :has(.print-area) { margin: 0 !important; padding: 0 !important; min-height: 0 !important; background: transparent !important; box-shadow: none !important; border: none !important; }
   .print-area {
-    position: absolute; left: 0; top: 0; width: 100%;
+    width: 100%;
     margin: 0 !important; border: none !important; box-shadow: none !important; padding: 0 !important;
   }
   .print-area, .print-area * {
