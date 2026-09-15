@@ -744,8 +744,9 @@ ${body}
   // นับ/กรองบนค่า "ตอนโหลดหน้า" (stable) แล้วคืนค่าสด (live) ก่อนวาด — แถวจึงค้างในแท็บเดิมให้ตรวจทานได้
   // กรองเดือนก่อนนับ → ตัวเลขบนแท็บสถานะตรงกับเดือนที่เลือก
   const stableRows = rows.map(stable).filter(r => month === 'all' || monthKey(r) === month)
-  const counts: Record<string, number> = { all: stableRows.length }
-  WORKFLOW.forEach(w => { counts[w.key] = stableRows.filter(r => r.status === w.key).length })
+  // แท็บแบบหมวดออเดอร์: ทั้งหมด = ยังไม่ส่ง · จัดส่งแล้ว = สถานะ "ส่งแล้ว" (ติ๊กจัดส่งแล้วย้ายไปแท็บนี้)
+  const isShipped = (r: Claim) => r.status === 'ส่งแล้ว'
+  const counts: Record<string, number> = { all: stableRows.filter(r => !isShipped(r)).length, shipped: stableRows.filter(isShipped).length }
 
   // ตัวเลือกของคอลัมน์แบบติ๊กเลือก — ดึงจากค่าที่มีจริงในเดือนที่เลือก (ค่าว่าง = "ไม่ระบุ")
   const colValues = (key: ColKey): string[] => {
@@ -766,7 +767,7 @@ ${body}
       (r.original_order_number ?? '').toLowerCase().includes(q) || (r.cause ?? '').toLowerCase().includes(q) ||
       (r.fault_by ?? '').toLowerCase().includes(q) || (r.fix_method ?? '').toLowerCase().includes(q)
     // พิมพ์ค้นหา = ข้ามตัวกรองแท็บ ค้นเจอทุกแถบ (เหมือนหมวดออเดอร์)
-    const matchTab = !!q || tab === 'all' || r.status === tab
+    const matchTab = !!q || (tab === 'shipped' ? isShipped(r) : !isShipped(r))
     // ตัวกรองหัวคอลัมน์
     const matchCols = COL_DEFS.every(c => {
       const v = c.get(r)
@@ -1033,18 +1034,14 @@ ${body}
         <CustomerPickStep book={customerBook} onPick={openAddForm} onClose={() => setCustStep(false)} />
       )}
 
-      {/* Status tabs (workflow) */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-        {([['all', 'ทั้งหมด', 'var(--ink-3)'], ...WORKFLOW.map(w => [w.key, w.key, w.color] as [string, string, string])] as [string, string, string][]).map(([key, label, color]) => {
-          const active = tab === key
-          return (
-            <button key={key} onClick={() => setTab(key)}
-              style={{ padding: '6px 14px', borderRadius: 20, border: active ? 'none' : '1px solid var(--border)', background: active ? color : 'var(--surface)', color: active ? '#fff' : 'var(--ink-3)', fontSize: 13, fontWeight: active ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
-              {label}
-              <span style={{ background: active ? 'rgba(255,255,255,0.3)' : color + '22', color: active ? '#fff' : color, borderRadius: 10, padding: '0px 6px', fontSize: 11, fontWeight: 700 }}>{counts[key] ?? 0}</span>
-            </button>
-          )
-        })}
+      {/* แท็บ ทั้งหมด / จัดส่งแล้ว — แบบเดียวกับหมวดออเดอร์ */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 18, alignItems: 'center', flexWrap: 'wrap' }}>
+        {([['all', 'ทั้งหมด'], ['shipped', 'จัดส่งแล้ว']] as [string, string][]).map(([key, label]) => (
+          <button key={key} onClick={() => setTab(key)} className="ow-tab" data-active={tab === key || undefined}>
+            {label}
+            <span className="ow-tab-n">{(counts[key] ?? 0).toLocaleString()}</span>
+          </button>
+        ))}
         {/* เลือกคอลัมน์ที่จะโชว์ — ติ๊กออก = ซ่อน */}
         <div style={{ position: 'relative', marginLeft: 'auto' }}>
           <button onClick={() => setOpenColPicker(v => !v)}
