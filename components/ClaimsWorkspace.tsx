@@ -105,6 +105,39 @@ const WORKFLOW: { key: string; color: string }[] = [
 ]
 const STATUS_COLOR = (s: string) => WORKFLOW.find(w => w.key === s)?.color ?? 'var(--ink-3)'
 
+// ── ตัวกรอง/การเรียงที่หัวคอลัมน์ (แบบเดียวกับหน้าออเดอร์) ──
+// date = เรียง + ช่วงวันที่ · pick = เรียง + ติ๊กเลือกค่า · num/text = เรียง · bool = แล้ว/ยังไม่
+type ColKind = 'date' | 'pick' | 'num' | 'text' | 'bool'
+const NONE = '(ไม่ระบุ)'
+const COL_DEFS = [
+  { key: 'claim_date', label: 'วันที่', kind: 'date', get: (r: Claim) => r.claim_date },
+  { key: 'deadline', label: 'กำหนดส่ง', kind: 'date', get: (r: Claim) => r.deadline },
+  { key: 'channel', label: 'แพลตฟอร์ม', kind: 'pick', get: (r: Claim) => r.channel },
+  { key: 'serial_no', label: 'Serial', kind: 'text', get: (r: Claim) => r.serial_no },
+  { key: 'customer', label: 'ลูกค้า', kind: 'text', get: (r: Claim) => r.customer_username },
+  { key: 'claim_type', label: 'ประเภท', kind: 'pick', get: (r: Claim) => r.claim_type },
+  { key: 'fault_by', label: 'ผิดโดย', kind: 'pick', get: (r: Claim) => r.fault_by },
+  { key: 'refund', label: 'ยอดชำระ', kind: 'num', get: (r: Claim) => r.refund_amount == null ? null : (r.money_direction === 'เก็บลูกค้า' ? 1 : -1) * Number(r.refund_amount) },
+  { key: 'status', label: 'สถานะ', kind: 'pick', get: (r: Claim) => r.status },
+  { key: 'admin_name', label: 'แอดมิน', kind: 'pick', get: (r: Claim) => r.admin_name },
+  { key: 'technician', label: 'ช่าง', kind: 'pick', get: (r: Claim) => r.technician },
+  { key: 'closed', label: 'ปิดงาน', kind: 'bool', get: (r: Claim) => r.closed_at, yes: 'ปิดงานแล้ว', no: 'ยังไม่ปิดงาน' },
+  { key: 'ship_name', label: 'ชื่อผู้รับ', kind: 'text', get: (r: Claim) => r.ship_name },
+  { key: 'shipped', label: 'จัดส่ง', kind: 'bool', get: (r: Claim) => r.shipped_at, yes: 'จัดส่งแล้ว', no: 'ยังไม่จัดส่ง' },
+  { key: 'ship_back_cost', label: 'ค่าส่งกลับ', kind: 'num', get: (r: Claim) => r.ship_back_cost },
+  { key: 'ship_return_cost', label: 'ค่าส่งคืน', kind: 'num', get: (r: Claim) => r.ship_return_cost },
+  { key: 'estimated_price', label: 'ราคาประเมิน', kind: 'num', get: (r: Claim) => r.estimated_price },
+  { key: 'updated_at', label: 'แก้ไขล่าสุด', kind: 'date', get: (r: Claim) => r.updated_at },
+] as const satisfies readonly { key: string; label: string; kind: ColKind; get: (r: Claim) => string | number | null | undefined; yes?: string; no?: string }[]
+type ColKey = typeof COL_DEFS[number]['key']
+const SORT_LABELS: Record<ColKind, [string, string]> = {
+  date: ['เก่าสุด → ใหม่สุด', 'ใหม่สุด → เก่าสุด'],
+  num: ['น้อยไปมาก', 'มากไปน้อย'],
+  pick: ['ก → ฮ', 'ฮ → ก'],
+  text: ['ก → ฮ', 'ฮ → ก'],
+  bool: ['', ''],
+}
+
 function emptyClaim(): Claim {
   return {
     id: '', claim_date: todayYmd(), deadline: null, channel: '', customer_username: '',
@@ -195,6 +228,12 @@ export default function ClaimsWorkspace() {
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<string>('all')
   const [month, setMonth] = useState('all')   // 'all' | 'YYYY-MM' | 'none' (ไม่มีวันที่แจ้ง)
+  // ตัวกรอง/การเรียงหัวคอลัมน์
+  const [colSort, setColSort] = useState<{ key: ColKey; dir: 'asc' | 'desc' } | null>(null)
+  const [colPick, setColPick] = useState<Partial<Record<ColKey, string[]>>>({})
+  const [colRange, setColRange] = useState<Partial<Record<ColKey, { from: string; to: string }>>>({})
+  const [colBool, setColBool] = useState<Partial<Record<ColKey, boolean | null>>>({})
+  const [colMenu, setColMenu] = useState<{ key: ColKey; rect: DOMRect } | null>(null)
   const [modal, setModal] = useState<{ mode: 'add' | 'edit'; data: Claim } | null>(null)
   const [saving, setSaving] = useState(false)
   const [pasteText, setPasteText] = useState('')
@@ -700,15 +739,53 @@ ${body}
   const counts: Record<string, number> = { all: stableRows.length }
   WORKFLOW.forEach(w => { counts[w.key] = stableRows.filter(r => r.status === w.key).length })
 
-  const displayed = stableRows.filter(r => {
+  // ตัวเลือกของคอลัมน์แบบติ๊กเลือก — ดึงจากค่าที่มีจริงในเดือนที่เลือก (ค่าว่าง = "ไม่ระบุ")
+  const colValues = (key: ColKey): string[] => {
+    const get = COL_DEFS.find(c => c.key === key)?.get
+    if (!get) return []
+    const vals = Array.from(new Set(stableRows.map(r => String(get(r) ?? '') || NONE)))
+    if (key === 'status') return WORKFLOW.map(w => w.key).filter(k => vals.includes(k)).concat(vals.includes(NONE) ? [NONE] : [])
+    return vals.filter(v => v !== NONE).sort((a, b) => a.localeCompare(b, 'th')).concat(vals.includes(NONE) ? [NONE] : [])
+  }
+  const colActive = (key: ColKey) => colSort?.key === key || (colPick[key]?.length ?? 0) > 0 ||
+    !!(colRange[key]?.from || colRange[key]?.to) || colBool[key] != null
+  const anyColFilter = COL_DEFS.some(c => (colPick[c.key]?.length ?? 0) > 0 || !!(colRange[c.key]?.from || colRange[c.key]?.to) || colBool[c.key] != null)
+  const clearColFilters = () => { setColPick({}); setColRange({}); setColBool({}) }
+
+  const filteredStable = stableRows.filter(r => {
     const q = search.toLowerCase()
     const matchSearch = !q || (r.customer_username ?? '').toLowerCase().includes(q) ||
       (r.original_order_number ?? '').toLowerCase().includes(q) || (r.cause ?? '').toLowerCase().includes(q) ||
       (r.fault_by ?? '').toLowerCase().includes(q) || (r.fix_method ?? '').toLowerCase().includes(q)
     // พิมพ์ค้นหา = ข้ามตัวกรองแท็บ ค้นเจอทุกแถบ (เหมือนหมวดออเดอร์)
     const matchTab = !!q || tab === 'all' || r.status === tab
-    return matchSearch && matchTab
-  }).map(live)
+    // ตัวกรองหัวคอลัมน์
+    const matchCols = COL_DEFS.every(c => {
+      const v = c.get(r)
+      if (c.kind === 'pick') { const p = colPick[c.key]; return !p?.length || p.includes(String(v ?? '') || NONE) }
+      if (c.kind === 'date') {
+        const rg = colRange[c.key]; if (!rg?.from && !rg?.to) return true
+        const d = String(v ?? '').slice(0, 10); if (!d) return false
+        return (!rg.from || d >= rg.from) && (!rg.to || d <= rg.to)
+      }
+      if (c.kind === 'bool') { const b = colBool[c.key]; return b == null || !!v === b }
+      return true
+    })
+    return matchSearch && matchTab && matchCols
+  })
+  // เรียงบนค่า stable → แถวไม่กระโดดหนีตอนแก้ช่องที่กำลังเรียงอยู่
+  if (colSort) {
+    const def = COL_DEFS.find(c => c.key === colSort.key)!
+    const dir = colSort.dir === 'asc' ? 1 : -1
+    filteredStable.sort((a, b) => {
+      const va = def.get(a), vb = def.get(b)
+      const ea = va == null || va === '', eb = vb == null || vb === ''
+      if (ea || eb) return ea === eb ? 0 : ea ? 1 : -1   // ค่าว่างไปท้ายเสมอ
+      if (def.kind === 'num') return (Number(va) - Number(vb)) * dir
+      return String(va).localeCompare(String(vb), 'th', { numeric: true }) * dir
+    })
+  }
+  const displayed = filteredStable.map(live)
 
   // ยอดรวมค่าส่งกลับ / ค่าส่งคืน / ราคาประเมิน — คิดจากเคสที่กรองอยู่ตอนนี้ (เดือน + แท็บสถานะ + คำค้น)
   const totals = useMemo(() => {
@@ -945,6 +1022,11 @@ ${body}
       <div className="dn-list-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
         {loading ? (
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>กำลังโหลด…</div>
+        ) : displayed.length === 0 && anyColFilter ? (
+          <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>
+            ไม่มีเคสที่ตรงกับตัวกรองคอลัมน์
+            <div><button onClick={clearColFilters} style={{ marginTop: 10, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--brand)', borderRadius: 999, padding: '6px 16px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>ล้างตัวกรองคอลัมน์</button></div>
+          </div>
         ) : displayed.length === 0 ? (
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>ยังไม่มีเคสเคลม — กด “＋ เพิ่มรายการ” แล้ววางข้อความจากไลน์ได้เลย</div>
         ) : (
@@ -961,9 +1043,20 @@ ${body}
                   {['วันที่', 'กำหนดส่ง', 'แพลตฟอร์ม', 'Serial', 'ลูกค้า', 'ประเภท', 'ผิดโดย', 'วิธีแก้ไข', 'รายการ', 'ยอดชำระ', 'สถานะ', 'แอดมิน', 'ช่าง', 'ปิดงาน', 'ชื่อผู้รับ', 'ที่อยู่จัดส่ง', 'จัดส่ง', 'ค่าส่งกลับ', 'ค่าส่งคืน', 'ราคาประเมิน', 'หมายเหตุ', 'แก้ไขล่าสุด', ''].map((h, i) => {
                     // 3 คอลัมน์เงิน โชว์ยอดรวมของเคสที่กรองอยู่ต่อท้ายชื่อคอลัมน์เลย (เดิมเป็นการ์ดแดชบอร์ดข้างบน)
                     const sum = h === 'ค่าส่งกลับ' ? totals.back : h === 'ค่าส่งคืน' ? totals.ret : h === 'ราคาประเมิน' ? totals.est : null
+                    const def = COL_DEFS.find(c => c.label === h)
+                    const on = def ? colActive(def.key) : false
+                    const nPick = def ? colPick[def.key]?.length ?? 0 : 0
                     return (
                     <th key={i} style={{ textAlign: sum !== null ? 'right' : 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>
-                      {h}{sum !== null && <span style={{ color: 'var(--ink)', fontWeight: 700, marginLeft: 6 }}>{sum.toLocaleString('th-TH', { maximumFractionDigits: 2 })}</span>}
+                      {def ? (
+                        <button onClick={e => { const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); setColMenu(m => m?.key === def.key ? null : { key: def.key, rect }) }}
+                          style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: on ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', gap: 3, fontFamily: 'inherit' }}>
+                          {h}{nPick > 0 && ` (${nPick})`}
+                          {colSort?.key === def.key && <span style={{ fontSize: 10 }}>{colSort.dir === 'asc' ? '↑' : '↓'}</span>}
+                          <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                        </button>
+                      ) : h}
+                      {sum !== null && <span style={{ color: 'var(--ink)', fontWeight: 700, marginLeft: 6 }}>{sum.toLocaleString('th-TH', { maximumFractionDigits: 2 })}</span>}
                     </th>
                   )})}
                 </tr>
@@ -1105,6 +1198,67 @@ ${body}
           </div>
         )}
       </div>
+
+      {/* เมนูหัวคอลัมน์ — เรียง/กรอง */}
+      {colMenu && (() => {
+        const def = COL_DEFS.find(c => c.key === colMenu.key)!
+        const k = def.key
+        const close = () => setColMenu(null)
+        const opt = (label: string, active: boolean, onClick: () => void, extra?: React.CSSProperties) => (
+          <div key={label} onClick={onClick}
+            style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: active ? 600 : 400, color: active ? 'var(--blue)' : 'var(--ink)', background: active ? 'rgba(196,126,58,0.08)' : 'transparent', ...extra }}>
+            {label}
+          </div>
+        )
+        const left = Math.max(8, Math.min(colMenu.rect.left, window.innerWidth - 240))
+        const picked = colPick[k] ?? []
+        const range = colRange[k] ?? { from: '', to: '' }
+        return (
+          <>
+            <div onClick={close} style={{ position: 'fixed', inset: 0, zIndex: 150 }} />
+            <div className="ow-drop" style={{ position: 'fixed', top: colMenu.rect.bottom + 4, left, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 180, maxHeight: '60vh', overflowY: 'auto' }}>
+              {def.kind === 'bool' ? (
+                ([['ทั้งหมด', null], [def.yes, true], [def.no, false]] as [string, boolean | null][]).map(([label, val]) =>
+                  opt(label, (colBool[k] ?? null) === val, () => { setColBool(p => ({ ...p, [k]: val })); close() }))
+              ) : (
+                <>
+                  {([['asc', SORT_LABELS[def.kind][0]], ['desc', SORT_LABELS[def.kind][1]]] as ['asc' | 'desc', string][]).map(([dir, label]) =>
+                    opt(label, colSort?.key === k && colSort.dir === dir, () => { setColSort({ key: k, dir }); close() }))}
+                  {colSort?.key === k && opt('ไม่เรียง', false, () => { setColSort(null); close() })}
+                </>
+              )}
+              {def.kind === 'date' && (
+                <div style={{ padding: '10px 14px 6px', borderTop: '1px solid var(--border)', marginTop: 4 }}>
+                  {([['from', 'ตั้งแต่'], ['to', 'ถึงวันที่']] as ['from' | 'to', string][]).map(([f, label]) => (
+                    <div key={f} style={{ marginBottom: 8 }}>
+                      <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>{label}</label>
+                      <input type="date" lang="en-GB" value={range[f]} onChange={e => setColRange(p => ({ ...p, [k]: { ...range, [f]: e.target.value } }))}
+                        style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+                    </div>
+                  ))}
+                  {(range.from || range.to) && (
+                    <button onClick={() => setColRange(p => ({ ...p, [k]: { from: '', to: '' } }))} style={{ fontSize: 11, border: 'none', background: 'transparent', color: 'var(--ink-4)', cursor: 'pointer', padding: 0 }}>ล้างช่วงวันที่</button>
+                  )}
+                </div>
+              )}
+              {def.kind === 'pick' && (
+                <div style={{ borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 4 }}>
+                  {colValues(k).map(v => (
+                    <label key={v} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: picked.includes(v) ? 'var(--blue-bg)' : 'transparent' }}>
+                      <input type="checkbox" checked={picked.includes(v)} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }}
+                        onChange={() => setColPick(p => ({ ...p, [k]: picked.includes(v) ? picked.filter(x => x !== v) : [...picked, v] }))} />
+                      <span style={{ color: k === 'status' && v !== NONE ? STATUS_COLOR(v) : v === NONE ? 'var(--ink-4)' : 'var(--ink)', fontWeight: k === 'status' ? 600 : 400 }}>{v}</span>
+                    </label>
+                  ))}
+                  {picked.length > 0 && (
+                    <button onClick={() => setColPick(p => ({ ...p, [k]: [] }))} style={{ fontSize: 11, border: 'none', background: 'transparent', color: 'var(--ink-4)', cursor: 'pointer', padding: '6px 12px 2px' }}>ล้างที่เลือก</button>
+                  )}
+                </div>
+              )}
+            </div>
+          </>
+        )
+      })()}
 
       {/* Action menu (···) */}
       {openAction && actionRect && (() => {
