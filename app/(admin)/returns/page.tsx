@@ -751,23 +751,23 @@ function MediaCell({ kind, list, busy, onAdd, onRemove }: {
     // ‼️ แถวตารางสูงคงที่ (.dn-rows) — เรียงแถวเดียว มีหลายรูป/คลิปเลื่อนซ้ายขวาดู ไม่ขึ้นบรรทัดใหม่
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
       {list.length > 0 && (
-        <div className="dn-hscroll" style={{ display: 'flex', flexWrap: 'nowrap', gap: 8, overflowX: 'auto', maxWidth: 190, padding: '6px 6px 0 0' }}>
+        <div className="dn-hscroll" style={{ display: 'flex', flexWrap: 'nowrap', gap: 8, overflowX: 'auto', maxWidth: 190, padding: '2px 6px 0 0' }}>
           {list.map((m, i) => (
             <div key={m.url} style={{ position: 'relative', flexShrink: 0 }}>
               <a href={m.url} target="_blank" rel="noreferrer" title={isVideo ? `เปิดวิดีโอ ${m.name ?? ''}` : 'เปิดรูปขนาดเต็ม'}
                 style={isVideo
-                  ? { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--blue)', textDecoration: 'none', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 22px 4px 8px' }
+                  ? { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--blue)', textDecoration: 'none', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 20px 2px 8px' }
                   : { display: 'block' }}>
-                {isVideo ? <>▶ คลิป {i + 1}</> : <img src={m.url} alt="รูปพัสดุ" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)', display: 'block' }} />}
+                {isVideo ? <>▶ คลิป {i + 1}</> : <img src={m.url} alt="รูปพัสดุ" style={{ width: 28, height: 28, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)', display: 'block' }} />}
               </a>
               <button onClick={() => onRemove(i)} title="เอาออก"
-                style={{ position: 'absolute', top: isVideo ? 3 : -6, right: isVideo ? 3 : -6, width: 18, height: 18, borderRadius: '50%', border: 'none', background: 'rgba(15,23,42,0.65)', color: '#fff', fontSize: 10, lineHeight: 1, cursor: 'pointer', padding: 0 }}>✕</button>
+                style={{ position: 'absolute', top: isVideo ? 2 : -4, right: isVideo ? 2 : -4, width: 15, height: 15, borderRadius: '50%', border: 'none', background: 'rgba(15,23,42,0.65)', color: '#fff', fontSize: 10, lineHeight: 1, cursor: 'pointer', padding: 0 }}>✕</button>
             </div>
           ))}
         </div>
       )}
       <button type="button" onClick={() => input.current?.click()} disabled={!!busy}
-        style={{ flexShrink: 0, border: '1px dashed #ccc', background: 'transparent', color: busy ? 'var(--ink-3)' : 'var(--blue)', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: busy ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>
+        style={{ flexShrink: 0, border: '1px dashed #ccc', background: 'transparent', color: busy ? 'var(--ink-3)' : 'var(--blue)', borderRadius: 6, padding: '2px 10px', fontSize: 12, cursor: busy ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>
         {busy ? `กำลังอัพ ${busy}` : isVideo ? '+ วิดีโอ' : '+ รูป'}
       </button>
       <input ref={input} type="file" accept={isVideo ? 'video/*' : 'image/*'} multiple style={{ display: 'none' }}
@@ -785,14 +785,14 @@ function ClaimCell({ claim, linked, editing, onStart, onCancel, onPick }: {
   if (editing) return <ClaimSearch linked={linked} onCancel={onCancel} onPick={onPick} />
   return (
     <div onClick={onStart} title="กดเพื่อค้นงานเคลม" className="rp-cell"
-      style={{ padding: '6px 8px', borderRadius: 6, cursor: 'text', minHeight: 20, overflow: 'hidden' }}>
+      style={{ padding: '2px 8px', borderRadius: 6, cursor: 'text', minHeight: 20, overflow: 'hidden', display: 'flex', alignItems: 'baseline', gap: 6, whiteSpace: 'nowrap' }}>
       {!linked ? <span style={{ color: 'var(--ink-4)' }}>—</span>
         : !claim ? <span style={{ color: 'var(--ink-4)' }}>กำลังโหลด…</span>
         : <>
-            <div style={{ color: 'var(--ink)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{claimLabel(claim)}</div>
-            <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <span style={{ color: 'var(--ink)', fontWeight: 600, flexShrink: 0 }}>{claimLabel(claim)}</span>
+            <span style={{ fontSize: 11.5, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
               {[claim.original_order_number ? claim.customer_username : null, claim.channel, claim.status].filter(Boolean).join(' · ') || 'งานเคลม'}
-            </div>
+            </span>
           </>}
     </div>
   )

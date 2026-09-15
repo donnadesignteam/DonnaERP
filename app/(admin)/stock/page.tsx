@@ -459,7 +459,7 @@ export default function StockPage() {
                   <td style={{ padding: '12px 14px', color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
                     {item.fabric_width != null ? `${item.fabric_width} ม.` : '-'}
                   </td>
-                  <td style={{ padding: '12px 14px', color: 'var(--ink-3)', maxWidth: 180 }}>{item.fabric_type || '-'}</td>
+                  <td title={item.fabric_type || undefined} style={{ padding: '12px 14px', color: 'var(--ink-3)', maxWidth: 180, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.fabric_type || '-'}</td>
                   <td style={{ padding: '12px 14px', color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{item.shop_code || '-'}</td>
                   <td style={{ padding: '12px 14px', color: 'var(--ink)' }}>{item.shop_name || '-'}</td>
                   {quickFilter !== 'waiting' && (
@@ -521,10 +521,7 @@ export default function StockPage() {
                   </td>
                   <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', color: 'var(--ink-4)', fontSize: 11 }}>
                     {item.updated_at ? (
-                      <div>
-                        <div>{new Date(item.updated_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}</div>
-                        <div>{new Date(item.updated_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>
-                      </div>
+                      <span>{new Date(item.updated_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}{new Date(item.updated_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</span>
                     ) : '-'}
                   </td>
                   <td style={{ padding: '12px 14px' }}>

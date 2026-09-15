@@ -388,13 +388,7 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
 }
 
 // คอลัมน์รายการโชว์ได้ไม่เกินกี่บรรทัด (เกินนี้ขึ้น "+ อีก N รายการ" แทน แถวจะได้ไม่ยืด)
-const ITEM_LINE_MAX = 3
-// ‼️ แถวทุกแท็บสูงเท่ากัน = 3 บรรทัด (.ow-card tbody tr ใน globals.css) — ช่องรายการรวม "+ อีก N" ต้องไม่เกิน 3 บรรทัด
-//    มีไม่เกิน 3 รายการ = โชว์ครบ · เกิน = โชว์ 2 + "+ อีก N รายการ"
-const itemShown = (items: unknown[] | null | undefined) => {
-  const n = formatItemLines(items as never).length
-  return n > ITEM_LINE_MAX ? ITEM_LINE_MAX - 1 : n
-}
+// ‼️ แถวทุกแท็บสูงเท่ากัน = 1 บรรทัด 48px เท่าหน้าภาพรวม (.ow-card tbody tr ใน globals.css) — ช่องไหนซ้อน 2 บรรทัด แถวจะสูงกว่าแถวอื่นทันที
 const PAGE_SIZE = 50
 const DEMO_LOCAL_TICKS = true   // เฉพาะโคลน donnaweb-design — ดู demoTicks
 
@@ -1099,10 +1093,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       <input type="checkbox" checked={tickVal(r.id, 'printed', !!r.printed_at)} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'printed', e.target.checked) : togglePrinted(r.id, e.target.checked)}
         style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
       {r.printed_at && (
-        <div style={{ fontSize: 10, color: '#A8744F', fontWeight: 600, marginTop: 3 }}>
+        <span style={{ fontSize: 10, color: '#A8744F', fontWeight: 600, marginLeft: 6, verticalAlign: 'middle' }}>
           {new Date(r.printed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
           {new Date(r.printed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-        </div>
+        </span>
       )}
     </td>
   )
@@ -3258,14 +3252,10 @@ ${body}
                       onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
                       style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: '100%', minWidth: 100, outline: 'none', padding: '2px 0' }} />
                   ) : (
-                    <div onClick={() => setEditCell({ id: r.id, field: 'outsource', val })} style={{ cursor: 'text', minWidth: 60 }}>
+                    // แถวสูง 1 บรรทัด — วันเวลาที่ลงสั่งนอก ชี้เมาส์ดูในทูลทิป
+                    <div onClick={() => setEditCell({ id: r.id, field: 'outsource', val })} style={{ cursor: 'text', minWidth: 60 }}
+                      title={val ? `${val}${r.outsource_at ? ` · ลงเมื่อ ${new Date(r.outsource_at).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}` : ''}` : undefined}>
                       <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160, color: val ? 'var(--ink)' : 'var(--ink-4)' }}>{val || '—'}</div>
-                      {val && r.outsource_at && (
-                        <div style={{ color: 'var(--ink-4)', fontSize: 10, lineHeight: 1.3 }}>
-                          {new Date(r.outsource_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
-                          {new Date(r.outsource_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      )}
                     </div>
                   )
                 }
@@ -3361,7 +3351,7 @@ ${body}
                     {showCol('customer') && (
                     <td style={{ padding: '8px 14px', minWidth: 140 }}>
                       {r.customer_name
-                        ? <Link href={`/customers?name=${encodeURIComponent(r.customer_name)}`} title={r.customer_name} style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word' }}>{r.customer_name}</Link>
+                        ? <Link href={`/customers?name=${encodeURIComponent(r.customer_name)}`} title={r.customer_name} style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 }}>{r.customer_name}</Link>
                         : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
                     )}
@@ -3373,7 +3363,7 @@ ${body}
                         const pos = { top: btnR.bottom - (cardR?.top ?? 0), left: btnR.left - (cardR?.left ?? 0) }
                         setRowPlatformDropdown(d => d?.id === r.id ? null : { id: r.id, pos })
                       }} style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.platform ? 'var(--ink-3)' : 'var(--ink-4)', padding: 0, maxWidth: 140, textAlign: 'left' }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>{r.platform && <PlatformIcon name={r.platform} size={18} />}{r.platform || '—'}</span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>{r.platform && <PlatformIcon name={r.platform} size={18} />}{r.platform || '—'}</span>
                       </button>
                     </td>
                     )}
@@ -3382,13 +3372,11 @@ ${body}
                       <button onClick={() => { openItemsModal(r) }}
                         style={{ border: 'none', background: 'transparent', fontSize: 11, cursor: 'pointer', padding: 0, color: r.items?.length ? 'var(--ink)' : 'var(--ink-4)', textAlign: 'left', display: 'block', width: '100%' }}>
                         {r.items?.length ? (
-                          <div>
-                            {/* โชว์ไม่เกิน 3 บรรทัด — รายการเยอะแค่ไหนแถวก็ไม่ยืด (กดเปิดดูรายการเต็มได้) */}
-                            {formatItemLines(r.items).slice(0, itemShown(r.items)).map((line, i) => (
-                              <div key={i} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190, lineHeight: '1.6', color: i === 0 ? 'var(--ink)' : 'var(--ink-3)' }}>{line}</div>
-                            ))}
-                            {formatItemLines(r.items).length > itemShown(r.items) && (
-                              <div style={{ fontSize: 10, lineHeight: '1.6', color: 'var(--ink-4)' }}>+ อีก {formatItemLines(r.items).length - itemShown(r.items)} รายการ</div>
+                          // แถวสูง 1 บรรทัด (เท่าหน้าภาพรวม): รายการแรก + "+N" · ชี้เมาส์ดูครบทุกรายการ · กดเปิดแก้ได้เหมือนเดิม
+                          <div title={formatItemLines(r.items).join('\n')} style={{ display: 'flex', alignItems: 'center', gap: 6, maxWidth: 190 }}>
+                            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, color: 'var(--ink)' }}>{formatItemLines(r.items)[0]}</span>
+                            {formatItemLines(r.items).length > 1 && (
+                              <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 600, color: '#8A6142', background: 'var(--cream)', borderRadius: 999, padding: '1px 7px' }}>+{formatItemLines(r.items).length - 1}</span>
                             )}
                           </div>
                         ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
@@ -3446,7 +3434,7 @@ ${body}
                     {showCol('status') && statusCell(r)}
                     {showCol('done') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                         <input type="checkbox" checked={tickVal(r.id, 'done', !!r.is_urgent)} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'done', e.target.checked) : toggleDone(r.id, e.target.checked)}
                           style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                         {timeStamp(r, 'done_at')}
@@ -3455,7 +3443,7 @@ ${body}
                     )}
                     {quickFilter !== 'install' && showCol('shipped') && (
                       <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                           <input type="checkbox" checked={tickVal(r.id, 'shipped', r.order_status === 'จัดส่งแล้ว')} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'shipped', e.target.checked) : toggleShipped(r.id, e.target.checked)}
                             style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                           {shippedStamp(r)}
@@ -3490,7 +3478,7 @@ ${body}
                     {showCol('rail') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       {hasRail(r) ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                           <input type="checkbox" checked={tickVal(r.id, 'rail', !!r.rail_packed)} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'rail', e.target.checked) : toggleRailPacked(r.id, e.target.checked)}
                             style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                           {r.rail_packed && r.rail_packed_at && (
@@ -3779,7 +3767,7 @@ ${body}
                     {showCol('customer') && (
                     <td style={{ padding: '12px 14px', minWidth: 140 }}>
                       {r.customer_name
-                        ? <Link href={`/customers?name=${encodeURIComponent(r.customer_name)}`} title={r.customer_name} style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word' }}>{r.customer_name}</Link>
+                        ? <Link href={`/customers?name=${encodeURIComponent(r.customer_name)}`} title={r.customer_name} style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 }}>{r.customer_name}</Link>
                         : <span style={{ color: 'var(--ink-4)' }}>-</span>}
                     </td>
                     )}
@@ -3798,7 +3786,7 @@ ${body}
                     {showCol('status') && statusCell(r)}
                     {showCol('done') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                         <input type="checkbox" checked={tickVal(r.id, 'done', !!r.is_urgent)} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'done', e.target.checked) : toggleDone(r.id, e.target.checked)}
                           style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                         {timeStamp(r, 'done_at')}
@@ -3810,7 +3798,7 @@ ${body}
                       {r.is_installation ? (
                         <span style={{ color: 'var(--ink-4)' }}>-</span>
                       ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                           <input type="checkbox" checked={tickVal(r.id, 'shipped', r.order_status === 'จัดส่งแล้ว')} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'shipped', e.target.checked) : toggleShipped(r.id, e.target.checked)}
                             style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                           {shippedStamp(r)}
@@ -3827,7 +3815,7 @@ ${body}
                     {showCol('rail') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       {hasRail(r) ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                           <input type="checkbox" checked={tickVal(r.id, 'rail', !!r.rail_packed)} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'rail', e.target.checked) : toggleRailPacked(r.id, e.target.checked)}
                             style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                           {r.rail_packed && r.rail_packed_at && (
@@ -4174,7 +4162,7 @@ ${body}
                     {showCol('customer') && (
                     <td style={{ padding: '12px 14px', minWidth: 140 }}>
                       {r.customer_name
-                        ? <Link href={`/customers?name=${encodeURIComponent(r.customer_name)}`} title={r.customer_name} style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word' }}>{r.customer_name}</Link>
+                        ? <Link href={`/customers?name=${encodeURIComponent(r.customer_name)}`} title={r.customer_name} style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 }}>{r.customer_name}</Link>
                         : <span style={{ color: 'var(--ink-4)' }}>-</span>}
                     </td>
                     )}
@@ -4192,13 +4180,11 @@ ${body}
                       <button onClick={() => { openItemsModal(r) }}
                         style={{ border: 'none', background: 'transparent', fontSize: 11, cursor: 'pointer', padding: 0, color: r.items?.length ? 'var(--ink)' : 'var(--ink-4)', textAlign: 'left', display: 'block', width: '100%' }}>
                         {r.items?.length ? (
-                          <div>
-                            {/* โชว์ไม่เกิน 3 บรรทัด — รายการเยอะแค่ไหนแถวก็ไม่ยืด (กดเปิดดูรายการเต็มได้) */}
-                            {formatItemLines(r.items).slice(0, itemShown(r.items)).map((line, i) => (
-                              <div key={i} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 230, lineHeight: '1.6', color: i === 0 ? 'var(--ink)' : 'var(--ink-3)' }}>{line}</div>
-                            ))}
-                            {formatItemLines(r.items).length > itemShown(r.items) && (
-                              <div style={{ fontSize: 10, lineHeight: '1.6', color: 'var(--ink-4)' }}>+ อีก {formatItemLines(r.items).length - itemShown(r.items)} รายการ</div>
+                          // แถวสูง 1 บรรทัด (เท่าหน้าภาพรวม): รายการแรก + "+N" · ชี้เมาส์ดูครบทุกรายการ · กดเปิดแก้ได้เหมือนเดิม
+                          <div title={formatItemLines(r.items).join('\n')} style={{ display: 'flex', alignItems: 'center', gap: 6, maxWidth: 230 }}>
+                            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, color: 'var(--ink)' }}>{formatItemLines(r.items)[0]}</span>
+                            {formatItemLines(r.items).length > 1 && (
+                              <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 600, color: '#8A6142', background: 'var(--cream)', borderRadius: 999, padding: '1px 7px' }}>+{formatItemLines(r.items).length - 1}</span>
                             )}
                           </div>
                         ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
@@ -4256,7 +4242,7 @@ ${body}
                     )}
                     {showCol('done') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                         <input type="checkbox" checked={tickVal(r.id, 'done', !!r.is_urgent)} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'done', e.target.checked) : toggleDone(r.id, e.target.checked)}
                           style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                         {timeStamp(r, 'done_at')}
@@ -4265,7 +4251,7 @@ ${body}
                     )}
                     {showCol('shipped') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                         <input type="checkbox" checked={tickVal(r.id, 'shipped', r.order_status === 'จัดส่งแล้ว')} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'shipped', e.target.checked) : toggleShipped(r.id, e.target.checked)}
                           style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                         {shippedStamp(r)}
@@ -4281,7 +4267,7 @@ ${body}
                     {showCol('rail') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       {hasRail(r) ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                           <input type="checkbox" checked={tickVal(r.id, 'rail', !!r.rail_packed)} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'rail', e.target.checked) : toggleRailPacked(r.id, e.target.checked)}
                             style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                           {r.rail_packed && r.rail_packed_at && (
@@ -4303,14 +4289,10 @@ ${body}
                           onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
                           style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: '100%', outline: 'none', padding: '2px 0' }} />
                       ) : (
-                        <div onClick={() => setEditCell({ id: r.id, field: 'outsource', val: r.outsource ?? '' })} style={{ cursor: 'text', minWidth: 60 }}>
+                        // แถวสูง 1 บรรทัด — วันเวลาที่ลงสั่งนอก ชี้เมาส์ดูในทูลทิป
+                        <div onClick={() => setEditCell({ id: r.id, field: 'outsource', val: r.outsource ?? '' })} style={{ cursor: 'text', minWidth: 60 }}
+                          title={r.outsource ? `${r.outsource}${r.outsource_at ? ` · ลงเมื่อ ${new Date(r.outsource_at).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}` : ''}` : undefined}>
                           <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: r.outsource ? 'var(--ink)' : 'var(--ink-4)' }}>{r.outsource || '—'}</div>
-                          {r.outsource && r.outsource_at && (
-                            <div style={{ color: 'var(--ink-4)', fontSize: 10, lineHeight: 1.3 }}>
-                              {new Date(r.outsource_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
-                              {new Date(r.outsource_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-                            </div>
-                          )}
                         </div>
                       )}
                     </td>

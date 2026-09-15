@@ -265,7 +265,7 @@ export default function PurchaseOrdersPage() {
                   </td>
                   <td style={{ padding: '13px 16px', color: 'var(--ink)', fontWeight: 500 }}>{r.order_number || '-'}</td>
                   <td style={{ padding: '13px 16px', color: 'var(--ink-3)', maxWidth: 200 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.items || '-'}</div></td>
-                  <td style={{ padding: '13px 16px' }}>{r.supplier || '-'}</td>
+                  <td title={r.supplier || undefined} style={{ padding: '13px 16px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200 }}>{r.supplier || '-'}</td>
                   <td style={{ padding: '13px 16px' }}>
                     <select value={r.status} onChange={e => updateStatus(r.id, e.target.value)}
                       style={{ border: 'none', background: (STATUS_COLOR[r.status] ?? 'var(--ink-3)') + '22', color: STATUS_COLOR[r.status] ?? 'var(--ink-3)', borderRadius: 980, padding: '3px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer', outline: 'none' }}>
@@ -275,10 +275,7 @@ export default function PurchaseOrdersPage() {
                   </td>
                   <td style={{ padding: '13px 16px', whiteSpace: 'nowrap', color: 'var(--ink-4)', fontSize: 11 }}>
                     {r.updated_at ? (
-                      <div>
-                        <div>{new Date(r.updated_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}</div>
-                        <div>{new Date(r.updated_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>
-                      </div>
+                      <span>{new Date(r.updated_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}{new Date(r.updated_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</span>
                     ) : '-'}
                   </td>
                   <td style={{ padding: '13px 16px' }}>

@@ -820,7 +820,7 @@ ${body}
     setRows(prev => prev.map(r => r.id === id ? ({ ...r, [field]: value, updated_at: now } as Claim) : r))
     await tUpdate('claims', id, { [field]: value, updated_at: now }, { [field]: old ? (old as any)[field] ?? null : null }, `แก้เคลม ${old?.customer_username || ''}`, load)
   }
-  // ‼️ แถวตารางสูงคงที่ 3 บรรทัด (.dn-rows) — ข้อความยาวตัดที่ opts.lines (ค่าเริ่ม 3) ชี้เมาส์ดูเต็ม · กดแก้ได้เหมือนเดิม
+  // ‼️ แถวตารางสูงคงที่ 1 บรรทัด 48px (.dn-rows) — ข้อความยาวตัดที่ opts.lines (ค่าเริ่ม 1) ชี้เมาส์ดูเต็ม · กดแก้ได้เหมือนเดิม
   const textCell = (r: Claim, field: keyof Claim, opts?: { numeric?: boolean; placeholder?: string; align?: 'left' | 'right'; lines?: number }) => {
     const val = r[field] == null ? '' : String(r[field])
     return isEditing(r.id, field) ? (
@@ -832,7 +832,7 @@ ${body}
     ) : (
       <div onClick={() => setEditCell({ id: r.id, field, val })} title={val || undefined}
         style={{ cursor: 'text', color: val ? 'var(--ink)' : 'var(--ink-4)', textAlign: opts?.align ?? 'left',
-          display: '-webkit-box', WebkitLineClamp: opts?.lines ?? 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word' }}>
+          display: '-webkit-box', WebkitLineClamp: opts?.lines ?? 1, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word' }}>
         {opts?.numeric && val ? Number(val).toLocaleString('th-TH') : (val || (opts?.placeholder ?? '—'))}
       </div>
     )
@@ -1154,15 +1154,15 @@ ${body}
                     )}
                     {showCol('ลูกค้า') && (
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
-                      <div>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
                         {r.customer_username
                           ? <Link href={`/customers?name=${encodeURIComponent(r.customer_username)}`} title="เปิดโฟลเดอร์ออเดอร์" style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>{r.customer_username}</Link>
                           : '-'}
+                        {r.original_order_number && <span style={{ color: 'var(--ink-4)', fontSize: 11 }}>#{r.original_order_number}</span>}
+                        {r.photos && r.photos.length > 0 && (
+                          <span title={`มีรูปงานเคลม ${r.photos.length} รูป`} style={{ fontSize: 11, color: 'var(--ink-3)' }}>📷 {r.photos.length}</span>
+                        )}
                       </div>
-                      {r.original_order_number && <div style={{ color: 'var(--ink-4)', fontSize: 11 }}>#{r.original_order_number}</div>}
-                      {r.photos && r.photos.length > 0 && (
-                        <div title={`มีรูปงานเคลม ${r.photos.length} รูป`} style={{ fontSize: 11, color: 'var(--ink-3)' }}>📷 {r.photos.length}</div>
-                      )}
                     </td>
                     )}
                     {showCol('ประเภท') && (
@@ -1182,18 +1182,16 @@ ${body}
                     )}
                     {showCol('รายการ') && (
                     <td style={{ padding: '8px 14px', maxWidth: 320 }}>
-                      <div style={{ marginBottom: 2 }}>{textCell(r, 'cause', { lines: 1 })}</div>
-                      <button onClick={() => { setItemsPaste(''); setItemsParseErr(''); setItemsModal({ id: r.id, items: r.items ? r.items.map(it => ({ ...it })) : [] }) }}
-                        style={{ border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', textAlign: 'left', width: '100%', display: 'block' }}>
-                        {r.items && r.items.length > 0 ? (
-                          <div style={{ fontSize: 11, color: 'var(--ink-3)', lineHeight: 1.5 }}>
-                            {r.items.slice(0, r.items.length > 2 ? 1 : 2).map((it, i) => <div key={i} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 300 }}>• {itemLine(it)}</div>)}
-                            {r.items.length > 2 && <div>+ อีก {r.items.length - 1} รายการ</div>}
-                          </div>
-                        ) : <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>+ เพิ่มรายการ</span>}
-                      </button>
-                      {/* เลขพัสดุที่ลูกค้าส่งคืน — แถวสูงคงที่ เลยโชว์เฉพาะตอนมีรายการไม่เกิน 1 บรรทัด (ที่เหลือดูได้ในฟอร์มแก้ไข) */}
-                      {r.return_tracking && (r.items?.length ?? 0) <= 1 && <div title={`คืน: ${r.return_tracking}`} style={{ fontSize: 11, color: 'var(--ink-4)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 300 }}>คืน: {r.return_tracking}</div>}
+                      {/* แถวสูง 1 บรรทัด: สาเหตุ + ป้าย "N รายการ" (กดเปิดแก้รายการ) · ชี้ป้ายดูรายการครบ + เลขพัสดุที่ลูกค้าส่งคืน */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>{textCell(r, 'cause', { lines: 1 })}</div>
+                        <button onClick={() => { setItemsPaste(''); setItemsParseErr(''); setItemsModal({ id: r.id, items: r.items ? r.items.map(it => ({ ...it })) : [] }) }}
+                          title={[...(r.items ?? []).map(it => '• ' + itemLine(it)), r.return_tracking ? `คืน: ${r.return_tracking}` : ''].filter(Boolean).join('\n') || 'เพิ่มรายการ'}
+                          style={{ flexShrink: 0, border: 'none', cursor: 'pointer', borderRadius: 999, padding: '2px 9px', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
+                            background: r.items?.length ? 'var(--cream)' : 'transparent', color: r.items?.length ? '#8A6142' : 'var(--ink-4)' }}>
+                          {r.items?.length ? `${r.items.length} รายการ` : '+ เพิ่มรายการ'}
+                        </button>
+                      </div>
                     </td>
                     )}
                     {showCol('ยอดชำระ') && (
@@ -1205,7 +1203,7 @@ ${body}
                           onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
                           style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: 90, outline: 'none', padding: '2px 0' }} />
                       ) : (
-                        <div onClick={() => setEditCell({ id: r.id, field: 'refund_amount', val: r.refund_amount != null ? String(r.refund_amount) : '' })} style={{ cursor: 'text' }}>
+                        <div onClick={() => setEditCell({ id: r.id, field: 'refund_amount', val: r.refund_amount != null ? String(r.refund_amount) : '' })} style={{ cursor: 'text', display: 'inline-block' }}>
                           {r.refund_amount != null ? (
                             <span style={{ fontWeight: 600, color: r.money_direction === 'เก็บลูกค้า' ? '#6F8F6A' : 'var(--red)' }}>
                               {r.money_direction === 'เก็บลูกค้า' ? '+' : '−'}{Number(r.refund_amount).toLocaleString()}
@@ -1213,7 +1211,7 @@ ${body}
                           ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                         </div>
                       )}
-                      {r.money_status && <div style={{ fontSize: 11, color: r.money_status === 'รอ' ? '#C79A4B' : '#6F8F6A' }}>{r.money_status}</div>}
+                      {r.money_status && <span style={{ fontSize: 11, marginLeft: 6, color: r.money_status === 'รอ' ? '#C79A4B' : '#6F8F6A' }}>{r.money_status}</span>}
                     </td>
                     )}
                     {showCol('สถานะ') && (
@@ -1250,8 +1248,10 @@ ${body}
                     )}
                     {showCol('ชื่อผู้รับ') && (
                     <td style={{ padding: '8px 14px', minWidth: 110 }}>
-                      <div>{textCell(r, 'ship_name', { lines: 2 })}</div>
-                      <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>{textCell(r, 'ship_phone', { placeholder: '+ เบอร์โทร', lines: 1 })}</div>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
+                        <div style={{ minWidth: 0 }}>{textCell(r, 'ship_name')}</div>
+                        <div style={{ fontSize: 11, color: 'var(--ink-4)', flexShrink: 0 }}>{textCell(r, 'ship_phone', { placeholder: '+ เบอร์โทร' })}</div>
+                      </div>
                     </td>
                     )}
                     {showCol('ที่อยู่จัดส่ง') && (
@@ -1289,10 +1289,10 @@ ${body}
                     {showCol('แก้ไขล่าสุด') && (
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', color: 'var(--ink-4)', fontSize: 11 }}>
                       {r.updated_at ? (
-                        <div>
-                          <div>{new Date(r.updated_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}</div>
-                          <div>{new Date(r.updated_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>
-                        </div>
+                        <span>
+                          {new Date(r.updated_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
+                          {new Date(r.updated_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
                       ) : '-'}
                     </td>
                     )}

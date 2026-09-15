@@ -183,8 +183,6 @@ const COL_W: Record<string, number> = {
 }
 // คอลัมน์ที่ตัดบรรทัดเดียว (คอลัมน์รายการเป็นหลายบรรทัด จัดการความกว้างในตัวเอง)
 const CLIP_ONE_LINE = (id: string) => id !== 'items' && COL_W[id] != null
-// คอลัมน์รายการโชว์ได้ไม่เกินกี่บรรทัด (เกินนี้ขึ้น "+ อีก N รายการ" เหมือนหมวดออเดอร์)
-const ITEM_LINE_MAX = 3
 const shortDate = (v?: string | null) => v ? new Date(v).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '-'
 // ISO → ค่าที่ช่อง datetime-local รับได้ (เวลาเครื่อง)
 const toLocalInput = (iso: string) => {
@@ -1510,12 +1508,11 @@ export default function InstallationsPage() {
                         (() => {
                           const lines = formatItemLines(orderItems[ins.source_order_id!])
                           return (
-                            <div>
-                              {lines.slice(0, ITEM_LINE_MAX).map((line, k) => (
-                                <div key={k} title={line} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: COL_W.items, fontSize: 11, lineHeight: '1.6', color: k === 0 ? 'var(--ink)' : 'var(--ink-3)' }}>{line}</div>
-                              ))}
-                              {lines.length > ITEM_LINE_MAX && (
-                                <div style={{ fontSize: 11, lineHeight: '1.6', color: 'var(--ink-4)' }}>+ อีก {lines.length - ITEM_LINE_MAX} รายการ</div>
+                            // แถวสูง 1 บรรทัด (เท่าหน้าภาพรวม): รายการแรก + "+N" · ชี้ดูครบทุกรายการ
+                            <div title={lines.join('\n')} style={{ display: 'flex', alignItems: 'center', gap: 6, maxWidth: COL_W.items }}>
+                              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, fontSize: 11, color: 'var(--ink)' }}>{lines[0]}</span>
+                              {lines.length > 1 && (
+                                <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 600, color: '#8A6142', background: 'var(--cream)', borderRadius: 999, padding: '1px 7px' }}>+{lines.length - 1}</span>
                               )}
                             </div>
                           )
@@ -1532,7 +1529,7 @@ export default function InstallationsPage() {
                     // แถวที่เพิ่มเองในหน้านี้ → จิ้มแก้รายละเอียดงานตรงนี้ได้เลย
                     <div onClick={() => setEditWork({ id: ins.id, value: ins.work_details ?? '' })} title={ins.work_details || undefined}
                       style={{ cursor: 'text', fontSize: 11, whiteSpace: 'pre-line', color: ins.work_details ? 'var(--ink-3)' : 'var(--ink-4)', minWidth: 60,
-                        display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                        display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                       {ins.work_details || '—'}
                     </div>
                   ),
