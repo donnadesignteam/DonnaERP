@@ -6,6 +6,7 @@
 // ช่อง "จากออเดอร์" = ผูกกับงานเคลม (claims) — กดแล้วพิมพ์ค้นเหมือนช่องอื่น (เลขออเดอร์เดิม/ชื่อลูกค้า/เลขพัสดุส่งคืน/เบอร์)
 // ตาราง: sql/create_return_parcels.sql + sql/add_return_parcels_claim.sql (คอลัมน์ claim_id)
 import { useState, useEffect, useRef, useMemo } from 'react'
+import AnchoredMenu from '@/components/AnchoredMenu'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
@@ -129,7 +130,7 @@ export default function ReturnParcelsPage() {
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<string | null>(null)          // `${id}:${key}` ช่องที่กำลังพิมพ์
   const [uploading, setUploading] = useState<Record<string, string>>({}) // `${id}:videos` → "45%"
-  const [actionMenu, setActionMenu] = useState<{ id: string; top: number; left: number } | null>(null)
+  const [actionMenu, setActionMenu] = useState<{ id: string; rect: DOMRect } | null>(null)   // rect ของปุ่ม ··· (AnchoredMenu พลิกขึ้นเองถ้าชิดขอบล่าง)
   // แถวไม่กระโดดหนีตอนแก้ช่องที่กำลังเรียง/กรองอยู่ — กรอง+เรียงด้วย stable() แสดงผลด้วย live()
   const { snapshot, stable, live } = useStableView<Parcel>(rows)
   const [colSort, setColSort] = useState<{ key: ColId; dir: 'asc' | 'desc' } | null>(null)
@@ -600,7 +601,7 @@ export default function ReturnParcelsPage() {
                     <td style={{ ...td, padding: '8px' }}>
                       <button onClick={e => {
                         const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
-                        setActionMenu(actionMenu?.id === r.id ? null : { id: r.id, top: rect.bottom + 4, left: rect.right - 120 })
+                        setActionMenu(actionMenu?.id === r.id ? null : { id: r.id, rect: rect })
                       }}
                         style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 16, lineHeight: 1, color: 'var(--ink-3)' }}>⋯</button>
                     </td>
@@ -679,10 +680,11 @@ export default function ReturnParcelsPage() {
         return (
           <>
             <div onMouseDown={() => setActionMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 1500 }} />
-            <div style={{ position: 'fixed', top: actionMenu.top, left: actionMenu.left, width: 120, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 1600, overflow: 'hidden' }}>
+            {/* ‼️ เดิมวางใต้ปุ่มตายตัว แถวล่างสุดของจอเมนูตกขอบ เห็นตัวเลือกไม่ครบ → AnchoredMenu พลิกขึ้นด้านบนให้เอง */}
+            <AnchoredMenu rect={actionMenu.rect} minWidth={120} style={{ width: 120, background: '#fff', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', padding: 0, overflow: 'hidden' }}>
               <button onClick={() => { setActionMenu(null); void delRow(r) }}
                 style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: '#fff', cursor: 'pointer', fontSize: 13, color: 'var(--red)' }}>ลบแถวนี้</button>
-            </div>
+            </AnchoredMenu>
           </>
         )
       })()}

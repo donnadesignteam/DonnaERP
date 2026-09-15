@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import AnchoredMenu from '@/components/AnchoredMenu'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useInstallPhotos, photoSaveError, type InstallPhoto } from '@/components/InstallPhotos'
@@ -324,7 +325,7 @@ export default function InstallationsPage() {
   const [printColStep, setPrintColStep] = useState(false)   // กดตารางรายการแล้ว → ขั้นถัดไปคือเลือกคอลัมน์
   const [quoteDragOver, setQuoteDragOver] = useState(false)   // ลาก PDF ใบเสนอราคามาวางในกล่องเพิ่มรายการติดตั้ง
   const [parseError, setParseError] = useState('')
-  const [actionMenu, setActionMenu] = useState<{ id: string; top: number; left: number } | null>(null)
+  const [actionMenu, setActionMenu] = useState<{ id: string; rect: DOMRect } | null>(null)   // rect ของปุ่ม ··· (AnchoredMenu พลิกขึ้นเองถ้าชิดขอบล่าง)
   const [editNote, setEditNote] = useState<{ id: string; value: string } | null>(null)
   const [editAppt, setEditAppt] = useState<{ id: string; date: string; time: string } | null>(null)
   // รายการสินค้าของออเดอร์ต้นทาง (เฉพาะแถวที่ sync มาจากหมวดออเดอร์) — key = source_order_id
@@ -1774,7 +1775,7 @@ export default function InstallationsPage() {
                     <td style={{ padding: '12px 14px' }}>
                       <button onClick={e => {
                         const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
-                        setActionMenu(actionMenu?.id === ins.id ? null : { id: ins.id, top: r.bottom + 4, left: r.right - 120 })
+                        setActionMenu(actionMenu?.id === ins.id ? null : { id: ins.id, rect: r })
                       }}
                         style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 16, lineHeight: 1, color: 'var(--ink-3)' }}>⋯</button>
                     </td>
@@ -1832,7 +1833,8 @@ export default function InstallationsPage() {
         return (
           <>
             <div onMouseDown={() => setActionMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 1500 }} />
-            <div style={{ position: 'fixed', top: actionMenu.top, left: actionMenu.left, width: 120, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 1600, overflow: 'hidden' }}>
+            {/* ‼️ เดิมวางใต้ปุ่มตายตัว แถวล่างสุดของจอเมนูตกขอบ เห็นตัวเลือกไม่ครบ → AnchoredMenu พลิกขึ้นด้านบนให้เอง */}
+            <AnchoredMenu rect={actionMenu.rect} minWidth={120} style={{ width: 120, background: '#fff', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', padding: 0, overflow: 'hidden' }}>
               <button onClick={() => {
                 ph.begin(ins.photos, ins.id)
                 setModal({ mode: 'edit', data: { ...ins } })
@@ -1847,7 +1849,7 @@ export default function InstallationsPage() {
                 style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', borderTop: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>ปริ้น</button>
               <button onClick={() => { setActionMenu(null); del(ins.id) }}
                 style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', borderTop: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 13, color: 'var(--red)' }}>ลบ</button>
-            </div>
+            </AnchoredMenu>
           </>
         )
       })()}
