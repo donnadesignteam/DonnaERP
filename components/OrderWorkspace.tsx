@@ -389,6 +389,12 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
 
 // คอลัมน์รายการโชว์ได้ไม่เกินกี่บรรทัด (เกินนี้ขึ้น "+ อีก N รายการ" แทน แถวจะได้ไม่ยืด)
 const ITEM_LINE_MAX = 3
+// ‼️ แถวทุกแท็บสูงเท่ากัน = 3 บรรทัด (.ow-card tbody tr ใน globals.css) — ช่องรายการรวม "+ อีก N" ต้องไม่เกิน 3 บรรทัด
+//    มีไม่เกิน 3 รายการ = โชว์ครบ · เกิน = โชว์ 2 + "+ อีก N รายการ"
+const itemShown = (items: unknown[] | null | undefined) => {
+  const n = formatItemLines(items as never).length
+  return n > ITEM_LINE_MAX ? ITEM_LINE_MAX - 1 : n
+}
 const PAGE_SIZE = 50
 const DEMO_LOCAL_TICKS = true   // เฉพาะโคลน donnaweb-design — ดู demoTicks
 
@@ -3353,9 +3359,9 @@ ${body}
                     </td>
                     )}
                     {showCol('customer') && (
-                    <td style={{ padding: '8px 14px', minWidth: 100 }}>
+                    <td style={{ padding: '8px 14px', minWidth: 140 }}>
                       {r.customer_name
-                        ? <Link href={`/customers?name=${encodeURIComponent(r.customer_name)}`} title="ดูประวัติลูกค้า" style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>{r.customer_name}</Link>
+                        ? <Link href={`/customers?name=${encodeURIComponent(r.customer_name)}`} title={r.customer_name} style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word' }}>{r.customer_name}</Link>
                         : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
                     )}
@@ -3378,11 +3384,11 @@ ${body}
                         {r.items?.length ? (
                           <div>
                             {/* โชว์ไม่เกิน 3 บรรทัด — รายการเยอะแค่ไหนแถวก็ไม่ยืด (กดเปิดดูรายการเต็มได้) */}
-                            {formatItemLines(r.items).slice(0, ITEM_LINE_MAX).map((line, i) => (
+                            {formatItemLines(r.items).slice(0, itemShown(r.items)).map((line, i) => (
                               <div key={i} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190, lineHeight: '1.6', color: i === 0 ? 'var(--ink)' : 'var(--ink-3)' }}>{line}</div>
                             ))}
-                            {formatItemLines(r.items).length > ITEM_LINE_MAX && (
-                              <div style={{ fontSize: 10, color: 'var(--ink-4)' }}>+ อีก {formatItemLines(r.items).length - ITEM_LINE_MAX} รายการ</div>
+                            {formatItemLines(r.items).length > itemShown(r.items) && (
+                              <div style={{ fontSize: 10, lineHeight: '1.6', color: 'var(--ink-4)' }}>+ อีก {formatItemLines(r.items).length - itemShown(r.items)} รายการ</div>
                             )}
                           </div>
                         ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
@@ -3455,7 +3461,7 @@ ${body}
                           {shippedStamp(r)}
                           {Array.isArray(r.shipments) && r.shipments.length > 0 && (
                             <button onClick={() => { setTrackModal(r.id); setTrackError('') }} title="ดูสถานะพัสดุ"
-                              style={{ border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 6, padding: '1px 6px', fontSize: 10, cursor: 'pointer', color: 'var(--ink-2)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              style={{ border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 6, padding: '0 6px', fontSize: 10, lineHeight: '15px', cursor: 'pointer', color: 'var(--ink-2)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               📦 {thaiTrackStatus(r.shipments[0].status) || `${r.shipments.length} เลขพัสดุ`}
                             </button>
                           )}
@@ -3771,9 +3777,9 @@ ${body}
                     </td>
                     )}
                     {showCol('customer') && (
-                    <td style={{ padding: '12px 14px' }}>
+                    <td style={{ padding: '12px 14px', minWidth: 140 }}>
                       {r.customer_name
-                        ? <Link href={`/customers?name=${encodeURIComponent(r.customer_name)}`} title="ดูประวัติลูกค้า" style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>{r.customer_name}</Link>
+                        ? <Link href={`/customers?name=${encodeURIComponent(r.customer_name)}`} title={r.customer_name} style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word' }}>{r.customer_name}</Link>
                         : <span style={{ color: 'var(--ink-4)' }}>-</span>}
                     </td>
                     )}
@@ -3810,7 +3816,7 @@ ${body}
                           {shippedStamp(r)}
                           {Array.isArray(r.shipments) && r.shipments.length > 0 && (
                             <button onClick={() => { setTrackModal(r.id); setTrackError('') }} title="ดูสถานะพัสดุ"
-                              style={{ border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 6, padding: '1px 6px', fontSize: 10, cursor: 'pointer', color: 'var(--ink-2)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              style={{ border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 6, padding: '0 6px', fontSize: 10, lineHeight: '15px', cursor: 'pointer', color: 'var(--ink-2)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               📦 {thaiTrackStatus(r.shipments[0].status) || `${r.shipments.length} เลขพัสดุ`}
                             </button>
                           )}
@@ -4166,9 +4172,9 @@ ${body}
                     <td style={{ padding: '12px 14px', color: 'var(--ink)', fontWeight: 600 }}>{r.order_number || '-'}</td>
                     )}
                     {showCol('customer') && (
-                    <td style={{ padding: '12px 14px' }}>
+                    <td style={{ padding: '12px 14px', minWidth: 140 }}>
                       {r.customer_name
-                        ? <Link href={`/customers?name=${encodeURIComponent(r.customer_name)}`} title="ดูประวัติลูกค้า" style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>{r.customer_name}</Link>
+                        ? <Link href={`/customers?name=${encodeURIComponent(r.customer_name)}`} title={r.customer_name} style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word' }}>{r.customer_name}</Link>
                         : <span style={{ color: 'var(--ink-4)' }}>-</span>}
                     </td>
                     )}
@@ -4188,11 +4194,11 @@ ${body}
                         {r.items?.length ? (
                           <div>
                             {/* โชว์ไม่เกิน 3 บรรทัด — รายการเยอะแค่ไหนแถวก็ไม่ยืด (กดเปิดดูรายการเต็มได้) */}
-                            {formatItemLines(r.items).slice(0, ITEM_LINE_MAX).map((line, i) => (
+                            {formatItemLines(r.items).slice(0, itemShown(r.items)).map((line, i) => (
                               <div key={i} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 230, lineHeight: '1.6', color: i === 0 ? 'var(--ink)' : 'var(--ink-3)' }}>{line}</div>
                             ))}
-                            {formatItemLines(r.items).length > ITEM_LINE_MAX && (
-                              <div style={{ fontSize: 10, color: 'var(--ink-4)' }}>+ อีก {formatItemLines(r.items).length - ITEM_LINE_MAX} รายการ</div>
+                            {formatItemLines(r.items).length > itemShown(r.items) && (
+                              <div style={{ fontSize: 10, lineHeight: '1.6', color: 'var(--ink-4)' }}>+ อีก {formatItemLines(r.items).length - itemShown(r.items)} รายการ</div>
                             )}
                           </div>
                         ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
@@ -4265,7 +4271,7 @@ ${body}
                         {shippedStamp(r)}
                         {Array.isArray(r.shipments) && r.shipments.length > 0 && (
                           <button onClick={() => { setTrackModal(r.id); setTrackError('') }} title="ดูสถานะพัสดุ"
-                            style={{ border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 6, padding: '1px 6px', fontSize: 10, cursor: 'pointer', color: 'var(--ink-2)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            style={{ border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 6, padding: '0 6px', fontSize: 10, lineHeight: '15px', cursor: 'pointer', color: 'var(--ink-2)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             📦 {thaiTrackStatus(r.shipments[0].status) || `${r.shipments.length} เลขพัสดุ`}
                           </button>
                         )}

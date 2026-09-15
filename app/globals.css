@@ -229,6 +229,10 @@ h1, h2, h3 { font-weight: 700; }
 .ow-card table thead th:first-child { border-radius: 10px 0 0 10px; }
 .ow-card table thead th:last-child { border-radius: 0 10px 10px 0; }
 .ow-card table tbody td { padding-top: 12px !important; padding-bottom: 12px !important; border-bottom: 1px solid var(--hairline); }
+/* ทุกแท็บของหมวดออเดอร์ แถวสูงเท่ากัน = เนื้อหา 3 บรรทัด (user ขอ 15ก.ย.69) — เนื้อหาในช่องจัดกึ่งกลางแนวตั้ง
+   ‼️ ช่องไหนเพิ่มบรรทัดเกิน 3 แถวจะสูงกว่าแถวอื่นทันที (ช่องรายการคุมไว้ที่ itemShown ใน OrderWorkspace) */
+.ow-card table tbody tr { height: 78px; }
+.ow-card table tbody td { vertical-align: middle; }
 .ow-card table tbody tr:not(.is-pinned):hover { background: var(--cream-2) !important; }
 /* แถวปักหมุด — พื้นครีมอ่อน (#F7F0E8) เห็นชัดว่าลอยอยู่บนสุด · ชี้แล้วเข้มขึ้นอีกนิด */
 .ow-card table tbody tr.is-pinned:hover { background: #F2E7DC !important; }
