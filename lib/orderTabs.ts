@@ -135,7 +135,7 @@ export function matchQuickTab(r: TabRow, tab: QuickTab): boolean {
   const isCancelled = r.order_status === 'ยกเลิก'
   return tab === 'shipped' ? isShipped
     : tab === 'cancelled' ? isCancelled
-    : tab === 'claim' ? isClaim
+    : tab === 'claim' ? (isClaim && !isShipped && !isCancelled)   // งานเคลมที่ส่งแล้ว/ยกเลิก ย้ายไปแท็บของตัวเองเหมือนออเดอร์ปกติ (user ขอ 15ก.ย.69)
     : (isShipped || isCancelled) ? false
     : tab === 'all' ? true
     : tab === 'platform' ? (!isClaim && PLATFORM_NAMES.includes(p))

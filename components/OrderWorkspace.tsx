@@ -2757,7 +2757,7 @@ ${body}
             const isCancelled = r.order_status === 'ยกเลิก'
             const matchQ = quickFilter === 'shipped' ? isShipped
               : quickFilter === 'cancelled' ? isCancelled
-              : quickFilter === 'claim' ? isClaim
+              : quickFilter === 'claim' ? (isClaim && !isShipped && !isCancelled)
               : (isShipped || isCancelled) ? false
               : quickFilter === 'all' ? true
               : quickFilter === 'platform' ? (!isClaim && (p === 'Shopee' || p === 'Tiktok' || p === 'Lazada'))
