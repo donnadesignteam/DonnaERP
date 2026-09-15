@@ -405,6 +405,13 @@ table.dn-list tbody td { padding: 12px 14px !important; border-bottom: 1px solid
 table.dn-list tbody td > b, table.dn-list tbody td > strong, table.dn-list tbody td > a, table.dn-list tbody td > span > b { font-size: inherit !important; }
 table.dn-list tbody tr:last-child td { border-bottom: none !important; }
 table.dn-list tbody tr:hover { background: var(--cream-2) !important; }
+/* .dn-rows = แถวสูงเท่าตารางหมวดออเดอร์ (78px = เนื้อหา 3 บรรทัด) — งานเคลม/พัสดุส่งกลับ/ปฏิทินงานติดตั้ง/ปฏิทินร้าน/พนักงาน/สต็อก/สั่งซื้อ (user ขอ 15ก.ย.69)
+   line-height 1.4 ให้ 3 บรรทัดพอดี 78 · ‼️ช่องไหนเกิน 3 บรรทัดแถวจะสูงกว่าแถวอื่น ต้องตัดในช่องนั้นเอง */
+table.dn-list.dn-rows tbody tr { height: 78px; }
+table.dn-list.dn-rows tbody td { vertical-align: middle !important; line-height: 1.4; }
+/* แถบรูป/คลิปเลื่อนข้างในแถวตาราง — ซ่อนแถบเลื่อน (กินความสูงแถว) ยังลาก/Shift+ล้อเมาส์เลื่อนได้ */
+.dn-hscroll { scrollbar-width: none; }
+.dn-hscroll::-webkit-scrollbar { display: none; }
 table.dn-list input[type="checkbox"] { appearance: none; -webkit-appearance: none; width: 18px; height: 18px; border-radius: 6px; border: 1.5px solid var(--border-2); background: var(--cream-2); cursor: pointer; position: relative; vertical-align: middle; margin: 0; }
 table.dn-list input[type="checkbox"]:hover:not(:disabled) { border-color: var(--brand); }
 table.dn-list input[type="checkbox"]:checked { background: var(--brand); border-color: var(--brand); }

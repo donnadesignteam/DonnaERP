@@ -1365,7 +1365,7 @@ export default function InstallationsPage() {
             {cf.anyFilter && <div><button onClick={cf.clearFilters} style={{ marginTop: 10, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--brand)', borderRadius: 999, padding: '6px 16px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>ล้างตัวกรองคอลัมน์</button></div>}
           </div>
         ) : (
-          <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <table className="dn-list dn-rows" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
                 {/* หัวตาราง = COLS (ชุด/ลำดับเดียวกับแท็บงานติดตั้งในหมวดออเดอร์ ยกเว้นวันผลิตที่เหลือ) */}
@@ -1530,8 +1530,9 @@ export default function InstallationsPage() {
                       style={{ border: '1px solid var(--blue)', borderRadius: 6, background: 'transparent', fontSize: 11, width: '100%', outline: 'none', padding: '4px 6px', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }} />
                   ) : (
                     // แถวที่เพิ่มเองในหน้านี้ → จิ้มแก้รายละเอียดงานตรงนี้ได้เลย
-                    <div onClick={() => setEditWork({ id: ins.id, value: ins.work_details ?? '' })}
-                      style={{ cursor: 'text', fontSize: 11, whiteSpace: 'pre-line', color: ins.work_details ? 'var(--ink-3)' : 'var(--ink-4)', minWidth: 60 }}>
+                    <div onClick={() => setEditWork({ id: ins.id, value: ins.work_details ?? '' })} title={ins.work_details || undefined}
+                      style={{ cursor: 'text', fontSize: 11, whiteSpace: 'pre-line', color: ins.work_details ? 'var(--ink-3)' : 'var(--ink-4)', minWidth: 60,
+                        display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                       {ins.work_details || '—'}
                     </div>
                   ),

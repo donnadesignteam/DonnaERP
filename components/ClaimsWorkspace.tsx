@@ -820,7 +820,8 @@ ${body}
     setRows(prev => prev.map(r => r.id === id ? ({ ...r, [field]: value, updated_at: now } as Claim) : r))
     await tUpdate('claims', id, { [field]: value, updated_at: now }, { [field]: old ? (old as any)[field] ?? null : null }, `แก้เคลม ${old?.customer_username || ''}`, load)
   }
-  const textCell = (r: Claim, field: keyof Claim, opts?: { numeric?: boolean; placeholder?: string; align?: 'left' | 'right' }) => {
+  // ‼️ แถวตารางสูงคงที่ 3 บรรทัด (.dn-rows) — ข้อความยาวตัดที่ opts.lines (ค่าเริ่ม 3) ชี้เมาส์ดูเต็ม · กดแก้ได้เหมือนเดิม
+  const textCell = (r: Claim, field: keyof Claim, opts?: { numeric?: boolean; placeholder?: string; align?: 'left' | 'right'; lines?: number }) => {
     const val = r[field] == null ? '' : String(r[field])
     return isEditing(r.id, field) ? (
       <input type={opts?.numeric ? 'number' : 'text'} autoFocus value={editCell!.val}
@@ -829,8 +830,9 @@ ${body}
         onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
         style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: '100%', minWidth: 70, outline: 'none', padding: '2px 0', textAlign: opts?.align ?? 'left' }} />
     ) : (
-      <div onClick={() => setEditCell({ id: r.id, field, val })}
-        style={{ cursor: 'text', color: val ? 'var(--ink)' : 'var(--ink-4)', textAlign: opts?.align ?? 'left' }}>
+      <div onClick={() => setEditCell({ id: r.id, field, val })} title={val || undefined}
+        style={{ cursor: 'text', color: val ? 'var(--ink)' : 'var(--ink-4)', textAlign: opts?.align ?? 'left',
+          display: '-webkit-box', WebkitLineClamp: opts?.lines ?? 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word' }}>
         {opts?.numeric && val ? Number(val).toLocaleString('th-TH') : (val || (opts?.placeholder ?? '—'))}
       </div>
     )
@@ -1084,7 +1086,7 @@ ${body}
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>ยังไม่มีเคสเคลม — กด “＋ เพิ่มรายการ” แล้ววางข้อความจากไลน์ได้เลย</div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <table className="dn-list dn-rows" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
                   <th style={{ padding: '10px 8px 10px 14px', width: 32 }}>
@@ -1180,17 +1182,18 @@ ${body}
                     )}
                     {showCol('รายการ') && (
                     <td style={{ padding: '8px 14px', maxWidth: 320 }}>
-                      <div style={{ marginBottom: 4 }}>{textCell(r, 'cause')}</div>
+                      <div style={{ marginBottom: 2 }}>{textCell(r, 'cause', { lines: 1 })}</div>
                       <button onClick={() => { setItemsPaste(''); setItemsParseErr(''); setItemsModal({ id: r.id, items: r.items ? r.items.map(it => ({ ...it })) : [] }) }}
                         style={{ border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', textAlign: 'left', width: '100%', display: 'block' }}>
                         {r.items && r.items.length > 0 ? (
                           <div style={{ fontSize: 11, color: 'var(--ink-3)', lineHeight: 1.5 }}>
-                            {r.items.slice(0, 3).map((it, i) => <div key={i} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 300 }}>• {itemLine(it)}</div>)}
-                            {r.items.length > 3 && <div>+ อีก {r.items.length - 3} รายการ</div>}
+                            {r.items.slice(0, r.items.length > 2 ? 1 : 2).map((it, i) => <div key={i} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 300 }}>• {itemLine(it)}</div>)}
+                            {r.items.length > 2 && <div>+ อีก {r.items.length - 1} รายการ</div>}
                           </div>
                         ) : <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>+ เพิ่มรายการ</span>}
                       </button>
-                      {r.return_tracking && <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 4 }}>คืน: {r.return_tracking}</div>}
+                      {/* เลขพัสดุที่ลูกค้าส่งคืน — แถวสูงคงที่ เลยโชว์เฉพาะตอนมีรายการไม่เกิน 1 บรรทัด (ที่เหลือดูได้ในฟอร์มแก้ไข) */}
+                      {r.return_tracking && (r.items?.length ?? 0) <= 1 && <div title={`คืน: ${r.return_tracking}`} style={{ fontSize: 11, color: 'var(--ink-4)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 300 }}>คืน: {r.return_tracking}</div>}
                     </td>
                     )}
                     {showCol('ยอดชำระ') && (
@@ -1247,8 +1250,8 @@ ${body}
                     )}
                     {showCol('ชื่อผู้รับ') && (
                     <td style={{ padding: '8px 14px', minWidth: 110 }}>
-                      <div>{textCell(r, 'ship_name')}</div>
-                      <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>{textCell(r, 'ship_phone', { placeholder: '+ เบอร์โทร' })}</div>
+                      <div>{textCell(r, 'ship_name', { lines: 2 })}</div>
+                      <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>{textCell(r, 'ship_phone', { placeholder: '+ เบอร์โทร', lines: 1 })}</div>
                     </td>
                     )}
                     {showCol('ที่อยู่จัดส่ง') && (

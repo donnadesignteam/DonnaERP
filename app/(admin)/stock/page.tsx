@@ -412,7 +412,7 @@ export default function StockPage() {
             ไม่มีข้อมูลสต็อก
           </div>
         ) : (
-          <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <table className="dn-list dn-rows" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
                 {(['รหัสผ้า', 'ชื่อสี'] as const).map(h => (

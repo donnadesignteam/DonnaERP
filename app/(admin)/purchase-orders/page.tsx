@@ -247,7 +247,7 @@ export default function PurchaseOrdersPage() {
             <div style={{ fontSize: 36, marginBottom: 12 }}>🛒</div>ไม่มีรายการสั่งซื้อ
           </div>
         ) : (
-          <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <table className="dn-list dn-rows" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
                 {['ชื่อลูกค้า', 'เลขคำสั่งซื้อ', 'รายการ', 'Supplier', 'สถานะ', 'แก้ไขล่าสุด', ''].map(h => (

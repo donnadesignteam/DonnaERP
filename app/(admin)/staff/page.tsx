@@ -170,7 +170,7 @@ export default function StaffPage() {
 
       {!loading && !error && (
         <div className="dn-list-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'auto', boxShadow: 'var(--shadow)' }}>
-          <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
+          <table className="dn-list dn-rows" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
             <thead>
               <tr>
                 <th style={th}>รหัส</th>

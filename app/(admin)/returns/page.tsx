@@ -536,7 +536,7 @@ export default function ReturnParcelsPage() {
                : <>ยังไม่มีพัสดุส่งกลับ — กด &quot;＋ เพิ่มรายการ&quot; ด้านบนเพื่อเริ่มลงรายการแรก</>}
           </div>
         ) : (
-          <table className="dn-list" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 13 }}>
+          <table className="dn-list dn-rows" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 13 }}>
             <thead>
               <tr>
                 {ALL_COLS.filter(c => showCol(c.id)).map(c => headCell(c.id, th))}
@@ -748,16 +748,17 @@ function MediaCell({ kind, list, busy, onAdd, onRemove }: {
   const input = useRef<HTMLInputElement>(null)
   const isVideo = kind === 'videos'
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '4px 0' }}>
+    // ‼️ แถวตารางสูงคงที่ (.dn-rows) — เรียงแถวเดียว มีหลายรูป/คลิปเลื่อนซ้ายขวาดู ไม่ขึ้นบรรทัดใหม่
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
       {list.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        <div className="dn-hscroll" style={{ display: 'flex', flexWrap: 'nowrap', gap: 8, overflowX: 'auto', maxWidth: 190, padding: '6px 6px 0 0' }}>
           {list.map((m, i) => (
-            <div key={m.url} style={{ position: 'relative' }}>
+            <div key={m.url} style={{ position: 'relative', flexShrink: 0 }}>
               <a href={m.url} target="_blank" rel="noreferrer" title={isVideo ? `เปิดวิดีโอ ${m.name ?? ''}` : 'เปิดรูปขนาดเต็ม'}
                 style={isVideo
                   ? { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--blue)', textDecoration: 'none', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 22px 4px 8px' }
                   : { display: 'block' }}>
-                {isVideo ? <>▶ คลิป {i + 1}</> : <img src={m.url} alt="รูปพัสดุ" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)', display: 'block' }} />}
+                {isVideo ? <>▶ คลิป {i + 1}</> : <img src={m.url} alt="รูปพัสดุ" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)', display: 'block' }} />}
               </a>
               <button onClick={() => onRemove(i)} title="เอาออก"
                 style={{ position: 'absolute', top: isVideo ? 3 : -6, right: isVideo ? 3 : -6, width: 18, height: 18, borderRadius: '50%', border: 'none', background: 'rgba(15,23,42,0.65)', color: '#fff', fontSize: 10, lineHeight: 1, cursor: 'pointer', padding: 0 }}>✕</button>
@@ -766,7 +767,7 @@ function MediaCell({ kind, list, busy, onAdd, onRemove }: {
         </div>
       )}
       <button type="button" onClick={() => input.current?.click()} disabled={!!busy}
-        style={{ alignSelf: 'flex-start', border: '1px dashed #ccc', background: 'transparent', color: busy ? 'var(--ink-3)' : 'var(--blue)', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: busy ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>
+        style={{ flexShrink: 0, border: '1px dashed #ccc', background: 'transparent', color: busy ? 'var(--ink-3)' : 'var(--blue)', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: busy ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>
         {busy ? `กำลังอัพ ${busy}` : isVideo ? '+ วิดีโอ' : '+ รูป'}
       </button>
       <input ref={input} type="file" accept={isVideo ? 'video/*' : 'image/*'} multiple style={{ display: 'none' }}
