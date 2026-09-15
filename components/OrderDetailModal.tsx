@@ -43,7 +43,7 @@ const ORDER_ASSIGNED = ['รออัพเดท', 'แจ้งลงหน้
 const assignedLabel = (v: unknown) => { const s = String(v ?? '').trim(); return ORDER_ASSIGNED.includes(s) ? s : 'รออัพเดท' }
 
 // ใบที่รายการสินค้าเยอะ (งานติดตั้งทั้งหลัง) → แบ่งหน้า หน้าละ ITEMS_PER_PAGE รายการ ไม่ต้องเลื่อนยาว (user ขอ 15ก.ย.69)
-const ITEMS_PER_PAGE = 10
+const ITEMS_PER_PAGE = 5
 
 const MONEY_FIELDS = new Set(['price', 'deposit', 'paid_amount', 'refund_amount', 'shipping_cost'])
 const baht = (v: number) => '฿' + v.toLocaleString('th-TH', { maximumFractionDigits: 2 })
@@ -324,7 +324,7 @@ export function OrderDetailBody({ row, afterShipping, wide }: { row: Row; afterS
       {/* ══ รายการสินค้า ══ */}
       {items.length > 0 && (
         <Card title={`รายการสินค้า (${items.length})`} icon={BOX_ICON}>
-          <div ref={itemsTop} style={{ display: 'flex', flexDirection: 'column', gap: 10, scrollMarginTop: 16 }}>
+          <div ref={itemsTop} style={{ display: 'flex', flexDirection: 'column', gap: 6, scrollMarginTop: 16 }}>
             {itemPager(false)}
             {items.slice(itemStart, itemStart + ITEMS_PER_PAGE).map((it, idx) => {
               const i = itemStart + idx
@@ -333,14 +333,14 @@ export function OrderDetailBody({ row, afterShipping, wide }: { row: Row; afterS
               const lines = itemBlockLines(it as RawItem)
               return (
                 <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 14,
-                                      background: 'var(--cream-2)', borderRadius: 14, padding: '12px 16px' }}>
+                                      background: 'var(--cream-2)', borderRadius: 12, padding: '8px 14px' }}>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     {lines.map((ln, li) => (
                       <div key={li} style={{
                         fontSize: li === 0 ? 14.5 : 13,
                         fontWeight: li === 0 ? 700 : 400,
                         color: li === 0 ? 'var(--ink)' : (ln.rail ? 'var(--brand)' : 'var(--ink-soft)'),
-                        lineHeight: 1.65, wordBreak: 'break-word',
+                        lineHeight: 1.5, wordBreak: 'break-word',
                       }}>{ln.t}</div>
                     ))}
                     {it.outsource ? (
