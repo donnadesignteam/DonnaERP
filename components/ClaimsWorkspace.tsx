@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { claimUpdate, claimInsert } from '@/lib/adminActor'
-import { nextSerial } from '@/lib/serialNo'
+import { nextSerial, matchSerial } from '@/lib/serialNo'
 import { buildCustomerBook, type CustomerEntry } from '@/lib/customerBook'
 import CustomerPickStep from '@/components/CustomerPickStep'
 import { useConfirm } from '@/components/ConfirmDialog'
@@ -724,7 +724,8 @@ ${body}
     const q = search.toLowerCase()
     const matchSearch = !q || (r.customer_username ?? '').toLowerCase().includes(q) ||
       (r.original_order_number ?? '').toLowerCase().includes(q) || (r.cause ?? '').toLowerCase().includes(q) ||
-      (r.fault_by ?? '').toLowerCase().includes(q) || (r.fix_method ?? '').toLowerCase().includes(q)
+      (r.fault_by ?? '').toLowerCase().includes(q) || (r.fix_method ?? '').toLowerCase().includes(q) ||
+      matchSerial(r.serial_no, q)
     // พิมพ์ค้นหา = ข้ามตัวกรองแท็บ ค้นเจอทุกแถบ (เหมือนหมวดออเดอร์)
     const matchTab = !!q || tab === 'all' || r.status === tab
     return matchSearch && matchTab

@@ -10,7 +10,7 @@ import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, ITEM_FIELDS, ITEM_FIELD_OPTIONS, shownFields, visibleItemCols, itemInputValue, emptyItem as emptyRawItem } from '@/lib/itemFormat'
 import { railLink } from '@/lib/rail'
-import { installSerial, nextSerial } from '@/lib/serialNo'
+import { installSerial, nextSerial, matchSerial } from '@/lib/serialNo'
 import { buildCustomerBook } from '@/lib/customerBook'
 import CustomerPickStep from '@/components/CustomerPickStep'
 import { TECH_OPTIONS } from '@/lib/techs'
@@ -636,7 +636,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       [i.source_order_id as string, { id: i.id, work_type: i.work_type, serial_no: i.serial_no, installation_status: i.installation_status,
         install_zone: i.install_zone, technician_type: i.technician_type }])))
     // งานเคลมจากหน้าเคลม (ตาราง claims) → โชว์ปนในหมวดออเดอร์ด้วย จะได้เรียงวันที่เหลือรวมกัน
-    const CLAIM_COLS = 'id, claim_date, channel, customer_username, original_order_number, items, status, is_urgent, notes, courier, printed_at, shipped_at, admin_name, estimated_price, created_at, updated_at'
+    const CLAIM_COLS = 'id, serial_no, claim_date, channel, customer_username, original_order_number, items, status, is_urgent, notes, courier, printed_at, shipped_at, admin_name, estimated_price, created_at, updated_at'
     let claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(`${CLAIM_COLS}, deadline, technician, pinned, pinned_at, serial_no`).order('id', { ascending: true }))
     // ยังไม่ได้รัน sql/add_serial_no.sql → ดึงแบบไม่มีเลขที่ใบไปก่อน (คอลัมน์ Serial ของงานเคลมจะขึ้น —)
     if (claimRes.error) claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(`${CLAIM_COLS}, deadline, technician, pinned, pinned_at`).order('id', { ascending: true }))
@@ -1757,7 +1757,9 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const displayedFrozen = scopedRows.filter(r => {
     const matchMonth = month === 'all' || monthKey(r) === month
     const matchSearch = (r.customer_name ?? '').toLowerCase().includes(search.toLowerCase()) ||
-      (r.order_number ?? '').toLowerCase().includes(search.toLowerCase())
+      (r.order_number ?? '').toLowerCase().includes(search.toLowerCase()) ||
+      // เลขที่ใบ: DR (งานนอก) / DM (เคลม) อยู่ในแถว · IN (งานติดตั้ง) อยู่ในแถวปฏิทินที่ผูกกับใบนี้
+      (!!search.trim() && (matchSerial(r.serial_no, search) || matchSerial(installSerial(instMeta[r.id]?.serial_no), search)))
     const matchStatus = statusFilters.length === 0 || statusFilters.includes(r.order_status ?? '')
     const matchPlatform = platformFilters.length === 0 || platformFilters.includes(r.platform ?? '')
     const matchCourier = courierFilters.length === 0 || courierFilters.includes(r.courier ?? '')

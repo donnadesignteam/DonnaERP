@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import { matchSerial, installSerial } from '@/lib/serialNo'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
@@ -94,7 +95,7 @@ export default function MobileInstallations() {
     const q = search.trim().toLowerCase()
     if (!q) return []
     return filtered
-      .filter(r => [r.customer_real_name, r.customer_id, r.serial_no, r.phone, r.work_details, r.notes]
+      .filter(r => matchSerial(installSerial(r.serial_no), q) || [r.customer_real_name, r.customer_id, r.phone, r.work_details, r.notes]
         .some(v => (v ?? '').toLowerCase().includes(q)))
       .sort((a, b) => (b.appointment_datetime ?? '').localeCompare(a.appointment_datetime ?? ''))
   }, [filtered, search])

@@ -15,7 +15,7 @@ import { CARRIER_OPTIONS, detectCarrier } from '@/lib/carriers'
 import { compressImage } from '@/lib/packingPhotos'
 import { compressVideo } from '@/lib/videoCompress'
 import { useConfirm } from '@/components/ConfirmDialog'
-import { nextSerial } from '@/lib/serialNo'
+import { nextSerial, matchSerial } from '@/lib/serialNo'
 import { buildCustomerBook, type CustomerEntry } from '@/lib/customerBook'
 import CustomerPickStep from '@/components/CustomerPickStep'
 
@@ -291,8 +291,9 @@ export default function ReturnParcelsPage() {
   const q = search.trim().toLowerCase()
   const displayed = !q ? rows : rows.filter(r => {
     const c = r.claim_id ? claims[r.claim_id] : null
-    return [r.sender_name, r.items, r.carrier, r.tracking_no, r.orig_carrier, r.orig_tracking_no, r.orig_order_number, r.address, r.phone, c?.original_order_number, c?.customer_username]
-      .some(v => (v ?? '').toLowerCase().includes(q))
+    return matchSerial(r.serial_no, q) ||
+      [r.sender_name, r.items, r.carrier, r.tracking_no, r.orig_carrier, r.orig_tracking_no, r.orig_order_number, r.address, r.phone, c?.original_order_number, c?.customer_username]
+        .some(v => (v ?? '').toLowerCase().includes(q))
   })
 
   const th: React.CSSProperties = { textAlign: 'left', padding: '11px 12px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#FAFAFA', zIndex: 1, borderBottom: '1px solid var(--border)' }

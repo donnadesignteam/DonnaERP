@@ -19,6 +19,18 @@ export const formatSerial = (kind: SerialKind, n: number) => `${SERIAL_PREFIX[ki
 export const nextSerial = (kind: SerialKind, existing: (string | null | undefined)[]) =>
   formatSerial(kind, existing.reduce((mx, s) => Math.max(mx, serialNum(s)), 0) + 1)
 
+// ช่องค้นหาของทุกหน้า: พิมพ์เลขที่ใบแบบไหนก็เจอ — 'DR0042' · 'dr42' · 'DR 42' · '0042' · '42'
+// (ไม่สนตัวพิมพ์เล็กใหญ่/ช่องว่าง/เลข 0 นำหน้า · มีตัวอักษรนำหน้าต้องตรงหมวด เช่น IN42 ไม่เจอ DR0042)
+export const matchSerial = (serial: string | null | undefined, query: string) => {
+  const s = (serial ?? '').toLowerCase()
+  const k = query.toLowerCase().replace(/\s+/g, '')
+  if (!s || !k) return false
+  if (s.includes(k)) return true
+  const m = k.match(/^([a-z]{0,2})0*(\d+)$/)
+  if (!m) return false
+  return (!m[1] || s.replace(/[^a-z]/g, '') === m[1]) && serialNum(s) === Number(m[2])
+}
+
 // เลขงานติดตั้งที่เก็บเป็นตัวเลขล้วนในตาราง installations → 'IN0043'
 export const installSerial = (s: string | null | undefined) =>
   s ? formatSerial('install', serialNum(s)) : ''

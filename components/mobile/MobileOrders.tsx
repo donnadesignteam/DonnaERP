@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { matchSerial } from '@/lib/serialNo'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { syncRows, byEntryDateDesc } from '@/lib/rowCache'
@@ -16,6 +17,7 @@ import ScanFolderButton from './ScanFolderButton'
 //    แต่ตรรกะแท็บ/สี ใช้ lib/orderTabs.ts ร่วมกัน จะได้ไม่กรองข้อมูลเพี้ยนจากหน้าเดสก์ท็อป
 type Entry = {
   id: string
+  serial_no?: string | null
   entry_date: string | null
   deadline: string | null
   shipping_datetime: string | null
@@ -50,7 +52,7 @@ export default function MobileOrders() {
   const load = async () => {
     // ‼️ เลือกเฉพาะคอลัมน์ที่การ์ด + ตรรกะแท็บ/วันที่ (orderTabs/shipping) ใช้จริง — เดิม select('*') ดึงทุกคอลัมน์เปลืองเน็ตมือถือ
     // + จำไว้ในเครื่อง ขอเฉพาะใบที่เปลี่ยน (lib/rowCache.ts) — เดิมเปิดหน้าทีไรดึงทั้งตาราง ~0.5 MB
-    const cols = 'id, entry_date, deadline, shipping_datetime, customer_name, order_number, platform, order_status, courier, items, is_urgent, is_installation, is_dropoff, install_time, notes, address, phone'
+    const cols = 'id, serial_no, entry_date, deadline, shipping_datetime, customer_name, order_number, platform, order_status, courier, items, is_urgent, is_installation, is_dropoff, install_time, notes, address, phone'
     const { data, error: err } = await syncRows<Entry>({
       key: 'mobile-orders', table: 'order_entries', select: cols, sort: byEntryDateDesc,
       full: () => supabase.from('order_entries').select(cols)
@@ -92,6 +94,7 @@ export default function MobileOrders() {
       return (r.customer_name ?? '').toLowerCase().includes(q)
         || (r.order_number ?? '').toLowerCase().includes(q)
         || (r.phone ?? '').toLowerCase().includes(q)
+        || matchSerial(r.serial_no, q)
     })
     // เรียงตามวันที่ต้องส่ง ใกล้ครบกำหนดขึ้นก่อน · งานเสร็จแล้ว (is_urgent) ไปท้ายสุด เหมือนหน้าเดสก์ท็อป
     const parseD = (r: Entry) => {

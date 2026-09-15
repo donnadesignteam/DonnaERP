@@ -14,7 +14,7 @@ import { prevOf } from '@/lib/trackedDb'
 import { useStableView } from '@/lib/useStableView'
 import { oeUpdate, instUpdate, instInsert } from '@/lib/adminActor'
 import { useConfirm } from '@/components/ConfirmDialog'
-import { installSerial, serialNum } from '@/lib/serialNo'
+import { installSerial, serialNum, matchSerial } from '@/lib/serialNo'
 import { usePrintColumns, PrintColumnPicker, printTableHtml, type PrintCol } from '@/components/PrintColumnPicker'
 import { createOrderForInstall, orderPatchFromInstall } from '@/lib/installOrderSync'
 import { PROD_STATUS_COLOR, INSTALL_STATUSES, daysRemaining, daysLabel, cmpDaysSort, cmpDeadlineSort } from '@/lib/orderTabs'
@@ -1116,8 +1116,8 @@ export default function InstallationsPage() {
   })
   const byZone = zoneFilter.length ? byMonth.filter(ins => zoneFilter.includes(ins.install_zone)) : byMonth
   const q = search.trim().toLowerCase()
-  const filtered = !q ? byZone : byZone.filter(ins =>
-    [ins.serial_no, installSerial(ins.serial_no), ins.customer_real_name, ins.customer_id, ins.platform, ins.province, ins.install_zone, ins.phone, ins.installation_status, ins.notes]
+  const filtered = !q ? byZone : byZone.filter(ins => matchSerial(installSerial(ins.serial_no), q) ||
+    [ins.customer_real_name, ins.customer_id, ins.platform, ins.province, ins.install_zone, ins.phone, ins.installation_status, ins.notes]
       .some(v => (v ?? '').toLowerCase().includes(q))
   )
   // เรียงตามลำดับที่ตรึงไว้ตอนโหลด (ชุดเดียวกับหมวดออเดอร์) — แถวที่เพิ่งเพิ่มยังไม่มีในลำดับ ไปต่อท้าย
