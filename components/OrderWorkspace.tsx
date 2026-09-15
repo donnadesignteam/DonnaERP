@@ -23,6 +23,7 @@ import { useInstallPhotos, photoSaveError } from '@/components/InstallPhotos'
 import ProvinceSelect from '@/components/ProvinceSelect'
 import { syncWorkStatus as syncWorkStatusExact } from '@/lib/workStatusSync'
 import { recordAction } from '@/lib/history'
+import { opUpdate, opInsert, opDelete } from '@/lib/historyOps'
 import { prevOf } from '@/lib/trackedDb'
 import { stampInsert, oeUpdate, oeInsert, instUpdate, instInsert, claimUpdate } from '@/lib/adminActor'
 import { useConfirm } from '@/components/ConfirmDialog'
@@ -855,6 +856,9 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
           if (outsourceVal) await syncOutsourcePO(saved.id, payload.customer_name, payload.order_number, outsourceVal, modalItems)
           await load()
         },
+        // หลังรีเฟรช: ย้อน = ลบครบเหมือนเดิม · ทำซ้ำ = ใส่ใบออเดอร์กลับ (งานติดตั้ง/สั่งซื้อที่ผูกกัน เปิดใบแล้วกดบันทึกอีกครั้ง)
+        undoOps: [opDelete('installations', saved.id, 'source_order_id'), opDelete('purchase_orders', saved.id, 'source_order_id'), opDelete('order_entries', saved.id)],
+        redoOps: [opInsert('order_entries', saved)],
       })
     } else {
       const orig = rows.find(r => r.id === d.id)
@@ -897,8 +901,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       setRows(prev => prev.filter(r => r.id !== id))
       if (row) recordAction({
         label: `ลบออเดอร์ ${row.order_number || row.customer_name || ''}`,
-        undo: async () => { await supabase.from('order_entries').insert(row); await load() },
-        redo: async () => { await supabase.from('order_entries').delete().eq('id', id); await load() },
+        undo: async () => { const { error: e } = await supabase.from('order_entries').insert(row); if (e) throw e; await load() },
+        redo: async () => { const { error: e } = await supabase.from('order_entries').delete().eq('id', id); if (e) throw e; await load() },
+        undoOps: [opInsert('order_entries', row)],
+        redoOps: [opDelete('order_entries', id)],
       })
     } catch (e) {
       setError(`ลบไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`)
@@ -959,8 +965,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       setRows(prev => prev.filter(r => !ids.includes(r.id)))
       if (deleted.length) recordAction({
         label: `ลบออเดอร์ ${deleted.length} รายการ`,
-        undo: async () => { await supabase.from('order_entries').insert(deleted); await load() },
-        redo: async () => { await supabase.from('order_entries').delete().in('id', ids); await load() },
+        undo: async () => { const { error: e } = await supabase.from('order_entries').insert(deleted); if (e) throw e; await load() },
+        redo: async () => { const { error: e } = await supabase.from('order_entries').delete().in('id', ids); if (e) throw e; await load() },
+        undoOps: [opInsert('order_entries', deleted)],
+        redoOps: [opDelete('order_entries', ids)],
       })
     } catch (e) {
       setError(`ลบไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`)
@@ -1037,6 +1045,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       label: `แก้${what} ${row?.order_number || row?.customer_name || ''}`,
       undo: async () => { await applyField(id, field, old); await load() },
       redo: async () => { await applyField(id, field, value); await load() },
+      // หลังรีเฟรช: แก้ค่ากลับตรงๆ (งานเคลมที่โชว์ปนอยู่ เขียนตาราง claims ตามช่องที่จับคู่กันไว้)
+      ...(row && isClaimEntry(row)
+        ? { undoOps: [opUpdate('claims', id, claimFieldPatch(field, old) ?? {})], redoOps: [opUpdate('claims', id, claimFieldPatch(field, value) ?? {})] }
+        : { undoOps: [opUpdate('order_entries', id, { [field]: old })], redoOps: [opUpdate('order_entries', id, { [field]: value })] }),
     })
   }
 
@@ -1046,6 +1058,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       label,
       undo: async () => { await oeUpdate(prev).eq('id', id); await load() },
       redo: async () => { await oeUpdate(patch).eq('id', id); await load() },
+      undoOps: [opUpdate('order_entries', id, prev)],
+      redoOps: [opUpdate('order_entries', id, patch)],
     })
   }
 

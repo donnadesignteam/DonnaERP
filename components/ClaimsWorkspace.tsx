@@ -13,6 +13,7 @@ import { usePrintColumns, PrintColumnPicker, printTableHtml, type PrintCol } fro
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { recordAction } from '@/lib/history'
+import { opUpdate, opInsert, opDelete } from '@/lib/historyOps'
 import { tUpdate, prevOf } from '@/lib/trackedDb'
 import { itemBlockLines, railSplit, railLayers, railKind, railIssues, normalizeRailColor } from '@/lib/itemFormat'
 import { NO_FAULT, FAULT_BY_TECHS } from '@/lib/claimFault'
@@ -435,6 +436,8 @@ export default function ClaimsWorkspace() {
         label: `เพิ่มเคลม ${name}`,
         undo: async () => { await supabase.from('claims').delete().eq('id', saved.id); await load() },
         redo: async () => { await claimInsert(saved); await load() },
+        undoOps: [opDelete('claims', saved.id)],
+        redoOps: [opInsert('claims', saved)],
       })
     } else {
       const old = rows.find(r => r.id === d.id)
@@ -447,6 +450,8 @@ export default function ClaimsWorkspace() {
         label: `แก้เคลม ${name}`,
         undo: async () => { await claimUpdate(prev).eq('id', d.id); await load() },
         redo: async () => { await claimUpdate(payload).eq('id', d.id); await load() },
+        undoOps: [opUpdate('claims', d.id, prev)],
+        redoOps: [opUpdate('claims', d.id, payload)],
       })
     }
     ph.commit()   // บันทึกผ่านแล้วค่อยลบไฟล์ของรูปที่กดเอาออก (กดยกเลิกกลางทางรูปเดิมจะไม่หาย)
@@ -464,14 +469,18 @@ export default function ClaimsWorkspace() {
     const row = rows.find(r => r.id === id)
     setError('')
     try {
+      // แปะชื่อคนลบก่อน (trigger ประวัติอ่านชื่อจากแถวที่กำลังถูกลบ)
+      await claimUpdate({ updated_at: new Date().toISOString() }).eq('id', id)
       const { error: err } = await supabase.from('claims').delete().eq('id', id)
       // ‼️ ลบไม่สำเร็จต้องฟ้องเสมอ ห้ามเงียบ (เดิมไม่มี else เลยดูเหมือนกดปุ่มไม่ติด)
       if (err) { setError(`ลบไม่สำเร็จ: ${err.message}`); return }
       setRows(prev => prev.filter(r => r.id !== id))
       if (row) recordAction({
         label: `ลบเคลม ${row.customer_username || row.original_order_number || ''}`,
-        undo: async () => { await claimInsert(row); await load() },
-        redo: async () => { await supabase.from('claims').delete().eq('id', id); await load() },
+        undo: async () => { const { error: e } = await claimInsert(row); if (e) throw e; await load() },
+        redo: async () => { const { error: e } = await supabase.from('claims').delete().eq('id', id); if (e) throw e; await load() },
+        undoOps: [opInsert('claims', row)],
+        redoOps: [opDelete('claims', id)],
       })
     } catch (e) {
       setError(`ลบไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`)

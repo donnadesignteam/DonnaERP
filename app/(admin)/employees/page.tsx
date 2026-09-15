@@ -10,6 +10,7 @@ import { RED_ZONES, CAMPAIGNS, LEAVE_STATUS_COLOR as STATUS_COLOR, DAYS_TH as DA
 import { EMPLOYEES } from '@/lib/staff'
 import { fetchEmployeeOptions } from '@/lib/staffDb'
 import { recordAction } from '@/lib/history'
+import { opUpdate, opInsert, opDelete } from '@/lib/historyOps'
 import { tUpdate } from '@/lib/trackedDb'
 import { useConfirm } from '@/components/ConfirmDialog'
 import { LEAVE_TYPES, rangeDays, vacationMaxDays, applyLeaveToStaff, isQuotaApplied, isApproved } from '@/lib/leave'
@@ -198,6 +199,8 @@ export default function EmployeesPage() {
         label: `เพิ่มใบลา ${nick}`,
         undo: async () => { await supabase.from('leave_requests').delete().eq('id', row.id); await applyLeaveToStaff(code, type, days, -1); await load() },
         redo: async () => { await supabase.from('leave_requests').insert(row); await applyLeaveToStaff(code, type, days, 1); await load() },
+        undoOps: [opDelete('leave_requests', row.id), { t: 'leave', code, type, days, sign: -1 }],
+        redoOps: [opInsert('leave_requests', row), { t: 'leave', code, type, days, sign: 1 }],
       })
     }
     setSaving(false)
@@ -231,6 +234,8 @@ export default function EmployeesPage() {
         label: `ลบใบลา ${l.employee_nickname || ''}`,
         undo: async () => { await supabase.from('leave_requests').insert(l); await applyLeaveToStaff(l.employee_code, l.leave_type, days, 1); await load() },
         redo: async () => { await supabase.from('leave_requests').delete().eq('id', id); await applyLeaveToStaff(l.employee_code, l.leave_type, days, -1); await load() },
+        undoOps: [opInsert('leave_requests', l), { t: 'leave', code: l.employee_code, type: l.leave_type, days, sign: 1 }],
+        redoOps: [opDelete('leave_requests', id), { t: 'leave', code: l.employee_code, type: l.leave_type, days, sign: -1 }],
       })
     }
     load()

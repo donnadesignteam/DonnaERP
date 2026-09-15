@@ -49,8 +49,9 @@ export const touchesContent = (patch: Row) =>
 // - admin_* = เฉพาะตอนแก้เนื้อออเดอร์โดยแอดมินหลัก (= ย้ายเจ้าของโบนัส)
 export function stampUpdate(patch: Row): Row {
   const s = readStaffSession()               // ไม่มี = ล็อกอินด้วยรหัสรวมของร้าน (ไม่รู้ว่าใคร)
-  const out: Row = { ...patch }
-  if (s) { out.actor_code = s.code; out.actor_name = s.nickname }
+  // ‼️ ไม่รู้ว่าใคร = ล้างชื่อทิ้ง (null) ไม่ใช่ไม่แตะ — ไม่แตะแล้ว trigger ประวัติคัดลอกชื่อคนแก้ "ครั้งก่อน" มาใส่
+  //    (user แจ้ง 15ก.ย.69: ล็อกอินรหัสร้านแก้ออเดอร์ ประวัติขึ้นชื่อคนที่แก้ล่าสุด แทนที่จะเป็นแก้แบบไม่มีชื่อ)
+  const out: Row = { ...patch, actor_code: s?.code ?? null, actor_name: s?.nickname ?? null }
 
   // ‼️ มี admin_name มาในคำสั่ง = คนกรอกเลือกเอง (dropdown ในตาราง/ฟอร์ม) → ยึดตามที่เลือก ไม่ทับ
   //    เติมรหัสให้ตรงชื่อเพื่อให้ฝั่งรายงานอ้างอิงได้ (ชื่อที่ไม่ใช่แอดมินหลัก = ไม่มีรหัส)
@@ -81,7 +82,7 @@ export function stampUpdate(patch: Row): Row {
 // แปะคนทำลงในแถวที่กำลังจะ insert — คนลงออเดอร์ตั้งครั้งเดียวตรงนี้ ไม่เปลี่ยนอีก
 export function stampInsert(row: Row): Row {
   const s = readStaffSession()
-  if (!s) return row
+  if (!s) return { ...row, actor_code: null, actor_name: null }   // ไม่รู้ว่าใคร = ไม่ติดชื่อใครในประวัติ
   const now = new Date().toISOString()
   const out: Row = {
     ...row,
@@ -108,9 +109,10 @@ export const oeUpdate = (patch: Row): any => supabase.from('order_entries').upda
 export const oeInsert = (row: Row): any => supabase.from('order_entries').insert(stampInsert(row))
 
 // ตารางอื่นที่แอดมินทำงานด้วย — แปะแค่ "ใครทำ" ไว้ให้ประวัติมีชื่อ (ไม่มีเรื่องโบนัส)
-const stampActor = (patch: Row): Row => {
+// ‼️ ไม่มีคุกกี้พนักงาน (รหัสรวมของร้าน) = ใส่ null ไม่ใช่ปล่อยค่าเดิม ไม่งั้นประวัติขึ้นชื่อคนแก้ครั้งก่อน
+export const stampActor = (patch: Row): Row => {
   const s = readStaffSession()
-  return s ? { ...patch, actor_code: s.code, actor_name: s.nickname } : patch
+  return { ...patch, actor_code: s?.code ?? null, actor_name: s?.nickname ?? null }
 }
 export const claimUpdate = (patch: Row): any => supabase.from('claims').update(stampActor(patch))
 export const claimInsert = (row: Row): any => supabase.from('claims').insert(stampActor(row))

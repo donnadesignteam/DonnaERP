@@ -10,6 +10,7 @@ import { HOLIDAYS } from '@/lib/holidays'
 import { formatItemLines, autoTapeHooks, ITEM_FIELDS, ITEM_FIELD_OPTIONS, visibleItemCols, itemInputValue, emptyItem, type RawItem } from '@/lib/itemFormat'
 import { syncOutsourcePO } from '@/lib/outsourceSync'
 import { recordAction } from '@/lib/history'
+import { opUpdate, opInsert, opDelete } from '@/lib/historyOps'
 import { prevOf } from '@/lib/trackedDb'
 import { useStableView } from '@/lib/useStableView'
 import { oeUpdate, instUpdate, instInsert } from '@/lib/adminActor'
@@ -512,6 +513,8 @@ export default function InstallationsPage() {
       label,
       undo: async () => { await instUpdate(prev).eq('id', id); await load() },
       redo: async () => { await instUpdate(patch).eq('id', id); await load() },
+      undoOps: [opUpdate('installations', id, prev)],
+      redoOps: [opUpdate('installations', id, patch)],
     })
   }
 
@@ -541,6 +544,8 @@ export default function InstallationsPage() {
           label: `เพิ่มงานติดตั้ง ${name}`,
           undo: async () => { await supabase.from('installations').delete().eq('id', saved.id); await load() },
           redo: async () => { await instInsert(saved); await load() },
+          undoOps: [opDelete('installations', saved.id)],
+          redoOps: [opInsert('installations', saved)],
         })
       }
     } else {
@@ -746,6 +751,8 @@ export default function InstallationsPage() {
       label,
       undo: async () => { await oeUpdate(prev).eq('id', orderId); await load() },
       redo: async () => { await oeUpdate(full).eq('id', orderId); await load() },
+      undoOps: [opUpdate('order_entries', orderId, prev)],
+      redoOps: [opUpdate('order_entries', orderId, full)],
     })
     return true
   }
@@ -894,13 +901,18 @@ export default function InstallationsPage() {
     const row = installs.find(i => i.id === id)
     setError('')
     try {
+      // แปะชื่อคนลบก่อน (trigger ประวัติอ่านชื่อจากแถวที่กำลังถูกลบ) — แก้แค่ updated_at ไม่ขึ้นเป็นรายการแก้ในประวัติ
+      await instUpdate({ updated_at: new Date().toISOString() }).eq('id', id)
       // ‼️ ลบไม่สำเร็จต้องฟ้องเสมอ ห้ามเงียบ (เดิมไม่ได้เช็ค error เลยดูเหมือนกดปุ่มไม่ติด)
       const { error: err } = await supabase.from('installations').delete().eq('id', id)
       if (err) { setError(`ลบไม่สำเร็จ: ${err.message}`); return }
       if (row) recordAction({
         label: `ลบงานติดตั้ง ${row.customer_real_name || row.serial_no || ''}`,
-        undo: async () => { await instInsert(row); await load() },
-        redo: async () => { await supabase.from('installations').delete().eq('id', id); await load() },
+        // ‼️ เช็ค error ด้วย — เดิมย้อนพลาดแล้วเงียบ (เคสลบงานติดตั้ง MIL 15ก.ย.69)
+        undo: async () => { const { error: e } = await instInsert(row); if (e) throw e; await load() },
+        redo: async () => { const { error: e } = await supabase.from('installations').delete().eq('id', id); if (e) throw e; await load() },
+        undoOps: [opInsert('installations', row)],
+        redoOps: [opDelete('installations', id)],
       })
       load()
     } catch (e) {

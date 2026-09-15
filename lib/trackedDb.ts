@@ -5,9 +5,14 @@
 // log ประวัติ, อัปโหลดรูป) ไม่ต้อง track เพราะ reload จะดึงค่าที่ถูกกลับมาเอง
 import { supabase } from './supabase'
 import { recordAction } from './history'
+import { opUpdate, opInsert, opDelete } from './historyOps'
+import { stampActor } from './adminActor'
 
 type Reload = () => Promise<void> | void
 type Row = Record<string, any>
+
+// งานเคลม/งานติดตั้ง: แปะ "ใครทำ" ทุกครั้ง (ไม่มีชื่อ = null) ไม่งั้นประวัติขึ้นชื่อคนแก้ครั้งก่อน
+const stamp = (table: string, v: Row) => (table === 'claims' || table === 'installations') ? stampActor(v) : v
 
 // ดึงค่าเดิมเฉพาะฟิลด์ที่กำลังจะแก้ (คีย์เดียวกับ patch) ไว้ใช้ย้อนกลับ
 export function prevOf(old: Row, patch: Row): Row {
@@ -20,12 +25,14 @@ export function prevOf(old: Row, patch: Row): Row {
 export async function tUpdate(
   table: string, id: string | number, patch: Row, prev: Row, label: string, reload: Reload,
 ): Promise<void> {
-  const { error } = await supabase.from(table).update(patch).eq('id', id)
+  const { error } = await supabase.from(table).update(stamp(table, patch)).eq('id', id)
   if (error) throw error
   recordAction({
     label,
-    undo: async () => { const { error: e } = await supabase.from(table).update(prev).eq('id', id); if (e) throw e; await reload() },
-    redo: async () => { const { error: e } = await supabase.from(table).update(patch).eq('id', id); if (e) throw e; await reload() },
+    undo: async () => { const { error: e } = await supabase.from(table).update(stamp(table, prev)).eq('id', id); if (e) throw e; await reload() },
+    redo: async () => { const { error: e } = await supabase.from(table).update(stamp(table, patch)).eq('id', id); if (e) throw e; await reload() },
+    undoOps: [opUpdate(table, id, prev)],
+    redoOps: [opUpdate(table, id, patch)],
   })
 }
 
@@ -33,13 +40,15 @@ export async function tUpdate(
 export async function tInsert(
   table: string, row: Row, label: string, reload: Reload,
 ): Promise<Row> {
-  const { data, error } = await supabase.from(table).insert(row).select().single()
+  const { data, error } = await supabase.from(table).insert(stamp(table, row)).select().single()
   if (error) throw error
   const saved = data as Row           // มี id ที่ DB สร้าง
   recordAction({
     label,
     undo: async () => { const { error: e } = await supabase.from(table).delete().eq('id', saved.id); if (e) throw e; await reload() },
     redo: async () => { const { error: e } = await supabase.from(table).insert(saved); if (e) throw e; await reload() },
+    undoOps: [opDelete(table, saved.id)],
+    redoOps: [opInsert(table, saved)],
   })
   return saved
 }
@@ -67,6 +76,8 @@ export async function tDelete(
       const { error: e } = await supabase.from(table).delete().eq('id', row.id); if (e) throw e
       await reload()
     },
+    undoOps: [opInsert(table, row), ...related.map(r => opInsert(r.table, r.rows))],
+    redoOps: [...related.map(r => opDelete(r.table, r.rows.map(x => x.id))), opDelete(table, row.id)],
   })
 }
 
