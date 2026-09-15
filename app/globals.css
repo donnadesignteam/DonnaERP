@@ -228,10 +228,10 @@ h1, h2, h3 { font-weight: 700; }
 .ow-card table thead th > button { color: inherit !important; font-size: inherit !important; font-weight: inherit !important; font-family: inherit; }
 .ow-card table thead th:first-child { border-radius: 10px 0 0 10px; }
 .ow-card table thead th:last-child { border-radius: 0 10px 10px 0; }
-.ow-card table tbody td { padding-top: 8px !important; padding-bottom: 8px !important; border-bottom: 1px solid var(--hairline); }
-/* ทุกแท็บของหมวดออเดอร์ แถวสูงเท่ากัน = 48px เท่าตารางหน้าภาพรวม เนื้อหา 1 บรรทัด (user ขอ 15ก.ย.69 · เดิมเคยทำ 3 บรรทัด 78px) — เนื้อหาในช่องจัดกึ่งกลางแนวตั้ง
+.ow-card table tbody td { padding-top: 10px !important; padding-bottom: 10px !important; border-bottom: 1px solid var(--hairline); }
+/* ทุกแท็บของหมวดออเดอร์ แถวสูงเท่ากัน = 56px เนื้อหาไม่เกิน 2 บรรทัด (user ขอ 15ก.ย.69 · ลองมาแล้ว 3 บรรทัด 78px / 1 บรรทัด 48px) — เนื้อหาในช่องจัดกึ่งกลางแนวตั้ง
    ‼️ ช่องไหนเพิ่มบรรทัดเกิน 3 แถวจะสูงกว่าแถวอื่นทันที (ช่องรายการคุมไว้ที่ itemShown ใน OrderWorkspace) */
-.ow-card table tbody tr { height: 48px; }
+.ow-card table tbody tr { height: 56px; }
 .ow-card table tbody td { vertical-align: middle; line-height: 1.4; }
 .ow-card table tbody tr:not(.is-pinned):hover { background: var(--cream-2) !important; }
 /* แถวปักหมุด — พื้นครีมอ่อน (#F7F0E8) เห็นชัดว่าลอยอยู่บนสุด · ชี้แล้วเข้มขึ้นอีกนิด */
@@ -405,10 +405,10 @@ table.dn-list tbody td { padding: 12px 14px !important; border-bottom: 1px solid
 table.dn-list tbody td > b, table.dn-list tbody td > strong, table.dn-list tbody td > a, table.dn-list tbody td > span > b { font-size: inherit !important; }
 table.dn-list tbody tr:last-child td { border-bottom: none !important; }
 table.dn-list tbody tr:hover { background: var(--cream-2) !important; }
-/* .dn-rows = แถวสูงเท่าตารางหมวดออเดอร์/หน้าภาพรวม (48px = เนื้อหา 1 บรรทัด) — งานเคลม/พัสดุส่งกลับ/ปฏิทินงานติดตั้ง/ปฏิทินร้าน/พนักงาน/สต็อก/สั่งซื้อ (user ขอ 15ก.ย.69)
+/* .dn-rows = แถวสูงเท่าตารางหมวดออเดอร์/หน้าภาพรวม (56px = เนื้อหาไม่เกิน 2 บรรทัด) — งานเคลม/พัสดุส่งกลับ/ปฏิทินงานติดตั้ง/ปฏิทินร้าน/พนักงาน/สต็อก/สั่งซื้อ (user ขอ 15ก.ย.69)
    line-height 1.4 ให้ 3 บรรทัดพอดี 78 · ‼️ช่องไหนเกิน 3 บรรทัดแถวจะสูงกว่าแถวอื่น ต้องตัดในช่องนั้นเอง */
-table.dn-list.dn-rows tbody tr { height: 48px; }
-table.dn-list.dn-rows tbody td { vertical-align: middle !important; line-height: 1.4; padding-top: 8px !important; padding-bottom: 8px !important; }
+table.dn-list.dn-rows tbody tr { height: 56px; }
+table.dn-list.dn-rows tbody td { vertical-align: middle !important; line-height: 1.4; padding-top: 10px !important; padding-bottom: 10px !important; }
 /* แถบรูป/คลิปเลื่อนข้างในแถวตาราง — ซ่อนแถบเลื่อน (กินความสูงแถว) ยังลาก/Shift+ล้อเมาส์เลื่อนได้ */
 .dn-hscroll { scrollbar-width: none; }
 .dn-hscroll::-webkit-scrollbar { display: none; }

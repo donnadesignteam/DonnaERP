@@ -820,7 +820,7 @@ ${body}
     setRows(prev => prev.map(r => r.id === id ? ({ ...r, [field]: value, updated_at: now } as Claim) : r))
     await tUpdate('claims', id, { [field]: value, updated_at: now }, { [field]: old ? (old as any)[field] ?? null : null }, `แก้เคลม ${old?.customer_username || ''}`, load)
   }
-  // ‼️ แถวตารางสูงคงที่ 1 บรรทัด 48px (.dn-rows) — ข้อความยาวตัดที่ opts.lines (ค่าเริ่ม 1) ชี้เมาส์ดูเต็ม · กดแก้ได้เหมือนเดิม
+  // ‼️ แถวตารางสูงคงที่ 2 บรรทัด 56px (.dn-rows) — ข้อความยาวตัดที่ opts.lines (ค่าเริ่ม 2) ชี้เมาส์ดูเต็ม · กดแก้ได้เหมือนเดิม
   const textCell = (r: Claim, field: keyof Claim, opts?: { numeric?: boolean; placeholder?: string; align?: 'left' | 'right'; lines?: number }) => {
     const val = r[field] == null ? '' : String(r[field])
     return isEditing(r.id, field) ? (
@@ -832,7 +832,7 @@ ${body}
     ) : (
       <div onClick={() => setEditCell({ id: r.id, field, val })} title={val || undefined}
         style={{ cursor: 'text', color: val ? 'var(--ink)' : 'var(--ink-4)', textAlign: opts?.align ?? 'left',
-          display: '-webkit-box', WebkitLineClamp: opts?.lines ?? 1, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word' }}>
+          display: '-webkit-box', WebkitLineClamp: opts?.lines ?? 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word' }}>
         {opts?.numeric && val ? Number(val).toLocaleString('th-TH') : (val || (opts?.placeholder ?? '—'))}
       </div>
     )
@@ -1184,7 +1184,7 @@ ${body}
                     <td style={{ padding: '8px 14px', maxWidth: 320 }}>
                       {/* แถวสูง 1 บรรทัด: สาเหตุ + ป้าย "N รายการ" (กดเปิดแก้รายการ) · ชี้ป้ายดูรายการครบ + เลขพัสดุที่ลูกค้าส่งคืน */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>{textCell(r, 'cause', { lines: 1 })}</div>
+                        <div style={{ flex: 1, minWidth: 0 }}>{textCell(r, 'cause', { lines: 2 })}</div>
                         <button onClick={() => { setItemsPaste(''); setItemsParseErr(''); setItemsModal({ id: r.id, items: r.items ? r.items.map(it => ({ ...it })) : [] }) }}
                           title={[...(r.items ?? []).map(it => '• ' + itemLine(it)), r.return_tracking ? `คืน: ${r.return_tracking}` : ''].filter(Boolean).join('\n') || 'เพิ่มรายการ'}
                           style={{ flexShrink: 0, border: 'none', cursor: 'pointer', borderRadius: 999, padding: '2px 9px', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
@@ -1249,8 +1249,8 @@ ${body}
                     {showCol('ชื่อผู้รับ') && (
                     <td style={{ padding: '8px 14px', minWidth: 110 }}>
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
-                        <div style={{ minWidth: 0 }}>{textCell(r, 'ship_name')}</div>
-                        <div style={{ fontSize: 11, color: 'var(--ink-4)', flexShrink: 0 }}>{textCell(r, 'ship_phone', { placeholder: '+ เบอร์โทร' })}</div>
+                        <div style={{ minWidth: 0 }}>{textCell(r, 'ship_name', { lines: 1 })}</div>
+                        <div style={{ fontSize: 11, color: 'var(--ink-4)', flexShrink: 0 }}>{textCell(r, 'ship_phone', { placeholder: '+ เบอร์โทร', lines: 1 })}</div>
                       </div>
                     </td>
                     )}

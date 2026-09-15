@@ -1508,12 +1508,12 @@ export default function InstallationsPage() {
                         (() => {
                           const lines = formatItemLines(orderItems[ins.source_order_id!])
                           return (
-                            // แถวสูง 1 บรรทัด (เท่าหน้าภาพรวม): รายการแรก + "+N" · ชี้ดูครบทุกรายการ
-                            <div title={lines.join('\n')} style={{ display: 'flex', alignItems: 'center', gap: 6, maxWidth: COL_W.items }}>
-                              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, fontSize: 11, color: 'var(--ink)' }}>{lines[0]}</span>
-                              {lines.length > 1 && (
-                                <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 600, color: '#8A6142', background: 'var(--cream)', borderRadius: 999, padding: '1px 7px' }}>+{lines.length - 1}</span>
-                              )}
+                            // แถวสูง 2 บรรทัด (แบบหมวดออเดอร์): มี 2 รายการ = ครบ · เกิน = รายการแรก + "+ อีก N รายการ" · ชี้ดูครบ
+                            <div title={lines.join('\n')} style={{ maxWidth: COL_W.items }}>
+                              {lines.slice(0, lines.length > 2 ? 1 : 2).map((line, k) => (
+                                <div key={k} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 11, color: k === 0 ? 'var(--ink)' : 'var(--ink-3)' }}>{line}</div>
+                              ))}
+                              {lines.length > 2 && <div style={{ fontSize: 10, color: 'var(--ink-4)' }}>+ อีก {lines.length - 1} รายการ</div>}
                             </div>
                           )
                         })()
@@ -1529,7 +1529,7 @@ export default function InstallationsPage() {
                     // แถวที่เพิ่มเองในหน้านี้ → จิ้มแก้รายละเอียดงานตรงนี้ได้เลย
                     <div onClick={() => setEditWork({ id: ins.id, value: ins.work_details ?? '' })} title={ins.work_details || undefined}
                       style={{ cursor: 'text', fontSize: 11, whiteSpace: 'pre-line', color: ins.work_details ? 'var(--ink-3)' : 'var(--ink-4)', minWidth: 60,
-                        display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                        display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                       {ins.work_details || '—'}
                     </div>
                   ),
