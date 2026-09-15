@@ -1,6 +1,7 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
+import Pager from '@/components/Pager'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -121,6 +122,10 @@ type CustomerPO = {
 
 const PO_STATUS_COLOR: Record<string, string> = { 'รอของ': '#C79A4B', 'ของเข้าแล้ว': '#6F8F6A' }
 
+// ออเดอร์เยอะ (ลูกค้าประจำ) → แบ่งหน้า หน้าละ ORDERS_PER_PAGE ใบ ไม่ต้องเลื่อนยาว (user ขอ 15ก.ย.69)
+const ORDERS_PER_PAGE = 5
+
+
 function CustomerFolder() {
   const params = useSearchParams()
   const name = params.get('name') ?? ''
@@ -130,6 +135,9 @@ function CustomerFolder() {
   const [pos, setPos] = useState<CustomerPO[]>([])
   const [loading, setLoading] = useState(true)
   const [delPhoto, setDelPhoto] = useState<string | null>(null) // URL รูปแพ็คที่กำลังลบ
+  const [page, setPage] = useState(1)
+  const listTop = useRef<HTMLDivElement>(null)
+  useEffect(() => { setPage(1) }, [name])   // เปิดโฟลเดอร์ลูกค้าคนอื่น = กลับหน้า 1
   // กล่องยืนยันของเว็บเอง (ไม่ใช้ window.confirm — ดูเหตุผลใน components/ConfirmDialog.tsx)
   const { ask, confirmDialog } = useConfirm()
 
@@ -190,6 +198,15 @@ function CustomerFolder() {
   }, [name])
 
   const total = orders.reduce((s, o) => s + (o.price ?? 0), 0)
+  const pageCount = Math.max(1, Math.ceil(orders.length / ORDERS_PER_PAGE))
+  const curPage = Math.min(page, pageCount)
+  const pageStart = (curPage - 1) * ORDERS_PER_PAGE
+  const pageOrders = orders.slice(pageStart, pageStart + ORDERS_PER_PAGE)
+  // เปลี่ยนหน้า → เลื่อนกลับไปหัวรายการ (กดเลขหน้าจากแถบล่างจะได้ไม่ค้างอยู่ท้ายหน้า)
+  const goPage = (n: number) => {
+    setPage(n)
+    requestAnimationFrame(() => listTop.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }
   const latest = orders.find(o => o.entry_date)?.entry_date ?? null
 
   // การ์ดโทนเดียวกับป๊อปอัปรายละเอียดออเดอร์ (พื้นครีม มุมมน 16 เส้นบาง ไม่มีเงาหนา)
@@ -244,8 +261,10 @@ function CustomerFolder() {
           ไม่พบประวัติออเดอร์ของลูกค้านี้
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 36 }}>
-          {orders.map((o, i) => {
+        <div ref={listTop} style={{ display: 'flex', flexDirection: 'column', gap: 36, scrollMarginTop: 16 }}>
+          <Pager page={curPage} pageCount={pageCount} onPage={goPage} label={`ออเดอร์ที่ ${pageStart + 1} - ${Math.min(pageStart + ORDERS_PER_PAGE, orders.length)} จากทั้งหมด ${orders.length} ใบ`} />
+          {pageOrders.map((o, idx) => {
+            const i = pageStart + idx   // ลำดับจริงในรายการทั้งหมด (ป้าย "ออเดอร์ที่ X / N" ยังนับต่อเนื่องข้ามหน้า)
             const ships = Array.isArray(o.shipments) ? o.shipments : []
             const photos = o.packing_photos ?? []
             return (
@@ -327,6 +346,7 @@ function CustomerFolder() {
             </section>
             )
           })}
+          <Pager page={curPage} pageCount={pageCount} onPage={goPage} label={`ออเดอร์ที่ ${pageStart + 1} - ${Math.min(pageStart + ORDERS_PER_PAGE, orders.length)} จากทั้งหมด ${orders.length} ใบ`} />
         </div>
       )}
 

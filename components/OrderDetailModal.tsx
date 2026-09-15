@@ -5,13 +5,14 @@
 //
 // เรียงเป็น 6 ส่วน: สรุปออเดอร์ · ไทม์ไลน์สถานะ · รายการสินค้า · การจัดส่ง · ข้อมูลใบออเดอร์ · ประวัติแก้ไข
 // เนื้อหาแยกเป็น OrderDetailBody ใช้ร่วมกับโฟลเดอร์ลูกค้า (app/(admin)/customers) ให้หน้าตาเดียวกัน
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { FIELD_TH } from '@/lib/activityText'
 import { PlatformIcon, CourierIcon } from './BrandMark'
 import { itemBlockLines, itemPrice, type RawItem } from '@/lib/itemFormat'
 import OrderHistory from './OrderHistory'
+import Pager from './Pager'
 import { OUTSIDE_PLATFORMS, PLATFORM_NAMES } from '@/lib/orderTabs'
 
 type Row = Record<string, unknown>
@@ -40,6 +41,9 @@ const EXTRA_TH: Record<string, string> = {
 // ให้ตรงกับช่องเลือกในตาราง ซึ่งแสดงค่าที่ไม่รู้จักเป็นตัวเลือกแรกอยู่แล้ว
 const ORDER_ASSIGNED = ['รออัพเดท', 'แจ้งลงหน้าร้าน', 'พี่ฟอง', 'ช่างเชียงใหม่']
 const assignedLabel = (v: unknown) => { const s = String(v ?? '').trim(); return ORDER_ASSIGNED.includes(s) ? s : 'รออัพเดท' }
+
+// ใบที่รายการสินค้าเยอะ (งานติดตั้งทั้งหลัง) → แบ่งหน้า หน้าละ ITEMS_PER_PAGE รายการ ไม่ต้องเลื่อนยาว (user ขอ 15ก.ย.69)
+const ITEMS_PER_PAGE = 10
 
 const MONEY_FIELDS = new Set(['price', 'deposit', 'paid_amount', 'refund_amount', 'shipping_cost'])
 const baht = (v: number) => '฿' + v.toLocaleString('th-TH', { maximumFractionDigits: 2 })
@@ -190,6 +194,17 @@ export function OrderDetailBody({ row, afterShipping, wide }: { row: Row; afterS
   const [copied, setCopied] = useState(false)
 
   const items = (row.items as Item[] | null) ?? []
+  const [itemPage, setItemPage] = useState(1)
+  const itemPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE))
+  const curItemPage = Math.min(itemPage, itemPages)
+  const itemStart = (curItemPage - 1) * ITEMS_PER_PAGE
+  const itemsTop = useRef<HTMLDivElement>(null)
+  // bottom = กดจากแถบล่าง → เลื่อนกลับหัวรายการ (หน้าใหม่สูงไม่เท่าเดิม ไม่งั้นค้างกลางรายการ)
+  const itemPager = (bottom: boolean) => (
+    <Pager page={curItemPage} pageCount={itemPages}
+      onPage={n => { setItemPage(n); if (bottom) requestAnimationFrame(() => itemsTop.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })) }}
+      label={`รายการที่ ${itemStart + 1} - ${Math.min(itemStart + ITEMS_PER_PAGE, items.length)} จาก ${items.length}`} />
+  )
   const price = typeof row.price === 'number' ? row.price as number : null
   const shipments = (row.shipments as Shipment[] | null) ?? []
   const tracking = shipments.map(sp => sp?.no).filter(Boolean).join(', ')
@@ -309,8 +324,10 @@ export function OrderDetailBody({ row, afterShipping, wide }: { row: Row; afterS
       {/* ══ รายการสินค้า ══ */}
       {items.length > 0 && (
         <Card title={`รายการสินค้า (${items.length})`} icon={BOX_ICON}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {items.map((it, i) => {
+          <div ref={itemsTop} style={{ display: 'flex', flexDirection: 'column', gap: 10, scrollMarginTop: 16 }}>
+            {itemPager(false)}
+            {items.slice(itemStart, itemStart + ITEMS_PER_PAGE).map((it, idx) => {
+              const i = itemStart + idx
               const qty = Number(it.quantity) || null
               // ‼️ ใช้สูตรบรรทัดเดียวกับตอนปริ้น/คัดลอกในหมวดออเดอร์ จะได้อ่านแล้วตรงกับใบสั่งงาน
               const lines = itemBlockLines(it as RawItem)
@@ -351,6 +368,7 @@ export function OrderDetailBody({ row, afterShipping, wide }: { row: Row; afterS
                 </div>
               )
             })}
+            {itemPager(true)}
           </div>
         </Card>
       )}
