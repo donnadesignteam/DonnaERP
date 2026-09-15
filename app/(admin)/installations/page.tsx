@@ -24,6 +24,7 @@ import { syncWorkStatus } from '@/lib/workStatusSync'
 import ProvinceSelect from '@/components/ProvinceSelect'
 import { formatOrderLines, linesToHtml, openFormPrintWindow, escPrintHtml, type PrintLine, type PrintableOrder } from '@/lib/orderPrint'
 import QRCode from 'qrcode'
+import { useColumnFilters, SearchPill, MonthSelect, SortSelect, Tab, type FilterDef } from '@/components/ListFilters'
 import { parseMoney } from '@/lib/money'
 import { WORK_TYPES, WORK_TYPE_OPTIONS, ZONES, TECHS, TECH_BY_ZONE,
   normStatus, statusLabel, statusOptions, rowColor, INSTALL_COLUMNS } from '@/lib/installMeta'
@@ -339,6 +340,33 @@ export default function InstallationsPage() {
     try { localStorage.setItem('inst_hidden_cols', JSON.stringify(next)) } catch {}
     return next
   })
+  // ตัวกรอง/เรียงที่หัวคอลัมน์ — แบบเดียวกับหมวดออเดอร์ (components/ListFilters.tsx)
+  const oeOfRow = (ins: Installation) => (ins.source_order_id ? orderMeta[ins.source_order_id] : undefined)
+  const filterDefs: FilterDef<Installation>[] = [
+    { id: 'days', label: 'วันผลิตที่เหลือ', kind: 'date', get: ins => oeOfRow(ins)?.deadline ?? ins.appointment_datetime?.slice(0, 10) },
+    { id: 'deadline', label: 'วันที่นัดหมาย', kind: 'date', get: ins => ins.appointment_datetime },
+    { id: 'work', label: 'งาน', kind: 'pick', get: ins => ins.work_type },
+    { id: 'print', label: 'ปริ้น', kind: 'bool', get: ins => oeOfRow(ins)?.printed_at, yes: 'ปริ้นแล้ว', no: 'ยังไม่ปริ้น' },
+    { id: 'serial', label: 'Serial', kind: 'text', get: ins => ins.serial_no },
+    { id: 'customer', label: 'ลูกค้า', kind: 'text', get: ins => ins.customer_real_name || ins.customer_id },
+    { id: 'platform', label: 'แพลตฟอร์ม', kind: 'pick', get: ins => ins.platform },
+    { id: 'total', label: 'ยอดทั้งหมด', kind: 'num', get: ins => oeOfRow(ins)?.price },
+    { id: 'payment', label: 'ชำระ', kind: 'pick', get: ins => oeOfRow(ins)?.payment_status },
+    { id: 'paid', label: 'ชำระแล้ว', kind: 'num', get: ins => oeOfRow(ins)?.paid_amount },
+    { id: 'assigned', label: 'ลงออเดอร์', kind: 'pick', get: ins => oeOfRow(ins)?.order_assigned },
+    { id: 'admin', label: 'แอดมิน', kind: 'pick', get: ins => oeOfRow(ins)?.admin_name || ins.entered_by },
+    { id: 'status', label: 'สถานะงาน', kind: 'pick', get: ins => oeOfRow(ins)?.order_status },
+    { id: 'done', label: 'งานเสร็จ', kind: 'bool', get: ins => oeOfRow(ins)?.is_urgent, yes: 'งานเสร็จ', no: 'ยังไม่เสร็จ' },
+    { id: 'installed', label: 'ติดตั้ง', kind: 'pick', get: ins => { const oe = oeOfRow(ins); return oe ? (oe.install_status || (oe.is_dropoff ? 'ติดตั้งแล้ว' : '')) : '' } },
+    { id: 'inststatus', label: 'สถานะ', kind: 'pick', get: ins => ins.installation_status },
+    { id: 'created', label: 'วันที่สร้าง', kind: 'date', get: ins => oeOfRow(ins)?.entry_date ?? oeOfRow(ins)?.created_at ?? ins.created_at },
+    { id: 'province', label: 'จังหวัด', kind: 'pick', get: ins => ins.province },
+    { id: 'zone', label: 'โซน', kind: 'pick', get: ins => ins.install_zone },
+    { id: 'insttech', label: 'ช่างติดตั้ง', kind: 'pick', get: ins => ins.technician_type },
+    { id: 'tech', label: 'ช่างเย็บ', kind: 'pick', get: ins => oeOfRow(ins)?.technician },
+    { id: 'updated', label: 'แก้ไขล่าสุด', kind: 'date', get: ins => ins.updated_at },
+  ]
+  const cf = useColumnFilters(filterDefs)
   // popup แก้รายการสินค้า (แบบเดียวกับหมวดออเดอร์) — บันทึกกลับไปที่ order_entries ต้นทาง
   const [itemsModal, setItemsModal] = useState<{ orderId: string; items: RawItem[]; instId: string } | null>(null)
   const [itemsPasteText, setItemsPasteText] = useState('')
@@ -1179,7 +1207,8 @@ export default function InstallationsPage() {
   )
   // เรียงตามลำดับที่ตรึงไว้ตอนโหลด (ชุดเดียวกับหมวดออเดอร์) — แถวที่เพิ่งเพิ่มยังไม่มีในลำดับ ไปต่อท้าย
   const orderMap = new Map(sortOrder.map((id, i) => [id, i]))
-  const displayed = (orderMap.size
+  // เลือกเรียง/กรองที่หัวคอลัมน์ไว้ → ทับลำดับตั้งต้น
+  const displayed = cf.apply(orderMap.size
     ? [...filtered].sort((a, b) => (orderMap.get(a.id) ?? 999999) - (orderMap.get(b.id) ?? 999999))
     : filtered).map(live)
 
@@ -1272,40 +1301,30 @@ export default function InstallationsPage() {
         }} />
       </div>
 
-      {/* List */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)' }}>รายการทั้งหมด</h2>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        {/* เลือกโซนติดตั้ง — ชิปชุดนี้ชุดเดียว คุมทั้งปฏิทินด้านบนและตารางรายการด้านล่าง */}
-        <div className="no-print" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {/* กดได้หลายโซนพร้อมกัน (กดซ้ำเพื่อเอาออก) · ไม่เลือกเลย = ทุกโซน */}
-          <button onClick={() => setZoneFilter([])}
-            style={{ padding: '5px 12px', borderRadius: 980, border: zoneFilter.length === 0 ? 'none' : '1px solid var(--border)', background: zoneFilter.length === 0 ? 'var(--blue)' : '#fff', color: zoneFilter.length === 0 ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: zoneFilter.length === 0 ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            ทุกโซน <span style={{ opacity: 0.75 }}>{byMonth.length}</span>
-          </button>
-          {ZONES.map(z => {
-            const on = zoneFilter.includes(z)
-            const n = byMonth.filter(i => i.install_zone === z).length
-            return (
-              <button key={z} onClick={() => setZoneFilter(prev => on ? prev.filter(v => v !== z) : [...prev, z])}
-                style={{ padding: '5px 12px', borderRadius: 980, border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--blue)' : '#fff', color: on ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: on ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                {on ? '✓ ' : ''}{z} <span style={{ opacity: 0.75 }}>{n}</span>
-              </button>
-            )
-          })}
-        </div>
-        <select value={listFilter} onChange={e => setListFilter(e.target.value)}
-          style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 12px', fontSize: 13, outline: 'none' }}>
-          <option value="all">ทั้งหมด</option>
-          {Array.from(new Set(installs.map(ins => {
+      {/* List — แถบเครื่องมือชุดเดียวกับหมวดออเดอร์: ค้นหา + เดือน + เรียง · แท็บโซน + ปุ่มคอลัมน์ชิดขวา */}
+      <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)', marginBottom: 12 }}>รายการทั้งหมด</h2>
+      <div className="no-print" style={{ display: 'flex', gap: 14, marginBottom: 18, flexWrap: 'wrap' }}>
+        <SearchPill value={search} onChange={setSearch} placeholder="ค้นหา ชื่อลูกค้า / แพลตฟอร์ม / จังหวัด / เบอร์ / Serial…" />
+        <MonthSelect value={listFilter} onChange={setListFilter} title="เดือนที่นัดหมาย"
+          months={Array.from(new Set(installs.map(ins => {
             const d = new Date(ins.appointment_datetime)
             return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-          }))).sort().reverse().map(m => (
-            <option key={m} value={m}>{TH_MONTHS[Number(m.split('-')[1]) - 1]} {Number(m.split('-')[0]) + 543}</option>
-          ))}
-        </select>
+          }))).filter(m => !m.includes('NaN')).sort().reverse()} />
+        <SortSelect cf={cf} defs={filterDefs} presets={[['deadline', 'asc'], ['deadline', 'desc'], ['created', 'desc'], ['created', 'asc'], ['updated', 'desc']]} />
+      </div>
+      <div className="no-print" style={{ display: 'flex', gap: 10, marginBottom: 18, alignItems: 'center', flexWrap: 'wrap' }}>
+        {/* เลือกโซนติดตั้ง — ชุดเดียวคุมทั้งปฏิทินด้านบนและตารางรายการ · กดได้หลายโซน (กดซ้ำเพื่อเอาออก) · ทั้งหมด = ทุกโซน + ล้างตัวกรองคอลัมน์ */}
+        <Tab active={zoneFilter.length === 0} count={byMonth.length} onClick={() => { setZoneFilter([]); cf.clearFilters() }}
+          title={cf.anyFilter ? 'กดเพื่อดูทุกโซน + ล้างตัวกรองคอลัมน์' : undefined}>ทั้งหมด</Tab>
+        {ZONES.map(z => {
+          const on = zoneFilter.includes(z)
+          return (
+            <Tab key={z} active={on} count={byMonth.filter(i => i.install_zone === z).length}
+              onClick={() => setZoneFilter(prev => on ? prev.filter(v => v !== z) : [...prev, z])}>{z}</Tab>
+          )
+        })}
         {/* ปุ่มคอลัมน์ — ชุด/ลำดับเดียวกับแท็บงานติดตั้งในหมวดออเดอร์ ติ๊กออกเพื่อซ่อน (จำไว้ในเครื่อง) */}
-        <div className="no-print" style={{ position: 'relative' }}>
+        <div className="no-print" style={{ position: 'relative', marginLeft: 'auto' }}>
           <button onClick={() => setOpenColMenu(v => !v)}
             style={{ padding: '6px 14px', borderRadius: 20, border: hiddenCols.length ? 'none' : '1px solid var(--border)', background: hiddenCols.length ? 'var(--blue)' : 'var(--surface)', color: hiddenCols.length ? '#fff' : 'var(--ink-3)', fontSize: 13, fontWeight: hiddenCols.length ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
             คอลัมน์{hiddenCols.length > 0 && ` (ซ่อน ${hiddenCols.length})`} <span style={{ fontSize: 9, opacity: 0.7 }}>▼</span>
@@ -1331,30 +1350,24 @@ export default function InstallationsPage() {
             </>
           )}
         </div>
-        </div>
-      </div>
-      <div style={{ position: 'relative', marginBottom: 16 }}>
-        <input value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="ค้นหา ชื่อลูกค้า / แพลตฟอร์ม / จังหวัด / เบอร์ / Serial / หมายเหตุ"
-          style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 34px 9px 13px', fontSize: 13, outline: 'none', boxSizing: 'border-box', background: 'var(--surface)' }} />
-        {search && (
-          <button onClick={() => setSearch('')}
-            style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 15 }}>✕</button>
-        )}
       </div>
 
+      {cf.renderMenu(byZone)}
       <div className="dn-list-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', overflowX: 'auto' }}>
         {loading ? (
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>กำลังโหลด…</div>
         ) : displayed.length === 0 ? (
-          <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>ไม่มีรายการ</div>
+          <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>
+            {cf.anyFilter ? 'ไม่มีรายการที่ตรงกับตัวกรองคอลัมน์' : 'ไม่มีรายการ'}
+            {cf.anyFilter && <div><button onClick={cf.clearFilters} style={{ marginTop: 10, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--brand)', borderRadius: 999, padding: '6px 16px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>ล้างตัวกรองคอลัมน์</button></div>}
+          </div>
         ) : (
           <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
                 {/* หัวตาราง = COLS (ชุด/ลำดับเดียวกับแท็บงานติดตั้งในหมวดออเดอร์ ยกเว้นวันผลิตที่เหลือ) */}
                 {COLS.filter(c => showCol(c.id)).map(c => (
-                  <th key={c.id} style={{ textAlign: COL_ALIGN[c.id] ?? 'left', padding: '12px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{c.label}</th>
+                  <th key={c.id} style={{ textAlign: COL_ALIGN[c.id] ?? 'left', padding: '12px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{cf.head(c.id, c.label)}</th>
                 ))}
                 <th style={{ padding: '12px 14px' }} />
               </tr>

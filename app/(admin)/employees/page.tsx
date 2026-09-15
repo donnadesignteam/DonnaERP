@@ -14,6 +14,17 @@ import { tUpdate } from '@/lib/trackedDb'
 import { useConfirm } from '@/components/ConfirmDialog'
 import { LEAVE_TYPES, rangeDays, vacationMaxDays, applyLeaveToStaff, isQuotaApplied, isApproved } from '@/lib/leave'
 import { todayYmd } from '@/lib/thaiDate'
+import { useStableView } from '@/lib/useStableView'
+import { useColumnFilters, useHiddenColumns, SearchPill, MonthSelect, SortSelect, ColumnPicker, Tab, type FilterDef } from '@/components/ListFilters'
+
+// คอลัมน์ของรายการลา (ซ่อน/โชว์ได้ + ตัวกรองหัวคอลัมน์ แบบเดียวกับหมวดออเดอร์)
+const LEAVE_COLS = [
+  { id: 'code', label: 'รหัส' }, { id: 'name', label: 'ชื่อ-นามสกุล' }, { id: 'nickname', label: 'ชื่อเล่น' },
+  { id: 'department', label: 'แผนก' }, { id: 'date', label: 'วันที่ลา' }, { id: 'type', label: 'ประเภท' },
+  { id: 'reason', label: 'เหตุผล' }, { id: 'cert', label: 'ใบรับรอง' }, { id: 'status', label: 'สถานะ' },
+  { id: 'supervisor', label: 'หัวหน้า' }, { id: 'hr', label: 'บุคคล' },
+]
+const APPROVAL_OPTS = ['รออนุมัติ', 'อนุมัติ', 'ไม่อนุมัติ']
 
 type Leave = {
   id: string
@@ -91,6 +102,11 @@ export default function EmployeesPage() {
   const [dayModal, setDayModal] = useState<{ ymd: string; day: number; leaves: Leave[] } | null>(null)
   // กล่อง "รออนุมัติ" เหนือรายการลา — แบบเดียวกับปุ่มกรอง "ข้อมูลไม่ครบ / ยังไม่ปริ้น" ในหมวดออเดอร์
   const [pendingFilter, setPendingFilter] = useState(false)
+  // รายการลา: ค้นหา / เดือน / ตัวกรองหัวคอลัมน์ / ซ่อนคอลัมน์
+  const [leaveSearch, setLeaveSearch] = useState('')
+  const [leaveMonth, setLeaveMonth] = useState('all')
+  const { snapshot, stable, live } = useStableView<Leave>(leaves)
+  const hc = useHiddenColumns('leave_hidden_cols')
   const [view, setView] = useState<'month' | 'week' | 'day'>('month')
   const [selDay, setSelDay] = useState(new Date().getDate())   // วันที่ยึดของมุมมองสัปดาห์/วัน
 
@@ -102,6 +118,7 @@ export default function EmployeesPage() {
     const rows = (data ?? []) as Leave[]
     setPageCache('leave_requests', rows)
     setLeaves(rows)
+    snapshot(rows)
     setLoading(false)
   }
 
@@ -284,13 +301,34 @@ export default function EmployeesPage() {
   const isPending = (l: Leave) =>
     !isApproved(l) && l.supervisor_approval !== 'ไม่อนุมัติ' && l.hr_approval !== 'ไม่อนุมัติ'
   const pendingLeaves = leaves.filter(isPending)
-  const shownLeaves = pendingFilter ? pendingLeaves : leaves
+
+  // กรอง/เรียงบนค่า stable (แถวไม่เด้งหนีตอนกดอนุมัติ) แล้วคืนค่าสดก่อนวาด
+  const leaveDefs: FilterDef<Leave>[] = [
+    { id: 'code', label: 'รหัส', kind: 'text', get: l => l.employee_code },
+    { id: 'name', label: 'ชื่อ-นามสกุล', kind: 'text', get: l => l.employee_name },
+    { id: 'nickname', label: 'ชื่อเล่น', kind: 'pick', get: l => l.employee_nickname },
+    { id: 'department', label: 'แผนก', kind: 'pick', get: l => l.department },
+    { id: 'date', label: 'วันที่ลา', kind: 'date', get: l => l.leave_date },
+    { id: 'type', label: 'ประเภท', kind: 'pick', get: l => l.leave_type },
+    { id: 'cert', label: 'ใบรับรอง', kind: 'bool', get: l => l.medical_cert_url, yes: 'แนบใบรับรองแล้ว', no: 'ยังไม่แนบ' },
+    { id: 'status', label: 'สถานะ', kind: 'pick', get: l => l.leave_status, options: ['ใบลาเรียบร้อย', 'ยังไม่เขียนไปลา', 'รออนุมัติ'] },
+    { id: 'supervisor', label: 'หัวหน้า', kind: 'pick', get: l => l.supervisor_approval, options: APPROVAL_OPTS },
+    { id: 'hr', label: 'บุคคล', kind: 'pick', get: l => l.hr_approval, options: APPROVAL_OPTS },
+  ]
+  const lf = useColumnFilters(leaveDefs)
+  const leaveMonths = Array.from(new Set(leaves.map(l => (l.leave_date ?? '').slice(0, 7)).filter(Boolean))).sort().reverse()
+  const monthLeaves = leaves.map(stable).filter(l => leaveMonth === 'all' || (l.leave_date ?? '').slice(0, 7) === leaveMonth)
+  const lq = leaveSearch.trim().toLowerCase()
+  const searchedLeaves = !lq ? monthLeaves : monthLeaves.filter(l =>
+    [l.employee_code, l.employee_name, l.employee_nickname, l.department, l.leave_type, l.reason].some(v => (v ?? '').toLowerCase().includes(lq)))
+  const shownLeaves = lf.apply(pendingFilter ? searchedLeaves.filter(isPending) : searchedLeaves).map(live)
 
   // กดชื่อคนลาในปฏิทิน → เลื่อนลงไปที่แถวใบลานั้นในรายการลา แล้วกระพริบ (ปิดตัวกรอง "รออนุมัติ" ก่อน เผื่อแถวถูกซ่อน)
   const [flashLeave, setFlashLeave] = useState<string | null>(null)
   const jumpToLeave = (id: string) => {
     setDayModal(null)
-    if (pendingFilter && !pendingLeaves.some(l => l.id === id)) setPendingFilter(false)
+    // แถวโดนตัวกรองซ่อนอยู่ → ล้างตัวกรองทั้งหมดก่อน จะได้เลื่อนไปเจอ
+    if (!shownLeaves.some(l => l.id === id)) { setPendingFilter(false); setLeaveSearch(''); setLeaveMonth('all'); lf.clearFilters() }
     setFlashLeave(null)
     setTimeout(() => {
       document.querySelector(`[data-leave-row="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -419,22 +457,22 @@ export default function EmployeesPage() {
         )}
       </div>
 
-      {/* Leave list */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
-        <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>รายการลา</h2>
-        {/* ปุ่มกรอง "รออนุมัติ" — หน้าตา/พฤติกรรมชุดเดียวกับปุ่ม "ข้อมูลไม่ครบ / ยังไม่ปริ้น" ในหมวดออเดอร์
-            ไม่มีใบรออนุมัติ = ปุ่มหายไปเลย (เหมือนกัน) */}
-        {pendingLeaves.length > 0 && (
-          <button onClick={() => setPendingFilter(f => !f)}
-            title="ใบลาที่ยังไม่มีใครกดอนุมัติ/ไม่อนุมัติ — กดเพื่อดูเฉพาะใบพวกนี้"
-            style={{ padding: '6px 14px', borderRadius: 20, border: pendingFilter ? 'none' : '1px solid var(--border)', background: pendingFilter ? '#C79A4B' : 'var(--surface)', color: pendingFilter ? '#fff' : '#C79A4B', fontSize: 13, fontWeight: pendingFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
-            รออนุมัติ
-            <span style={{ background: pendingFilter ? 'rgba(255,255,255,0.3)' : '#C79A4B22', color: pendingFilter ? '#fff' : '#C79A4B', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
-              {pendingLeaves.length}
-            </span>
-          </button>
-        )}
+      {/* Leave list — แถบเครื่องมือชุดเดียวกับหมวดออเดอร์: ค้นหา + เดือน + เรียง · แท็บ ทั้งหมด / รออนุมัติ + ปุ่มคอลัมน์ชิดขวา */}
+      <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)', margin: '0 0 12px' }}>รายการลา</h2>
+      <div style={{ display: 'flex', gap: 14, marginBottom: 18, flexWrap: 'wrap' }}>
+        <SearchPill value={leaveSearch} onChange={setLeaveSearch} placeholder="ค้นหา รหัส / ชื่อ / ชื่อเล่น / แผนก / ประเภท / เหตุผล…" />
+        <MonthSelect value={leaveMonth} onChange={setLeaveMonth} months={leaveMonths} title="เดือนที่ลา" />
+        <SortSelect cf={lf} defs={leaveDefs} presets={[['date', 'desc'], ['date', 'asc'], ['nickname', 'asc']]} />
       </div>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 18, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Tab active={!pendingFilter} count={searchedLeaves.length} onClick={() => { setPendingFilter(false); lf.clearFilters() }}
+          title={lf.anyFilter ? 'กดเพื่อล้างตัวกรองคอลัมน์' : undefined}>ทั้งหมด</Tab>
+        {/* รออนุมัติ = ใบที่ยังไม่มีใครกดอนุมัติ/ไม่อนุมัติ */}
+        <Tab active={pendingFilter} count={searchedLeaves.filter(isPending).length} onClick={() => setPendingFilter(true)}
+          title="ใบลาที่ยังไม่มีใครกดอนุมัติ/ไม่อนุมัติ">รออนุมัติ</Tab>
+        <ColumnPicker cols={LEAVE_COLS} hc={hc} />
+      </div>
+      {lf.renderMenu(searchedLeaves)}
       <div className="dn-list-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', overflowX: 'auto' }}>
         {error ? (
           <div style={{ padding: 40, textAlign: 'center' }}>
@@ -446,23 +484,36 @@ export default function EmployeesPage() {
         ) : loading ? (
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>กำลังโหลด…</div>
         ) : shownLeaves.length === 0 ? (
-          <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>{pendingFilter ? 'ไม่มีใบลาที่รออนุมัติ' : 'ไม่มีรายการลา'}</div>
+          <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>
+            {lf.anyFilter ? 'ไม่มีใบลาที่ตรงกับตัวกรองคอลัมน์' : pendingFilter ? 'ไม่มีใบลาที่รออนุมัติ' : 'ไม่มีรายการลา'}
+            {lf.anyFilter && <div><button onClick={lf.clearFilters} style={{ marginTop: 10, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--brand)', borderRadius: 999, padding: '6px 16px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>ล้างตัวกรองคอลัมน์</button></div>}
+          </div>
         ) : (
           <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
-                {['รหัส','ชื่อ-นามสกุล','ชื่อเล่น','แผนก','วันที่ลา','ประเภท','เหตุผล','ใบรับรอง','สถานะ','หัวหน้า','บุคคล',''].map(h => (
-                  <th key={h} style={{ textAlign: 'left', padding: '11px 13px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
+                {LEAVE_COLS.filter(c => hc.show(c.id)).map(c => (
+                  <th key={c.id} style={{ textAlign: 'left', padding: '11px 13px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{lf.head(c.id, c.label)}</th>
                 ))}
+                <th style={{ padding: '11px 13px' }} />
               </tr>
             </thead>
             <tbody>
               {shownLeaves.map(l => (
                 <tr key={l.id} data-leave-row={l.id} className={flashLeave === l.id ? 'row-flash' : undefined} style={{ borderBottom: '1px solid var(--border)', background: isPending(l) ? '#C79A4B0f' : undefined }}>
+                  {hc.show('code') && (
                   <td style={{ padding: '11px 13px', fontWeight: 700, color: 'var(--blue)' }}>{l.employee_code}</td>
+                  )}
+                  {hc.show('name') && (
                   <td style={{ padding: '11px 13px' }}>{l.employee_name}</td>
+                  )}
+                  {hc.show('nickname') && (
                   <td style={{ padding: '11px 13px' }}>{l.employee_nickname}</td>
+                  )}
+                  {hc.show('department') && (
                   <td style={{ padding: '11px 13px', color: 'var(--ink-3)' }}>{l.department}</td>
+                  )}
+                  {hc.show('date') && (
                   <td style={{ padding: '11px 13px', whiteSpace: 'nowrap' }}>
                     {l.leave_date ? new Date(l.leave_date).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}
                     {l.leave_end_date && l.leave_end_date !== l.leave_date && (
@@ -470,8 +521,14 @@ export default function EmployeesPage() {
                         <span style={{ color: 'var(--ink-3)', fontWeight: 600 }}> ({rangeDays(l.leave_date, l.leave_end_date)} วัน)</span></>
                     )}
                   </td>
+                  )}
+                  {hc.show('type') && (
                   <td style={{ padding: '11px 13px' }}>{l.leave_type}</td>
+                  )}
+                  {hc.show('reason') && (
                   <td style={{ padding: '11px 13px', color: 'var(--ink-3)', maxWidth: 140 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.reason || '-'}</div></td>
+                  )}
+                  {hc.show('cert') && (
                   <td style={{ padding: '11px 13px', whiteSpace: 'nowrap' }}>
                     {l.leave_type !== 'ลาป่วย' ? (
                       <span style={{ color: 'var(--ink-4)' }}>-</span>
@@ -490,24 +547,31 @@ export default function EmployeesPage() {
                       </span>
                     )}
                   </td>
+                  )}
+                  {hc.show('status') && (
                   <td style={{ padding: '11px 13px' }}>
                     <select value={l.leave_status} onChange={e => updateLeave(l.id, 'leave_status', e.target.value)}
                       style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 6px', fontSize: 11, outline: 'none' }}>
                       {['ใบลาเรียบร้อย','ยังไม่เขียนไปลา','รออนุมัติ'].map(o => <option key={o}>{o}</option>)}
                     </select>
                   </td>
+                  )}
+                  {hc.show('supervisor') && (
                   <td style={{ padding: '11px 13px' }}>
                     <select value={l.supervisor_approval} onChange={e => updateLeave(l.id, 'supervisor_approval', e.target.value)}
                       style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 6px', fontSize: 11, outline: 'none', color: l.supervisor_approval === 'อนุมัติ' ? '#6F8F6A' : l.supervisor_approval === 'ไม่อนุมัติ' ? 'var(--red)' : 'var(--ink-3)' }}>
                       {['รออนุมัติ','อนุมัติ','ไม่อนุมัติ'].map(o => <option key={o}>{o}</option>)}
                     </select>
                   </td>
+                  )}
+                  {hc.show('hr') && (
                   <td style={{ padding: '11px 13px' }}>
                     <select value={l.hr_approval} onChange={e => updateLeave(l.id, 'hr_approval', e.target.value)}
                       style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 6px', fontSize: 11, outline: 'none', color: l.hr_approval === 'อนุมัติ' ? '#6F8F6A' : l.hr_approval === 'ไม่อนุมัติ' ? 'var(--red)' : 'var(--ink-3)' }}>
                       {['รออนุมัติ','อนุมัติ','ไม่อนุมัติ'].map(o => <option key={o}>{o}</option>)}
                     </select>
                   </td>
+                  )}
                   <td style={{ padding: '11px 13px' }}>
                     <button onClick={() => del(l.id)}
                       style={{ padding: '4px 10px', borderRadius: 6, border: 'none', background: '#ff375f22', color: 'var(--red)', cursor: 'pointer', fontSize: 11 }}>ลบ</button>
