@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+// สีวันผลิตที่เหลือชุดเดียวกับหมวดออเดอร์: เกิน/วันนี้ = แดงอิฐ · 1-10 วัน = เหลือง · เกิน 10 วัน = เขียว
+import { daysColor } from '@/lib/orderTabs'
 import { createPortal } from 'react-dom'
 import { supabase } from '@/lib/supabase'
 import { syncRows, byCreatedAsc } from '@/lib/rowCache'
@@ -860,7 +862,7 @@ export default function DashboardPage() {
                         ) : o.is_urgent ? (
                           <span style={{ fontWeight: 600, color: '#6F8F6A' }}>งานเสร็จ</span>
                         ) : days !== null ? (
-                          <span style={{ fontWeight: 600, color: days < 0 ? '#E03127' : days <= 2 ? '#C79A4B' : '#6F8F6A' }}>
+                          <span style={{ fontWeight: 600, color: daysColor(days) }}>
                             {days < 0 ? `เกิน ${Math.abs(days)} วัน` : days === 0 ? 'ต้องจัดส่งวันนี้' : `${days} วัน`}
                           </span>
                         ) : <span style={{ color: 'var(--ink-4)' }}>รอกำหนด</span>}
@@ -1002,7 +1004,7 @@ export default function DashboardPage() {
                               : <span style={{ color: 'var(--ink)' }}>-</span>}
                           </span>
                           <span style={{ fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0,
-                            color: days === null ? 'var(--ink-4)' : days < 0 ? 'var(--red)' : days <= 2 ? '#C79A4B' : '#6F8F6A' }}>
+                            color: days === null ? 'var(--ink-4)' : daysColor(days) }}>
                             {days === null ? 'รอกำหนด' : days < 0 ? `เกิน ${Math.abs(days)} วัน` : days === 0 ? 'ต้องจัดส่งวันนี้' : `${days} วัน`}
                           </span>
                         </div>
