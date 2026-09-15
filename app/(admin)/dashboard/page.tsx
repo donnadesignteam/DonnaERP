@@ -861,7 +861,7 @@ export default function DashboardPage() {
                           <span style={{ fontWeight: 600, color: '#6F8F6A' }}>งานเสร็จ</span>
                         ) : days !== null ? (
                           <span style={{ fontWeight: 600, color: days < 0 ? '#E03127' : days <= 2 ? '#C79A4B' : '#6F8F6A' }}>
-                            {days < 0 ? `เกิน ${Math.abs(days)}` : days} วัน
+                            {days < 0 ? `เกิน ${Math.abs(days)} วัน` : days === 0 ? 'ต้องจัดส่งวันนี้' : `${days} วัน`}
                           </span>
                         ) : <span style={{ color: 'var(--ink-4)' }}>รอกำหนด</span>}
                       </td>
@@ -1003,7 +1003,7 @@ export default function DashboardPage() {
                           </span>
                           <span style={{ fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0,
                             color: days === null ? 'var(--ink-4)' : days < 0 ? 'var(--red)' : days <= 2 ? '#C79A4B' : '#6F8F6A' }}>
-                            {days === null ? 'รอกำหนด' : days < 0 ? `เกิน ${Math.abs(days)} วัน` : `${days} วัน`}
+                            {days === null ? 'รอกำหนด' : days < 0 ? `เกิน ${Math.abs(days)} วัน` : days === 0 ? 'ต้องจัดส่งวันนี้' : `${days} วัน`}
                           </span>
                         </div>
                       )
@@ -1051,7 +1051,7 @@ export default function DashboardPage() {
               return (
                 <tr key={o.id}>
                   <td style={{ padding: '4px 6px', borderBottom: '1px solid #ccc', whiteSpace: 'nowrap' }}>
-                    {days === null ? 'รอกำหนด' : days < 0 ? `เกิน ${Math.abs(days)} วัน` : `${days} วัน`}
+                    {days === null ? 'รอกำหนด' : days < 0 ? `เกิน ${Math.abs(days)} วัน` : days === 0 ? 'ต้องจัดส่งวันนี้' : `${days} วัน`}
                   </td>
                   <td style={{ padding: '4px 6px', borderBottom: '1px solid #ccc', whiteSpace: 'nowrap' }}>
                     {isOutside
