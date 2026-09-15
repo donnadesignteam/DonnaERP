@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { matchSerial } from '@/lib/serialNo'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { syncRows, byCreatedAsc } from '@/lib/rowCache'
@@ -14,6 +15,7 @@ import { todayYmd } from '@/lib/thaiDate'
 
 type Order = {
   id: string
+  serial_no?: string | null   // เลขที่ใบงานนอก DR0001 — ไว้ค้นหา
   order_number: string
   customer_name: string
   order_status: string
@@ -224,7 +226,7 @@ export default function DashboardPage() {
   const load = async () => {
     setError('')
     // จำไว้ในเครื่อง ขอเฉพาะใบที่เปลี่ยน (lib/rowCache.ts)
-    const cols = 'id,order_number,customer_name,order_status,deadline,created_at,platform,courier,is_installation,is_urgent,is_dropoff,shipping_datetime,notes,updated_at'
+    const cols = 'id,serial_no,order_number,customer_name,order_status,deadline,created_at,platform,courier,is_installation,is_urgent,is_dropoff,shipping_datetime,notes,updated_at'
     const { data: rows, error: err } = await syncRows<Order>({
       key: 'dashboard', table: 'order_entries', select: cols, sort: byCreatedAsc,
       full: () => supabase.from('order_entries').select(cols).order('created_at', { ascending: true }).order('id', { ascending: true }),
@@ -237,6 +239,41 @@ export default function DashboardPage() {
   }
 
   useEffect(() => { load() }, [])
+
+  // ── อัปเดตสด: เกาะฟังความเปลี่ยนแปลงของ order_entries ──
+  // ‼️ เดิมหน้านี้ load() ครั้งเดียวตอนเปิด เปิดค้างไว้บนจอติดผนังตัวเลขจะค้างทั้งวัน
+  //    ทำแบบเดียวกับหน้าปฏิทินงานติดตั้ง: merge แถวที่เปลี่ยนเข้า state ไม่ยิงโหลดใหม่ทั้งก้อน
+  const allRef = useRef<Order[]>(all)
+  allRef.current = all
+  useEffect(() => {
+    const ch = supabase
+      .channel('dashboard_orders_live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_entries' }, payload => {
+        if (payload.eventType === 'DELETE') {
+          const gone = (payload.old as { id?: string }).id
+          if (!gone) return
+          setAll(prev => {
+            const next = prev.filter(o => o.id !== gone)
+            setPageCache('dashboard:order_entries', next)
+            return next
+          })
+          return
+        }
+        const row = payload.new as Order
+        const before = allRef.current.find(o => o.id === row.id)
+        void before
+        setAll(prev => {
+          const next = prev.some(o => o.id === row.id)
+            ? prev.map(o => o.id === row.id ? { ...o, ...row } : o)
+            : [...prev, row]
+          setPageCache('dashboard:order_entries', next)
+          return next
+        })
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [])
+
 
   const DONE_STATUSES = ['งานเสร็จ', 'จัดส่งแล้ว']
   // ออเดอร์ที่ลงเดือนนี้ (ตาม created_at)
@@ -277,7 +314,7 @@ export default function DashboardPage() {
   if (statusFilters.length) ordersList = ordersList.filter(o => statusFilters.includes(o.order_status))
   if (orderSearch) {
     const q = orderSearch.toLowerCase()
-    ordersList = ordersList.filter(o => o.order_number?.toLowerCase().includes(q) || o.customer_name?.toLowerCase().includes(q))
+    ordersList = ordersList.filter(o => o.order_number?.toLowerCase().includes(q) || o.customer_name?.toLowerCase().includes(q) || matchSerial(o.serial_no, q))
   }
   if (daysSort) {
     ordersList = [...ordersList].sort((a, b) => {
@@ -432,7 +469,7 @@ export default function DashboardPage() {
           <input
             value={orderSearch}
             onChange={e => setOrderSearch(e.target.value)}
-            placeholder="ค้นหาเลขที่ / ลูกค้า…"
+            placeholder="ค้นหาเลขที่ / Serial / ลูกค้า…"
             style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--ink)', fontSize: 12, outline: 'none', width: 220 }}
           />
         </div>
