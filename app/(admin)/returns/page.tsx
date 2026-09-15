@@ -19,6 +19,7 @@ import { nextSerial } from '@/lib/serialNo'
 import { buildCustomerBook, type CustomerEntry } from '@/lib/customerBook'
 import CustomerPickStep from '@/components/CustomerPickStep'
 import CreamSelect from '@/components/CreamSelect'
+import { CourierIcon } from '@/components/BrandMark'
 import { useStableView } from '@/lib/useStableView'
 import { TH_MONTHS } from '@/lib/shopCalendar'
 
@@ -709,7 +710,9 @@ function EditCell({ value, editing, onStart, onDone, multiline, carrier, label, 
   return (
     <div onClick={onStart} title={value || `กดเพื่อแก้${label}`} className="rp-cell"
       style={{ cursor: 'text', minHeight: 18, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: value ? 'var(--ink)' : 'var(--ink-4)' }}>
-      {value || '—'}
+      {carrier && value
+        ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><CourierIcon name={value} size={18} />{value}</span>
+        : value || '—'}
     </div>
   )
 }

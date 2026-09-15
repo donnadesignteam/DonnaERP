@@ -294,7 +294,7 @@ h1, h2, h3 { font-weight: 700; }
 @media (prefers-reduced-motion: reduce) { .cs-menu, .ow-drop, .cs-menu .cs-item, .ow-drop > * { animation: none; } .cs-chev { transition: none; } }
 
 /* ช่องแอดมิน/ช่างเย็บที่ยังไม่เลือกชื่อ — ป้ายพีชครีมมุมมนรอบช่องเลือก (เดิมระบายเหลืองเต็มช่องตาราง) */
-.ow-card td.ow-empty > select { background: #F6DFC6 !important; border-radius: 999px; padding: 5px 12px !important; min-width: 64px; color: #8A6142 !important; font-weight: 600; }
+.ow-card td.ow-empty > select, .dn-list td.ow-empty select { background: #F6DFC6 !important; border-radius: 999px; padding: 5px 12px !important; min-width: 64px; color: #8A6142 !important; font-weight: 600; }
 
 /* ════ ปฏิทินร้าน (/employees) — ดีไซน์ตามภาพต้นแบบ 14ก.ย.69 ════ */
 .sc-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }

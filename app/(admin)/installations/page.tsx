@@ -24,6 +24,7 @@ import { syncWorkStatus } from '@/lib/workStatusSync'
 import ProvinceSelect from '@/components/ProvinceSelect'
 import { formatOrderLines, linesToHtml, openFormPrintWindow, escPrintHtml, type PrintLine, type PrintableOrder } from '@/lib/orderPrint'
 import QRCode from 'qrcode'
+import { PlatformIcon } from '@/components/BrandMark'
 import { useColumnFilters, SearchPill, MonthSelect, SortSelect, Tab, type FilterDef } from '@/components/ListFilters'
 import { parseMoney } from '@/lib/money'
 import { WORK_TYPES, WORK_TYPE_OPTIONS, ZONES, TECHS, TECH_BY_ZONE,
@@ -100,7 +101,6 @@ const PAYMENT_STATUS_COLOR: Record<string, string> = {
 const ORDER_ASSIGNED = ['รออัพเดท', 'แจ้งลงหน้าร้าน', 'พี่ฟอง', 'ช่างเชียงใหม่']
 const ADMINS = ['กาย', 'แพท', 'หนูนา', 'ยุน', 'ส้ม', 'เก๋']
 const INSTALL_STATUS_OPTIONS = ['ติดตั้งแล้ว', 'ติดตั้ง50%']
-const EMPTY_HL = 'rgba(245,158,11,0.42)'
 const daysColor = (d: number) => d <= 0 ? 'var(--red)' : d <= 10 ? '#C79A4B' : '#6F8F6A'
 
 // ลำดับแถวชุดเดียวกับตารางงานติดตั้งในหมวดออเดอร์ — 3 ชั้น ต้องครบทั้ง 3 ถึงจะตรงกัน
@@ -1491,11 +1491,15 @@ export default function InstallationsPage() {
                     </>
                   ),
                   platform: (
-                    <select value={ins.platform || ''} onChange={e => saveInstField(ins.id, 'platform', e.target.value)}
-                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: ins.platform ? 'var(--ink-3)' : 'var(--ink-4)', padding: 0, maxWidth: 140 }}>
-                      <option value="">—</option>
-                      {Array.from(new Set([...PLATFORMS, ins.platform].filter(Boolean))).map(p => <option key={p} value={p as string}>{p}</option>)}
-                    </select>
+                    // ไอคอนแพลตฟอร์มหน้าชื่อ — ชุดเดียวกับหมวดออเดอร์
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
+                      {ins.platform && <PlatformIcon name={ins.platform} size={18} />}
+                      <select value={ins.platform || ''} onChange={e => saveInstField(ins.id, 'platform', e.target.value)}
+                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: ins.platform ? 'var(--ink-2)' : 'var(--ink-4)', padding: 0, maxWidth: 140 }}>
+                        <option value="">—</option>
+                        {Array.from(new Set([...PLATFORMS, ins.platform].filter(Boolean))).map(p => <option key={p} value={p as string}>{p}</option>)}
+                      </select>
+                    </span>
                   ),
                   items: ins.source_order_id ? (
                     // มาจากหมวดออเดอร์ → จิ้มเปิด popup แก้รายการ บันทึกกลับไปที่ออเดอร์ต้นทาง
@@ -1746,10 +1750,10 @@ export default function InstallationsPage() {
                     </div>
                   ) : <span style={{ color: 'var(--ink-4)' }}>-</span>,
                 }
-                // ช่องที่ยังไม่ได้กรอก → พื้นหลังสีเตือน (ชุดเดียวกับหมวดออเดอร์)
-                const cellBg: Record<string, string | undefined> = {
-                  admin: (oe?.admin_name || ins.entered_by) ? undefined : EMPTY_HL,
-                  tech: oid && !oe?.technician ? EMPTY_HL : undefined,
+                // ช่องแอดมิน/ช่างเย็บที่ยังไม่เลือกชื่อ → ป้ายพีชครีมมุมมน (คลาส .ow-empty ชุดเดียวกับหมวดออเดอร์)
+                const cellEmpty: Record<string, boolean> = {
+                  admin: !!oid && !(oe?.admin_name || ins.entered_by),
+                  tech: !!oid && !oe?.technician,
                 }
                 // ข้อความเต็มของคอลัมน์ที่ถูกตัดท้าย — เอาเมาส์ชี้แล้วอ่านได้
                 const titles: Record<string, string> = {
@@ -1766,10 +1770,9 @@ export default function InstallationsPage() {
                 return (
                   <tr key={ins.id} style={{ borderBottom: '1px solid var(--border)' }}>
                     {COLS.filter(c => showCol(c.id)).map(c => (
-                      <td key={c.id} style={{
+                      <td key={c.id} className={cellEmpty[c.id] ? 'ow-empty' : undefined} style={{
                         padding: c.id === 'items' ? '6px 14px' : '12px 14px',
                         textAlign: COL_ALIGN[c.id] ?? 'left',
-                        background: cellBg[c.id],
                         ...(COL_W[c.id] != null ? { width: COL_W[c.id], minWidth: COL_W[c.id], maxWidth: COL_W[c.id] } : {}),
                       }}>
                         {COL_W[c.id] != null ? (

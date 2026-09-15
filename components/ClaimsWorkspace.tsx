@@ -10,6 +10,7 @@ import CustomerPickStep from '@/components/CustomerPickStep'
 import { useConfirm } from '@/components/ConfirmDialog'
 import AnchoredMenu from '@/components/AnchoredMenu'
 import CreamSelect from '@/components/CreamSelect'
+import { PlatformIcon, CourierIcon } from '@/components/BrandMark'
 import { usePrintColumns, PrintColumnPicker, printTableHtml, type PrintCol } from '@/components/PrintColumnPicker'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
@@ -1140,7 +1141,9 @@ ${body}
                     </td>
                     )}
                     {showCol('แพลตฟอร์ม') && (
-                    <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', color: 'var(--ink)' }}>{r.channel || '-'}</td>
+                    <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', color: 'var(--ink-2)' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>{r.channel && <PlatformIcon name={r.channel} size={18} />}{r.channel || '-'}</span>
+                    </td>
                     )}
                     {showCol('Serial') && (
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', fontWeight: 700, color: 'var(--ink)' }}>
@@ -1219,12 +1222,12 @@ ${body}
                     </td>
                     )}
                     {showCol('แอดมิน') && (
-                    <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
+                    <td className={r.admin_name ? undefined : 'ow-empty'} style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
                       {selectInline(r, 'admin_name', adminOptions)}
                     </td>
                     )}
                     {showCol('ช่าง') && (
-                    <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
+                    <td className={r.technician ? undefined : 'ow-empty'} style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
                       {selectInline(r, 'technician', TECH_OPTIONS)}
                     </td>
                     )}
@@ -1256,7 +1259,16 @@ ${body}
                       <input type="checkbox" checked={!!r.shipped_at}
                         onChange={e => e.target.checked ? openShipModal(r) : unship(r)}
                         title={r.shipped_at ? 'ส่งแล้ว — ติ๊กออกเพื่อยกเลิก' : 'ติ๊กเพื่อกรอกเลขพัสดุ'}
-                        style={{ cursor: 'pointer', width: 16, height: 16, accentColor: '#6F8F6A' }} />
+                        style={{ cursor: 'pointer', width: 16, height: 16, accentColor: '#6F8F6A', verticalAlign: 'middle' }} />
+                      {/* ขนส่งของพัสดุที่ส่งออก — ไอคอน + ชื่อ ชุดเดียวกับหมวดออเดอร์ */}
+                      {(() => {
+                        const carriers = Array.from(new Set((Array.isArray(r.shipments) ? r.shipments.map(s => s.carrier) : []).concat(r.courier ? [r.courier] : []).filter(Boolean)))
+                        return carriers.map(c => (
+                          <span key={c} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 8, verticalAlign: 'middle', color: 'var(--ink-2)' }}>
+                            <CourierIcon name={c} size={18} />{c}
+                          </span>
+                        ))
+                      })()}
                     </td>
                     )}
                     {showCol('ค่าส่งกลับ') && (
