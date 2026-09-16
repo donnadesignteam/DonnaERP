@@ -98,7 +98,7 @@ const PAYMENT_STATUS_COLOR: Record<string, string> = {
   'ยังไม่ชำระ': '#f59e0b', 'มัดจำ': '#8b5cf6', 'มัดจำ50%': '#3b82f6', 'ชำระครบ': '#22c55e',
 }
 const ORDER_ASSIGNED = ['รออัพเดท', 'แจ้งลงหน้าร้าน', 'พี่ฟอง', 'ช่างเชียงใหม่']
-const ADMINS = ['กาย', 'แพท', 'หนูนา', 'ยุน', 'ส้ม', 'เก๋']
+const ADMINS = ['กาย', 'แพท', 'หนูนา', 'ยุน', 'ส้ม', 'เก๋', 'ช่างแพ็ค']
 const INSTALL_STATUS_OPTIONS = ['ติดตั้งแล้ว', 'ติดตั้ง50%']
 const EMPTY_HL = 'rgba(245,158,11,0.42)'
 const daysColor = (d: number) => d <= 0 ? 'var(--red)' : d <= 10 ? '#eab308' : '#34c759'
