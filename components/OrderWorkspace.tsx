@@ -5335,17 +5335,28 @@ ${body}
                 const now = new Date().toISOString()
                 // สั่งนอกในรายการ → ลงคอลัมน์สั่งนอกของออเดอร์ + ประทับเวลาเมื่อข้อความเปลี่ยน
                 const itemsOut = itemsOutsourceText(itemsModal.items)
-                const prevOut = rows.find(r => r.id === itemsModal.id)?.outsource ?? ''
+                const row = rows.find(r => r.id === itemsModal.id)
+                const prevOut = row?.outsource ?? ''
+                // ‼️ แถวงานเคลมที่โชว์ในหมวดออเดอร์ id อยู่ตาราง claims ไม่ใช่ order_entries
+                //    เดิมยิง update เข้า order_entries เสมอ → ไม่โดนแถวไหนเลย รายการสินค้าเลยไม่ถูกบันทึก
+                //    (ไม่ error ด้วย เลยดูเหมือนบันทึกได้ แต่พอรีเฟรชรายการหาย)
+                const isClaim = !!row && isClaimEntry(row)
+                const outPatch = itemsOut && itemsOut !== prevOut ? { outsource: itemsOut, outsource_at: now } : {}
                 const updates = {
                   items: newItems,
                   updated_at: now,
-                  ...(itemsOut && itemsOut !== prevOut ? { outsource: itemsOut, outsource_at: now } : {}),
+                  // ตาราง claims ไม่มีช่องสั่งนอก — ใส่ไปจะ error ทั้งคำสั่ง
+                  ...(isClaim ? {} : outPatch),
                 }
-                const { error: err } = await oeUpdate(updates).eq('id', itemsModal.id)
-                if (!err) {
-                  // สั่งนอกเปลี่ยน → sync ไปหมวดสั่งซื้อด้วย
-                  if (itemsOut && itemsOut !== prevOut) {
-                    const row = rows.find(r => r.id === itemsModal.id)
+                const res = isClaim
+                  ? await claimUpdate(updates).eq('id', itemsModal.id).select('id').maybeSingle()
+                  : await oeUpdate(updates).eq('id', itemsModal.id).select('id').maybeSingle()
+                // ‼️ เดิมถ้าบันทึกไม่สำเร็จจะเงียบสนิท (ปุ่มเหมือนกดไม่ติด) — ตอนนี้ขึ้นข้อความบอกเสมอ
+                if (res.error) { setItemsModalError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
+                if (!res.data) { setItemsModalError('บันทึกไม่สำเร็จ: ไม่พบใบนี้ในระบบแล้ว — รีเฟรชหน้าแล้วลองใหม่'); return }
+                {
+                  // สั่งนอกเปลี่ยน → sync ไปหมวดสั่งซื้อด้วย (งานเคลมไม่มีสั่งนอก)
+                  if (!isClaim && itemsOut && itemsOut !== prevOut) {
                     await syncOutsourcePO(itemsModal.id, row?.customer_name, row?.order_number, itemsOut, itemsModal.items)
                   }
                   // รูปหน้างานเก็บที่แถวงานติดตั้ง (installations.photos) ไม่ใช่ที่ออเดอร์

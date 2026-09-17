@@ -816,7 +816,9 @@ ${body}
     const now = new Date().toISOString()
     setRows(prev => prev.map(r => r.id === itemsModal.id ? ({ ...r, items, updated_at: now } as Claim) : r))
     setItemsModal(null)
-    await claimUpdate({ items, updated_at: now }).eq('id', itemsModal.id)
+    // ‼️ ต้องเช็กผลด้วย — เดิมยิงแล้วไม่ดูผล ถ้าบันทึกไม่ผ่านจะเงียบ (หน้าจอโชว์เหมือนบันทึกแล้ว แต่รีเฟรชแล้วหาย)
+    const { error: err } = await claimUpdate({ items, updated_at: now }).eq('id', itemsModal.id)
+    if (err) { setError(`บันทึกรายการสินค้าไม่สำเร็จ: ${err.message} — ลองใหม่อีกครั้ง`); load() }
   }
 
   // แปลงข้อความรายการ → items (เรียก AI เหมือนหมวดออเดอร์)
