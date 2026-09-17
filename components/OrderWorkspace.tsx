@@ -765,10 +765,45 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     }
   }
 
+  // Safari รุ่นก่อน 16 ไม่มี AbortSignal.timeout — เรียกตรงๆ จะพังทั้งการบันทึก จึงเช็กก่อนใช้
+  const abortAfter = (ms: number): AbortSignal | undefined => {
+    try { return typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(ms) : undefined } catch { return undefined }
+  }
+
+  // ‼️ กันปุ่มค้าง "กำลังบันทึก…" — คำสั่งที่ยิงไปแล้วเซิร์ฟเวอร์ไม่ตอบ (เน็ตสะดุด/คิวค้าง)
+  //    จะแขวนตลอดกาลถ้าไม่ใส่เวลาจำกัด แอดมินจะเข้าใจว่าเว็บพัง กดอะไรไม่ได้เลย
+  // (ใช้ Awaited<P> ไม่ใช่ PromiseLike<T> — ตัว builder ของ supabase ทำให้ TS เดาชนิดผลลัพธ์ไม่ออก)
+  async function withTimeout<P extends PromiseLike<unknown>>(p: P, what: string, ms = 25000): Promise<Awaited<P>> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await Promise.race([
+        p as PromiseLike<Awaited<P>>,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`${what}: เซิร์ฟเวอร์ไม่ตอบใน ${Math.round(ms / 1000)} วินาที — เน็ตอาจสะดุด กดบันทึกอีกครั้งได้เลย`)), ms)
+        }),
+      ])
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
+  }
+
   const save = async () => {
     if (!modal) return
     setSaving(true)
     setError('')
+    try {
+      await saveInner()
+    } catch (e) {
+      // พังกลางทาง (เน็ตหลุด/หมดเวลา) — บอกสาเหตุแล้วปล่อยให้กดใหม่ได้ ไม่ปิดกล่อง
+      setError(`บันทึกไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      // ‼️ ต้องอยู่ใน finally เสมอ ไม่งั้นถ้าหลุด throw ปุ่มจะค้างคำว่า "กำลังบันทึก…" ตลอด
+      setSaving(false)
+    }
+  }
+
+  const saveInner = async () => {
+    if (!modal) return
     const d = modal.data
     const now = new Date().toISOString()
     // งานเคลม: บังคับให้ platform ขึ้นต้นด้วย "เคลม:" เสมอ เพื่อให้ไปอยู่ tab งานเคลม
@@ -829,17 +864,25 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       // เลขที่ใบงานนอก DR0001 — ออกเฉพาะงานนอก (งานติดตั้งใช้เลขของปฏิทิน · งานแพลตฟอร์มไม่มีเลข)
       // ‼️ ถามเลขล่าสุดจากฐานตอนกดบันทึก ไม่ใช้เลขในหน้าจอ (แอดมินหลายคนเปิดค้างไว้พร้อมกัน)
       if (!payload.is_installation && OUTSIDE_PLATFORMS.includes(String(payload.platform ?? '')) && !isClaimRow(payload.platform)) {
-        const { data: used, error: serErr } = await supabase.from('order_entries').select('serial_no').like('serial_no', 'DR%')
+        const { data: used, error: serErr } = await withTimeout(supabase.from('order_entries').select('serial_no').like('serial_no', 'DR%'), 'ขอเลขที่ใบ')
         // ยังไม่ได้รัน sql/add_serial_no.sql (ไม่มีคอลัมน์) → ข้ามไป บันทึกได้ตามปกติ ไม่พัง
         if (!serErr) (payload as Record<string, unknown>).serial_no = nextSerial('outside', (used ?? []).map(x => (x as { serial_no: string | null }).serial_no))
       }
-      const res = await oeInsert(payload).select().single()
-      if (res.error) { setSaving(false); setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
+      // abortSignal = ยกเลิกคำขอที่ค้างจริงๆ (ไม่ใช่แค่เลิกรอ) — กดใหม่แล้วได้การเชื่อมต่อใหม่ ไม่ไปต่อคิวเดิมที่ตายแล้ว
+      const qIns = oeInsert(payload).select().single()
+      const sigIns = abortAfter(20000)
+      const res = await withTimeout(sigIns ? qIns.abortSignal(sigIns) : qIns, 'บันทึกออเดอร์')
+      if (res.error) { setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
       const saved = res.data as Entry
-      await syncInstallation({ ...payload, admin_name: d.admin_name || null }, saved.id)
-      if (payload.is_installation) await saveOrderPhotos(saved.id)
-      if (outsourceVal) await syncOutsourcePO(saved.id, payload.customer_name, payload.order_number, outsourceVal, modalItems)
-      setSaving(false)
+      // ‼️ ใบออเดอร์บันทึกลงฐานแล้ว — งานต่อเนื่อง (ปฏิทินติดตั้ง/รูป/ใบสั่งซื้อ) ถ้าพลาดต้องไม่ทำให้
+      //    ใบที่บันทึกไปแล้วดูเหมือนบันทึกไม่สำเร็จ จึงจับ error แยกแล้วแจ้งเป็นคำเตือนแทน
+      try {
+        await withTimeout(syncInstallation({ ...payload, admin_name: d.admin_name || null }, saved.id), 'ซิงค์ปฏิทินงานติดตั้ง')
+        if (payload.is_installation) await withTimeout(saveOrderPhotos(saved.id), 'บันทึกรูปหน้างาน')
+        if (outsourceVal) await withTimeout(syncOutsourcePO(saved.id, payload.customer_name, payload.order_number, outsourceVal, modalItems), 'ซิงค์ใบสั่งซื้อ')
+      } catch (e) {
+        setError(`บันทึกออเดอร์แล้ว แต่ ${e instanceof Error ? e.message : String(e)}`)
+      }
       setRows(prev => prev.some(r => r.id === saved.id) ? prev.map(r => r.id === saved.id ? { ...r, ...saved } : r) : [saved, ...prev])
       recordAction({
         label: `เพิ่มออเดอร์ ${oname}`,
@@ -868,17 +911,22 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       // ‼️ maybeSingle ไม่ใช่ single — ถ้า update ไม่โดนแถวไหนเลย single() จะโยน PGRST116
       //    ("Cannot coerce the result to a single JSON object") ซึ่งแอดมินอ่านไม่รู้เรื่อง
       //    เกิดได้เมื่อแถวถูกลบไปแล้ว หรือเป็นแถวงานเคลม (id อยู่ตาราง claims ไม่ใช่ order_entries)
-      const res = await oeUpdate(payload).eq('id', d.id).select().maybeSingle()
-      if (res.error) { setSaving(false); setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
+      const qUpd = oeUpdate(payload).eq('id', d.id).select().maybeSingle()
+      const sigUpd = abortAfter(20000)
+      const res = await withTimeout(sigUpd ? qUpd.abortSignal(sigUpd) : qUpd, 'บันทึกออเดอร์')
+      if (res.error) { setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
       if (!res.data) {
-        setSaving(false)
         setError('บันทึกไม่สำเร็จ: ไม่พบใบนี้ในตารางออเดอร์แล้ว — ถ้าเป็นงานเคลมให้แก้ที่หน้าเคลม (เมนู ··· → แก้ไข (ไปหน้าเคลม)) ถ้าไม่ใช่ ให้รีเฟรชหน้าแล้วลองใหม่')
         return
       }
-      await syncInstallation({ ...payload, admin_name: d.admin_name || null }, String(d.id))
-      if (payload.is_installation) await saveOrderPhotos(String(d.id))
-      if (outsourceVal || prevOutsource) await syncOutsourcePO(String(d.id), payload.customer_name, payload.order_number, outsourceVal, modalItems)
-      setSaving(false)
+      // งานต่อเนื่องพลาดไม่ทำให้ใบที่บันทึกแล้วหาย — แจ้งเป็นคำเตือนแทน (เหตุผลเดียวกับตอนเพิ่มใบใหม่)
+      try {
+        await withTimeout(syncInstallation({ ...payload, admin_name: d.admin_name || null }, String(d.id)), 'ซิงค์ปฏิทินงานติดตั้ง')
+        if (payload.is_installation) await withTimeout(saveOrderPhotos(String(d.id)), 'บันทึกรูปหน้างาน')
+        if (outsourceVal || prevOutsource) await withTimeout(syncOutsourcePO(String(d.id), payload.customer_name, payload.order_number, outsourceVal, modalItems), 'ซิงค์ใบสั่งซื้อ')
+      } catch (e) {
+        setError(`บันทึกออเดอร์แล้ว แต่ ${e instanceof Error ? e.message : String(e)}`)
+      }
       setRows(prev => prev.map(r => r.id === d.id ? res.data as Entry : r))
       if (orig) trackOrderField(String(d.id), payload, prevOf(orig, payload), `แก้ออเดอร์ ${oname}`)
     }
