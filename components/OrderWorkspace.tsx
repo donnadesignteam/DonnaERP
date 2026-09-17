@@ -40,6 +40,7 @@ import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
 import { PlatformIcon, CourierIcon } from '@/components/BrandMark'
 import CreamSelect from '@/components/CreamSelect'
+import CreamDate from '@/components/CreamDate'
 import { pillBg, pillInk } from '@/components/OrderDetailModal'
 
 type Item = {
@@ -252,12 +253,17 @@ function calcShipping(deadline: string, courier: string): string {
   return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()},${time}`
 }
 
+// ‼️ deadline (งานติดตั้ง/งานนอก) เป็น YYYY-MM-DD — new Date() ตรงๆ จะอ่านเป็น UTC เที่ยงคืน
+//    (= 07:00 ไทย) แล้ว Math.ceil ปัดขึ้นอีก 1 วัน งานที่ต้องส่ง/ติดตั้งวันนี้เลยขึ้นว่า "1 วัน"
 function daysRemaining(dateStr: string): number | null {
   if (!dateStr) return null
   let target: Date
-  const m = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
-  if (m) {
-    target = new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]))
+  const dmy = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+  const ymd = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (dmy) {
+    target = new Date(parseInt(dmy[3]), parseInt(dmy[2]) - 1, parseInt(dmy[1]))
+  } else if (ymd) {
+    target = new Date(parseInt(ymd[1]), parseInt(ymd[2]) - 1, parseInt(ymd[3]))
   } else {
     target = new Date(dateStr)
   }
@@ -1092,12 +1098,13 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     <td style={{ padding: '8px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
       <input type="checkbox" checked={tickVal(r.id, 'printed', !!r.printed_at)} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'printed', e.target.checked) : togglePrinted(r.id, e.target.checked)}
         style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
-      {r.printed_at && (
-        <div style={{ fontSize: 10, color: '#A8744F', fontWeight: 600, marginTop: 2 }}>
-          {new Date(r.printed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
-          {new Date(r.printed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-        </div>
-      )}
+      {/* ‼️ บรรทัดวันที่ต้องมีเสมอ (แถวที่ยังไม่ปริ้นใช้บรรทัดเปล่า) ไม่งั้นช่องติ๊กของแต่ละแถว
+          อยู่คนละระดับ — แถวที่ปริ้นแล้วจะถูกดันขึ้นไปครึ่งบรรทัด มองแล้วไม่ตรงแนวกัน */}
+      <div aria-hidden={!r.printed_at} style={{ fontSize: 10, color: '#A8744F', fontWeight: 600, marginTop: 2, whiteSpace: 'nowrap', visibility: r.printed_at ? 'visible' : 'hidden' }}>
+        {r.printed_at
+          ? `${new Date(r.printed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} ${new Date(r.printed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`
+          : ' '}
+      </div>
     </td>
   )
   const printHeader = () => (
@@ -2260,22 +2267,37 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     openAddFormFor(custStep.type, custStep.extra, name, phone)
   }
 
+  // ช่องเลือกในแถวตาราง (แอดมิน / ช่าง / ลงออเดอร์) — ใช้ CreamSelect ให้เมนูคลี่ลงแบบมีอนิเมชั่นและเป็นโทนครีม
+  const rowSelect = (value: string, opts: string[], onPick: (v: string) => void,
+    o: { maxWidth?: number; title?: string; blank?: boolean; dim?: boolean; bold?: boolean } = {}) => (
+    <CreamSelect value={value} onChange={onPick} className="cs-inline" title={o.title} menuMinWidth={140}
+      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none',
+        color: o.dim ? 'var(--ink-4)' : 'var(--ink)', fontWeight: o.bold ? 600 : 400, padding: 0, maxWidth: o.maxWidth,
+        display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'inherit' }}
+      options={[...(o.blank ? [{ value: '', label: '—' }] : []), ...Array.from(new Set([...opts, value].filter(Boolean))).map(x => ({ value: x, label: x }))]}
+      renderValue={c => (<>
+        <span className="cs-value" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{c?.label ?? '—'}</span>
+        <svg className="cs-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+      </>)} />
+  )
+
   // ช่องเลือกโซน/ช่าง ในแท็บงานติดตั้ง (ค่าอยู่ตาราง installations)
   const instSelectCell = (orderId: string, ins: InstMeta | undefined, field: 'install_zone' | 'technician_type', opts: string[]) => {
     if (!ins) return <span style={{ color: 'var(--ink-4)' }}>—</span>
     const val = ins[field] ?? ''
     return (
-      <select value={val} onChange={e => {
-        const v = e.target.value
+      <CreamSelect value={val} onChange={v => {
         const patch: Partial<InstMeta> = { [field]: v || null }
         // เลือกโซนที่รู้ชนิดช่างอยู่แล้ว → เติมช่างให้เลย (เหมือนหน้าปฏิทิน) ถ้ายังไม่ได้เลือกช่างไว้
         if (field === 'install_zone' && TECH_BY_ZONE[v] && !ins.technician_type) patch.technician_type = TECH_BY_ZONE[v]
         saveInstMeta(orderId, patch)
-      }} style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: val ? 600 : 400, color: val ? 'var(--ink-2)' : 'var(--ink-4)', padding: 0 }}>
-        <option value="">—</option>
-        {!!val && !opts.includes(val) && <option value={val}>{val}</option>}
-        {opts.map(o => <option key={o} value={o}>{o}</option>)}
-      </select>
+      }} className="cs-inline" menuMinWidth={150}
+        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: val ? 600 : 400, color: val ? 'var(--ink-2)' : 'var(--ink-4)', padding: 0, display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'inherit' }}
+        options={[{ value: '', label: '—' }, ...Array.from(new Set([...opts, val].filter(Boolean))).map(o => ({ value: o, label: o }))]}
+        renderValue={o => (<>
+          <span className="cs-value">{o?.label ?? '—'}</span>
+          <svg className="cs-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+        </>)} />
     )
   }
 
@@ -2608,27 +2630,15 @@ ${body}
 
   const inp = (label: string, key: string, type = 'text') => {
     const rawVal = String(modal?.data[key as keyof typeof modal.data] ?? '')
-    const displayVal = type === 'date'
-      ? rawVal.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$3/$2/$1')
-      : rawVal
     return (
       <div style={{ marginBottom: 14 }}>
         <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>{label}</label>
         {type === 'date' ? (
-          <div style={{ position: 'relative' }}>
-            <input
-              type="date"
-              value={/^\d{4}-\d{2}-\d{2}$/.test(rawVal) ? rawVal : ''}
-              onChange={e => { if (e.target.value) set(key, e.target.value) }}
-              onMouseDown={e => { e.preventDefault(); try { (e.target as HTMLInputElement).showPicker() } catch {} }}
-              style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box', color: displayVal ? 'transparent' : 'var(--ink-3)' }}
-            />
-            {displayVal && (
-              <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, display: 'flex', alignItems: 'center', paddingLeft: 12, fontSize: 13, color: 'var(--ink)', pointerEvents: 'none' }}>
-                {displayVal}
-              </div>
-            )}
-          </div>
+          /* ❗ ใช้ปฏิทินของเราเอง (CreamDate) — ปฏิทินของ input[type=date] เป็น UI ของเบราว์เซอร์ แต่งสีไม่ได้เลย */
+          <CreamDate value={rawVal} onChange={v => set(key, v)}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--cream-2)',
+              border: '1px solid var(--border-2)', borderRadius: 12, padding: '9px 12px', fontSize: 13,
+              cursor: 'pointer', fontFamily: 'inherit', boxSizing: 'border-box' }} />
         ) : (
           <input type="text" value={rawVal} onChange={e => set(key, e.target.value)}
             style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
@@ -2640,11 +2650,18 @@ ${body}
   const sel = (label: string, key: string, options: string[]) => (
     <div style={{ marginBottom: 14 }}>
       <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>{label}</label>
-      <select value={String(modal?.data[key as keyof typeof modal.data] ?? '')} onChange={e => set(key, e.target.value)}
-        style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none' }}>
-        <option value="">— เลือก —</option>
-        {options.map(o => <option key={o}>{o}</option>)}
-      </select>
+      {/* ❗ CreamSelect — เมนูของ <select> เป็นของระบบปฏิบัติการ แต่งสี/ใส่อนิเมชั่นไม่ได้ */}
+      <CreamSelect value={String(modal?.data[key as keyof typeof modal.data] ?? '')} onChange={v => set(key, v)}
+        options={[{ value: '', label: '— เลือก —' }, ...options.map(o => ({ value: o, label: o }))]}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--cream-2)',
+          border: '1px solid var(--border-2)', borderRadius: 12, padding: '9px 12px', fontSize: 13,
+          cursor: 'pointer', fontFamily: 'inherit', boxSizing: 'border-box', textAlign: 'left' }}
+        renderValue={o => (<>
+          <span className="cs-value" style={{ flex: 1, color: o?.value ? 'var(--ink)' : 'var(--ink-4)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {o?.label ?? '— เลือก —'}
+          </span>
+          <svg className="cs-chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+        </>)} />
     </div>
   )
 
@@ -3390,10 +3407,14 @@ ${body}
                     )}
                     {showCol('payment') && (
                     <td style={{ padding: '8px 14px' }}>
-                      <select value={r.payment_status || 'ยังไม่ชำระ'} onChange={e => handlePaymentStatus(r, e.target.value)}
-                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PAYMENT_STATUS_COLOR[r.payment_status] ?? '#C79A4B', padding: 0 }}>
-                        {PAYMENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
+                      <CreamSelect value={r.payment_status || 'ยังไม่ชำระ'} onChange={v => handlePaymentStatus(r, v)}
+                        className="cs-inline" menuMinWidth={150}
+                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PAYMENT_STATUS_COLOR[r.payment_status] ?? '#C79A4B', padding: 0, display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'inherit' }}
+                        options={PAYMENT_STATUSES.map(st => ({ value: st, label: st, color: PAYMENT_STATUS_COLOR[st] }))}
+                        renderValue={o => (<>
+                          <span className="cs-value" style={{ color: 'inherit' }}>{o?.label ?? 'ยังไม่ชำระ'}</span>
+                          <svg className="cs-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+                        </>)} />
                     </td>
                     )}
                     {showCol('paid') && (
@@ -3416,21 +3437,15 @@ ${body}
                     )}
                     {showCol('assigned') && (
                     <td style={{ padding: '8px 14px' }}>
-                      <select value={r.order_assigned || 'รออัพเดท'} onChange={e => updateField(r.id, 'order_assigned', e.target.value)}
-                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.order_assigned && r.order_assigned !== 'รออัพเดท' ? 'var(--ink)' : 'var(--ink-4)', fontWeight: r.order_assigned && r.order_assigned !== 'รออัพเดท' ? 600 : 400, padding: 0 }}>
-                        {ORDER_ASSIGNED.map(o => <option key={o} value={o}>{o}</option>)}
-                      </select>
+                      {rowSelect(r.order_assigned || 'รออัพเดท', ORDER_ASSIGNED, v => updateField(r.id, 'order_assigned', v),
+                        { dim: !r.order_assigned || r.order_assigned === 'รออัพเดท', bold: !!r.order_assigned && r.order_assigned !== 'รออัพเดท' })}
                     </td>
                     )}
                     {/* แอดมิน — ช่องเดียวกับงานแพลตฟอร์ม (เลือกเองได้ · ระบบทับให้เมื่อแอดมินหลักแก้เนื้อออเดอร์) */}
                     {showCol('admin') && (
                     <td className={r.admin_name ? undefined : 'ow-empty'} style={{ padding: '8px 14px' }}>
-                      <select value={r.admin_name || ''} onChange={e => updateField(r.id, 'admin_name', e.target.value)}
-                        title="เลือกเองได้ · ระบบจะเปลี่ยนให้เองเมื่อมีแอดมินหลักมาแก้เนื้อออเดอร์"
-                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.admin_name ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 80 }}>
-                        <option value="">—</option>
-                        {ADMINS.map(a => <option key={a} value={a}>{a}</option>)}
-                      </select>
+                      {rowSelect(r.admin_name || '', ADMINS, v => updateField(r.id, 'admin_name', v),
+                        { blank: true, maxWidth: 80, dim: !r.admin_name, title: 'เลือกเองได้ · ระบบจะเปลี่ยนให้เองเมื่อมีแอดมินหลักมาแก้เนื้อออเดอร์' })}
                     </td>
                     )}
                     {showCol('status') && statusCell(r)}
@@ -3463,11 +3478,14 @@ ${body}
                     )}
                     {quickFilter === 'install' && showCol('installed') && (
                       <td style={{ padding: '12px 14px', textAlign: 'center' }}>
-                        <select value={instStatus} onChange={e => handleInstallStatus(r, e.target.value)}
-                          style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: instStatus === 'ติดตั้งแล้ว' ? '#6F8F6A' : instStatus === 'ติดตั้ง50%' ? '#C79A4B' : 'var(--ink-4)', padding: 0 }}>
-                          <option value="">—</option>
-                          {INSTALL_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
+                        <CreamSelect value={instStatus} onChange={v => handleInstallStatus(r, v)}
+                          className="cs-inline" menuMinWidth={140}
+                          style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: instStatus === 'ติดตั้งแล้ว' ? '#6F8F6A' : instStatus === 'ติดตั้ง50%' ? '#C79A4B' : 'var(--ink-4)', padding: 0, display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'inherit' }}
+                          options={[{ value: '', label: '—' }, ...INSTALL_STATUS_OPTIONS.map(st => ({ value: st, label: st }))]}
+                          renderValue={o => (<>
+                            <span className="cs-value" style={{ color: 'inherit' }}>{o?.label ?? '—'}</span>
+                            <svg className="cs-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+                          </>)} />
                       </td>
                     )}
                     {quickFilter === 'install' && showCol('inststatus') && (
@@ -3515,11 +3533,8 @@ ${body}
                         คนละช่องกับ "ช่างติดตั้ง" ที่อยู่ในตาราง installations */}
                     {quickFilter === 'install' && showCol('tech') && (
                     <td className={r.technician ? undefined : 'ow-empty'} style={{ padding: '8px 14px' }}>
-                      <select value={r.technician || ''} onChange={e => updateField(r.id, 'technician', e.target.value)}
-                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.technician ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 100 }}>
-                        <option value="">—</option>
-                        {TECHS.map(t => <option key={t} value={t}>{t}</option>)}
-                      </select>
+                      {rowSelect(r.technician || '', TECHS, v => updateField(r.id, 'technician', v),
+                        { blank: true, maxWidth: 100, dim: !r.technician })}
                     </td>
                     )}
                     {showCol('address') && (
@@ -4226,21 +4241,14 @@ ${body}
                     // เลือกเองได้เหมือนเดิม + ระบบเปลี่ยนให้เองเมื่อมีแอดมินหลักมาแก้เนื้อออเดอร์ (lib/adminActor.ts)
                     // ยังไม่ได้ลงชื่อ = ไฮไลต์เหลืองให้เห็นว่าตกหล่น (user สั่ง 4 ส.ค. 69)
                     <td className={r.admin_name ? undefined : 'ow-empty'} style={{ padding: '8px 14px' }}>
-                      <select value={r.admin_name || ''} onChange={e => updateField(r.id, 'admin_name', e.target.value)}
-                        title="เลือกเองได้ · ระบบจะเปลี่ยนให้เองเมื่อมีแอดมินหลักมาแก้เนื้อออเดอร์"
-                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.admin_name ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 80 }}>
-                        <option value="">—</option>
-                        {ADMINS.map(a => <option key={a} value={a}>{a}</option>)}
-                      </select>
+                      {rowSelect(r.admin_name || '', ADMINS, v => updateField(r.id, 'admin_name', v),
+                        { blank: true, maxWidth: 80, dim: !r.admin_name, title: 'เลือกเองได้ · ระบบจะเปลี่ยนให้เองเมื่อมีแอดมินหลักมาแก้เนื้อออเดอร์' })}
                     </td>
                     )}
                     {showCol('tech') && (
                     <td className={r.technician ? undefined : 'ow-empty'} style={{ padding: '8px 14px' }}>
-                      <select value={r.technician || ''} onChange={e => updateField(r.id, 'technician', e.target.value)}
-                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.technician ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 100 }}>
-                        <option value="">—</option>
-                        {TECHS.map(t => <option key={t} value={t}>{t}</option>)}
-                      </select>
+                      {rowSelect(r.technician || '', TECHS, v => updateField(r.id, 'technician', v),
+                        { blank: true, maxWidth: 100, dim: !r.technician })}
                     </td>
                     )}
                     {showCol('status') && statusCell(r)}
@@ -4679,16 +4687,18 @@ ${body}
         <div
           onMouseDown={e => { modalDownOnBackdrop.current = e.target === e.currentTarget }}
           onClick={e => { if (e.target === e.currentTarget && modalDownOnBackdrop.current) { setModal(null); ph.cancel() } }}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 1000, padding: 24 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: 680, maxHeight: '90vh', overflowY: 'auto' }}>
+          style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 1000, padding: 24 }}>
+          {/* ธีมแบรนด์: การ์ดมุมมน 24 · ช่องกรอกทั้งฟอร์มได้หน้าตาครีมจาก .sc-fields (ไม่ใช้ .sc-modal เพราะฟอร์มจัด padding เองอยู่แล้ว) */}
+          <div onClick={e => e.stopPropagation()} className="sc-fields" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 24, boxShadow: '0 24px 60px rgba(61,43,31,0.22)', width: '100%', maxWidth: 680, maxHeight: '90vh', overflowY: 'auto' }}>
 
             {/* Tabs (add) / Title (edit) */}
             {modal.mode === 'edit' ? (
               <div style={{ padding: '24px 32px 0' }}>
-                <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 24 }}>แก้ไขออเดอร์</h2>
+                <h2 className="sc-mtitle" style={{ fontSize: 19, marginBottom: 24 }}>แก้ไขออเดอร์</h2>
               </div>
             ) : (
-              <div style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
+              /* แท็บเป็นปุ่มแคปซูลในแถบครีม (ชุดเดียวกับ .sc-seg ของปฏิทิน) แทนขีดเส้นใต้แบบเดิม */
+              <div style={{ display: 'flex', gap: 4, margin: '20px 32px 0', padding: 4, background: 'var(--cream-2)', border: '1px solid var(--border)', borderRadius: 999 }}>
                 {/* งานแพลตฟอร์ม: วาง Copy + Drop ไฟล์ (xlsx/csv) · งานนอก: Drop ไฟล์ = PDF ใบเสนอราคา */}
                 {/* ‼️ ไม่มีปุ่มแท็บ "วาง Copy" แล้ว — แต่หน้านั้นยังใช้อยู่ ระบบสลับไปเองเพื่อโชว์ผลหลังวางไฟล์ (ดู setModalTab('paste'))
                     งานแพลตฟอร์ม: ใส่ชื่อลูกค้าแล้ว = ลงทีละใบ จึงไม่มีแท็บ Drop ไฟล์ (ไฟล์เป็นการลงทีเดียวหลายใบ ชื่อมาจากไฟล์) */}
@@ -4703,7 +4713,7 @@ ${body}
                     }
                     setModalTab(t); setPasteRows([]); setIncomeRows([]); setFileParseError('')
                   }}
-                    style={{ flex: 1, padding: '16px 0', fontSize: 14, fontWeight: tabOn(t) ? 600 : 400, border: 'none', borderBottom: tabOn(t) ? '2px solid var(--blue)' : '2px solid transparent', background: 'transparent', cursor: 'pointer', color: tabOn(t) ? 'var(--blue)' : 'var(--ink-3)', transition: 'all 0.15s' }}>
+                    style={{ flex: 1, padding: '10px 0', fontSize: 14, fontWeight: tabOn(t) ? 600 : 500, border: 'none', borderRadius: 999, background: tabOn(t) ? 'var(--brand)' : 'transparent', cursor: 'pointer', color: tabOn(t) ? '#FFF8F0' : 'var(--ink-2)', transition: 'all 0.15s', fontFamily: 'inherit', boxShadow: tabOn(t) ? '0 3px 10px rgba(158,106,73,0.25)' : 'none' }}>
                     {t === 'form' ? 'กรอกฟอร์ม' : 'Drop ไฟล์'}
                   </button>
                 ))}
@@ -4776,11 +4786,15 @@ ${body}
                     const file = e.dataTransfer.files[0]
                     if (file) { handleQuotePdf(file); setModalTab('form') }
                   }}
-                  style={{ border: `2px dashed ${quoteDragOver ? 'var(--blue)' : 'var(--border)'}`, borderRadius: 12, padding: '48px 24px', textAlign: 'center', background: quoteDragOver ? 'var(--blue-bg)' : 'var(--bg)', transition: 'all 0.15s', marginBottom: 16 }}>
-                  <div style={{ fontSize: 36, marginBottom: 12 }}>📄</div>
+                  style={{ border: `2px dashed ${quoteDragOver ? 'var(--brand)' : 'var(--border-2)'}`, borderRadius: 20, padding: '44px 24px', textAlign: 'center', background: quoteDragOver ? 'var(--cream)' : 'var(--cream-2)', transition: 'all 0.15s', marginBottom: 16 }}>
+                  <span style={{ width: 56, height: 56, borderRadius: 18, background: 'var(--brand)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14, boxShadow: '0 6px 16px rgba(158,106,73,0.25)' }}>
+                    <svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke="#FFF8F0" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z" /><path d="M14 3v5h5" /><path d="M9 13h6M9 17h4" />
+                    </svg>
+                  </span>
                   <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>{orderParsing ? 'กำลังอ่านใบเสนอราคา…' : 'วางไฟล์ใบเสนอราคาที่นี่'}</div>
                   <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 20 }}>รองรับ .pdf</div>
-                  <label style={{ display: 'inline-block', padding: '8px 20px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, cursor: 'pointer', background: 'var(--surface)', color: 'var(--ink)' }}>
+                  <label data-btn style={{ display: 'inline-block', padding: '10px 26px', borderRadius: 999, border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--brand)', color: '#FFF8F0', boxShadow: '0 6px 16px rgba(158,106,73,0.25)' }}>
                     เลือกไฟล์
                     <input type="file" accept=".pdf" style={{ display: 'none' }} onChange={e => {
                       const file = e.target.files?.[0]
@@ -4790,7 +4804,7 @@ ${body}
                   </label>
                 </div>
                 {orderParseError && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 10 }}>{orderParseError}</div>}
-                <div style={{ fontSize: 12, color: 'var(--ink-3)', background: 'var(--bg)', borderRadius: 8, padding: '10px 14px' }}>
+                <div style={{ fontSize: 12, color: 'var(--ink-3)', background: 'var(--cream-2)', border: '1px solid var(--border)', borderRadius: 14, padding: '12px 16px', lineHeight: 1.7 }}>
                   ระบบอ่านชื่อลูกค้า ที่อยู่ เบอร์ ยอดรวม และรายการทุกจุดติดตั้งมากรอกในแท็บ “กรอกฟอร์ม” ให้ตรวจก่อนกดบันทึก
                 </div>
               </div>
@@ -4806,11 +4820,15 @@ ${body}
                     const file = e.dataTransfer.files[0]
                     if (file) handleFile(file)
                   }}
-                  style={{ border: `2px dashed ${fileDragOver ? 'var(--blue)' : 'var(--border)'}`, borderRadius: 12, padding: '48px 24px', textAlign: 'center', background: fileDragOver ? 'var(--blue-bg)' : 'var(--bg)', transition: 'all 0.15s', marginBottom: 16 }}>
-                  <div style={{ fontSize: 36, marginBottom: 12 }}>📂</div>
+                  style={{ border: `2px dashed ${fileDragOver ? 'var(--brand)' : 'var(--border-2)'}`, borderRadius: 20, padding: '44px 24px', textAlign: 'center', background: fileDragOver ? 'var(--cream)' : 'var(--cream-2)', transition: 'all 0.15s', marginBottom: 16 }}>
+                  <span style={{ width: 56, height: 56, borderRadius: 18, background: 'var(--brand)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14, boxShadow: '0 6px 16px rgba(158,106,73,0.25)' }}>
+                    <svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke="#FFF8F0" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 16V7m0 0l-3.2 3.2M12 7l3.2 3.2" /><path d="M4 15v2.5A2.5 2.5 0 006.5 20h11a2.5 2.5 0 002.5-2.5V15" />
+                    </svg>
+                  </span>
                   <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>วางไฟล์ที่นี่</div>
                   <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 20 }}>รองรับ .xlsx, .csv, .txt</div>
-                  <label style={{ display: 'inline-block', padding: '8px 20px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, cursor: 'pointer', background: 'var(--surface)', color: 'var(--ink)' }}>
+                  <label data-btn style={{ display: 'inline-block', padding: '10px 26px', borderRadius: 999, border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--brand)', color: '#FFF8F0', boxShadow: '0 6px 16px rgba(158,106,73,0.25)' }}>
                     เลือกไฟล์
                     <input type="file" accept=".xlsx,.xls,.xlsm,.csv,.txt,.tsv" style={{ display: 'none' }} onChange={e => {
                       const file = e.target.files?.[0]
@@ -4819,7 +4837,7 @@ ${body}
                     }} />
                   </label>
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--ink-3)', background: 'var(--bg)', borderRadius: 8, padding: '10px 14px' }}>
+                <div style={{ fontSize: 12, color: 'var(--ink-3)', background: 'var(--cream-2)', border: '1px solid var(--border)', borderRadius: 14, padding: '12px 16px', lineHeight: 1.7 }}>
                   <strong>ลำดับคอลัมน์ที่รองรับ:</strong> เลขออเดอร์ · ชื่อลูกค้า · วันชำระ · บริษัทขนส่ง · วันต้องส่ง · ราคา · สถานะ · Drop-off<br />
                   <strong>ไฟล์รายรับ Shopee (Income):</strong> วางไฟล์เดียวกันได้เลย ระบบแยกอัตโนมัติ → ลงยอดโอนจริงให้ออเดอร์ที่มีอยู่
                 </div>
@@ -4874,7 +4892,7 @@ ${body}
                         <thead>
                           <tr style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
                             {['สถานะ', 'วันชำระ', 'วันต้องส่ง', 'เลขออเดอร์', 'ราคาสุทธิ', 'ชื่อลูกค้า', 'การจัดส่ง'].map(h => (
-                              <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 500, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{h}</th>
+                              <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#8A6142', whiteSpace: 'nowrap' }}>{h}</th>
                             ))}
                           </tr>
                         </thead>
@@ -4995,7 +5013,7 @@ ${body}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                 <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700 }}>รายการสินค้า</label>
                 <button type="button" onClick={() => setModalItems(prev => [...prev, emptyItem()])}
-                  style={{ fontSize: 12, padding: '3px 10px', border: '1px solid var(--blue)', borderRadius: 6, color: 'var(--blue)', background: 'var(--blue-bg)', cursor: 'pointer' }}>
+                  style={{ fontSize: 12, padding: '5px 14px', border: '1px solid var(--border-2)', borderRadius: 999, color: 'var(--brand)', background: 'var(--cream-2)', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit' }}>
                   + เพิ่มรายการ
                 </button>
               </div>
@@ -5004,7 +5022,7 @@ ${body}
                 onChange={e => { setItemsPasteText(e.target.value); setFormParseError('') }}
                 rows={6}
                 placeholder={"วางข้อความรายการสินค้า — กด ✦ แปลงรายการ ให้ AI แปลงให้อัตโนมัติ"}
-                style={{ width: '100%', border: '1px dashed var(--border)', borderRadius: 6, padding: '8px 10px', fontSize: 12, outline: 'none', resize: 'none', boxSizing: 'border-box', fontFamily: 'monospace', background: 'var(--bg)', color: 'var(--ink)', marginBottom: 6 }}
+                style={{ width: '100%', border: '1px dashed var(--border-2)', borderRadius: 12, padding: '10px 12px', fontSize: 12, outline: 'none', resize: 'none', boxSizing: 'border-box', fontFamily: 'monospace', background: 'var(--cream-2)', color: 'var(--ink)', marginBottom: 6 }}
               />
               {formParseError && (
                 <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 6 }}>{formParseError}</div>
@@ -5013,11 +5031,11 @@ ${body}
                 type="button"
                 onClick={handleFormParseItems}
                 disabled={!itemsPasteText.trim() || formParseLoading}
-                style={{ marginBottom: 8, padding: '6px 16px', borderRadius: 7, border: 'none', background: formParseLoading || !itemsPasteText.trim() ? 'var(--border)' : 'var(--blue)', color: formParseLoading || !itemsPasteText.trim() ? 'var(--ink-3)' : '#fff', fontSize: 12, fontWeight: 600, cursor: formParseLoading || !itemsPasteText.trim() ? 'default' : 'pointer' }}>
+                style={{ marginBottom: 8, padding: '7px 18px', borderRadius: 999, border: 'none', background: formParseLoading || !itemsPasteText.trim() ? 'var(--border)' : 'var(--brand)', color: formParseLoading || !itemsPasteText.trim() ? 'var(--ink-3)' : '#FFF8F0', fontSize: 12, fontWeight: 600, cursor: formParseLoading || !itemsPasteText.trim() ? 'default' : 'pointer', fontFamily: 'inherit', boxShadow: formParseLoading || !itemsPasteText.trim() ? 'none' : '0 5px 14px rgba(158,106,73,0.25)' }}>
                 {formParseLoading ? 'กำลังแปลง…' : '✦ แปลงรายการ'}
               </button>
               {modalItems.length === 0 && !itemsPasteText && (
-                <div style={{ border: '1px dashed var(--border)', borderRadius: 8, padding: '12px', textAlign: 'center', color: 'var(--ink-4)', fontSize: 12 }}>
+                <div style={{ border: '1px dashed var(--border-2)', borderRadius: 14, padding: '14px', textAlign: 'center', color: 'var(--ink-4)', fontSize: 12 }}>
                   ยังไม่มีรายการ
                 </div>
               )}
@@ -5081,10 +5099,16 @@ ${body}
                   </div>
                   <div style={{ marginBottom: 14 }}>
                     <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>ชำระ</label>
-                    <select value={modal.data.payment_status || 'ยังไม่ชำระ'} onChange={e => set('payment_status', e.target.value)}
-                      style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', fontWeight: 600, color: PAYMENT_STATUS_COLOR[modal.data.payment_status ?? ''] ?? '#C79A4B' }}>
-                      {PAYMENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
+                    <CreamSelect value={modal.data.payment_status || 'ยังไม่ชำระ'} onChange={v => set('payment_status', v)}
+                      options={PAYMENT_STATUSES.map(st => ({ value: st, label: st, color: PAYMENT_STATUS_COLOR[st] }))}
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--cream-2)',
+                        border: '1px solid var(--border-2)', borderRadius: 12, padding: '9px 12px', fontSize: 13, fontWeight: 600,
+                        cursor: 'pointer', fontFamily: 'inherit', boxSizing: 'border-box', textAlign: 'left',
+                        color: PAYMENT_STATUS_COLOR[modal.data.payment_status ?? ''] ?? '#C79A4B' }}
+                      renderValue={o => (<>
+                        <span className="cs-value" style={{ flex: 1, color: 'inherit' }}>{o?.label ?? 'ยังไม่ชำระ'}</span>
+                        <svg className="cs-chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+                      </>)} />
                   </div>
                   {(modal.data.payment_status === 'มัดจำ' || modal.data.payment_status === 'มัดจำ50%') && (
                     <div style={{ marginBottom: 14 }}>
@@ -5131,9 +5155,9 @@ ${body}
 
             <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
               <button onClick={() => { setModal(null); setAddType(null); ph.cancel() }}
-                style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ยกเลิก</button>
-              <button onClick={save} disabled={saving}
-                style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
+                className="sc-mcancel" style={{ flex: 1, cursor: 'pointer', fontSize: 14, border: 'none' }}>ยกเลิก</button>
+              <button onClick={save} disabled={saving} className="sc-msave"
+                style={{ flex: 2, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
                 {saving ? 'กำลังบันทึก…' : 'บันทึก'}
               </button>
             </div>
@@ -5159,35 +5183,44 @@ ${body}
       )}
 
       {addTypeModal && (
-        <div onClick={() => setAddTypeModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: 400, padding: '28px 32px' }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>เพิ่มรายการ</h3>
+        <div onClick={() => setAddTypeModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+          <div onClick={e => e.stopPropagation()} className="sc-modal" style={{ maxWidth: 400, padding: '28px 32px' }}>
+            <h3 className="sc-mtitle" style={{ marginBottom: 6 }}>เพิ่มรายการ</h3>
             <p style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 20 }}>เลือกประเภทงาน</p>
+            {/* ‼️ ไอคอนเป็นเส้น SVG โทนแบรนด์ ไม่ใช้อีโมจิ — อีโมจิเป็นสีของระบบปฏิบัติการ คุมโทนไม่ได้
+                และหน้าตาเพี้ยนไปคนละแบบระหว่าง Windows / iPhone / Android */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {([
-                ['งานแพลตฟอร์ม', '🛍️', 'Shopee / Tiktok / Lazada', 'platform', {}],
-                ['งานนอก', '💬', 'Facebook / Line / หน้าร้าน', 'outside', {}],
-                ['งานติดตั้ง', '🔨', 'สั่งพร้อมติดตั้ง', 'install', { is_installation: true }],
-              ] as [string, string, string, 'platform'|'outside'|'install'|'claim', object][]).map(([label, icon, desc, type, extra]) => (
+                ['งานแพลตฟอร์ม', 'M6 8.5h12l-1 11H7zM9.2 8.5V6.6a2.8 2.8 0 015.6 0v1.9', 'Shopee / Tiktok / Lazada', 'platform', {}],
+                ['งานนอก', 'M20 12.2c0 3.3-3.6 6-8 6-.9 0-1.8-.1-2.6-.3L5 19.5l1.2-3A5.6 5.6 0 014 12.2c0-3.3 3.6-6 8-6s8 2.7 8 6z', 'Facebook / Line / หน้าร้าน', 'outside', {}],
+                ['งานติดตั้ง', 'M15 12l-8.4 8.4a1.5 1.5 0 01-2.1-2.1L12 9.9 M18 15l3.2-3.2 M21.2 11.8l-1.9-1.9A2 2 0 0118.7 8.5V7.4l-2.3-2.3a6 6 0 00-4.2-1.7l-3.2-.1.9.8a6.2 6.2 0 012.1 4.6v1.6l2 2h1.2a2 2 0 011.4.6l1.9 1.9', 'สั่งพร้อมติดตั้ง', 'install', { is_installation: true }],
+              ] as [string, string, string, 'platform'|'outside'|'install'|'claim', object][]).map(([label, iconPath, desc, type, extra]) => (
                 <button key={label} onClick={() => {
                   // ขั้นถัดไปคือถามชื่อลูกค้าก่อน (ดู custStep) ฟอร์มจะเปิดหลังได้ชื่อแล้ว
                   // งานแพลตฟอร์มมีทางเลือก "นำเข้าจากไฟล์" ในกล่องนั้นด้วย (ชื่อลูกค้าอยู่ในไฟล์อยู่แล้ว)
                   setAddTypeModal(false)
                   setCustStep({ type, extra })
                 }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', textAlign: 'left', transition: 'border-color 0.15s' }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--blue)')}
-                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}>
-                  <span style={{ fontSize: 24 }}>{icon}</span>
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{label}</div>
+                  style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', borderRadius: 18, border: '1px solid var(--border-2)', background: 'var(--cream-2)', cursor: 'pointer', textAlign: 'left', transition: 'border-color .15s, background .15s, box-shadow .15s, transform .15s', fontFamily: 'inherit' }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--brand)'; e.currentTarget.style.background = 'var(--cream)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(158,106,73,0.16)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-2)'; e.currentTarget.style.background = 'var(--cream-2)'; e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.transform = 'none' }}>
+                  <span style={{ width: 40, height: 40, borderRadius: 14, background: 'var(--brand)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 10px rgba(158,106,73,0.25)' }}>
+                    <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="#FFF8F0" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+                      <path d={iconPath} />
+                    </svg>
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>{label}</div>
                     <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>{desc}</div>
                   </div>
+                  <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="var(--ink-4)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <path d="M9 5l7 7-7 7" />
+                  </svg>
                 </button>
               ))}
             </div>
-            <button onClick={() => setAddTypeModal(false)}
-              style={{ marginTop: 16, width: '100%', padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontSize: 14, color: 'var(--ink-3)' }}>
+            <button onClick={() => setAddTypeModal(false)} className="sc-mcancel"
+              style={{ marginTop: 16, width: '100%', cursor: 'pointer', fontSize: 14, border: 'none' }}>
               ยกเลิก
             </button>
           </div>
@@ -5196,27 +5229,34 @@ ${body}
 
       {/* Print modal */}
       {printModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: printModalCols ? 460 : 380, padding: '28px 32px' }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 16 }}>ปริ้นออเดอร์{printModalCols ? ' — เลือกคอลัมน์' : ''}</h3>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+          {/* ธีมแบรนด์ — ชุดเดียวกับกล่องเพิ่มรายการ */}
+          <div className="sc-fields" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 24, boxShadow: '0 24px 60px rgba(61,43,31,0.22)', width: '100%', maxWidth: printModalCols ? 470 : 400, padding: '26px 30px' }}>
+            <h3 className="sc-mtitle" style={{ marginBottom: 16 }}>ปริ้นออเดอร์{printModalCols ? ' — เลือกคอลัมน์' : ''}</h3>
 
             {printModalCols ? (
               /* ขั้นที่ 2 — เลือกคอลัมน์ที่จะเอาลงตาราง */
               <>
                 <PrintColumnPicker cols={printColDefs()} state={printCols} />
                 <div style={{ display: 'flex', gap: 10 }}>
-                  <button onClick={() => setPrintModalCols(false)}
-                    style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14, color: 'var(--ink-3)' }}>ย้อนกลับ</button>
+                  <button onClick={() => setPrintModalCols(false)} className="sc-mcancel"
+                    style={{ flex: 1, cursor: 'pointer', fontSize: 14, border: 'none' }}>← ย้อนกลับ</button>
                   <button disabled={printColsOn === 0} onClick={() => { setPrintModalCols(false); doPrint() }}
-                    style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: printColsOn === 0 ? 'var(--border)' : 'var(--blue)', color: '#fff', cursor: printColsOn === 0 ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 600 }}>🖨️ ปริ้น</button>
+                    className={printColsOn === 0 ? undefined : 'sc-msave'}
+                    style={{ flex: 2, padding: '12px', borderRadius: 999, border: 'none',
+                      background: printColsOn === 0 ? 'var(--border)' : 'var(--brand)', color: printColsOn === 0 ? 'var(--ink-4)' : '#FFF8F0',
+                      cursor: printColsOn === 0 ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 600, fontFamily: 'inherit' }}>🖨️ ปริ้น</button>
                 </div>
               </>
             ) : (
               <>
               {/* เลือกว่าจะปริ้นอะไร — ตั้งต้นคือตารางของแท็บที่เปิดอยู่ */}
               <div style={{ display: 'grid', gap: 8, marginBottom: 18 }}>
-                <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', cursor: 'pointer', border: `1px solid ${printScope === 'tab' ? 'var(--blue)' : 'var(--border)'}`, borderRadius: 10, padding: '10px 12px' }}>
-                  <input type="radio" checked={printScope === 'tab'} onChange={() => setPrintScope('tab')} style={{ marginTop: 2 }} />
+                {/* ❗ การ์ดตัวเลือก: ที่เลือกอยู่ = พื้นครีม + ขอบสีแบรนด์ */}
+                <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer',
+                  border: `1.5px solid ${printScope === 'tab' ? 'var(--brand)' : 'var(--border-2)'}`, borderRadius: 16, padding: '12px 14px',
+                  background: printScope === 'tab' ? 'var(--cream)' : 'var(--cream-2)', transition: 'background .15s, border-color .15s' }}>
+                  <input type="radio" checked={printScope === 'tab'} onChange={() => setPrintScope('tab')} style={{ marginTop: 2, accentColor: 'var(--brand)' }} />
                   <span>
                     <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>ตารางที่เห็นอยู่ · {tabLabel}</span>
                     <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>
@@ -5224,8 +5264,10 @@ ${body}
                     </span>
                   </span>
                 </label>
-                <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', cursor: 'pointer', border: `1px solid ${printScope === 'days' ? 'var(--blue)' : 'var(--border)'}`, borderRadius: 10, padding: '10px 12px' }}>
-                  <input type="radio" checked={printScope === 'days'} onChange={() => setPrintScope('days')} style={{ marginTop: 2 }} />
+                <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer',
+                  border: `1.5px solid ${printScope === 'days' ? 'var(--brand)' : 'var(--border-2)'}`, borderRadius: 16, padding: '12px 14px',
+                  background: printScope === 'days' ? 'var(--cream)' : 'var(--cream-2)', transition: 'background .15s, border-color .15s' }}>
+                  <input type="radio" checked={printScope === 'days'} onChange={() => setPrintScope('days')} style={{ marginTop: 2, accentColor: 'var(--brand)' }} />
                   <span style={{ flex: 1 }}>
                     <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>เฉพาะงานที่ใกล้ถึงกำหนดส่ง</span>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
@@ -5233,17 +5275,17 @@ ${body}
                       <input type="number" min={0} max={99} value={printMaxDays}
                         onClick={e => { e.stopPropagation(); setPrintScope('days') }}
                         onChange={e => setPrintMaxDays(Number(e.target.value))}
-                        style={{ width: 62, border: '1px solid var(--border)', borderRadius: 8, padding: '5px 8px', fontSize: 15, fontWeight: 700, outline: 'none', textAlign: 'center' }} />
+                        style={{ width: 66, fontSize: 15, fontWeight: 700, outline: 'none', textAlign: 'center' }} />
                       <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>วัน · {getPrintRows(printMaxDays).length} รายการ</span>
                     </span>
                   </span>
                 </label>
               </div>
                 <div style={{ display: 'flex', gap: 10 }}>
-                  <button onClick={() => { setPrintModal(false); setPrintModalCols(false) }}
-                    style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ยกเลิก</button>
-                  <button onClick={() => setPrintModalCols(true)}
-                    style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>ถัดไป · เลือกคอลัมน์</button>
+                  <button onClick={() => { setPrintModal(false); setPrintModalCols(false) }} className="sc-mcancel"
+                    style={{ flex: 1, cursor: 'pointer', fontSize: 14, border: 'none' }}>ยกเลิก</button>
+                  <button onClick={() => setPrintModalCols(true)} className="sc-msave"
+                    style={{ flex: 2, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>ถัดไป · เลือกคอลัมน์</button>
                 </div>
               </>
             )}
@@ -5253,20 +5295,21 @@ ${body}
 
       {/* Items modal */}
       {itemsModal && (
-        <div onClick={closeItemsModal} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 1000, padding: 24 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: 900, maxHeight: '90vh', overflowY: 'auto', padding: '24px 28px' }}>
+        <div onClick={closeItemsModal} style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 1000, padding: 24 }}>
+          {/* ธีมแบรนด์: การ์ดมุมมน 24 · ช่องกรอกทั้งตารางได้หน้าตาครีมจาก .sc-fields */}
+          <div onClick={e => e.stopPropagation()} className="sc-fields" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 24, boxShadow: '0 24px 60px rgba(61,43,31,0.22)', width: '100%', maxWidth: 900, maxHeight: '90vh', overflowY: 'auto', padding: '26px 30px' }}>
 
-            <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', marginBottom: 14 }}>รายการสินค้า</h3>
+            <h3 className="sc-mtitle" style={{ marginBottom: 14 }}>รายการสินค้า</h3>
 
             {/* AI Paste zone */}
-            <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px', marginBottom: 16 }}>
+            <div style={{ background: 'var(--cream-2)', border: '1px solid var(--border-2)', borderRadius: 18, padding: '14px 16px', marginBottom: 16 }}>
               <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 6, fontWeight: 500 }}>วางข้อความรายการสินค้า — AI จะแปลงให้อัตโนมัติ</label>
               <textarea
                 value={itemsModalPasteText}
                 onChange={e => { setItemsModalPasteText(e.target.value); setItemsModalError('') }}
                 rows={4}
                 placeholder={'ตัวอย่าง:\nม่านจีบ CC-101 ขาวนวล กว้าง 2.5 สูง 2.2 จำนวน 1 ชุด\nม่านโปร่ง BB-202 ครีม 1.8x2.0 2 ชุด'}
-                style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 10px', fontSize: 12, outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit', background: '#fff' }}
+                style={{ width: '100%', fontSize: 12, outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }}
               />
               {itemsModalError && (
                 <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 6 }}>{itemsModalError}</div>
@@ -5274,7 +5317,7 @@ ${body}
               <button
                 onClick={handleParseItems}
                 disabled={!itemsModalPasteText.trim() || itemsModalLoading}
-                style={{ marginTop: 8, padding: '7px 18px', borderRadius: 7, border: 'none', background: itemsModalLoading || !itemsModalPasteText.trim() ? 'var(--border)' : 'var(--blue)', color: itemsModalLoading || !itemsModalPasteText.trim() ? 'var(--ink-3)' : '#fff', fontSize: 13, fontWeight: 600, cursor: itemsModalLoading || !itemsModalPasteText.trim() ? 'default' : 'pointer' }}>
+                style={{ marginTop: 10, padding: '8px 20px', borderRadius: 999, border: 'none', background: itemsModalLoading || !itemsModalPasteText.trim() ? 'var(--border)' : 'var(--brand)', color: itemsModalLoading || !itemsModalPasteText.trim() ? 'var(--ink-3)' : '#FFF8F0', fontSize: 13, fontWeight: 600, cursor: itemsModalLoading || !itemsModalPasteText.trim() ? 'default' : 'pointer', fontFamily: 'inherit', boxShadow: itemsModalLoading || !itemsModalPasteText.trim() ? 'none' : '0 5px 14px rgba(158,106,73,0.25)' }}>
                 {itemsModalLoading ? 'กำลังแปลง…' : '✦ แปลงรายการ'}
               </button>
             </div>
@@ -5286,18 +5329,18 @@ ${body}
             <>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
               <button onClick={() => setItemsShowAll(v => !v)}
-                style={{ fontSize: 11, padding: '3px 10px', border: '1px solid var(--border)', borderRadius: 6, background: itemsShowAll ? 'var(--blue-bg)' : 'var(--bg)', color: itemsShowAll ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer' }}>
+                style={{ fontSize: 11, padding: '5px 14px', border: '1px solid var(--border-2)', borderRadius: 999, background: itemsShowAll ? 'var(--cream)' : 'var(--cream-2)', color: itemsShowAll ? 'var(--brand)' : 'var(--ink-3)', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit' }}>
                 {itemsShowAll ? 'โชว์เฉพาะช่องที่ใช้' : `ทุกช่อง (${ITEM_FIELDS.length - cols.length} ช่องที่ซ่อนอยู่)`}
               </button>
             </div>
-            <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'auto', marginBottom: 14 }}>
+            <div style={{ border: '1px solid var(--border-2)', borderRadius: 16, overflow: 'auto', marginBottom: 14 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
-                  <tr style={{ background: '#FAFAFA', borderBottom: '1px solid var(--border)' }}>
+                  <tr style={{ background: 'var(--cream)', borderBottom: '1px solid var(--border)' }}>
                     {['#', ...cols.map(([lbl]) => lbl)].map(h => (
-                      <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 500, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{h}</th>
+                      <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#8A6142', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
-                    <th style={{ padding: '8px 10px', position: 'sticky', right: 0, background: '#FAFAFA', zIndex: 1 }} />
+                    <th style={{ padding: '10px 12px', position: 'sticky', right: 0, background: 'var(--cream)', zIndex: 1 }} />
                   </tr>
                 </thead>
                 <tbody>
@@ -5310,7 +5353,7 @@ ${body}
                             <select
                               value={String(item[key] ?? ITEM_FIELD_OPTIONS[key][0])}
                               onChange={e => setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: e.target.value } : it) } : null)}
-                              style={{ width: w, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: 12, outline: 'none', boxSizing: 'border-box', background: '#fff', cursor: 'pointer' }}>
+                              style={{ width: w, fontSize: 12, outline: 'none', boxSizing: 'border-box', cursor: 'pointer' }}>
                               {ITEM_FIELD_OPTIONS[key].map(o => <option key={o} value={o}>{o}</option>)}
                             </select>
                           ) : (
@@ -5322,7 +5365,7 @@ ${body}
                               const val = itemInputValue(key, e.target.value)
                               setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: val } : it) } : null)
                             }}
-                            style={{ width: w, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }}
+                            style={{ width: w, fontSize: 12, outline: 'none', boxSizing: 'border-box' }}
                           />
                           )}
                         </td>
@@ -5348,15 +5391,15 @@ ${body}
             })()}
 
             <button onClick={() => setItemsModal(m => m ? { ...m, items: [...m.items, emptyItem()] } : null)}
-              style={{ fontSize: 12, padding: '4px 12px', border: '1px solid var(--blue)', borderRadius: 6, color: 'var(--blue)', background: 'var(--blue-bg)', cursor: 'pointer', marginBottom: 16 }}>
+              style={{ fontSize: 12, padding: '6px 16px', border: '1px solid var(--border-2)', borderRadius: 999, color: 'var(--brand)', background: 'var(--cream-2)', cursor: 'pointer', marginBottom: 16, fontWeight: 600, fontFamily: 'inherit' }}>
               + เพิ่มแถว
             </button>
 
             {itemsModal.instId && ph.trigger()}
 
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={closeItemsModal}
-                style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>
+              <button onClick={closeItemsModal} className="sc-mcancel"
+                style={{ flex: 1, cursor: 'pointer', fontSize: 14, border: 'none' }}>
                 ยกเลิก
               </button>
               <button onClick={async () => {

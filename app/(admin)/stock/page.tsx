@@ -42,11 +42,13 @@ type StockItem = {
 const getStatus = (n: number) =>
   n === 0 ? 'ของหมด' : n <= 3 ? 'ควรสั่ง' : n <= 6 ? 'ของเหลือน้อย' : 'ปกติ'
 
+// ป้ายสถานะ — พื้นพาสเทลชุดเดียวกับหน้าออเดอร์ (PILL_BG) · ตัวอักษรน้ำตาลเข้ม #6B4326 เหมือนกันทุกป้าย
+const PILL_INK = '#6B4326'
 const statusStyle = (s: string): React.CSSProperties => {
-  if (s === 'ของหมด') return { background: 'rgba(220,38,38,0.08)', color: 'var(--red)' }
-  if (s === 'ควรสั่ง') return { background: 'rgba(255,159,10,0.1)', color: '#b45309' }
-  if (s === 'ของเหลือน้อย') return { background: 'rgba(255,204,0,0.12)', color: '#92600a' }
-  return { background: 'rgba(52,199,89,0.1)', color: '#1a7f37' }
+  if (s === 'ของหมด') return { background: '#F0C0B7', color: PILL_INK }
+  if (s === 'ควรสั่ง') return { background: '#F9E0C3', color: PILL_INK }
+  if (s === 'ของเหลือน้อย') return { background: '#FBEEDC', color: PILL_INK }
+  return { background: '#E3F3E0', color: PILL_INK }
 }
 
 const empty = (): Omit<StockItem, 'id' | 'updated_at'> => ({
@@ -490,7 +492,7 @@ export default function StockPage() {
                     </td>
                   ))}
                   <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', textAlign: 'center' }}>
-                    <span style={{ fontSize: 12, borderRadius: 20, padding: '3px 10px', fontWeight: 500, whiteSpace: 'nowrap', ...statusStyle(getStatus(item.roll_count)) }}>
+                    <span style={{ fontSize: 12, borderRadius: 999, padding: '4px 12px', fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 96, boxSizing: 'border-box', ...statusStyle(getStatus(item.roll_count)) }}>
                       {getStatus(item.roll_count)}
                     </span>
                     {item.ordered_at && (

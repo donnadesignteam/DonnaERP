@@ -820,7 +820,7 @@ ${body}
     setRows(prev => prev.map(r => r.id === id ? ({ ...r, [field]: value, updated_at: now } as Claim) : r))
     await tUpdate('claims', id, { [field]: value, updated_at: now }, { [field]: old ? (old as any)[field] ?? null : null }, `แก้เคลม ${old?.customer_username || ''}`, load)
   }
-  // ‼️ แถวตารางสูงคงที่ 2 บรรทัด 56px (.dn-rows) — ข้อความยาวตัดที่ opts.lines (ค่าเริ่ม 2) ชี้เมาส์ดูเต็ม · กดแก้ได้เหมือนเดิม
+  // ‼️ แถวตารางหน้านี้สูงคงที่ 3 บรรทัด 74px (.dn-rows + .dn-rows-3 — หน้าอื่นยังเป็น 2 บรรทัด 56px) — ข้อความยาวตัดที่ opts.lines (ค่าเริ่ม 2) ชี้เมาส์ดูเต็ม · กดแก้ได้เหมือนเดิม
   const textCell = (r: Claim, field: keyof Claim, opts?: { numeric?: boolean; placeholder?: string; align?: 'left' | 'right'; lines?: number }) => {
     const val = r[field] == null ? '' : String(r[field])
     return isEditing(r.id, field) ? (
@@ -859,12 +859,17 @@ ${body}
     await claimUpdate(updates).eq('id', r.id)
   }
 
+  // ช่องเลือกในแถวตาราง — ใช้ CreamSelect เพื่อให้เมนูคลี่ลงแบบมีอนิเมชั่นและเป็นโทนครีมเหมือนทั้งเว็บ
+  // (<select> ของเบราว์เซอร์แต่งเมนูไม่ได้ เมนูจะเป็นสีของระบบปฏิบัติการ)
   const selectInline = (r: Claim, field: keyof Claim, options: string[]) => (
-    <select value={String(r[field] ?? '')} onChange={e => saveCell(r.id, field, e.target.value)}
-      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', padding: 0, color: r[field] ? 'var(--ink)' : 'var(--ink-4)', maxWidth: 140 }}>
-      <option value="">—</option>
-      {options.map(o => <option key={o} value={o}>{o}</option>)}
-    </select>
+    <CreamSelect value={String(r[field] ?? '')} onChange={v => saveCell(r.id, field, v)}
+      className="cs-inline" menuMinWidth={150}
+      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', padding: 0, color: r[field] ? 'var(--ink)' : 'var(--ink-4)', maxWidth: 140, display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'inherit' }}
+      options={[{ value: '', label: '—' }, ...Array.from(new Set([...options, String(r[field] ?? '')].filter(Boolean))).map(o => ({ value: o, label: o }))]}
+      renderValue={o => (<>
+        <span className="cs-value" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{o?.label ?? '—'}</span>
+        <svg className="cs-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+      </>)} />
   )
 
   // popup แก้รายการ (กดที่ช่องรายการในตาราง) — เหมือนหมวดออเดอร์
@@ -1086,7 +1091,7 @@ ${body}
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>ยังไม่มีเคสเคลม — กด “＋ เพิ่มรายการ” แล้ววางข้อความจากไลน์ได้เลย</div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table className="dn-list dn-rows" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <table className="dn-list dn-rows dn-rows-3" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
                   <th style={{ padding: '10px 8px 10px 14px', width: 32 }}>
@@ -1158,7 +1163,10 @@ ${body}
                         {r.customer_username
                           ? <Link href={`/customers?name=${encodeURIComponent(r.customer_username)}`} title="เปิดโฟลเดอร์ออเดอร์" style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>{r.customer_username}</Link>
                           : '-'}
-                        {r.original_order_number && <span style={{ color: 'var(--ink-4)', fontSize: 11 }}>#{r.original_order_number}</span>}
+                        {/* ไม่มีเลขออเดอร์เดิม (งานนอก/หน้าร้าน) → โชว์เลขที่ใบเคลม (Serial) แทน จะได้มีเลขอ้างทุกใบ */}
+                        {r.original_order_number
+                          ? <span style={{ color: 'var(--ink-4)', fontSize: 11 }}>#{r.original_order_number}</span>
+                          : r.serial_no ? <span title="ใบนี้ไม่มีเลขออเดอร์เดิม — ใช้เลขที่ใบเคลมแทน" style={{ color: 'var(--ink-4)', fontSize: 11 }}>{r.serial_no}</span> : null}
                         {r.photos && r.photos.length > 0 && (
                           <span title={`มีรูปงานเคลม ${r.photos.length} รูป`} style={{ fontSize: 11, color: 'var(--ink-3)' }}>📷 {r.photos.length}</span>
                         )}
@@ -1181,15 +1189,22 @@ ${body}
                     </td>
                     )}
                     {showCol('รายการ') && (
-                    <td style={{ padding: '8px 14px', maxWidth: 320 }}>
-                      {/* แถวสูง 1 บรรทัด: สาเหตุ + ป้าย "N รายการ" (กดเปิดแก้รายการ) · ชี้ป้ายดูรายการครบ + เลขพัสดุที่ลูกค้าส่งคืน */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>{textCell(r, 'cause', { lines: 2 })}</div>
+                    <td style={{ padding: '8px 14px', minWidth: 190, maxWidth: 320 }}>
+                      {/* เหมือนเว็บจริง: สาเหตุบรรทัดบน แล้วไล่รายการจริงเป็น • บรรทัดละรายการ (กดเปิดแก้ได้)
+                          ‰❗ แถวสูง 3 บรรทัด (.dn-rows-3) — สาเหตุกิน 1 บรรทัด เหลือให้รายการ 2 บรรทัด เกินนั้นขึ้น "+ อีก N รายการ" */}
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ marginBottom: 2 }}>{textCell(r, 'cause', { lines: 1 })}</div>
                         <button onClick={() => { setItemsPaste(''); setItemsParseErr(''); setItemsModal({ id: r.id, items: r.items ? r.items.map(it => ({ ...it })) : [] }) }}
                           title={[...(r.items ?? []).map(it => '• ' + itemLine(it)), r.return_tracking ? `คืน: ${r.return_tracking}` : ''].filter(Boolean).join('\n') || 'เพิ่มรายการ'}
-                          style={{ flexShrink: 0, border: 'none', cursor: 'pointer', borderRadius: 999, padding: '2px 9px', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
-                            background: r.items?.length ? 'var(--cream)' : 'transparent', color: r.items?.length ? '#8A6142' : 'var(--ink-4)' }}>
-                          {r.items?.length ? `${r.items.length} รายการ` : '+ เพิ่มรายการ'}
+                          style={{ border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', textAlign: 'left', width: '100%', display: 'block', fontFamily: 'inherit' }}>
+                          {r.items && r.items.length > 0 ? (
+                            <div style={{ fontSize: 11, color: 'var(--ink-3)', lineHeight: 1.45 }}>
+                              {r.items.slice(0, 2).map((it, i) => (
+                                <div key={i} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>• {itemLine(it)}</div>
+                              ))}
+                              {r.items.length > 2 && <div style={{ color: 'var(--ink-4)' }}>+ อีก {r.items.length - 2} รายการ</div>}
+                            </div>
+                          ) : <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>+ เพิ่มรายการ</span>}
                         </button>
                       </div>
                     </td>
@@ -1216,10 +1231,13 @@ ${body}
                     )}
                     {showCol('สถานะ') && (
                     <td style={{ padding: '8px 14px' }}>
-                      <select value={r.status} onChange={e => updateStatus(r.id, e.target.value)}
-                        style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 600, cursor: 'pointer', outline: 'none', padding: 0, color: STATUS_COLOR(r.status) }}>
-                        {WORKFLOW.map(w => <option key={w.key} value={w.key}>{w.key}</option>)}
-                      </select>
+                      <CreamSelect value={r.status} onChange={v => updateStatus(r.id, v)} className="cs-inline" menuMinWidth={160}
+                        style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 600, cursor: 'pointer', outline: 'none', padding: 0, color: STATUS_COLOR(r.status), display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'inherit' }}
+                        options={WORKFLOW.map(w => ({ value: w.key, label: w.key, color: STATUS_COLOR(w.key) }))}
+                        renderValue={o => (<>
+                          <span className="cs-value" style={{ color: 'inherit' }}>{o?.label ?? r.status}</span>
+                          <svg className="cs-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+                        </>)} />
                     </td>
                     )}
                     {showCol('แอดมิน') && (
@@ -1501,30 +1519,31 @@ ${body}
 
       {/* Items modal (กดที่ช่องรายการในตาราง) — ฟอร์มเดียวกับหมวดออเดอร์ */}
       {itemsModal && (
-        <div onClick={() => { setItemsModal(null); setItemsParseErr('') }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: 24 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: 900, maxHeight: '90vh', overflowY: 'auto', padding: '24px 28px' }}>
-            <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', marginBottom: 14 }}>รายการสินค้า</h3>
+        <div onClick={() => { setItemsModal(null); setItemsParseErr('') }} style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: 24 }}>
+          {/* ธีมแบรนด์ — ชุดเดียวกับกล่องแปลงรายการของหมวดออเดอร์ */}
+          <div onClick={e => e.stopPropagation()} className="sc-fields" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 24, boxShadow: '0 24px 60px rgba(61,43,31,0.22)', width: '100%', maxWidth: 900, maxHeight: '90vh', overflowY: 'auto', padding: '26px 30px' }}>
+            <h3 className="sc-mtitle" style={{ marginBottom: 14 }}>รายการสินค้า</h3>
 
             {/* AI Paste zone */}
-            <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px', marginBottom: 16 }}>
+            <div style={{ background: 'var(--cream-2)', border: '1px solid var(--border-2)', borderRadius: 18, padding: '14px 16px', marginBottom: 16 }}>
               <textarea value={itemsPaste} onChange={e => { setItemsPaste(e.target.value); setItemsParseErr('') }} rows={4}
-                style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 10px', fontSize: 12, outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit', background: '#fff' }} />
+                style={{ width: '100%', fontSize: 12, outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }} />
               {itemsParseErr && <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 6 }}>{itemsParseErr}</div>}
               <button onClick={() => parseItemsText(updItemsModal)} disabled={!itemsPaste.trim() || itemsParsing}
-                style={{ marginTop: 8, padding: '7px 18px', borderRadius: 7, border: 'none', background: itemsParsing || !itemsPaste.trim() ? 'var(--border)' : 'var(--blue)', color: itemsParsing || !itemsPaste.trim() ? 'var(--ink-3)' : '#fff', fontSize: 13, fontWeight: 600, cursor: itemsParsing || !itemsPaste.trim() ? 'default' : 'pointer' }}>
+                style={{ marginTop: 10, padding: '8px 20px', borderRadius: 999, border: 'none', background: itemsParsing || !itemsPaste.trim() ? 'var(--border)' : 'var(--brand)', color: itemsParsing || !itemsPaste.trim() ? 'var(--ink-3)' : '#FFF8F0', fontSize: 13, fontWeight: 600, cursor: itemsParsing || !itemsPaste.trim() ? 'default' : 'pointer', fontFamily: 'inherit', boxShadow: itemsParsing || !itemsPaste.trim() ? 'none' : '0 5px 14px rgba(158,106,73,0.25)' }}>
                 {itemsParsing ? 'กำลังแปลง…' : '✦ แปลงรายการ'}
               </button>
             </div>
 
             {/* Editable table */}
-            <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'auto', marginBottom: 14 }}>
+            <div style={{ border: '1px solid var(--border-2)', borderRadius: 16, overflow: 'auto', marginBottom: 14 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
-                  <tr style={{ background: '#FAFAFA', borderBottom: '1px solid var(--border)' }}>
+                  <tr style={{ background: 'var(--cream)', borderBottom: '1px solid var(--border)' }}>
                     {['#', 'ประเภท', 'ชั้น', 'หัวราง/จีบ', 'ตะขอ', 'รหัสสี', 'ชื่อสี', 'กว้าง (ม.)', 'สูง (ม.)', 'จำนวน', 'หน่วย', 'กระดูม', 'หมายเหตุ'].map(h => (
-                      <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 500, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{h}</th>
+                      <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#8A6142', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
-                    <th style={{ padding: '8px 10px', position: 'sticky', right: 0, background: '#FAFAFA', zIndex: 1 }} />
+                    <th style={{ padding: '10px 12px', position: 'sticky', right: 0, background: 'var(--cream)', zIndex: 1 }} />
                   </tr>
                 </thead>
                 <tbody>
@@ -1535,7 +1554,7 @@ ${body}
                         <td key={key} style={{ padding: '4px 6px' }}>
                           <input type={type} step={type === 'number' ? '0.01' : undefined} value={item[key] === null ? '' : String(item[key])}
                             onChange={e => { const val = key === 'floors' ? (e.target.value === '' ? null : Number(e.target.value)) : e.target.value; updItemsModal(cur => cur.map((it, i) => i === idx ? { ...it, [key]: val } : it)) }}
-                            style={{ width: w, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+                            style={{ width: w, fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
                         </td>
                       ))}
                       <td style={{ padding: '4px 8px', position: 'sticky', right: 0, background: 'var(--surface)', boxShadow: '-2px 0 4px rgba(0,0,0,0.04)' }}>
@@ -1552,15 +1571,15 @@ ${body}
             </div>
 
             <button onClick={() => updItemsModal(cur => [...cur, emptyItem()])}
-              style={{ fontSize: 12, padding: '4px 12px', border: '1px solid var(--blue)', borderRadius: 6, color: 'var(--blue)', background: 'var(--blue-bg)', cursor: 'pointer', marginBottom: 16 }}>
+              style={{ fontSize: 12, padding: '6px 16px', border: '1px solid var(--border-2)', borderRadius: 999, color: 'var(--brand)', background: 'var(--cream-2)', cursor: 'pointer', marginBottom: 16, fontWeight: 600, fontFamily: 'inherit' }}>
               + เพิ่มแถว
             </button>
 
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => { setItemsModal(null); setItemsParseErr('') }}
-                style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ยกเลิก</button>
-              <button onClick={saveItemsModal}
-                style={{ flex: 2, padding: '10px', borderRadius: 8, border: 'none', background: 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>บันทึก</button>
+              <button onClick={() => { setItemsModal(null); setItemsParseErr('') }} className="sc-mcancel"
+                style={{ flex: 1, cursor: 'pointer', fontSize: 14, border: 'none' }}>ยกเลิก</button>
+              <button onClick={saveItemsModal} className="sc-msave"
+                style={{ flex: 2, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>บันทึก</button>
             </div>
           </div>
         </div>

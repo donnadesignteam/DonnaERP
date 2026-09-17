@@ -66,8 +66,8 @@ export default function ClientVersions() {
   if (!owner) return null
 
   return (
-    <div style={{ width: 340, flexShrink: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '24px' }}>
-      <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 4, color: 'var(--ink)' }}>เวอร์ชันที่แต่ละเครื่องใช้อยู่</h2>
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 20, boxShadow: '0 4px 16px rgba(120,86,58,0.10)', padding: '22px 24px' }}>
+      <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, color: 'var(--ink)' }}>เวอร์ชันที่แต่ละเครื่องใช้อยู่</h2>
       <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 16 }}>
         {off ? 'ยังไม่ได้เปิดใช้ — ต้องรัน sql/add_client_versions.sql ก่อน'
           : rows === null ? 'กำลังโหลด…'
@@ -76,11 +76,12 @@ export default function ClientVersions() {
       </p>
 
       {rows !== null && rows.length > 0 && (
-        <div style={{ maxHeight: 420, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        /* เรียงเป็นตารางตามความกว้างจอ — เครื่องเยอะก็ไม่ต้องเลื่อนในกล่องแคบๆ */
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 8 }}>
           {rows.map(r => {
             const isOld = !!current && r.version !== current
             return (
-              <div key={r.client_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 8, background: isOld ? '#fff6f6' : 'var(--bg)' }}>
+              <div key={r.client_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', border: '1px solid var(--hairline)', borderRadius: 14, background: isOld ? 'var(--red-bg)' : 'var(--cream-2)' }}>
                 <span style={{ width: 8, height: 8, borderRadius: 4, background: isOld ? 'var(--red)' : '#6F8F6A', flexShrink: 0 }} />
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

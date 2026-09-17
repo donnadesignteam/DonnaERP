@@ -29,6 +29,8 @@ function ToolsMark({ size = 20 }: { size?: number }) {
     <span title="งานติดตั้ง" style={{
       width: size, height: size, borderRadius: '50%', background: '#B5715A', flexShrink: 0,
       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      // ‼️ ไอคอนเป็น inline element ถ้าไม่ตรึง vertical-align มันจะนั่งบนเส้นฐานตัวอักษร = ลอยสูงกว่ากลางช่อง
+      verticalAlign: 'middle',
     }}>
       <svg width={inner} height={inner} viewBox="0 0 24 24" fill="#FFFFFF">
         <path d="M10.6 3.4h2.8v3.1h-2.8z" />
@@ -77,6 +79,8 @@ function Dot({ g, size = 20, title }: { g: Glyph; size?: number; title?: string 
     <span title={title} style={{
       width: size, height: size, borderRadius: '50%', background: g.bg, flexShrink: 0,
       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      // ‼️ เหตุผลเดียวกับ ToolsMark — ไม่งั้นวงไอคอนลอยสูงกว่าข้อความในช่องตาราง
+      verticalAlign: 'middle',
       boxShadow: g.bg === '#FFFFFF' ? 'inset 0 0 0 1px rgba(0,0,0,0.08)' : 'none',
     }}>
       {g.path

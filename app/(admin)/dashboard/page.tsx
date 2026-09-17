@@ -56,19 +56,25 @@ const PILL_BG: Record<string, string> = {
   'กำลังแพ็ค':   '#CFE6DE',   // เขียวอมฟ้า
   'แพ็คแล้ว':    '#CFE6DE',
   'รอจัดส่ง':    '#DBBEA7',   // น้ำตาลอ่อน
-  'งานเสร็จ':    '#D5E6C6',   // เขียว
+  'งานเสร็จ':    '#E3F3E0',   // เขียวชุดเดียวกับ 'จัดส่งแล้ว'
   'จัดส่งแล้ว':  '#E3F3E0',
   'รอติดตั้ง':   '#F0C0B7',   // ส้มอิฐอ่อน
   'ยกเลิก':      '#E6D9D5',   // เทาอมชมพู
 }
 const pillBg = (st: string) => PILL_BG[st] ?? '#EFE3D4'
 
+// ‼️ ใช้ตัวเดียวกับ lib/orderTabs — deadline เป็น YYYY-MM-DD ถ้าส่งเข้า new Date() ตรงๆ
+//    JS อ่านเป็น UTC เที่ยงคืน (= 07:00 ไทย) แล้ว Math.ceil ปัดขึ้นอีก 1 วัน
+//    งานติดตั้งที่ต้องติดตั้งวันนี้เลยขึ้นว่า "1 วัน" แทน "ต้องจัดส่งวันนี้"
 function daysRemaining(dateStr: string): number | null {
   if (!dateStr) return null
   let target: Date
-  const m = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
-  if (m) {
-    target = new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]))
+  const dmy = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+  const ymd = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (dmy) {
+    target = new Date(parseInt(dmy[3]), parseInt(dmy[2]) - 1, parseInt(dmy[1]))
+  } else if (ymd) {
+    target = new Date(parseInt(ymd[1]), parseInt(ymd[2]) - 1, parseInt(ymd[3]))
   } else {
     target = new Date(dateStr)
   }
@@ -421,6 +427,21 @@ export default function DashboardPage() {
     return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`
   }
 
+  // เลข "วันผลิตที่เหลือ" ที่โชว์ในแถว — ใช้ทั้งตอนเรียงและตอนวาด จะได้ตรงกันเสมอ
+  function rowDays(o: Order): number | null {
+    const isOutside = OUTSIDE_PLATFORMS.includes(o.platform ?? '') || o.is_installation
+    const effective = isOutside ? o.deadline : effShipping(o)
+    return effective ? daysRemaining(effective) : null
+  }
+
+  // ข้อความในช่อง "วันผลิตที่เหลือ" — งานติดตั้งถึงวันนัดใช้คำว่า "ต้องติดตั้งวันนี้" เหมือนหมวดออเดอร์
+  function daysLabel(days: number | null, o: Order): string {
+    if (days === null) return 'รอกำหนด'
+    if (days < 0) return `เกิน ${Math.abs(days)} วัน`
+    if (days === 0) return o.is_installation ? 'ต้องติดตั้งวันนี้' : 'ต้องจัดส่งวันนี้'
+    return `${days} วัน`
+  }
+
   const PLATFORMS = ['Tiktok','Tiktok-Chat','Shopee','Shopee-Chat','Lazada','Facebook','LineOA',
     'Lineส่วนตัวยุน','Lineส่วนตัวสู้','Lineส่วนตัวเฟิร์น','Lineส่วนตัวน็อต','หน้าร้าน',
     'เคลม:Shopee','เคลม:Lazada','เคลม:Tiktok','เคลม:Facebook','เคลม:หน้าร้าน',
@@ -448,12 +469,15 @@ export default function DashboardPage() {
     ordersList = ordersList.filter(o => o.order_number?.toLowerCase().includes(q) || o.customer_name?.toLowerCase().includes(q))
   }
   if (daysSort) {
+    // ‼️ ต้องคิดเลข "วันผลิตที่เหลือ" ด้วยสูตรเดียวกับที่วาดในแถว (rowDays) ไม่งั้นลำดับกับเลขที่เห็นไม่ตรงกัน
+    //    (เดิมตอนเรียงใช้ effectiveISODate ซึ่งตัดเวลาทิ้ง เลยได้คนละค่ากับที่โชว์)
     ordersList = [...ordersList].sort((a, b) => {
       // งานเสร็จ (is_urgent) ลงไปอยู่ล่างสุดเสมอ
       const doneA = a.is_urgent ? 1 : 0, doneB = b.is_urgent ? 1 : 0
       if (doneA !== doneB) return doneA - doneB
-      const da = daysRemaining(effectiveISODate(a) ?? '') ?? (daysSort === 'asc' ? Infinity : -Infinity)
-      const db = daysRemaining(effectiveISODate(b) ?? '') ?? (daysSort === 'asc' ? Infinity : -Infinity)
+      // ใบที่ยังไม่มีวัน (รอกำหนด) ไปอยู่ท้ายสุดเสมอ ไม่ว่าจะเรียงน้อย→มาก หรือมาก→น้อย
+      const da = rowDays(a), db = rowDays(b)
+      if (da === null || db === null) return (da === null ? 1 : 0) - (db === null ? 1 : 0)
       return daysSort === 'asc' ? da - db : db - da
     })
   }
@@ -852,7 +876,7 @@ export default function DashboardPage() {
                 {pageRows.map(o => {
                   const isOutside = OUTSIDE_PLATFORMS.includes(o.platform ?? '') || o.is_installation
                   const effective = isOutside ? o.deadline : effShipping(o)
-                  const days = effective ? daysRemaining(effective) : null
+                  const days = rowDays(o)
                   return (
                     <tr key={o.id} onClick={() => setDetailId(o.id)} title="กดเพื่อดูรายการเต็ม"
                         style={{ borderBottom: '1px solid var(--hairline)', cursor: 'pointer' }}>
@@ -863,7 +887,7 @@ export default function DashboardPage() {
                           <span style={{ fontWeight: 600, color: '#6F8F6A' }}>งานเสร็จ</span>
                         ) : days !== null ? (
                           <span style={{ fontWeight: 600, color: daysColor(days) }}>
-                            {days < 0 ? `เกิน ${Math.abs(days)} วัน` : days === 0 ? 'ต้องจัดส่งวันนี้' : `${days} วัน`}
+                            {daysLabel(days, o)}
                           </span>
                         ) : <span style={{ color: 'var(--ink-4)' }}>รอกำหนด</span>}
                       </td>
@@ -1005,7 +1029,7 @@ export default function DashboardPage() {
                           </span>
                           <span style={{ fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0,
                             color: days === null ? 'var(--ink-4)' : daysColor(days) }}>
-                            {days === null ? 'รอกำหนด' : days < 0 ? `เกิน ${Math.abs(days)} วัน` : days === 0 ? 'ต้องจัดส่งวันนี้' : `${days} วัน`}
+                            {daysLabel(days, o)}
                           </span>
                         </div>
                       )
@@ -1053,7 +1077,7 @@ export default function DashboardPage() {
               return (
                 <tr key={o.id}>
                   <td style={{ padding: '4px 6px', borderBottom: '1px solid #ccc', whiteSpace: 'nowrap' }}>
-                    {days === null ? 'รอกำหนด' : days < 0 ? `เกิน ${Math.abs(days)} วัน` : days === 0 ? 'ต้องจัดส่งวันนี้' : `${days} วัน`}
+                    {daysLabel(days, o)}
                   </td>
                   <td style={{ padding: '4px 6px', borderBottom: '1px solid #ccc', whiteSpace: 'nowrap' }}>
                     {isOutside

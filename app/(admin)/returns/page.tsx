@@ -189,6 +189,8 @@ export default function ReturnParcelsPage() {
   // ‼️ กันลงชื่อลูกค้าคนเดียวกันคนละแบบจนโฟลเดอร์ลูกค้าแตก — ค้นจากชื่อที่เคยลงไว้ในใบออเดอร์
   //    ดึงรายชื่อตอนกดเพิ่มครั้งแรกครั้งเดียว และดึงแค่ 4 ช่อง (ประหยัด Egress ของ Supabase)
   const [custStep, setCustStep] = useState(false)
+  // กล่องแก้ไขทั้งใบ (เมนู ··· → แก้ไข) — แก้หลายช่องแล้วกดบันทึกทีเดียว
+  const [editModal, setEditModal] = useState<{ id: string; data: Record<TextKey, string> } | null>(null)
   const [orderNames, setOrderNames] = useState<{ name: string | null; phone: string | null; order_number: string | null; date: string | null }[] | null>(null)
 
   const customerBook: CustomerEntry[] = useMemo(() => buildCustomerBook([
@@ -681,15 +683,91 @@ export default function ReturnParcelsPage() {
           <>
             <div onMouseDown={() => setActionMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 1500 }} />
             {/* ‼️ เดิมวางใต้ปุ่มตายตัว แถวล่างสุดของจอเมนูตกขอบ เห็นตัวเลือกไม่ครบ → AnchoredMenu พลิกขึ้นด้านบนให้เอง */}
-            <AnchoredMenu rect={actionMenu.rect} minWidth={120} style={{ width: 120, background: '#fff', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', padding: 0, overflow: 'hidden' }}>
+            <AnchoredMenu rect={actionMenu.rect} minWidth={130} style={{ width: 130, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: '0 12px 32px rgba(120,86,58,0.16)', padding: 5, overflow: 'hidden' }}>
+              <button onClick={() => {
+                setActionMenu(null)
+                setEditModal({ id: r.id, data: Object.fromEntries(COLS.map(c => [c.key, String(r[c.key] ?? '')])) as Record<TextKey, string> })
+              }}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, color: 'var(--ink-2)', borderRadius: 10, fontFamily: 'inherit' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--cream-2)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>แก้ไข</button>
               <button onClick={() => { setActionMenu(null); void delRow(r) }}
-                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: '#fff', cursor: 'pointer', fontSize: 13, color: 'var(--red)' }}>ลบแถวนี้</button>
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, color: 'var(--red)', borderRadius: 10, fontFamily: 'inherit' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--red-bg)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>ลบแถวนี้</button>
             </AnchoredMenu>
           </>
         )
       })()}
 
       {/* ชี้เมาส์ที่ช่อง = ขึ้นกรอบจางๆ บอกว่ากดแก้ได้ */}
+
+      {/* กล่องแก้ไขทั้งใบ (เมนู ··· → แก้ไข) — ธีมเดียวกับฟอร์มหน้าอื่น */}
+      {editModal && (() => {
+        const row = rows.find(x => x.id === editModal.id)
+        if (!row) return null
+        const setF = (k: TextKey, v: string) => setEditModal(m => (m ? { ...m, data: { ...m.data, [k]: v } } : m))
+        const save = async () => {
+          const patch: Partial<Parcel> = {}
+          for (const c of COLS) {
+            const next = editModal.data[c.key].trim()
+            if (next !== String(row[c.key] ?? '')) (patch as Record<string, unknown>)[c.key] = next || null
+          }
+          setEditModal(null)
+          if (Object.keys(patch).length) await saveField(row, patch, 'แก้ไขพัสดุส่งกลับ')
+        }
+        return (
+          <div onMouseDown={e => { if (e.target === e.currentTarget) setEditModal(null) }}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1600, padding: 24 }}>
+            <div className="sc-fields" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 24,
+              boxShadow: '0 24px 60px rgba(61,43,31,0.22)', width: '100%', maxWidth: 680, maxHeight: '88vh', overflowY: 'auto', padding: '26px 30px' }}>
+              <h3 className="sc-mtitle" style={{ marginBottom: 4 }}>แก้ไขพัสดุส่งกลับ</h3>
+              <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 18 }}>{row.serial_no ? `เลขที่ใบ ${row.serial_no}` : 'แก้หลายช่องแล้วกดบันทึกทีเดียว'}</p>
+
+              {/* ‼️ วางช่องเป็น 2 คอลัมน์จับคู่กันให้สมดุลแบบฟอร์มออเดอร์/งานเคลม
+                  (เดิมปล่อยไหลอัตโนมัติ ช่องเดี่ยวเลยเหลือที่ว่างครึ่งแถว) */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px 14px', marginBottom: 18 }}>
+                {(['sender_name', 'phone', 'carrier', 'tracking_no', 'orig_carrier', 'orig_tracking_no', 'orig_order_number', 'items', 'address'] as TextKey[]).map(k => {
+                  const c = COLS.find(x => x.key === k)!
+                  const full = c.multiline || k === 'orig_order_number'
+                  return (
+                    <div key={k} style={{ gridColumn: full ? '1 / -1' : undefined }}>
+                      <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>{c.label}</label>
+                      {c.multiline ? (
+                        <textarea value={editModal.data[k]} onChange={e => setF(k, e.target.value)} rows={2}
+                          style={{ width: '100%', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                      ) : (
+                        <input type="text" value={editModal.data[k]} onChange={e => setF(k, e.target.value)}
+                          list={c.carrier ? 'return-carriers' : undefined}
+                          style={{ width: '100%', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* วิดีโอ/รูป — อัพโหลดจากในกล่องแก้ไขได้เลย (บันทึกทันทีที่อัพเสร็จ ไม่ต้องรอกดบันทึก) */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px 14px', marginBottom: 18 }}>
+                {(['videos', 'photos'] as const).map(kind => (
+                  <div key={kind} style={{ background: 'var(--cream-2)', border: '1px solid var(--border-2)', borderRadius: 16, padding: '12px 14px' }}>
+                    <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 8 }}>
+                      {kind === 'videos' ? 'วิดีโอตอนแกะ' : 'รูปพัสดุ'}
+                      <span style={{ fontWeight: 400, color: 'var(--ink-4)', marginLeft: 6 }}>({(row[kind] ?? []).length})</span>
+                    </label>
+                    <MediaCell kind={kind} list={row[kind] ?? []} busy={uploading[`${row.id}:${kind}`]}
+                      onAdd={f => addMedia(row, kind, f)} onRemove={i => removeMedia(row, kind, i)} />
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => setEditModal(null)} className="sc-mcancel" style={{ flex: 1, cursor: 'pointer', fontSize: 14, border: 'none' }}>ยกเลิก</button>
+                <button onClick={() => void save()} className="sc-msave" style={{ flex: 2, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>บันทึก</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* กล่องยืนยัน — ต้องอยู่ท้ายสุดเพื่อทับทุกหน้าต่าง */}
       {confirmDialog}

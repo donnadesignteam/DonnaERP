@@ -30,7 +30,8 @@ const APPROVAL_OPTS = ['รออนุมัติ', 'อนุมัติ', '
 const LEAVE_STATUS_OPTS = ['ใบลาเรียบร้อย', 'ยังไม่เขียนไปลา', 'รออนุมัติ']
 // ป้ายเลือกในรายการลา — .dn-pill ครีมมุมมนชุดเดียวกับป้ายสถานะหมวดออเดอร์ (เขียว = ผ่าน · ชมพู = ไม่ผ่าน/ยังไม่ทำ · ส้มครีม = รอ)
 const LEAVE_PILL: Record<string, { bg: string; dot: string }> = {
-  'ใบลาเรียบร้อย': { bg: '#D5E6C6', dot: '#6F8F6A' }, 'อนุมัติ': { bg: '#D5E6C6', dot: '#6F8F6A' },
+  // เขียวชุดเดียวกับป้าย 'จัดส่งแล้ว' ในหมวดออเดอร์ (DONE_GREEN_* ใน OrderDetailModal)
+  'ใบลาเรียบร้อย': { bg: '#E3F3E0', dot: '#1F8A3B' }, 'อนุมัติ': { bg: '#E3F3E0', dot: '#1F8A3B' },
   'ยังไม่เขียนไปลา': { bg: '#F0C0B7', dot: '#C0563F' }, 'ไม่อนุมัติ': { bg: '#F0C0B7', dot: '#C0563F' },
   'รออนุมัติ': { bg: '#F9E0C3', dot: '#C79A4B' },
 }
@@ -391,7 +392,7 @@ export default function EmployeesPage() {
   // ช่องเลือกในรายการลา = ป้าย .dn-pill กดแล้วเมนูครีมคลี่ลง (CreamSelect ชุดเดียวกับหมวดออเดอร์)
   const leavePill = (value: string, opts: string[], onPick: (v: string) => void) => (
     <CreamSelect value={value || ''} onChange={v => { if (v !== value) onPick(v) }}
-      className="dn-pill ow-pill" style={{ color: '#6B4326', background: LEAVE_PILL[value]?.bg ?? '#EFE3D4' }} menuMinWidth={170}
+      className="dn-pill ow-pill" style={{ color: LEAVE_PILL[value]?.dot === '#1F8A3B' ? '#1F8A3B' : '#6B4326', background: LEAVE_PILL[value]?.bg ?? '#EFE3D4' }} menuMinWidth={170}
       options={Array.from(new Set([...opts, value].filter(Boolean))).map(o => ({ value: o, label: o, color: LEAVE_PILL[o]?.dot }))}
       renderValue={o => <span>{o?.label ?? (value || '—')}</span>} />
   )

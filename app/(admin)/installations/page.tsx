@@ -103,6 +103,25 @@ const PAYMENT_STATUS_COLOR: Record<string, string> = {
 }
 const ORDER_ASSIGNED = ['รออัพเดท', 'แจ้งลงหน้าร้าน', 'พี่ฟอง', 'ช่างเชียงใหม่']
 const ADMINS = ['กาย', 'แพท', 'หนูนา', 'ยุน', 'ส้ม', 'เก๋']
+
+// ช่องเลือกในแถวตาราง — CreamSelect เพื่อให้เมนูคลี่ลงมีอนิเมชั่นและเป็นโทนครีมเหมือนทั้งเว็บ
+function RowSelect({ value, opts, onPick, blank, maxWidth, bold, color }: {
+  value: string; opts: (string | null | undefined)[]; onPick: (v: string) => void
+  blank?: boolean; maxWidth?: number | string; bold?: boolean; color?: string
+}) {
+  return (
+    <CreamSelect value={value} onChange={onPick} className="cs-inline" menuMinWidth={150}
+      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none',
+        fontWeight: bold ? 600 : 400, color: color ?? 'var(--ink)', padding: 0, maxWidth,
+        display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'inherit' }}
+      options={[...(blank ? [{ value: '', label: '—' }] : []), ...Array.from(new Set([...opts, value].filter(Boolean) as string[])).map(o => ({ value: o, label: o }))]}
+      renderValue={o => (<>
+        <span className="cs-value" style={{ color: 'inherit', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o?.label ?? '—'}</span>
+        <svg className="cs-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+      </>)} />
+  )
+}
+
 const INSTALL_STATUS_OPTIONS = ['ติดตั้งแล้ว', 'ติดตั้ง50%']
 const daysColor = (d: number) => d <= 0 ? 'var(--red)' : d <= 10 ? '#C79A4B' : '#6F8F6A'
 
@@ -1469,12 +1488,12 @@ export default function InstallationsPage() {
                     <>
                       <input type="checkbox" checked={!!oe?.printed_at} onChange={e => togglePrinted(oid, e.target.checked)}
                         style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
-                      {oe?.printed_at && (
-                        <div style={{ fontSize: 10, color: '#A8744F', fontWeight: 600, marginTop: 3, whiteSpace: 'nowrap' }}>
-                          {new Date(oe.printed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
-                          {new Date(oe.printed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      )}
+                      {/* ‼️ บรรทัดวันที่มีเสมอ (ยังไม่ปริ้น = บรรทัดเปล่า) ช่องติ๊กทุกแถวจะได้อยู่ระดับเดียวกัน */}
+                      <div aria-hidden={!oe?.printed_at} style={{ fontSize: 10, color: '#A8744F', fontWeight: 600, marginTop: 3, whiteSpace: 'nowrap', visibility: oe?.printed_at ? 'visible' : 'hidden' }}>
+                        {oe?.printed_at
+                          ? `${new Date(oe.printed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} ${new Date(oe.printed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`
+                          : ' '}
+                      </div>
                     </>
                   ) : noOrder,
                   customer: (
@@ -1492,11 +1511,8 @@ export default function InstallationsPage() {
                     // ไอคอนแพลตฟอร์มหน้าชื่อ — ชุดเดียวกับหมวดออเดอร์
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
                       {ins.platform && <PlatformIcon name={ins.platform} size={18} />}
-                      <select value={ins.platform || ''} onChange={e => saveInstField(ins.id, 'platform', e.target.value)}
-                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: ins.platform ? 'var(--ink-2)' : 'var(--ink-4)', padding: 0, maxWidth: 140 }}>
-                        <option value="">—</option>
-                        {Array.from(new Set([...PLATFORMS, ins.platform].filter(Boolean))).map(p => <option key={p} value={p as string}>{p}</option>)}
-                      </select>
+                      <RowSelect value={ins.platform || ''} opts={PLATFORMS} onPick={v => saveInstField(ins.id, 'platform', v)}
+                        blank maxWidth={140} color={ins.platform ? 'var(--ink-2)' : 'var(--ink-4)'} />
                     </span>
                   ),
                   items: ins.source_order_id ? (
@@ -1536,10 +1552,8 @@ export default function InstallationsPage() {
                   /* ตั้งแต่นี่ลงไป = ข้อมูลของใบออเดอร์ต้นทาง — แก้ตรงนี้ได้เลย (เขียนลง order_entries) */
                   total: oid ? oeNumCell('price') : noOrder,
                   payment: oid ? (
-                    <select value={oe?.payment_status || 'ยังไม่ชำระ'} onChange={e => saveOrderPayment(oid, e.target.value)}
-                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PAYMENT_STATUS_COLOR[oe?.payment_status ?? ''] ?? '#C79A4B', padding: 0 }}>
-                      {PAYMENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
+                    <RowSelect value={oe?.payment_status || 'ยังไม่ชำระ'} opts={PAYMENT_STATUSES} onPick={v => saveOrderPayment(oid, v)}
+                      bold color={PAYMENT_STATUS_COLOR[oe?.payment_status ?? ''] ?? '#C79A4B'} />
                   ) : noOrder,
                   paid: !oid ? noOrder
                     : (!oe?.payment_status || oe.payment_status === 'ยังไม่ชำระ') ? <div style={{ textAlign: 'right', color: 'var(--ink-4)' }}>-</div>
@@ -1553,17 +1567,14 @@ export default function InstallationsPage() {
                         ? <div style={{ textAlign: 'right', fontWeight: 600, color: '#6E8CA0' }}>{autoDeposit.toLocaleString('th-TH')}</div>
                         : oeNumCell('deposit'),
                   assigned: oid ? (
-                    <select value={oe?.order_assigned || 'รออัพเดท'} onChange={e => saveOrder(oid, { order_assigned: e.target.value }, 'แก้ลงออเดอร์ ' + (oe?.customer_name || ''))}
-                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: oe?.order_assigned && oe.order_assigned !== 'รออัพเดท' ? 'var(--ink)' : 'var(--ink-4)', fontWeight: oe?.order_assigned && oe.order_assigned !== 'รออัพเดท' ? 600 : 400, padding: 0 }}>
-                      {ORDER_ASSIGNED.map(o => <option key={o} value={o}>{o}</option>)}
-                    </select>
+                    <RowSelect value={oe?.order_assigned || 'รออัพเดท'} opts={ORDER_ASSIGNED} onPick={v => saveOrder(oid, { order_assigned: v }, 'แก้ลงออเดอร์ ' + (oe?.customer_name || ''))}
+                      bold={!!oe?.order_assigned && oe.order_assigned !== 'รออัพเดท'}
+                      color={oe?.order_assigned && oe.order_assigned !== 'รออัพเดท' ? 'var(--ink)' : 'var(--ink-4)'} />
                   ) : noOrder,
                   admin: oid ? (
-                    <select value={oe?.admin_name || ins.entered_by || ''} onChange={e => saveOrder(oid, { admin_name: e.target.value || null }, 'แก้แอดมิน ' + (oe?.customer_name || ''))}
-                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: (oe?.admin_name || ins.entered_by) ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 80 }}>
-                      <option value="">—</option>
-                      {Array.from(new Set([...ADMINS, ...ENTERED_BY, ins.entered_by].filter(Boolean))).map(a => <option key={a} value={a as string}>{a}</option>)}
-                    </select>
+                    <RowSelect value={oe?.admin_name || ins.entered_by || ''} opts={[...ADMINS, ...ENTERED_BY, ins.entered_by]}
+                      onPick={v => saveOrder(oid, { admin_name: v || null }, 'แก้แอดมิน ' + (oe?.customer_name || ''))}
+                      blank maxWidth={80} color={(oe?.admin_name || ins.entered_by) ? 'var(--ink)' : 'var(--ink-4)'} />
                   ) : <span style={{ color: 'var(--ink-3)' }}>{ins.entered_by || '-'}</span>,
                   status: oid ? (
                     /* สถานะงาน — ป้าย .dn-pill ชุดเดียวกับหมวดออเดอร์ (statusCell) · จัดส่งแล้ว = ติดตั้งแล้ว */
@@ -1591,11 +1602,8 @@ export default function InstallationsPage() {
                     </div>
                   ) : noOrder,
                   installed: oid ? (
-                    <select value={instStatusOfOrder} onChange={e => saveOrderInstallStatus(oid, e.target.value)}
-                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: instStatusOfOrder === 'ติดตั้งแล้ว' ? '#6F8F6A' : instStatusOfOrder === 'ติดตั้ง50%' ? '#C79A4B' : 'var(--ink-4)', padding: 0 }}>
-                      <option value="">—</option>
-                      {INSTALL_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
+                    <RowSelect value={instStatusOfOrder} opts={INSTALL_STATUS_OPTIONS} onPick={v => saveOrderInstallStatus(oid, v)}
+                      blank bold color={instStatusOfOrder === 'ติดตั้งแล้ว' ? '#6F8F6A' : instStatusOfOrder === 'ติดตั้ง50%' ? '#C79A4B' : 'var(--ink-4)'} />
                   ) : noOrder,
                   inststatus: (
                     /* สถานะ — ป้าย .dn-pill ชุดเดียวกับแท็บงานติดตั้งในหมวดออเดอร์ */
@@ -1659,25 +1667,16 @@ export default function InstallationsPage() {
                     </div>
                   ),
                   zone: (
-                    <select value={ins.install_zone || ''} onChange={e => updateZone(ins.id, e.target.value)}
-                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: ins.install_zone ? 600 : 400, color: ins.install_zone ? 'var(--ink-2)' : 'var(--ink-4)', padding: 0 }}>
-                      <option value="">—</option>
-                      {ZONES.map(z => <option key={z} value={z}>{z}</option>)}
-                    </select>
+                    <RowSelect value={ins.install_zone || ''} opts={ZONES} onPick={v => updateZone(ins.id, v)}
+                      blank bold={!!ins.install_zone} color={ins.install_zone ? 'var(--ink-2)' : 'var(--ink-4)'} />
                   ),
                   insttech: (
-                    <select value={ins.technician_type || ''} onChange={e => updateTech(ins.id, e.target.value)}
-                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: ins.technician_type ? 600 : 400, color: ins.technician_type ? 'var(--ink-2)' : 'var(--ink-4)', padding: 0 }}>
-                      <option value="">—</option>
-                      {TECHS.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                    <RowSelect value={ins.technician_type || ''} opts={TECHS} onPick={v => updateTech(ins.id, v)}
+                      blank bold={!!ins.technician_type} color={ins.technician_type ? 'var(--ink-2)' : 'var(--ink-4)'} />
                   ),
                   tech: oid ? (
-                    <select value={oe?.technician || ''} onChange={e => saveOrder(oid, { technician: e.target.value || null }, 'แก้ช่างเย็บ ' + (oe?.customer_name || ''))}
-                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: oe?.technician ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: '100%' }}>
-                      <option value="">—</option>
-                      {TECH_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                    <RowSelect value={oe?.technician || ''} opts={TECH_OPTIONS} onPick={v => saveOrder(oid, { technician: v || null }, 'แก้ช่างเย็บ ' + (oe?.customer_name || ''))}
+                      blank maxWidth="100%" color={oe?.technician ? 'var(--ink)' : 'var(--ink-4)'} />
                   ) : noOrder,
                   address: oid ? (
                     isOe('address') ? (

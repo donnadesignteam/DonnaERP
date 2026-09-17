@@ -68,10 +68,18 @@ export function effectiveDueDate(r: DueRow): string | null {
   return isOutsideRow ? (r.deadline ?? null) : effShipping(r)
 }
 
+// ‼️ วันของ deadline (งานติดตั้ง/งานนอก) เก็บเป็น YYYY-MM-DD — ห้ามส่งเข้า new Date() ตรงๆ
+//    เพราะ JS อ่านเป็นเวลา UTC เที่ยงคืน = 07:00 ของไทย ทำให้ Math.ceil ปัดขึ้นไปอีก 1 วันเสมอ
+//    (งานที่ต้องติดตั้งวันนี้เลยขึ้นว่า "1 วัน") — ต้องประกอบเป็นวันที่ท้องถิ่นเอง
 export function daysRemaining(dateStr: string): number | null {
   if (!dateStr) return null
-  const m = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
-  const target = m ? new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1])) : new Date(dateStr)
+  const dmy = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+  const ymd = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  const target = dmy
+    ? new Date(parseInt(dmy[3]), parseInt(dmy[2]) - 1, parseInt(dmy[1]))
+    : ymd
+      ? new Date(parseInt(ymd[1]), parseInt(ymd[2]) - 1, parseInt(ymd[3]))
+      : new Date(dateStr)
   const result = Math.ceil((target.getTime() - new Date().setHours(0, 0, 0, 0)) / 86400000)
   return isNaN(result) ? null : result
 }
@@ -89,8 +97,10 @@ export function parseSortDate(s: string | null | undefined): Date | null {
     const d = new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]))
     return isNaN(d.getTime()) ? null : d
   }
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
-    const d = new Date(s)
+  const ymd = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (ymd) {
+    // ประกอบเป็นวันที่ท้องถิ่น (เหตุผลเดียวกับ daysRemaining) ไม่งั้นวันเดียวกันเรียงสลับกับแบบ D/M/YYYY
+    const d = new Date(parseInt(ymd[1]), parseInt(ymd[2]) - 1, parseInt(ymd[3]))
     return isNaN(d.getTime()) ? null : d
   }
   return null

@@ -247,9 +247,12 @@ h1, h2, h3 { font-weight: 700; }
 .ow-card table input[type="checkbox"]:hover:not(:disabled) { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(158,106,73,0.12); }
 .ow-card table input[type="checkbox"]:focus-visible { outline: 2px solid var(--brand-soft); outline-offset: 2px; }
 .ow-card table input[type="checkbox"]:checked { background: var(--brand); border-color: var(--brand); animation: cb-pop 260ms cubic-bezier(.34,1.56,.64,1); }
+/* ‼️ ตรึงเครื่องหมายถูกไว้กลางกล่องด้วย 50% + translate — อย่ากลับไปใช้ left/top เป็น px
+   เพราะกล่องกับเส้นขอบเปลี่ยนขนาดตามการซูมหน้า ทำให้ติ๊กเบี้ยวไปมุมบน/ขวา */
 .ow-card table input[type="checkbox"]:checked::after {
-  content: ''; position: absolute; left: 5px; top: 1.5px; width: 4.5px; height: 9px;
-  border: solid #FFF8F0; border-width: 0 2.2px 2.2px 0; transform: rotate(45deg);
+  content: ''; position: absolute; left: 50%; top: 50%; width: 4.5px; height: 9px;
+  border: solid #FFF8F0; border-width: 0 2.2px 2.2px 0;
+  transform: translate(-50%, -55%) rotate(45deg);
   animation: cb-draw 240ms 60ms ease-out both;
 }
 .ow-card table input[type="checkbox"]:indeterminate { background: var(--brand); border-color: var(--brand); }
@@ -273,7 +276,19 @@ h1, h2, h3 { font-weight: 700; }
 /* ป้ายสถานะในหน้าออเดอร์ = .dn-pill ของหน้าภาพรวม (กว้าง/สี/ความหนาเดียวกัน) + เป็นปุ่มกดเลือกได้ */
 .ow-pill { border: none; font-family: inherit; cursor: pointer; white-space: nowrap; line-height: inherit; transition: box-shadow 120ms; }
 .ow-pill:hover, .ow-pill[data-open] { box-shadow: inset 0 0 0 1.5px rgba(107,67,38,0.28); }
-.ow-pill:focus-visible, .ow-select:focus-visible { outline: 2px solid var(--brand-soft); outline-offset: 2px; }
+.ow-pill:focus-visible, .ow-select:focus-visible, .cs-inline:focus-visible { outline: 2px solid var(--brand-soft); outline-offset: 2px; }
+
+/* ‼️ ช่องเลือกในแถวตาราง ใช้ .cs-inline ไม่ใช่ .ow-select
+   (.ow-select เป็นปุ่มบนแถบเครื่องมือ — สูง 46px กว้างอย่างน้อย 180px ถ้าเอามาใส่ในแถว ช่องจะกว้างเกิน
+    และตัวหนังสือถูกดันไปชิดซ้ายเพราะลูกศรโดนผลักไปสุดขอบขวา) */
+.cs-inline { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-width: 0;
+  background: transparent; border: none; padding: 0; cursor: pointer; font-family: inherit; text-align: left;
+  border-radius: 999px; transition: background-color 140ms ease, box-shadow 140ms ease; }
+.cs-inline .cs-value { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: inherit; }
+.cs-inline:hover, .cs-inline[data-open] { background-color: var(--cream-2); box-shadow: 0 0 0 5px var(--cream-2); }
+.cs-inline .cs-chev { opacity: 0.55; }
+.cs-inline:hover .cs-chev, .cs-inline[data-open] .cs-chev { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .cs-inline { transition: none; } }
 
 /* รายการที่เลื่อนลงมา — ครีม มุมมน เงานุ่ม (ใช้กับ CreamSelect + เมนูลอยเดิมในหน้าออเดอร์ .ow-drop) */
 .cs-menu, .ow-drop {
@@ -301,8 +316,29 @@ h1, h2, h3 { font-weight: 700; }
 .ow-drop > div:hover, .ow-drop > label:hover, .ow-drop > button:hover { background: var(--cream-2) !important; }
 @media (prefers-reduced-motion: reduce) { .cs-menu, .ow-drop, .cs-menu .cs-item, .ow-drop > * { animation: none; } .cs-chev { transition: none; } }
 
-/* ช่องแอดมิน/ช่างเย็บที่ยังไม่เลือกชื่อ — ป้ายพีชครีมมุมมนรอบช่องเลือก (เดิมระบายเหลืองเต็มช่องตาราง) */
-.ow-card td.ow-empty > select, .dn-list td.ow-empty select { background: #F6DFC6 !important; border-radius: 999px; padding: 5px 12px !important; min-width: 64px; color: #8A6142 !important; font-weight: 600; }
+/* ช่องแอดมิน/ช่างเย็บที่ยังไม่เลือกชื่อ — ป้ายพีชครีมมุมมนรอบช่องเลือก (เดิมระบายเหลืองเต็มช่องตาราง)
+   ‼️ ใช้ background-color ไม่ใช่ background — ไม่งั้นลบลูกศรของช่องเลือกทิ้ง (ดูบล็อกถัดไป) */
+.ow-card td.ow-empty > select, .dn-list td.ow-empty select { background-color: #F6DFC6 !important; border-radius: 999px; padding: 5px 24px 5px 12px !important; min-width: 64px; color: #8A6142 !important; font-weight: 600; }
+
+/* ════ ช่องเลือก <select> ในตารางทุกหน้า — ให้หน้าตาเดียวกับ CreamSelect ════
+   เมนูของ <select> เป็นของระบบปฏิบัติการ ใส่อนิเมชั่นไม่ได้ (ถ้าต้องการเมนูคลี่ลงต้องใช้ CreamSelect)
+   แต่ตัวช่องคุมได้ — พื้นครีมมุมมน ลูกศรของเราเอง ชี้/โฟกัสแล้วค่อยๆ เปลี่ยน */
+table.dn-list select, .ow-card table select, .sc-fields select, .sc-modal select {
+  appearance: none; -webkit-appearance: none; cursor: pointer;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238B7460' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>") !important;
+  background-repeat: no-repeat !important; background-position: right 7px center !important; background-size: 11px !important;
+  padding-right: 22px !important; border-radius: 999px !important;
+  transition: background-color 150ms ease, box-shadow 150ms ease, color 150ms ease;
+}
+table.dn-list select:hover:not(:disabled), .ow-card table select:hover:not(:disabled),
+.sc-fields select:hover:not(:disabled), .sc-modal select:hover:not(:disabled) {
+  background-color: var(--cream) !important; box-shadow: inset 0 0 0 1px var(--border-2);
+}
+table.dn-list select:focus-visible, .ow-card table select:focus-visible,
+.sc-fields select:focus-visible, .sc-modal select:focus-visible { outline: 2px solid var(--brand-soft); outline-offset: 1px; }
+/* รายการในเมนูของระบบ — อย่างน้อยให้พื้น/ตัวอักษรเป็นโทนครีมบนเบราว์เซอร์ที่ยอมให้แต่ง */
+table.dn-list select option, .ow-card table select option, .sc-fields select option, .sc-modal select option { background: var(--surface); color: var(--ink); }
+@media (prefers-reduced-motion: reduce) { table.dn-list select, .ow-card table select { transition: none; } }
 
 /* ════ ปฏิทินร้าน (/employees) — ดีไซน์ตามภาพต้นแบบ 14ก.ย.69 ════ */
 .sc-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
@@ -383,10 +419,15 @@ html.dark .sc-leave { background: #2F2319; } html.dark .sc-closed { background: 
 .sc-mlink { display: inline-block; font-size: 12px; color: var(--brand); margin-top: 6px; text-decoration: none; }
 .sc-madd { width: 100%; margin-top: 6px; padding: 12px; border-radius: 999px; border: 1.5px dashed rgba(158,106,73,0.45); background: transparent; color: var(--brand); font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
 .sc-madd:hover { background: var(--cream-2); border-style: solid; }
-.sc-modal input:not([type=checkbox]):not([type=radio]):not([type=file]), .sc-modal select, .sc-modal textarea {
+/* .sc-fields = เอาเฉพาะหน้าตาช่องกรอกของธีมไปใช้ กับกล่องที่จัด layout เองอยู่แล้ว (เช่น ฟอร์มเพิ่ม/แก้ออเดอร์)
+   ถ้าใส่ .sc-modal ทั้งก้อนจะโดน padding/max-height ของการ์ดทับ layout เดิม */
+.sc-modal input:not([type=checkbox]):not([type=radio]):not([type=file]), .sc-modal select, .sc-modal textarea,
+.sc-fields input:not([type=checkbox]):not([type=radio]):not([type=file]), .sc-fields select, .sc-fields textarea {
   background: var(--cream-2) !important; border: 1px solid var(--border-2) !important; border-radius: 12px !important; padding: 9px 12px !important; color: var(--ink); font-family: inherit; }
-.sc-modal input:focus, .sc-modal select:focus, .sc-modal textarea:focus { border-color: var(--brand) !important; box-shadow: 0 0 0 3px rgba(158,106,73,0.12); }
-.sc-modal label { color: var(--ink-3) !important; }
+.sc-modal input:focus, .sc-modal select:focus, .sc-modal textarea:focus,
+.sc-fields input:focus, .sc-fields select:focus, .sc-fields textarea:focus { border-color: var(--brand) !important; box-shadow: 0 0 0 3px rgba(158,106,73,0.12); }
+/* label ที่ทำหน้าที่เป็นปุ่ม (เช่น ปุ่มเลือกไฟล์ในกล่อง Drop ไฟล์) ต้องไม่โดนสีตัวอักษรของ label ทับ */
+.sc-modal label:not([data-btn]), .sc-fields label:not([data-btn]) { color: var(--ink-3) !important; }
 .sc-mcancel { border-radius: 999px !important; background: var(--cream-2) !important; border: 1px solid var(--border-2) !important; color: var(--ink-2) !important; padding: 12px !important; font-family: inherit; }
 .sc-msave { border-radius: 999px !important; background: var(--brand) !important; color: #FFF8F0 !important; padding: 12px !important; box-shadow: 0 6px 16px rgba(158,106,73,0.25); font-family: inherit; }
 
@@ -408,6 +449,8 @@ table.dn-list tbody tr:hover { background: var(--cream-2) !important; }
 /* .dn-rows = แถวสูงเท่าตารางหมวดออเดอร์/หน้าภาพรวม (56px = เนื้อหาไม่เกิน 2 บรรทัด) — งานเคลม/พัสดุส่งกลับ/ปฏิทินงานติดตั้ง/ปฏิทินร้าน/พนักงาน/สต็อก/สั่งซื้อ (user ขอ 15ก.ย.69)
    line-height 1.4 ให้ 3 บรรทัดพอดี 78 · ‼️ช่องไหนเกิน 3 บรรทัดแถวจะสูงกว่าแถวอื่น ต้องตัดในช่องนั้นเอง */
 table.dn-list.dn-rows tbody tr { height: 56px; }
+/* หน้างานเคลม: ข้อความยาวกว่าที่อื่น (สาเหตุ/วิธีแก้ไข/ที่อยู่) ให้แถวสูงพอ 3 บรรทัด */
+table.dn-list.dn-rows-3 tbody tr { height: 74px; }
 table.dn-list.dn-rows tbody td { vertical-align: middle !important; line-height: 1.4; padding-top: 10px !important; padding-bottom: 10px !important; }
 /* แถบรูป/คลิปเลื่อนข้างในแถวตาราง — ซ่อนแถบเลื่อน (กินความสูงแถว) ยังลาก/Shift+ล้อเมาส์เลื่อนได้ */
 .dn-hscroll { scrollbar-width: none; }
@@ -415,7 +458,8 @@ table.dn-list.dn-rows tbody td { vertical-align: middle !important; line-height:
 table.dn-list input[type="checkbox"] { appearance: none; -webkit-appearance: none; width: 18px; height: 18px; border-radius: 6px; border: 1.5px solid var(--border-2); background: var(--cream-2); cursor: pointer; position: relative; vertical-align: middle; margin: 0; }
 table.dn-list input[type="checkbox"]:hover:not(:disabled) { border-color: var(--brand); }
 table.dn-list input[type="checkbox"]:checked { background: var(--brand); border-color: var(--brand); }
-table.dn-list input[type="checkbox"]:checked::after { content: ''; position: absolute; left: 5px; top: 1.5px; width: 5px; height: 10px; border: solid #FFF8F0; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+/* ‼️ กลางกล่องด้วย 50% + translate เหมือนช่องติ๊กของหมวดออเดอร์ (เหตุผลเดียวกับคอมเมนต์ด้านบน) */
+table.dn-list input[type="checkbox"]:checked::after { content: ''; position: absolute; left: 50%; top: 50%; width: 5px; height: 10px; border: solid #FFF8F0; border-width: 0 2px 2px 0; transform: translate(-50%, -55%) rotate(45deg); }
 
 /* การ์ดในปฏิทินที่กดแล้วไปต่อได้ (นัดหมาย → ออเดอร์ · ใบลา → แถวในรายการลา) */
 .sc-link { cursor: pointer; transition: transform .12s, box-shadow .12s, border-color .12s; }

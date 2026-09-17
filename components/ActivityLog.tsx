@@ -50,8 +50,8 @@ export default function ActivityLog() {
   const cats = ['', 'ออเดอร์', 'เคลม', 'งานติดตั้ง', 'สั่งซื้อ', 'สต็อก', 'ใบลา', 'สแกนผลิต']
 
   return (
-    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: 24 }}>
-      <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 4, color: 'var(--ink)' }}>ประวัติการแก้ไข</h2>
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 20, boxShadow: '0 4px 16px rgba(120,86,58,0.10)', padding: '22px 24px' }}>
+      <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, color: 'var(--ink)' }}>ประวัติการแก้ไข</h2>
       <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 16 }}>ทุกการเพิ่ม/แก้ไข/ลบ ในระบบ — เชื่อมทั้งร้านอัตโนมัติ</p>
 
       {/* ตัวกรองหมวด */}
@@ -59,10 +59,11 @@ export default function ActivityLog() {
         {cats.map(c => (
           <button key={c || 'all'} onClick={() => setCat(c)}
             style={{
-              padding: '5px 12px', borderRadius: 16, fontSize: 12, cursor: 'pointer',
-              border: '1px solid', borderColor: cat === c ? 'var(--blue)' : 'var(--border)',
-              background: cat === c ? 'var(--blue)' : '#fff',
-              color: cat === c ? '#fff' : 'var(--ink-3)', fontWeight: cat === c ? 600 : 400,
+              padding: '6px 14px', borderRadius: 999, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
+              border: cat === c ? 'none' : '1px solid var(--border-2)',
+              background: cat === c ? 'var(--brand)' : 'var(--cream-2)',
+              color: cat === c ? '#FFF8F0' : 'var(--ink-2)', fontWeight: 600,
+              boxShadow: cat === c ? '0 3px 10px rgba(158,106,73,0.25)' : 'none',
             }}>
             {c || 'ทั้งหมด'}
           </button>
@@ -70,7 +71,7 @@ export default function ActivityLog() {
       </div>
 
       {error && (
-        <div style={{ padding: 14, borderRadius: 8, background: '#fff4f4', border: '1px solid #ffd4d4', color: 'var(--red)', fontSize: 13 }}>
+        <div style={{ padding: 14, borderRadius: 14, background: 'var(--red-bg)', border: '1px solid #E2B9A8', color: 'var(--red)', fontSize: 13 }}>
           ⚠️ {error}
         </div>
       )}
@@ -112,7 +113,7 @@ export default function ActivityLog() {
 
           {hasMore && !loading && (
             <button onClick={() => load(false)}
-              style={{ marginTop: 12, padding: '9px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink-3)', cursor: 'pointer', fontSize: 13, fontWeight: 500 }}>
+              style={{ marginTop: 12, padding: '11px', borderRadius: 999, border: '1px solid var(--border-2)', background: 'var(--cream-2)', color: 'var(--brand)', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}>
               โหลดเพิ่ม
             </button>
           )}
