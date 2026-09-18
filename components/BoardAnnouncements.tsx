@@ -1,7 +1,7 @@
 'use client'
 
 // ประกาศจากกระดานสนทนา — โชว์บนหน้าภาพรวม (ใต้คำทักทาย เหนือการ์ด 3 ใบ)
-// ดึงเฉพาะหมวด "ประกาศ" ปักหมุดขึ้นก่อน แล้วใหม่ → เก่า สูงสุด 3 เรื่อง · ไม่มีประกาศ = ไม่แสดงอะไรเลย
+// ดึงเฉพาะหมวด "ประกาศ" ปักหมุดขึ้นก่อน แล้วใหม่ → เก่า สูงสุด 3 เรื่อง · แถบบรรทัดเดียว ตัวใหญ่ สลับเรื่องเอง · ไม่มีประกาศ = ไม่แสดงอะไรเลย
 // กดเรื่องไหน → เปิดหัวข้อนั้นในหน้ากระดานสนทนา
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
@@ -22,6 +22,7 @@ const MEGAPHONE = 'M10.34 15.84c-.688-.06-1.386-.09-2.09-.09H7.5a4.5 4.5 0 110-9
 
 export default function BoardAnnouncements() {
   const [items, setItems] = useState<BoardTopic[] | null>(null)
+  const [idx, setIdx] = useState(0)
 
   useEffect(() => {
     listTopics().then(list => setItems(
@@ -30,34 +31,36 @@ export default function BoardAnnouncements() {
     ))
   }, [])
 
-  if (!items || items.length === 0) return null
-  const top = items.slice(0, MAX)
+  // หลายเรื่อง = สลับโชว์ทีละเรื่องทุก 6 วิ (บรรทัดเดียว ตัวใหญ่) · กดตัวนับเพื่อไปเรื่องถัดไปเอง
+  const top = (items ?? []).slice(0, MAX)
+  const cur = top.length ? top[idx % top.length] : null
+  useEffect(() => {
+    if (top.length < 2) return
+    const t = setInterval(() => setIdx(i => i + 1), 6000)
+    return () => clearInterval(t)
+  }, [top.length])
+
+  if (!cur) return null
 
   return (
-    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 20, boxShadow: 'var(--shadow)', padding: '14px 18px', marginBottom: 20 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-        <span style={{ width: 30, height: 30, borderRadius: '50%', background: '#F6DCD6', color: '#A0443A', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d={MEGAPHONE} /></svg>
-        </span>
-        <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>ประกาศ</span>
-        <span style={{ fontSize: 12, color: 'var(--ink-4)' }}>{items.length} เรื่อง</span>
-        <Link href="/board?tab=ประกาศ" style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 600, color: 'var(--brand)', textDecoration: 'none' }}>ดูทั้งหมด →</Link>
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
-        {top.map((t, i) => (
-          <Link key={t.id} href={`/board?topic=${t.id}`}
-            style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 6px', textDecoration: 'none', borderTop: i ? '1px solid var(--hairline, var(--border))' : 'none', borderRadius: 8 }}
-            className="ba-row">
-            {t.pinned ? <span title="ปักหมุด" style={{ fontSize: 13, width: 18, flexShrink: 0 }}>📌</span> : <span style={{ width: 18, flexShrink: 0, textAlign: 'center', color: 'var(--ink-4)' }}>•</span>}
-            <span style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 10 }}>
-              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0, maxWidth: '55%' }}>{t.title}</span>
-              <span style={{ fontSize: 13, color: 'var(--ink-soft)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.body}</span>
-            </span>
-            <span style={{ fontSize: 12, color: 'var(--ink-3)', whiteSpace: 'nowrap', flexShrink: 0 }}>{t.author} · {ago(t.created_at)}{t.comments.length ? ` · 💬 ${t.comments.length}` : ''}</span>
-          </Link>
-        ))}
-      </div>
-      <style>{`.ba-row:hover { background: var(--cream-2); }`}</style>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 18, boxShadow: 'var(--shadow)', padding: '0 18px', height: 58, marginBottom: 20 }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 32, padding: '0 14px 0 10px', borderRadius: 999, background: '#F6DCD6', color: '#A0443A', fontSize: 14, fontWeight: 700, flexShrink: 0 }}>
+        <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d={MEGAPHONE} /></svg>
+        ประกาศ
+      </span>
+      <Link key={cur.id} href={`/board?topic=${cur.id}`} className="ba-line" title={cur.body}
+        style={{ flex: 1, minWidth: 0, fontSize: 18, fontWeight: 700, color: 'var(--ink)', textDecoration: 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {cur.pinned && '📌 '}{cur.title}
+      </Link>
+      {top.length > 1 && (
+        <button onClick={() => setIdx(i => i + 1)} title="เรื่องถัดไป"
+          style={{ border: '1px solid var(--border)', background: 'var(--cream-2)', borderRadius: 999, height: 28, padding: '0 10px', fontSize: 12, color: 'var(--ink-3)', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+          {(idx % top.length) + 1}/{top.length} ›
+        </button>
+      )}
+      <span style={{ fontSize: 12.5, color: 'var(--ink-3)', whiteSpace: 'nowrap', flexShrink: 0 }}>{cur.author} · {ago(cur.created_at)}</span>
+      <Link href="/board?tab=ประกาศ" style={{ fontSize: 13, fontWeight: 600, color: 'var(--brand)', textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>ดูทั้งหมด →</Link>
+      <style>{`.ba-line { animation: ba-in 380ms ease; } .ba-line:hover { color: var(--brand) !important; } @keyframes ba-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }`}</style>
     </div>
   )
 }
