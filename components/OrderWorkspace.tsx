@@ -38,7 +38,7 @@ import { parseMoney } from '@/lib/money'
 import { formatOrderText, formatOrderHtml } from '@/lib/orderPrint'
 import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
-import { PlatformIcon, CourierIcon } from '@/components/BrandMark'
+import { PlatformIcon, CourierIcon, INSTALL_ICON_PATH } from '@/components/BrandMark'
 import CreamSelect from '@/components/CreamSelect'
 import CreamDate from '@/components/CreamDate'
 import { pillBg, pillInk } from '@/components/OrderDetailModal'
@@ -5193,7 +5193,7 @@ ${body}
               {([
                 ['งานแพลตฟอร์ม', 'M6 8.5h12l-1 11H7zM9.2 8.5V6.6a2.8 2.8 0 015.6 0v1.9', 'Shopee / Tiktok / Lazada', 'platform', {}],
                 ['งานนอก', 'M20 12.2c0 3.3-3.6 6-8 6-.9 0-1.8-.1-2.6-.3L5 19.5l1.2-3A5.6 5.6 0 014 12.2c0-3.3 3.6-6 8-6s8 2.7 8 6z', 'Facebook / Line / หน้าร้าน', 'outside', {}],
-                ['งานติดตั้ง', 'M15 12l-8.4 8.4a1.5 1.5 0 01-2.1-2.1L12 9.9 M18 15l3.2-3.2 M21.2 11.8l-1.9-1.9A2 2 0 0118.7 8.5V7.4l-2.3-2.3a6 6 0 00-4.2-1.7l-3.2-.1.9.8a6.2 6.2 0 012.1 4.6v1.6l2 2h1.2a2 2 0 011.4.6l1.9 1.9', 'สั่งพร้อมติดตั้ง', 'install', { is_installation: true }],
+                ['งานติดตั้ง', INSTALL_ICON_PATH, 'สั่งพร้อมติดตั้ง', 'install', { is_installation: true }],
               ] as [string, string, string, 'platform'|'outside'|'install'|'claim', object][]).map(([label, iconPath, desc, type, extra]) => (
                 <button key={label} onClick={() => {
                   // ขั้นถัดไปคือถามชื่อลูกค้าก่อน (ดู custStep) ฟอร์มจะเปิดหลังได้ชื่อแล้ว

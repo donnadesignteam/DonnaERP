@@ -23,6 +23,9 @@ const MAIL = 'M2.5 5.5h19v13h-19zM2.5 6.2 12 13l9.5-6.8'
 // ประแจ = งานติดตั้ง (ไม่ได้ส่งผ่านขนส่ง)
 // หมวกนิรภัยช่าง = งานช่าง (งานติดตั้ง)
 // ‼️ ขนาดจริงแค่ ~13px ต้องใช้รูปทึบทรงเรียบ ลายเส้นละเอียดจะเละเป็นก้อน
+// ไอคอนงานติดตั้ง (ค้อน) — ชุดเดียวกับปุ่ม "งานติดตั้ง" ในหน้าต่างเพิ่มรายการ · ใช้ร่วมทุกที่ แก้ที่นี่ที่เดียว
+export const INSTALL_ICON_PATH = 'M15 12l-8.4 8.4a1.5 1.5 0 01-2.1-2.1L12 9.9 M18 15l3.2-3.2 M21.2 11.8l-1.9-1.9A2 2 0 0118.7 8.5V7.4l-2.3-2.3a6 6 0 00-4.2-1.7l-3.2-.1.9.8a6.2 6.2 0 012.1 4.6v1.6l2 2h1.2a2 2 0 011.4.6l1.9 1.9'
+
 function ToolsMark({ size = 20 }: { size?: number }) {
   const inner = Math.round(size * 0.68)
   return (
@@ -32,10 +35,8 @@ function ToolsMark({ size = 20 }: { size?: number }) {
       // ‼️ ไอคอนเป็น inline element ถ้าไม่ตรึง vertical-align มันจะนั่งบนเส้นฐานตัวอักษร = ลอยสูงกว่ากลางช่อง
       verticalAlign: 'middle',
     }}>
-      <svg width={inner} height={inner} viewBox="0 0 24 24" fill="#FFFFFF">
-        <path d="M10.6 3.4h2.8v3.1h-2.8z" />
-        <path d="M6.2 14.2v-2.6a5.8 5.8 0 0111.6 0v2.6z" />
-        <path d="M3.2 15.4h17.6a1.4 1.4 0 010 2.8H3.2a1.4 1.4 0 010-2.8z" />
+      <svg width={inner} height={inner} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+        <path d={INSTALL_ICON_PATH} />
       </svg>
     </span>
   )
