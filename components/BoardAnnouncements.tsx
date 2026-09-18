@@ -52,7 +52,7 @@ export default function BoardAnnouncements() {
       <Link key={cur.id} href={`/board?topic=${cur.id}`} className="ba-line" title={`${cur.title}\n${cur.body}`}
         style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 12, textDecoration: 'none', whiteSpace: 'nowrap', overflow: 'hidden' }}>
         <span className="ba-title" style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0, maxWidth: '50%' }}>
-          {cur.pinned && '📌 '}{cur.title}
+          {cur.title}
         </span>
         {cur.body && (
           <span style={{ fontSize: 14.5, color: 'var(--ink-soft)', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{cur.body.replace(/\s*\n+\s*/g, ' ')}</span>
