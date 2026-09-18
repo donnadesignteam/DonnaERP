@@ -48,9 +48,15 @@ export default function BoardAnnouncements() {
         <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d={MEGAPHONE} /></svg>
         ประกาศ
       </span>
-      <Link key={cur.id} href={`/board?topic=${cur.id}`} className="ba-line" title={cur.body}
-        style={{ flex: 1, minWidth: 0, fontSize: 18, fontWeight: 700, color: 'var(--ink)', textDecoration: 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-        {cur.pinned && '📌 '}{cur.title}
+      {/* หัวข้อ (ตัวใหญ่) + รายละเอียด (ตัวเล็กสีอ่อน) อยู่บรรทัดเดียวกัน — ยาวเกินตัดท้ายรายละเอียดก่อน หัวข้อกินได้ไม่เกินครึ่ง */}
+      <Link key={cur.id} href={`/board?topic=${cur.id}`} className="ba-line" title={`${cur.title}\n${cur.body}`}
+        style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 12, textDecoration: 'none', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+        <span className="ba-title" style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0, maxWidth: '50%' }}>
+          {cur.pinned && '📌 '}{cur.title}
+        </span>
+        {cur.body && (
+          <span style={{ fontSize: 14.5, color: 'var(--ink-soft)', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{cur.body.replace(/\s*\n+\s*/g, ' ')}</span>
+        )}
       </Link>
       {top.length > 1 && (
         <button onClick={() => setIdx(i => i + 1)} title="เรื่องถัดไป"
@@ -60,7 +66,7 @@ export default function BoardAnnouncements() {
       )}
       <span style={{ fontSize: 12.5, color: 'var(--ink-3)', whiteSpace: 'nowrap', flexShrink: 0 }}>{cur.author} · {ago(cur.created_at)}</span>
       <Link href="/board?tab=ประกาศ" style={{ fontSize: 13, fontWeight: 600, color: 'var(--brand)', textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>ดูทั้งหมด →</Link>
-      <style>{`.ba-line { animation: ba-in 380ms ease; } .ba-line:hover { color: var(--brand) !important; } @keyframes ba-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }`}</style>
+      <style>{`.ba-line { animation: ba-in 380ms ease; } .ba-line:hover .ba-title { color: var(--brand) !important; } @keyframes ba-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }`}</style>
     </div>
   )
 }
