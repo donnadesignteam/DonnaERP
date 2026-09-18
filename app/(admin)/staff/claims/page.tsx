@@ -12,7 +12,7 @@ import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { isOwnerLogin, claimUpdate } from '@/lib/adminActor'
 import StaffTabs from '@/components/StaffTabs'
 import { TH_MONTHS } from '@/lib/shopCalendar'
-import { isPersonFault } from '@/lib/claimFault'
+import { faultPeople, faultShareCount } from '@/lib/claimFault'
 import Link from 'next/link'
 
 type ClaimRow = {
@@ -36,6 +36,8 @@ type ClaimRow = {
 
 // ค่าเคลมของเคสหนึ่ง = ค่าส่งกลับ + ค่าส่งคืน + ราคาประเมิน
 const claimCost = (r: ClaimRow) => (r.ship_back_cost ?? 0) + (r.ship_return_cost ?? 0) + (r.estimated_price ?? 0)
+// ช่อง "ผิดโดย" มีได้หลายชื่อ → ค่าเคลมที่แต่ละคนต้องรับ = ค่าเคลม ÷ จำนวนผู้ผิดในเคสนั้น
+const claimShare = (r: ClaimRow) => claimCost(r) / faultShareCount(r.fault_by)
 const baht = (v: number) => v ? '฿' + Math.round(v).toLocaleString('th-TH') : '—'
 
 // บริษัทขนส่งไม่ใช่พนักงาน — หน้านี้รวมเฉพาะคน (ชุดเดียวกับกลุ่ม "ขนส่ง" ในหน้าเคลม)
@@ -122,7 +124,7 @@ export default function StaffClaimsPage() {
   // ── ตัวเลือกเดือน (ยึดวันที่แจ้งเคลม เหมือนหมวดออเดอร์/หน้างานเคลม) ──
   const monthKey = (r: ClaimRow) => (r.claim_date ?? '').slice(0, 7) || 'none'
   const monthOptions = useMemo(() => {
-    const keys = Array.from(new Set(rows.filter(r => isPersonFault(r.fault_by)).map(monthKey)))
+    const keys = Array.from(new Set(rows.filter(r => faultPeople(r.fault_by).length > 0).map(monthKey)))
     return { ym: keys.filter(k => k !== 'none').sort().reverse(), hasNone: keys.includes('none') }
   }, [rows])
   const monthLabel = (k: string) => {
@@ -136,15 +138,15 @@ export default function StaffClaimsPage() {
     const q = search.trim().toLowerCase()
     const map = new Map<string, ClaimRow[]>()
     for (const r of rows) {
-      const name = (r.fault_by ?? '').trim()
-      if (!isPersonFault(name)) continue
-      if (person && name !== person) continue
       if (reviewFilter && (r.fault_review || PENDING) !== reviewFilter) continue
       if (month !== 'all' && monthKey(r) !== month) continue
-      if (q && !name.toLowerCase().includes(q)) continue
-      const list = map.get(name)
-      if (list) list.push(r)
-      else map.set(name, [r])
+      for (const name of faultPeople(r.fault_by)) {   // เคสที่ผิดหลายคน ขึ้นใต้ชื่อทุกคน
+        if (person && name !== person) continue
+        if (q && !name.toLowerCase().includes(q)) continue
+        const list = map.get(name)
+        if (list) list.push(r)
+        else map.set(name, [r])
+      }
     }
     return [...map.entries()]
       .map(([name, list]) => ({
@@ -153,8 +155,8 @@ export default function StaffClaimsPage() {
         pending: list.filter(c => !c.fault_review).length,
         guilty: list.filter(c => c.fault_review === 'ตรวจสอบแล้วผิดจริง').length,
         appeal: list.filter(c => (c.fault_appeal ?? '').trim()).length,
-        cost: list.reduce((sum, c) => sum + claimCost(c), 0),
-        guiltyCost: list.filter(c => c.fault_review === 'ตรวจสอบแล้วผิดจริง').reduce((sum, c) => sum + claimCost(c), 0),
+        cost: list.reduce((sum, c) => sum + claimShare(c), 0),
+        guiltyCost: list.filter(c => c.fault_review === 'ตรวจสอบแล้วผิดจริง').reduce((sum, c) => sum + claimShare(c), 0),
       }))
       .sort((a, b) => b.list.length - a.list.length || a.name.localeCompare(b.name, 'th'))
   }, [rows, search, person, reviewFilter, month])
@@ -162,22 +164,23 @@ export default function StaffClaimsPage() {
   // รายชื่อคนทั้งหมด (ไม่ขึ้นกับฟีลเตอร์ที่เลือกอยู่) สำหรับกล่องเลือกคน
   const people = useMemo(() => {
     const set = new Set<string>()
-    for (const r of rows) {
-      const name = (r.fault_by ?? '').trim()
-      if (isPersonFault(name)) set.add(name)
-    }
+    for (const r of rows) for (const name of faultPeople(r.fault_by)) set.add(name)
     return [...set].sort((a, b) => a.localeCompare(b, 'th'))
   }, [rows])
 
-  const totals = useMemo(() => ({
-    people: groups.length,
-    cases: groups.reduce((s, g) => s + g.list.length, 0),
-    pending: groups.reduce((s, g) => s + g.pending, 0),
-    guilty: groups.reduce((s, g) => s + g.guilty, 0),
-    appeal: groups.reduce((s, g) => s + g.appeal, 0),
-    cost: groups.reduce((s, g) => s + g.cost, 0),
-    guiltyCost: groups.reduce((s, g) => s + g.guiltyCost, 0),
-  }), [groups])
+  // เคสที่ผิดหลายคนอยู่หลายกลุ่ม — จำนวนเคสนับไม่ซ้ำ · ค่าเคลมรวมจากส่วนแบ่งของแต่ละคน (รวมกันแล้วเท่าค่าเคลมจริง)
+  const totals = useMemo(() => {
+    const uniq = [...new Map(groups.flatMap(g => g.list).map(c => [c.id, c])).values()]
+    return {
+      people: groups.length,
+      cases: uniq.length,
+      pending: uniq.filter(c => !c.fault_review).length,
+      guilty: uniq.filter(c => c.fault_review === 'ตรวจสอบแล้วผิดจริง').length,
+      appeal: uniq.filter(c => (c.fault_appeal ?? '').trim()).length,
+      cost: groups.reduce((s, g) => s + g.cost, 0),
+      guiltyCost: groups.reduce((s, g) => s + g.guiltyCost, 0),
+    }
+  }, [groups])
 
   if (owner === false) {
     return (
@@ -292,12 +295,15 @@ export default function StaffClaimsPage() {
                               : '—'}
                           </td>
                           <td style={td}>{c.claim_type || '—'}</td>
-                          <td style={td}>{c.fault || '—'}</td>
+                          <td style={td}>{c.fault || '—'}{faultShareCount(c.fault_by) > 1 && <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>ผิดร่วม: {c.fault_by}</div>}</td>
                           <td style={td}>{c.fix_method || '—'}</td>
                           <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap', fontWeight: claimCost(c) ? 600 : 400, color: claimCost(c) ? 'var(--ink)' : 'var(--ink-4)' }}
                             title={([['ค่าส่งกลับ', c.ship_back_cost], ['ค่าส่งคืน', c.ship_return_cost], ['ราคาประเมิน', c.estimated_price]] as [string, number | null][])
                               .filter(([, v]) => v).map(([k, v]) => k + ' ' + Number(v).toLocaleString('th-TH')).join(' + ') || 'ยังไม่ได้กรอกค่าใช้จ่าย'}>
-                            {baht(claimCost(c))}
+                            {baht(claimShare(c))}
+                            {faultShareCount(c.fault_by) > 1 && claimCost(c) > 0 && (
+                              <div style={{ fontSize: 10.5, fontWeight: 400, color: 'var(--ink-4)' }}>หาร {faultShareCount(c.fault_by)} จาก {baht(claimCost(c))}</div>
+                            )}
                           </td>
                           <td style={{ ...td, maxWidth: 320 }}>
                             {(c.fault_appeal ?? '').trim() ? (

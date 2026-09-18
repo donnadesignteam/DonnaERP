@@ -15,3 +15,17 @@ export const isPersonFault = (name?: string | null): boolean => {
   const n = (name ?? '').trim()
   return !!n && n !== NO_FAULT && !FAULT_COURIERS.includes(n)
 }
+
+// ช่อง "ผิดโดย" ใส่ได้หลายชื่อ — เก็บในคอลัมน์ข้อความเดิม (claims.fault_by) คั่นด้วย ", " ไม่ต้องแก้ฐานข้อมูล
+export const FAULT_SEP = ', '
+export const splitFaultBy = (v?: string | null): string[] =>
+  (v ?? '').split(',').map(s => s.trim()).filter(Boolean)
+export const joinFaultBy = (names: string[]): string =>
+  Array.from(new Set(names.map(s => s.trim()).filter(Boolean))).join(FAULT_SEP)
+
+// ชื่อพนักงาน/ช่างในช่อง "ผิดโดย" ของเคสนั้น (ตัดขนส่ง/ไม่ถือว่าผิดออก)
+export const faultPeople = (v?: string | null): string[] => splitFaultBy(v).filter(isPersonFault)
+
+// ค่าเคลมหารกี่ส่วน = จำนวนผู้ผิดทั้งหมดในช่อง (รวมบริษัทขนส่งด้วย เพราะเป็นผู้ผิดอีกรายหนึ่ง) อย่างน้อย 1
+export const faultShareCount = (v?: string | null): number =>
+  Math.max(1, splitFaultBy(v).filter(n => n !== NO_FAULT).length)
