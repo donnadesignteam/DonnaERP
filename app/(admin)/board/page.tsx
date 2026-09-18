@@ -97,6 +97,11 @@ export default function BoardPage() {
   useEffect(() => {
     listTopics().then(list => { setTopics(list); setLoaded(true) })
     setMe(currentAuthor())
+    // มาจากลิงก์ (เช่นประกาศบนหน้าภาพรวม): ?topic=<id> เปิดหัวข้อนั้น · ?tab=<หมวด> เปิดแท็บนั้น
+    const p = new URLSearchParams(window.location.search)
+    const tp = p.get('topic'), tb = p.get('tab')
+    if (tp) setSelId(tp)
+    if (tb && (BOARD_CATEGORIES as readonly string[]).includes(tb)) setTab(tb as BoardCategory)
   }, [])
 
   const counts = useMemo(() => {

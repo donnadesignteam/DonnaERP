@@ -16,6 +16,7 @@ import { PlatformIcon, CourierIcon } from '@/components/BrandMark'
 import NotifyBell from '@/components/NotifyBell'
 import OrderDetailModal from '@/components/OrderDetailModal'
 import ScanToast from '@/components/ScanToast'
+import BoardAnnouncements from '@/components/BoardAnnouncements'
 
 
 type Order = {
@@ -596,6 +597,9 @@ export default function DashboardPage() {
           </button>
         </div>
       </div>
+
+      {/* ประกาศจากกระดานสนทนา (ไม่มีประกาศ = ไม่โชว์) */}
+      <BoardAnnouncements />
 
       {/* การ์ดหลัก 3 ใบ */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20, marginBottom: 28 }}>
