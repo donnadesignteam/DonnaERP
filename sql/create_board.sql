@@ -8,7 +8,9 @@ create table if not exists board_topics (
   title       text not null,
   body        text not null default '',
   author      text not null,                 -- ชื่อเล่นคนตั้ง (จาก staff session) หรือ "แอดมิน" ถ้าล็อกอินรหัสร้าน
-  order_number text,                          -- ผูกกับออเดอร์ (กดเปิดรายละเอียดออเดอร์ได้)
+  order_number text,                          -- เลขออเดอร์ (ถ้ามี)
+  order_id    uuid,                          -- ผูกกับออเดอร์ order_entries.id (กดเปิดรายละเอียดออเดอร์ได้ ใช้ได้แม้ออเดอร์ไม่มีเลข)
+  order_label text,                          -- ข้อความโชว์ เช่น DR0042 · ชื่อลูกค้า
   status      text,                          -- ใช้กับหมวดปัญหา: รอตอบ / กำลังทำ / ปิดแล้ว
   pinned      boolean not null default false,
   created_at  timestamptz not null default now(),

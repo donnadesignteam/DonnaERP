@@ -96,6 +96,7 @@ export default function BoardPage() {
 
   useEffect(() => {
     listTopics().then(list => { setTopics(list); setLoaded(true) })
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMe(currentAuthor())
     // มาจากลิงก์ (เช่นประกาศบนหน้าภาพรวม): ?topic=<id> เปิดหัวข้อนั้น · ?tab=<หมวด> เปิดแท็บนั้น
     const p = new URLSearchParams(window.location.search)
@@ -114,7 +115,7 @@ export default function BoardPage() {
     const q = search.trim().toLowerCase()
     let list = topics.filter(t => tab === 'all' || t.category === tab)
     if (sort === 'open') list = list.filter(t => t.status && t.status !== 'ปิดแล้ว')
-    if (q) list = list.filter(t => [t.title, t.body, t.author, t.order_number ?? '', ...t.comments.map(c => c.body + ' ' + c.author)].join(' ').toLowerCase().includes(q))
+    if (q) list = list.filter(t => [t.title, t.body, t.author, t.order_number ?? '', t.order_label ?? '', ...t.comments.map(c => c.body + ' ' + c.author)].join(' ').toLowerCase().includes(q))
     const key = (t: BoardTopic) => sort === 'comments' ? String(t.comments.length).padStart(6, '0') : t.last_activity_at
     return [...list].sort((a, b) => Number(b.pinned) - Number(a.pinned) || key(b).localeCompare(key(a)))
   }, [topics, tab, sort, search])
@@ -243,11 +244,11 @@ export default function BoardPage() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{sel.author} <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--ink-4)', marginLeft: 6 }}>{fullDate(sel.created_at)}</span></div>
                     <div style={{ fontSize: 13.5, color: 'var(--ink-2)', marginTop: 4, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}><RichText text={sel.body} /></div>
-                    {sel.order_number && (
-                      <button onClick={() => openOrder(sel.order_number!)}
+                    {(sel.order_id || sel.order_number) && (
+                      <button onClick={() => sel.order_id ? setOrderOpen(sel.order_id) : openOrder(sel.order_number!)}
                         style={{ marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 8, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--cream-2)', padding: '9px 14px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: 'var(--ink)' }}>
                         <Icon d={CAT_STYLE['งานออเดอร์'].icon} size={16} color="var(--brand)" />
-                        ออเดอร์ #{sel.order_number}
+                        {sel.order_label || `ออเดอร์ #${sel.order_number}`}
                         <span style={{ color: 'var(--brand)', fontWeight: 600 }}>เปิดดู →</span>
                       </button>
                     )}
@@ -340,13 +341,13 @@ export default function BoardPage() {
 
 function NewTopicModal({ onClose, onCreate, defaultCategory }: {
   onClose: () => void
-  onCreate: (t: { category: BoardCategory; title: string; body: string; order_number: string | null }) => void
+  onCreate: (t: { category: BoardCategory; title: string; body: string; order_number: string | null; order_id: string | null; order_label: string | null }) => void
   defaultCategory: BoardCategory
 }) {
   const [category, setCategory] = useState<BoardCategory>(defaultCategory)
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
-  const [orderNo, setOrderNo] = useState('')
+  const [order, setOrder] = useState<OrderHit | null>(null)
   const ok = title.trim().length > 0
   const input: React.CSSProperties = { width: '100%', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 14px', fontSize: 14, outline: 'none', boxSizing: 'border-box', background: 'var(--surface)', color: 'var(--ink)', fontFamily: 'inherit' }
   const label: React.CSSProperties = { fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)', display: 'block', marginBottom: 6 }
@@ -371,15 +372,79 @@ function NewTopicModal({ onClose, onCreate, defaultCategory }: {
           <textarea value={body} onChange={e => setBody(e.target.value)} rows={5} placeholder="เล่าเรื่องให้คนอ่านเข้าใจ — พิมพ์ @ชื่อ เพื่อเรียกคนที่เกี่ยวข้อง" style={{ ...input, resize: 'vertical', lineHeight: 1.55 }} />
         </div>
         <div style={{ marginBottom: 22 }}>
-          <span style={label}>เลขออเดอร์ที่เกี่ยวข้อง <span style={{ fontWeight: 400, color: 'var(--ink-4)' }}>(ถ้ามี — กดเปิดดูออเดอร์จากหัวข้อได้)</span></span>
-          <input value={orderNo} onChange={e => setOrderNo(e.target.value)} placeholder="เลขออเดอร์" style={{ ...input, maxWidth: 280 }} />
+          <span style={label}>ออเดอร์ที่เกี่ยวข้อง <span style={{ fontWeight: 400, color: 'var(--ink-4)' }}>(ถ้ามี — กดเปิดดูออเดอร์จากหัวข้อได้)</span></span>
+          <OrderPicker value={order} onChange={setOrder} inputStyle={input} />
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button onClick={onClose} style={{ border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--ink-2)', borderRadius: 999, height: 42, padding: '0 20px', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>ยกเลิก</button>
-          <button disabled={!ok} onClick={() => onCreate({ category, title, body, order_number: orderNo || null })}
+          <button disabled={!ok} onClick={() => onCreate({ category, title, body, order_number: order?.order_number ?? null, order_id: order?.id ?? null, order_label: order ? orderLabel(order) : null })}
             style={{ border: 'none', background: ok ? 'var(--brand)' : 'var(--cream)', color: '#FFF8F0', borderRadius: 999, height: 42, padding: '0 24px', fontSize: 14, fontWeight: 600, cursor: ok ? 'pointer' : 'default', fontFamily: 'inherit' }}>โพสต์หัวข้อ</button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── ค้นหาออเดอร์ลูกค้า: พิมพ์ชื่อลูกค้า / เลขออเดอร์ / เลขที่ใบ (Serial เช่น DR0042) ──
+// ค้นในฐานจริง (อ่านอย่างเดียว) ทีละ 8 ใบ ใหม่ → เก่า · รอพิมพ์หยุด 0.3 วิ ค่อยค้น (ไม่ยิงทุกตัวอักษร)
+type OrderHit = { id: string; order_number: string | null; serial_no?: string | null; customer_name: string | null; order_status: string | null; created_at: string }
+const orderLabel = (o: OrderHit) => [o.serial_no, o.customer_name, o.order_number ? '#' + o.order_number : ''].filter(Boolean).join(' · ') || 'ออเดอร์'
+
+function OrderPicker({ value, onChange, inputStyle }: { value: OrderHit | null; onChange: (o: OrderHit | null) => void; inputStyle: React.CSSProperties }) {
+  const [q, setQ] = useState('')
+  const [hits, setHits] = useState<OrderHit[]>([])
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    const kw = q.trim().replace(/[,()*%\\]/g, '')   // ตัดอักขระที่ทำให้ตัวกรอง .or() พัง
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (kw.length < 2) { setHits([]); setErr(''); return }
+    let alive = true
+    const t = setTimeout(async () => {
+      setBusy(true)
+      const base = 'id, order_number, customer_name, order_status, created_at'
+      const run = (cols: string, fields: string[]) => supabase.from('order_entries').select(cols)
+        .or(fields.map(f => `${f}.ilike.*${kw}*`).join(',')).order('created_at', { ascending: false }).limit(8)
+      let r = await run(`${base}, serial_no`, ['customer_name', 'order_number', 'serial_no'])
+      if (r.error) r = await run(base, ['customer_name', 'order_number'])   // ยังไม่มีคอลัมน์ serial_no
+      if (!alive) return
+      setBusy(false)
+      if (r.error) { setErr(r.error.message); setHits([]) } else { setErr(''); setHits((r.data ?? []) as unknown as OrderHit[]) }
+    }, 300)
+    return () => { alive = false; clearTimeout(t) }
+  }, [q])
+
+  if (value) {
+    return (
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, border: '1px solid var(--brand-soft)', background: '#F4E9DD', borderRadius: 12, padding: '8px 12px', maxWidth: '100%' }}>
+        <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{orderLabel(value)}</span>
+        {value.order_status && <span style={{ fontSize: 11.5, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{value.order_status}</span>}
+        <button onClick={() => onChange(null)} title="เอาออก" style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 14, padding: 0 }}>✕</button>
+      </div>
+    )
+  }
+  return (
+    <div style={{ position: 'relative' }}>
+      <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหาชื่อลูกค้า / เลขออเดอร์ / Serial (เช่น DR0042)" style={inputStyle} />
+      {q.trim().length >= 2 && (
+        <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: 'var(--shadow-md)', zIndex: 10, maxHeight: 280, overflowY: 'auto', padding: 4 }}>
+          {busy && hits.length === 0 ? <div style={{ padding: '10px 12px', fontSize: 13, color: 'var(--ink-3)' }}>กำลังค้นหา…</div>
+            : err ? <div style={{ padding: '10px 12px', fontSize: 13, color: 'var(--red)' }}>ค้นหาไม่สำเร็จ: {err}</div>
+            : hits.length === 0 ? <div style={{ padding: '10px 12px', fontSize: 13, color: 'var(--ink-3)' }}>ไม่พบออเดอร์</div>
+            : hits.map(o => (
+              <button key={o.id} onClick={() => { onChange(o); setQ('') }}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '9px 12px', border: 'none', borderRadius: 8, background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--brand)', width: 58, flexShrink: 0 }}>{o.serial_no || '—'}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.customer_name || '(ไม่ระบุชื่อลูกค้า)'}</span>
+                  <span style={{ display: 'block', fontSize: 11.5, color: 'var(--ink-3)' }}>{o.order_number ? '#' + o.order_number : 'ไม่มีเลขออเดอร์'} · {new Date(o.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}</span>
+                </span>
+                {o.order_status && <span style={{ fontSize: 11.5, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{o.order_status}</span>}
+              </button>
+            ))}
+        </div>
+      )}
     </div>
   )
 }

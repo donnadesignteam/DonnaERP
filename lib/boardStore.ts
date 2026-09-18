@@ -18,6 +18,8 @@ export type BoardTopic = {
   body: string
   author: string
   order_number: string | null
+  order_id?: string | null      // ออเดอร์ที่ผูก (order_entries.id) — ใช้เปิดรายละเอียด · หัวข้อเก่าที่มีแค่ order_number ยังเปิดได้
+  order_label?: string | null   // ข้อความโชว์บนปุ่ม เช่น "DR0042 · คุณเอ · #2609…"
   status: BoardStatus | null
   pinned: boolean
   created_at: string
@@ -74,11 +76,11 @@ function mutate(fn: (list: BoardTopic[]) => void): BoardTopic[] {
 
 export async function listTopics(): Promise<BoardTopic[]> { return load() }
 
-export async function createTopic(t: { category: BoardCategory; title: string; body: string; order_number?: string | null }): Promise<BoardTopic> {
+export async function createTopic(t: { category: BoardCategory; title: string; body: string; order_number?: string | null; order_id?: string | null; order_label?: string | null }): Promise<BoardTopic> {
   const now = new Date().toISOString()
   const topic: BoardTopic = {
     id: uid(), category: t.category, title: t.title.trim(), body: t.body.trim(), author: currentAuthor(),
-    order_number: t.order_number?.trim() || null, status: t.category === 'ปัญหา/แก้ไข' ? 'รอตอบ' : null,
+    order_number: t.order_number?.trim() || null, order_id: t.order_id || null, order_label: t.order_label || null, status: t.category === 'ปัญหา/แก้ไข' ? 'รอตอบ' : null,
     pinned: false, created_at: now, last_activity_at: now, comments: [],
   }
   mutate(list => { list.unshift(topic) })
