@@ -552,14 +552,17 @@ export default function DashboardPage() {
       {/* แถวบน: คำทักทายตามช่วงเวลา (ซ้าย) + วัน/เวลา + ปุ่มเต็มจอ (ขวา) */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 26, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <span style={{ fontSize: 30, lineHeight: 1 }} aria-hidden>{greet.emoji}</span>
+          <span style={{ fontSize: 27, lineHeight: 1 }} aria-hidden>{greet.emoji}</span>
           <div>
-            <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--brand)', lineHeight: 1.15 }}>{greet.text}</h1>
-            <button onClick={() => setModal({ title: 'ออเดอร์ทั้งหมดของเดือนนี้', orders: [...monthOrders].reverse(), showPrint: true })}
-              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14.5, fontWeight: 600, color: 'var(--ink-3)', lineHeight: 1.3, marginTop: 3 }}>
-              สรุปภาพรวมคำสั่งซื้อ · เดือนนี้{' '}
-              <span style={{ color: 'var(--brand)', fontWeight: 700, fontSize: 17, fontVariantNumeric: 'tabular-nums' }}>{(loading || !clock) ? '—' : monthOrders.length.toLocaleString()}</span> รายการ
-            </button>
+            <h1 style={{ fontSize: 23, fontWeight: 700, color: 'var(--brand)', lineHeight: 1.3 }}>{greet.text}</h1>
+            {/* สรุปเดือนนี้ = ป้ายครีมมน (สไตล์เดียวกับจำนวนบนแท็บหน้าออเดอร์) กดแล้วเปิดรายการออเดอร์ของเดือนนี้ */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2, fontSize: 13.5, color: 'var(--ink-3)' }}>
+              สรุปภาพรวมคำสั่งซื้อ
+              <button className="dn-month-pill" title="ดูออเดอร์ทั้งหมดของเดือนนี้"
+                onClick={() => setModal({ title: 'ออเดอร์ทั้งหมดของเดือนนี้', orders: [...monthOrders].reverse(), showPrint: true })}>
+                เดือนนี้ <b>{(loading || !clock) ? '—' : monthOrders.length.toLocaleString()}</b> รายการ
+              </button>
+            </div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
