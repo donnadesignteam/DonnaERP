@@ -50,7 +50,7 @@ type ClaimRow = {
 }
 
 type Kind = 'leave' | 'appeal' | 'board'
-type Item = { key: string; href: string; who: string; what: string; when: string; kind: Kind; ts?: string }
+type Item = { key: string; href: string; who: string; what: string; when: string; kind: Kind; ts?: string; topic?: string }
 
 // ของค้างอนุมัติ (ใบลา/อุทธรณ์เคลม) — ปิดไว้ก่อน user สั่ง 19ก.ย.69 "แจ้งแค่เรื่องมีคนโพสตามงานก่อน" · เปิดคืน = true
 const SHOW_APPROVALS = false
@@ -58,6 +58,18 @@ const SHOW_APPROVALS = false
 const SEEN_KEY = 'dn-board-seen'   // เวลาที่เปิดกระดิ่งดูล่าสุด (ต่อเครื่อง) — ใหม่กว่านี้ = ยังไม่ได้อ่าน
 const readSeen = () => { try { return localStorage.getItem(SEEN_KEY) ?? '' } catch { return '' } }
 const writeSeen = (v: string) => { try { localStorage.setItem(SEEN_KEY, v) } catch { /* ปิดที่เก็บข้อมูล = ไม่จำ */ } }
+
+// หัวข้อที่เปิดดูแล้ว (ต่อเครื่อง) { topicId: เวลาที่เปิด } — แจ้งเตือนของหัวข้อนั้นที่เก่ากว่าเวลานี้ถูกเอาออกจากกระดิ่ง
+const READ_KEY = 'dn-board-read'
+const readMap = (): Record<string, string> => { try { return JSON.parse(localStorage.getItem(READ_KEY) || '{}') } catch { return {} } }
+export function markTopicRead(topicId: string) {
+  const m = readMap()
+  m[topicId] = new Date().toISOString()
+  const cut = new Date(Date.now() - 8 * 86400000).toISOString()   // เก็บแค่ช่วงที่กระดิ่งยังโชว์ (7 วัน) กันโตไม่หยุด
+  for (const k of Object.keys(m)) if (m[k] < cut) delete m[k]
+  try { localStorage.setItem(READ_KEY, JSON.stringify(m)) } catch { /* ปิดที่เก็บข้อมูล = ไม่จำ */ }
+  window.dispatchEvent(new Event('board-read'))
+}
 
 const ICON: Record<Kind, { bg: string; ink: string; d: string }> = {
   leave: { bg: 'var(--cream)', ink: 'var(--brand)', d: 'M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5' },
@@ -75,6 +87,7 @@ export function NotifyProvider({ children }: { children: React.ReactNode }) {
   const [board, setBoard] = useState<Item[]>([])
   const [ready, setReady] = useState(false)
   const [seen, setSeen] = useState('')          // เวลาที่เปิดดูล่าสุด
+  const [read, setRead] = useState<Record<string, string>>({})
 
   // ── ของค้างอนุมัติ ──
   const loadApprovals = useCallback(async () => {
@@ -130,11 +143,11 @@ export function NotifyProvider({ children }: { children: React.ReactNode }) {
     const out: Item[] = []
     for (const t of (tp.data ?? []) as { id: string; title: string; author: string; category: string; created_at: string }[]) {
       if (t.author === me) continue
-      out.push({ key: 'bt' + t.id, href: `/board?topic=${t.id}`, kind: 'board', who: t.author, what: `ตั้งหัวข้อ “${t.title}”`, when: ago(t.created_at), ts: t.created_at })
+      out.push({ key: 'bt' + t.id, topic: t.id, href: `/board?topic=${t.id}`, kind: 'board', who: t.author, what: `ตั้งหัวข้อ “${t.title}”`, when: ago(t.created_at), ts: t.created_at })
     }
     for (const c of (cm.data ?? []) as unknown as { id: string; topic_id: string; author: string; created_at: string; board_topics: { title: string } | null }[]) {
       if (c.author === me) continue
-      out.push({ key: 'bc' + c.id, href: `/board?topic=${c.topic_id}`, kind: 'board', who: c.author, what: `ตอบใน “${c.board_topics?.title ?? 'หัวข้อ'}”`, when: ago(c.created_at), ts: c.created_at })
+      out.push({ key: 'bc' + c.id, topic: c.topic_id, href: `/board?topic=${c.topic_id}`, kind: 'board', who: c.author, what: `ตอบใน “${c.board_topics?.title ?? 'หัวข้อ'}”`, when: ago(c.created_at), ts: c.created_at })
     }
     out.sort((a, b) => (b.ts ?? '').localeCompare(a.ts ?? ''))
     setBoard(out)
@@ -142,12 +155,15 @@ export function NotifyProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setSeen(readSeen())   // eslint-disable-line react-hooks/set-state-in-effect
+    setRead(readMap())
+    const onRead = () => setRead(readMap())
+    window.addEventListener('board-read', onRead)
     const all = () => Promise.all([loadApprovals(), loadBoard()]).then(() => setReady(true))
     all()
     const t = setInterval(all, 120000)   // เช็กใหม่ทุก 2 นาที (ตามงานมี realtime ช่วยอีกทาง)
     const onBoard = () => { loadBoard() }
     window.addEventListener('board-activity', onBoard)
-    return () => { clearInterval(t); window.removeEventListener('board-activity', onBoard) }
+    return () => { clearInterval(t); window.removeEventListener('board-activity', onBoard); window.removeEventListener('board-read', onRead) }
   }, [loadApprovals, loadBoard])
 
   const markSeen = useCallback(() => {
@@ -157,7 +173,9 @@ export function NotifyProvider({ children }: { children: React.ReactNode }) {
     return prev
   }, [seen])
 
-  return <NotifyCtx.Provider value={{ approvals, board, ready, seen, markSeen }}>{children}</NotifyCtx.Provider>
+  // เปิดหัวข้อไหนแล้ว → แจ้งเตือนของหัวข้อนั้น (ที่เข้ามาก่อนเปิด) หายไปจากกระดิ่ง
+  const visible = board.filter(b => !(b.topic && read[b.topic] && (b.ts ?? '') <= read[b.topic]))
+  return <NotifyCtx.Provider value={{ approvals, board: visible, ready, seen, markSeen }}>{children}</NotifyCtx.Provider>
 }
 
 export default function NotifyBell() {
@@ -189,7 +207,7 @@ export default function NotifyBell() {
   const appealCount = approvals.filter(i => i.kind === 'appeal').length
 
   const row = (it: Item, fresh = false) => (
-    <Link key={it.key} href={it.href} onClick={() => setOpen(false)}
+    <Link key={it.key} href={it.href} onClick={() => { setOpen(false); if (it.topic) markTopicRead(it.topic) }}
       style={{ display: 'flex', alignItems: 'flex-start', gap: 11, padding: '11px 18px', textDecoration: 'none',
                borderBottom: '1px solid var(--border)', background: fresh ? '#F7F0E8' : 'transparent' }}>
       <span style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, marginTop: 1, background: ICON[it.kind].bg, color: ICON[it.kind].ink,

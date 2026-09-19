@@ -3,7 +3,7 @@
 // หมวด "ตามงาน" (เดิมชื่อกระดานสนทนา) — คุยกันเป็นหัวข้อตามงาน (แทนแชต: เรื่องไม่จมหาย, ผูกกับออเดอร์ได้, ไม่ต้องเปิด realtime ค้าง)
 // ซ้าย = รายการหัวข้อ (ปักหมุดอยู่บนสุด แล้วเรียงตามความเคลื่อนไหวล่าสุด) · ขวา = หัวข้อที่เลือก + ความคิดเห็น
 // ข้อมูล: เว็บจริงเก็บใน Supabase (ทุกคนเห็นเหมือนกัน) · โคลนโหมดอ่านอย่างเดียวเก็บในเบราว์เซอร์ — ดู lib/boardStore.ts
-import NotifyBell from '@/components/NotifyBell'
+import NotifyBell, { markTopicRead } from '@/components/NotifyBell'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import CreamSelect from '@/components/CreamSelect'
 import OrderDetailModal from '@/components/OrderDetailModal'
@@ -137,6 +137,9 @@ export default function BoardPage() {
   }, [topics, tab, sort, search])
 
   const sel = topics.find(t => t.id === selId) ?? shown[0] ?? null
+  // เปิดดูหัวข้อไหน = อ่านแล้ว → แจ้งเตือนของหัวข้อนั้นในกระดิ่งหายไป
+  const selIdNow = sel?.id
+  useEffect(() => { if (selIdNow) markTopicRead(selIdNow) }, [selIdNow, sel?.comments.length])
 
   // เลือกหัวข้ออื่น → ล้างกล่องพิมพ์ที่ค้าง
   const pick = (id: string) => { setSelId(id); setDraft(''); setDraftFiles([]); setOrderMsg('') }

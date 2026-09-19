@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { currentAuthor } from '@/lib/boardStore'
 import { READ_ONLY } from '@/lib/readOnly'
+import { markTopicRead } from './NotifyBell'
 
 type Toast = { key: string; topicId: string; who: string; what: string; title: string; at: Date; out?: boolean }
 const SHOW_MS = 7000
@@ -53,10 +54,10 @@ export default function BoardToast() {
 
   if (!toasts.length) return null
   return (
-    <div className="toast-stack" style={{ top: 72 }}>
+    <div className="toast-stack">
       {toasts.map(t => (
         <div key={t.key} className={`toast${t.out ? ' is-out' : ''}`}
-          onClick={() => { close(t.key); router.push(`/board?topic=${t.topicId}`) }} title="เปิดหัวข้อนี้">
+          onClick={() => { close(t.key); markTopicRead(t.topicId); router.push(`/board?topic=${t.topicId}`) }} title="เปิดหัวข้อนี้">
           <span className="toast-icon" style={{ background: 'var(--cream)', color: 'var(--brand)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" /></svg>
           </span>
