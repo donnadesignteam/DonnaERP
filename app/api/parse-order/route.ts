@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { fabricTypeFromCode } from '@/lib/fabrics'
+import { applyFabricCatalog } from '@/lib/fabrics'
 import { fillItemDefaults, autoTapeHooks, type RawItem } from '@/lib/itemFormat'
 import { askClaude } from '@/lib/askClaude'
 import { normalizeThaiDate } from '@/lib/thaiDate'
@@ -90,8 +90,7 @@ ${ITEM_RULES}
         // ม่านลอนเทป/รางม่านลอนเทป ที่ไม่ได้ลงจำนวนกระดูม → คำนวณจากความกว้างให้เลย
         if (!it.hooks) { const h = autoTapeHooks(it); if (h) it.hooks = h }
         if (typeof it.type === 'string' && it.type.startsWith('ราง')) return it
-        const ft = fabricTypeFromCode(it.color_code)
-        return ft ? { ...it, fabric_type: ft } : it
+        return applyFabricCatalog(it)
       })
     }
     return NextResponse.json({ order })

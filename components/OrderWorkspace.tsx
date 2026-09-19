@@ -8,7 +8,7 @@ import { supabase } from '@/lib/supabase'
 import { syncRows, byEntryDateDesc } from '@/lib/rowCache'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
-import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, ITEM_FIELDS, ITEM_FIELD_OPTIONS, shownFields, visibleItemCols, itemInputValue, emptyItem as emptyRawItem } from '@/lib/itemFormat'
+import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, ITEM_FIELDS, ITEM_FIELD_OPTIONS, shownFields, visibleItemCols, railNoField, itemInputValue, buildItemSuggestions, emptyItem as emptyRawItem } from '@/lib/itemFormat'
 import { railLink } from '@/lib/rail'
 import { installSerial, nextSerial, matchSerial } from '@/lib/serialNo'
 import { buildCustomerBook } from '@/lib/customerBook'
@@ -20,6 +20,7 @@ import { effShipping } from '@/lib/shipping'
 import { thaiTrackStatus } from '@/lib/trackExtract'
 import { syncOutsourcePO, markPOReceivedForOrders } from '@/lib/outsourceSync'
 import { useInstallPhotos, photoSaveError } from '@/components/InstallPhotos'
+import { ThemedSelect, SuggestInput } from '@/components/ItemInputs'
 import ProvinceSelect from '@/components/ProvinceSelect'
 import { syncWorkStatus as syncWorkStatusExact } from '@/lib/workStatusSync'
 import { recordAction } from '@/lib/history'
@@ -520,6 +521,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [modalItems, setModalItems] = useState<Item[]>([])
   const [itemsModal, setItemsModal] = useState<{ id: string; items: Item[]; instId: string | null } | null>(null)
+  // คำแนะนำในช่องรายการสินค้า = คำที่เคยลงในออเดอร์ที่โหลดอยู่ (ไม่ดึงฐานเพิ่ม)
+  const itemSuggest = useMemo(() => buildItemSuggestions(rows.map(r => r.items)), [rows])
   // รูปหน้างาน (งานติดตั้ง) — คอมโพเนนต์กลางตัวเดียวกับหน้างานติดตั้ง
   const ph = useInstallPhotos()
   const [itemsPasteText, setItemsPasteText] = useState('')
@@ -5043,7 +5046,7 @@ ${body}
               {modalItems.map((item, idx) => {
                 // โชว์เฉพาะช่องที่เกี่ยวกับสินค้าชนิดนี้ + ช่องที่มีข้อมูลอยู่ (กด "ทุกช่อง" ถ้าต้องกรอกช่องอื่น)
                 const shown = shownFields(item)
-                const fields = formShowAll.includes(idx) ? ITEM_FIELDS : ITEM_FIELDS.filter(([, key]) => shown.has(key as string))
+                const fields = (formShowAll.includes(idx) ? ITEM_FIELDS : ITEM_FIELDS.filter(([, key]) => shown.has(key as string))).filter(([, key]) => !railNoField(item, key as string))
                 const hidden = ITEM_FIELDS.length - fields.length
                 return (
                 <div key={idx} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', marginBottom: 8, background: 'var(--bg)' }}>
@@ -5063,20 +5066,17 @@ ${body}
                       <div key={key} style={key === 'type' ? { gridColumn: 'span 2' } : undefined}>
                         <label style={{ fontSize: 11, color: 'var(--ink-4)', display: 'block', marginBottom: 2 }}>{lbl}</label>
                         {ITEM_FIELD_OPTIONS[key] ? (
-                          <select
-                            value={String(item[key] ?? ITEM_FIELD_OPTIONS[key][0])}
-                            onChange={e => setModalItems(prev => prev.map((it, i) => i === idx ? { ...it, [key]: e.target.value } : it))}
-                            style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 7px', fontSize: 12, outline: 'none', boxSizing: 'border-box', background: '#fff', cursor: 'pointer' }}>
-                            {ITEM_FIELD_OPTIONS[key].map(o => <option key={o} value={o}>{o}</option>)}
-                          </select>
+                          <ThemedSelect value={String(item[key] ?? ITEM_FIELD_OPTIONS[key][0])} options={ITEM_FIELD_OPTIONS[key]}
+                            onChange={v => setModalItems(prev => prev.map((it, i) => i === idx ? { ...it, [key]: v } : it))}
+                            style={{ width: '100%' }} />
                         ) : (
-                        <input type={type} step={type === 'number' ? (key === 'floors' ? '1' : '0.01') : undefined}
-                          value={item[key] == null ? '' : String(item[key])}
-                          onChange={e => {
-                            const val = itemInputValue(key, e.target.value)
+                        <SuggestInput type={type} step={type === 'number' ? (key === 'floors' ? '1' : '0.01') : undefined}
+                          value={item[key] == null ? '' : String(item[key])} suggestions={itemSuggest[key as string]}
+                          onChange={v => {
+                            const val = itemInputValue(key, v)
                             setModalItems(prev => prev.map((it, i) => i === idx ? { ...it, [key]: val } : it))
                           }}
-                          style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 5, padding: '5px 8px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+                          style={{ width: '100%' }} />
                         )}
                       </div>
                     ))}
@@ -5325,23 +5325,20 @@ ${body}
                       <td style={{ padding: '6px 10px', color: 'var(--ink-4)', fontWeight: 500, width: 28 }}>{idx + 1}</td>
                       {cols.map(([, key, type, w]) => (
                         <td key={key} style={{ padding: '4px 6px' }}>
-                          {ITEM_FIELD_OPTIONS[key] ? (
-                            <select
-                              value={String(item[key] ?? ITEM_FIELD_OPTIONS[key][0])}
-                              onChange={e => setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: e.target.value } : it) } : null)}
-                              style={{ width: w, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: 12, outline: 'none', boxSizing: 'border-box', background: '#fff', cursor: 'pointer' }}>
-                              {ITEM_FIELD_OPTIONS[key].map(o => <option key={o} value={o}>{o}</option>)}
-                            </select>
+                          {railNoField(item, key) ? <span style={{ display: 'inline-block', width: w, color: 'var(--ink-4)', fontSize: 12, textAlign: 'center' }}>—</span> : ITEM_FIELD_OPTIONS[key] ? (
+                            <ThemedSelect value={String(item[key] ?? ITEM_FIELD_OPTIONS[key][0])} options={ITEM_FIELD_OPTIONS[key]}
+                              onChange={v => setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: v } : it) } : null)}
+                              style={{ width: w, borderRadius: 4, padding: '4px 6px' }} />
                           ) : (
-                          <input
+                          <SuggestInput
                             type={type}
                             step={type === 'number' ? '0.01' : undefined}
-                            value={item[key] == null ? '' : String(item[key])}
-                            onChange={e => {
-                              const val = itemInputValue(key, e.target.value)
+                            value={item[key] == null ? '' : String(item[key])} suggestions={itemSuggest[key as string]}
+                            onChange={v => {
+                              const val = itemInputValue(key, v)
                               setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: val } : it) } : null)
                             }}
-                            style={{ width: w, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }}
+                            style={{ width: w, borderRadius: 4, padding: '4px 6px' }}
                           />
                           )}
                         </td>

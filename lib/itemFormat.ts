@@ -277,8 +277,35 @@ export const shownFields = (it: RawItem): Set<string> => {
     const v = it[key]
     if (v !== '' && v != null && !(key === 'quantity' && v === 0)) s.add(key as string)
   }
+  // รางทุกแบบ: ไม่ขึ้นช่อง "แบบ" (รางพร้อมส่งเสมอ — fillItemDefaults ตั้งให้) และช่อง "สูง" (รางมีแค่ความยาว)
+  if (String(it.type ?? '').startsWith('ราง')) { s.delete('supply'); s.delete('height') }
   return s
 }
+
+// ช่องที่พิมพ์แล้วขึ้นคำที่เคยลงไว้ (ช่องตัวเลข/กระดูม/หมายเหตุ/ราคา ไม่ต้อง — ค่าไม่ซ้ำกัน)
+const SUGGEST_KEYS = ['type', 'eyelet_color', 'rail_head', 'pleat', 'hook_type', 'rail_color', 'opacity', 'model', 'slat_size',
+  'fabric_type', 'color_code', 'color_name', 'color_desc', 'unit', 'orientation', 'fabric_split', 'chemical', 'weight_chain', 'pull_side', 'outsource'] as const
+// คำแนะนำต่อช่อง = คำที่เคยลงในรายการที่โหลดอยู่ในหน้าแล้ว (ไม่ดึงฐานเพิ่ม) เรียงจากใช้บ่อยสุด
+export function buildItemSuggestions(lists: Iterable<unknown>): Record<string, string[]> {
+  const count: Record<string, Map<string, number>> = {}
+  for (const k of SUGGEST_KEYS) count[k] = new Map()
+  for (const list of lists) {
+    if (!Array.isArray(list)) continue
+    for (const it of list as Record<string, unknown>[]) {
+      if (!it || typeof it !== 'object') continue
+      for (const k of SUGGEST_KEYS) {
+        const v = typeof it[k] === 'string' ? (it[k] as string).replace(/\s+/g, ' ').trim() : ''
+        if (v && v.length <= 60) count[k].set(v, (count[k].get(v) ?? 0) + 1)
+      }
+    }
+  }
+  const out: Record<string, string[]> = {}
+  for (const k of SUGGEST_KEYS) out[k] = [...count[k].entries()].sort((a, b) => b[1] - a[1]).slice(0, 200).map(([v]) => v)
+  return out
+}
+
+// รางมีแค่ความยาว + พร้อมส่งเสมอ → ช่อง สูง/แบบ ของรางไม่ต้องมีให้กรอก (ตารางโชว์ช่องว่างแทน)
+export const railNoField = (it: RawItem, key: string) => String(it.type ?? '').startsWith('ราง') && (key === 'height' || key === 'supply')
 
 // คอลัมน์ที่จะโชว์ในตารางแก้รายการ — เรียงตาม ITEM_FIELDS เสมอ (ตำแหน่งเดียวกันทุกหน้า)
 export const visibleItemCols = (items: RawItem[], showAll: boolean) => {
@@ -367,6 +394,8 @@ export function fillItemDefaults(it: RawItem): RawItem {
   const typeName = nameRaw.replace(/\(?\s*(พร้อม\s*ส่?ง|สั่ง\s*ตัด)\s*\)?/g, ' ').replace(/\s+/g, ' ').trim() || nameRaw
   out.type = normalizeItemType(typeName)
   const isRail = String(out.type ?? '').startsWith('ราง')
+  // รางมีแค่ความยาว ไม่มีความสูง · รางพร้อมส่งเสมอ
+  if (isRail) { out.supply = 'พร้อมส่ง'; out.height = 0 }
 
   // ---- ช่องหัวราง: เดิมเก็บปนกันทั้งจำนวนจีบ/ชนิดตะขอ/สีราง/แบ่งผ้า → แยกลงช่องของมัน
   let head = String(out.rail_head ?? '').replace(/\s+/g, ' ').trim()
@@ -577,7 +606,7 @@ export function itemBlockLines(item: RawItem, opts?: { hideNote?: boolean }): { 
   // หมวดพิเศษต่อท้ายบรรทัดขนาด: แบ่งผ้า / เคมี / โซ่ถ่วง / ฝั่งดึง เช่น "(ดึงขวา)" "(แยกกลาง)"
   const pullRaw = (item.pull_side ?? '').trim()
   const extras = [
-    normalizeSupply(item.supply) === 'พร้อมส่ง' ? 'พร้อมส่ง' : '',
+    !isRail && normalizeSupply(item.supply) === 'พร้อมส่ง' ? 'พร้อมส่ง' : '',   // ราง = พร้อมส่งทุกเส้น ไม่ต้องขึ้นป้าย
     (item.fabric_split ?? '').trim(),
     (item.chemical ?? '').trim(),
     (item.weight_chain ?? '').trim(),

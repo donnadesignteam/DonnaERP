@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import AnchoredMenu from '@/components/AnchoredMenu'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -8,7 +8,8 @@ import { useInstallPhotos, photoSaveError, type InstallPhoto } from '@/component
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { HOLIDAYS } from '@/lib/holidays'
-import { formatItemLines, autoTapeHooks, ITEM_FIELDS, ITEM_FIELD_OPTIONS, visibleItemCols, itemInputValue, emptyItem, type RawItem } from '@/lib/itemFormat'
+import { ThemedSelect, SuggestInput } from '@/components/ItemInputs'
+import { formatItemLines, autoTapeHooks, ITEM_FIELDS, ITEM_FIELD_OPTIONS, visibleItemCols, railNoField, itemInputValue, buildItemSuggestions, emptyItem, type RawItem } from '@/lib/itemFormat'
 import { syncOutsourcePO } from '@/lib/outsourceSync'
 import { recordAction } from '@/lib/history'
 import { opUpdate, opInsert, opDelete } from '@/lib/historyOps'
@@ -310,6 +311,8 @@ export default function InstallationsPage() {
   })
   // popup แก้รายการสินค้า (แบบเดียวกับหมวดออเดอร์) — บันทึกกลับไปที่ order_entries ต้นทาง
   const [itemsModal, setItemsModal] = useState<{ orderId: string; items: RawItem[]; instId: string } | null>(null)
+  // คำแนะนำในช่องรายการสินค้า = คำที่เคยลงในออเดอร์ที่โหลดอยู่ (ไม่ดึงฐานเพิ่ม)
+  const itemSuggest = useMemo(() => buildItemSuggestions(Object.values(orderItems)), [orderItems])
   const [itemsPasteText, setItemsPasteText] = useState('')
   const [itemsParsing, setItemsParsing] = useState(false)
   const [itemsError, setItemsError] = useState('')
@@ -1850,22 +1853,20 @@ export default function InstallationsPage() {
                       <td style={{ padding: '6px 10px', color: 'var(--ink-4)', fontWeight: 500, width: 28 }}>{idx + 1}</td>
                       {cols.map(([, key, type, w]) => (
                         <td key={key} style={{ padding: '4px 6px' }}>
-                          {ITEM_FIELD_OPTIONS[key] ? (
-                            <select
-                              value={String(item[key] ?? ITEM_FIELD_OPTIONS[key][0])}
-                              onChange={e => setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: e.target.value } : it) } : null)}
-                              style={{ width: w, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: 12, outline: 'none', boxSizing: 'border-box', background: '#fff', cursor: 'pointer' }}>
-                              {ITEM_FIELD_OPTIONS[key].map(o => <option key={o} value={o}>{o}</option>)}
-                            </select>
+                          {railNoField(item, key) ? <span style={{ display: 'inline-block', width: w, color: 'var(--ink-4)', fontSize: 12, textAlign: 'center' }}>—</span> : ITEM_FIELD_OPTIONS[key] ? (
+                            <ThemedSelect value={String(item[key] ?? ITEM_FIELD_OPTIONS[key][0])} options={ITEM_FIELD_OPTIONS[key]}
+                              onChange={v => setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: v } : it) } : null)}
+                              style={{ width: w, borderRadius: 4, padding: '4px 6px' }} />
                           ) : (
-                          <input
+                          <SuggestInput
                             type={type}
                             step={type === 'number' ? '0.01' : undefined}
                             value={key === 'hooks' && !(item.hooks ?? '').toString().trim()
                               ? autoTapeHooks(item)                                  /* ว่าง → โชว์กระดูมที่คำนวณจากม่านลอนเทป (พิมพ์ทับได้) */
                               : (item[key] == null ? '' : String(item[key]))}
-                            onChange={e => {
-                              const val = itemInputValue(key, e.target.value)
+                            suggestions={itemSuggest[key as string]}
+                            onChange={v => {
+                              const val = itemInputValue(key, v)
                               setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: val } : it) } : null)
                             }}
                             style={{ width: w, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }}
