@@ -277,6 +277,11 @@ export const shownFields = (it: RawItem): Set<string> => {
     const v = it[key]
     if (v !== '' && v != null && !(key === 'quantity' && v === 0)) s.add(key as string)
   }
+  // รางทุกแบบ: ไม่ต้องขึ้นช่อง "แบบ" (ค่าในระบบยังเป็นสั่งตัด ใบปริ้นไม่เปลี่ยน) และช่อง "สูง" (รางไม่มีความสูง)
+  if (String(it.type ?? '').startsWith('ราง')) {
+    if (normalizeSupply(it.supply) !== 'พร้อมส่ง') s.delete('supply')
+    if (!Number(it.height)) s.delete('height')
+  }
   return s
 }
 
