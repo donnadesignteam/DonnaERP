@@ -4,7 +4,8 @@
 import { readStaffSession } from './staffSession'
 
 export const BOARD_CATEGORIES = ['ประกาศ', 'งานทั่วไป', 'งานออเดอร์', 'งานติดตั้ง', 'ปัญหา/แก้ไข', 'ลูกค้า', 'ไอเดีย'] as const
-export type BoardCategory = typeof BOARD_CATEGORIES[number]
+// หมวดพิมพ์เองได้ — BOARD_CATEGORIES เป็นแค่หมวดตั้งต้นที่แนะนำ
+export type BoardCategory = string
 
 // สถานะใช้กับหมวดปัญหา/แก้ไข — จะได้รู้ว่าเรื่องไหนยังค้าง
 export const BOARD_STATUSES = ['รอตอบ', 'กำลังทำ', 'ปิดแล้ว'] as const
@@ -79,7 +80,7 @@ export async function listTopics(): Promise<BoardTopic[]> { return load() }
 export async function createTopic(t: { category: BoardCategory; title: string; body: string; order_number?: string | null; order_id?: string | null; order_label?: string | null }): Promise<BoardTopic> {
   const now = new Date().toISOString()
   const topic: BoardTopic = {
-    id: uid(), category: t.category, title: t.title.trim(), body: t.body.trim(), author: currentAuthor(),
+    id: uid(), category: t.category.trim() || 'งานทั่วไป', title: t.title.trim(), body: t.body.trim(), author: currentAuthor(),
     order_number: t.order_number?.trim() || null, order_id: t.order_id || null, order_label: t.order_label || null, status: t.category === 'ปัญหา/แก้ไข' ? 'รอตอบ' : null,
     pinned: false, created_at: now, last_activity_at: now, comments: [],
   }
