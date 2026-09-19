@@ -537,27 +537,23 @@ export default function DashboardPage() {
   // เนื้อหาที่ปริ้นอยู่ในบล็อก .print-area ท้ายไฟล์ — ซ่อนบนหน้าจอ โผล่เฉพาะตอนสั่งปริ้น
   const printReport = () => window.print()
 
-  // คำทักทายคิดจากนาฬิกาฝั่งไคลเอนต์ (clock ตั้งใน effect) กัน hydration mismatch
-  const hr = clock?.getHours() ?? 9
-  const greet = hr < 12 ? { text: 'สวัสดีตอนเช้า', emoji: '☀️' }
-              : hr < 17 ? { text: 'สวัสดีตอนบ่าย', emoji: '🌤️' }
-              : { text: 'สวัสดีตอนเย็น', emoji: '🌙' }
-
   const statCounts = [todayDue.length, toShip.length, overdue.length]
   const statOrders = [todayDue, toShip, overdue]
 
   return (
     <div ref={pageRef} style={isFs ? { background: 'var(--bg)', height: '100%', overflowY: 'auto', padding: 28 } : undefined}>
 
-      {/* แถวบน: คำทักทายตามช่วงเวลา (ซ้าย) + วัน/เวลา + ปุ่มเต็มจอ (ขวา) */}
+      {/* แถวบน: หัวข้อ "สรุปภาพรวมคำสั่งซื้อ" + จำนวนเดือนนี้ (ซ้าย) + วัน/เวลา + ปุ่มเต็มจอ (ขวา) · เดิมเป็นคำทักทาย (user ขอเปลี่ยน 19ก.ย.69) */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 26, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <span style={{ fontSize: 30, lineHeight: 1 }} aria-hidden>{greet.emoji}</span>
+          <svg width="30" height="30" fill="none" stroke="var(--brand)" strokeWidth="1.5" viewBox="0 0 24 24" aria-hidden style={{ flexShrink: 0 }}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+          </svg>
           <div>
-            <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--brand)', lineHeight: 1.15 }}>{greet.text}</h1>
+            <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--brand)', lineHeight: 1.15 }}>สรุปภาพรวมคำสั่งซื้อ</h1>
             <button onClick={() => setModal({ title: 'ออเดอร์ทั้งหมดของเดือนนี้', orders: [...monthOrders].reverse(), showPrint: true })}
               style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14.5, fontWeight: 600, color: 'var(--ink-3)', lineHeight: 1.3, marginTop: 3 }}>
-              สรุปภาพรวมคำสั่งซื้อ · เดือนนี้{' '}
+              เดือนนี้{' '}
               <span style={{ color: 'var(--brand)', fontWeight: 700, fontSize: 17, fontVariantNumeric: 'tabular-nums' }}>{(loading || !clock) ? '—' : monthOrders.length.toLocaleString()}</span> รายการ
             </button>
           </div>
