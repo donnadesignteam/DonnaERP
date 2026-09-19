@@ -33,7 +33,6 @@ const STATUS_STYLE: Record<BoardStatus, { bg: string; ink: string }> = {
 const SORTS = [
   { value: 'recent', label: 'เรียงตามล่าสุด' },
   { value: 'comments', label: 'ความคิดเห็นมากสุด' },
-  { value: 'open', label: 'เรื่องที่ยังไม่ปิด' },
 ]
 
 // อวาตาร์ = ตัวอักษรแรกของชื่อบนวงกลมสี (สีคงที่ต่อชื่อ) · ข้ามสระหน้า เ แ โ ใ ไ (แอดมิน → อ)
@@ -115,7 +114,6 @@ export default function BoardPage() {
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase()
     let list = topics.filter(t => tab === 'all' || t.category === tab)
-    if (sort === 'open') list = list.filter(t => t.status && t.status !== 'ปิดแล้ว')
     if (q) list = list.filter(t => [t.title, t.body, t.author, t.order_number ?? '', t.order_label ?? '', ...t.comments.map(c => c.body + ' ' + c.author)].join(' ').toLowerCase().includes(q))
     const key = (t: BoardTopic) => sort === 'comments' ? String(t.comments.length).padStart(6, '0') : t.last_activity_at
     return [...list].sort((a, b) => Number(b.pinned) - Number(a.pinned) || key(b).localeCompare(key(a)))
