@@ -8,6 +8,7 @@
 //    จากจุดที่บันทึกผลสแกน แล้วลบปุ่มทดสอบทิ้ง
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { READ_ONLY } from '@/lib/readOnly'
 
 export type ScanEvent = {
   dept: string          // แผนกที่สแกน
@@ -94,7 +95,7 @@ export default function ScanToast({ orders = [] }: { orders?: { order_number?: s
 
   // เปิดหน้าด้วย ?scan=1 แล้วเด้งให้ดูทันที (ยิงรวด 4 ใบ จะได้เห็นว่าเกิน 2 แล้วต่อคิวรอ)
   useEffect(() => {
-    if (!new URLSearchParams(window.location.search).has('scan')) return
+    if (!READ_ONLY || !new URLSearchParams(window.location.search).has('scan')) return
     const t = setTimeout(() => { for (let i = 0; i < 4; i++) fireRandom() }, 700)
     return () => clearTimeout(t)
   }, [fireRandom])
@@ -124,15 +125,17 @@ export default function ScanToast({ orders = [] }: { orders?: { order_number?: s
       </div>
 
       {/* ── แผงทดสอบ (โคลนยังไม่มีช่างสแกนจริง) ลบทิ้งได้เมื่อต่อของจริงแล้ว ── */}
-      <div style={{ position: 'fixed', right: 18, bottom: 18, zIndex: 1900, display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button onClick={fireRandom} className="dn-ctrl" style={{ height: 38, fontSize: 12.5 }}>
-          ทดสอบแจ้งเตือนสแกน
-        </button>
-        <button onClick={() => setAuto(a => !a)} className={`dn-ctrl${auto ? ' is-on' : ''}`}
-          style={{ height: 38, fontSize: 12.5 }} title="เด้งเองทุก 8 วินาที">
-          {auto ? 'หยุดเด้งเอง' : 'เด้งเองอัตโนมัติ'}
-        </button>
-      </div>
+      {READ_ONLY && (
+        <div style={{ position: 'fixed', right: 18, bottom: 18, zIndex: 1900, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button onClick={fireRandom} className="dn-ctrl" style={{ height: 38, fontSize: 12.5 }}>
+            ทดสอบแจ้งเตือนสแกน
+          </button>
+          <button onClick={() => setAuto(a => !a)} className={`dn-ctrl${auto ? ' is-on' : ''}`}
+            style={{ height: 38, fontSize: 12.5 }} title="เด้งเองทุก 8 วินาที">
+            {auto ? 'หยุดเด้งเอง' : 'เด้งเองอัตโนมัติ'}
+          </button>
+        </div>
+        )}
     </>
   )
 }

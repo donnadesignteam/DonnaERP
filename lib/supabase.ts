@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { READ_ONLY } from './readOnly'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -8,8 +9,7 @@ const raw = createClient(supabaseUrl, supabaseAnonKey, { accessToken: async () =
 
 // ‼️ โคลนสำหรับลองดีไซน์เท่านั้น (donnaweb-design) — ต่อฐานข้อมูลจริงแบบ "อ่านได้ เขียนไม่ได้"
 // insert/update/upsert/delete และการอัป/ลบไฟล์ จะไม่ถูกส่งออกไป คืน error ให้หน้าจอแสดงตามปกติ
-// ‼️ ห้ามก๊อปไฟล์นี้กลับไปที่ C:\Users\Com\donnaweb เด็ดขาด (ของจริงต้องเขียนได้)
-const READ_ONLY = true
+// เปิดด้วย NEXT_PUBLIC_READ_ONLY=1 เท่านั้น (lib/readOnly.ts) — เว็บจริงไม่มีค่านี้ = เขียนได้ปกติ
 const DENIED = 'โหมดลองดีไซน์: บันทึกข้อมูลถูกปิดไว้ (โคลน donnaweb-design ต่อฐานจริงแบบอ่านอย่างเดียว)'
 
 // ตัวปลอมของ query builder — ต่อ .eq().select() ฯลฯ ได้เรื่อยๆ แล้วจบด้วย { data: null, error }

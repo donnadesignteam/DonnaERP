@@ -44,6 +44,7 @@ import { PlatformIcon, CourierIcon, INSTALL_ICON_PATH } from '@/components/Brand
 import CreamSelect from '@/components/CreamSelect'
 import CreamDate from '@/components/CreamDate'
 import { pillBg, pillInk } from '@/components/OrderDetailModal'
+import { READ_ONLY } from '@/lib/readOnly'
 
 type Item = {
   type: string
@@ -398,7 +399,7 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
 // คอลัมน์รายการโชว์ได้ไม่เกินกี่บรรทัด (เกินนี้ขึ้น "+ อีก N รายการ" แทน แถวจะได้ไม่ยืด)
 // ‼️ แถวทุกแท็บสูงเท่ากัน = 2 บรรทัด 56px (.ow-card tbody tr ใน globals.css) — ช่องไหนซ้อน 2 บรรทัด แถวจะสูงกว่าแถวอื่นทันที
 const PAGE_SIZE = 50
-const DEMO_LOCAL_TICKS = true   // เฉพาะโคลน donnaweb-design — ดู demoTicks
+const DEMO_LOCAL_TICKS = READ_ONLY   // โหมดอ่านอย่างเดียว (โคลน) ติ๊กบนจอได้แต่ไม่บันทึก · เว็บจริง = false
 
 const isClaimRow = (platform: string | null | undefined) => (platform ?? '').startsWith('เคลม:')
 
