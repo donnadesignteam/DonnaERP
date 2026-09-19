@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { fabricTypeFromCode } from '@/lib/fabrics'
+import { applyFabricCatalog } from '@/lib/fabrics'
 import { askClaude } from '@/lib/askClaude'
 
 // เผื่อเวลาให้สะพาน Claude ที่เครื่องร้าน (ช้ากว่ายิง API ตรง)
@@ -81,8 +81,7 @@ ${text}`
     if (Array.isArray(claim?.items)) {
       claim.items = claim.items.map((it: { type?: string; color_code?: string; fabric_type?: string }) => {
         if (typeof it?.type === 'string' && it.type.startsWith('ราง')) return it
-        const ft = fabricTypeFromCode(it?.color_code)
-        return ft ? { ...it, fabric_type: ft } : it
+        return applyFabricCatalog(it)
       })
     }
     return NextResponse.json({ claim })

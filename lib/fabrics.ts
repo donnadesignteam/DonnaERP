@@ -10,17 +10,16 @@ export type FabricMeta = {
 }
 
 export const FABRIC_LOOKUP: Record<string, FabricMeta> = {
+  // ── ตามชีทสต็อก (แท็บ "ชีต21" · 19 ก.ย. 69) — รหัสที่มี 2 ร้าน ใช้ร้านแรก ──
   'S010': { color_name: 'ครีมขาว', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'DK85/01', shop_name: 'Darika (DK)' },
-  'D00': { color_name: 'ขาวครีม', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'St160-13', shop_name: 'รุ่งโรจน์' },
   'D038': { color_name: 'ขาวครีม', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'AU004-26', shop_name: 'ออร่า Aura Art' },
-  'W17': { color_name: 'เบจน้ำตาล', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'MU101/17', shop_name: 'M&X' },
-  'S22': { color_name: 'เบจน้ำตาล', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'รอหาตัวใหม่', shop_name: 'M&X' },
-  'S700': { color_name: 'ครีมลาเต้', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'DK85/06', shop_name: 'Darika (DK)' },
-  'S05': { color_name: 'เทาเบจ', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'MU101/5', shop_name: 'M&X' },
-  'S18': { color_name: 'เทาเมฆ', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'MU101/18', shop_name: 'M&X' },
+  'W17': { color_name: 'ขาวควัน', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'MU101-17', shop_name: 'M&X' },
+  'S700': { color_name: 'ครีมลาเต้', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'dk107/2', shop_name: 'Darika (DK)' },
+  'S05': { color_name: 'เทาเบจ', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'MU101-5', shop_name: 'M&X' },
+  'S18': { color_name: 'เทาเมฆ', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'MU101-18', shop_name: 'M&X' },
   'M80': { color_name: 'เทาเข้ม', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'BSW-3', shop_name: 'CT store' },
   'S61': { color_name: 'เทาเบจ', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'BSW-1', shop_name: 'CT store' },
-  'S10': { color_name: 'สีดำ', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'COS 18-13', shop_name: 'Cosi' },
+  'S10': { color_name: 'Jet Black', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'COS 18-13', shop_name: 'Cosi' },
   'DS01': { color_name: 'โปร่งลายฝนขาวสว่าง สูงปกติ', fabric_width: 2.80, fabric_type: 'SHEER ผ้าโปร่ง', shop_code: '1S-101', shop_name: 'CT store' },
   'DS02': { color_name: 'โปร่งลายฝนขาวนวล สูงปกติ', fabric_width: 2.80, fabric_type: 'SHEER ผ้าโปร่ง', shop_code: '1S-102', shop_name: 'CT store' },
   'DS03': { color_name: 'โปร่งเรียบขาวสว่าง สูงปกติ', fabric_width: 2.80, fabric_type: 'SHEER ผ้าโปร่ง', shop_code: '1S-104', shop_name: 'CT store' },
@@ -28,15 +27,18 @@ export const FABRIC_LOOKUP: Record<string, FabricMeta> = {
   'DS05': { color_name: 'Mist Gray โปร่งเทา', fabric_width: 2.80, fabric_type: 'SHEER ผ้าโปร่ง', shop_code: '1S-130', shop_name: 'CT store' },
   'DS06': { color_name: 'โปร่งลายฝนขาวสว่าง สูงพิเศษ', fabric_width: 3.20, fabric_type: 'SHEER ผ้าโปร่ง', shop_code: 'OK301-21A', shop_name: 'Sue M' },
   'DS07': { color_name: 'โปร่งลายฝนขาวนวล สูงพิเศษ', fabric_width: 3.20, fabric_type: 'SHEER ผ้าโปร่ง', shop_code: 'OK301-21B', shop_name: 'Sue M' },
-  'DS08': { color_name: 'โปร่งเรียบหนา Mid-modern', fabric_width: 2.80, fabric_type: 'SHEER ผ้าโปร่ง', shop_code: 'AB21', shop_name: 'จิงจิง' },
-  'DS09': { color_name: 'โปร่งเรียบหนาพิเศษ Richy', fabric_width: 3.20, fabric_type: 'SHEER ผ้าโปร่ง', shop_code: 'AB22', shop_name: 'จิงจิง' },
-  'DS10': { color_name: 'โปร่งลาย Linen', fabric_width: 3.20, fabric_type: 'SHEER ผ้าโปร่ง', shop_code: 'AB58', shop_name: 'จิงจิง' },
-  'DS11': { color_name: 'โปร่งหนา Butter Cup linen Pie', fabric_width: 3.20, fabric_type: 'SHEER ผ้าโปร่ง', shop_code: 'AB41', shop_name: 'จิงจิง' },
+  'DS08': { color_name: 'Clear Off White', fabric_width: 3.00, fabric_type: 'SHEER ผ้าโปร่ง', shop_code: '', shop_name: 'CT store' },
+  'DS09': { color_name: 'raindrop off white', fabric_width: 3.20, fabric_type: 'SHEER ผ้าโปร่ง', shop_code: '', shop_name: 'CT store' },
+  'DS091': { color_name: 'raindrop off white', fabric_width: 2.80, fabric_type: 'SHEER ผ้าโปร่ง', shop_code: '', shop_name: 'CT store' },
+  'AB21': { color_name: 'โปร่งเรียบหนา Mid-modern', fabric_width: 2.80, fabric_type: 'SHEER ผ้าโปร่ง', shop_code: 'AB21', shop_name: 'จิงจิง' },
+  'AB22': { color_name: 'โปร่งเรียบหนาพิเศษ Richy', fabric_width: 3.20, fabric_type: 'SHEER ผ้าโปร่ง', shop_code: 'AB22', shop_name: 'จิงจิง' },
+  'AB58': { color_name: 'โปร่งลาย Linen', fabric_width: 3.20, fabric_type: 'SHEER ผ้าโปร่ง', shop_code: 'AB58', shop_name: 'จิงจิง' },
+  'AB41': { color_name: 'โปร่งหนา Butter Cup linen Pie', fabric_width: 3.20, fabric_type: 'SHEER ผ้าโปร่ง', shop_code: 'AB41', shop_name: 'จิงจิง' },
   'H01': { color_name: 'ครีม', fabric_width: 3.20, fabric_type: 'DIMOUT สูงพิเศษ', shop_code: 'G471', shop_name: 'เดอะแกรน The Grand' },
   'HJJ-6': { color_name: 'ครีมอ่อน', fabric_width: 3.20, fabric_type: 'DIMOUT สูงพิเศษ', shop_code: '820-1', shop_name: 'จิงจิง' },
   'HJJ-7': { color_name: 'ครีมน้ำตาล', fabric_width: 3.20, fabric_type: 'DIMOUT สูงพิเศษ', shop_code: '1018-6', shop_name: 'จิงจิง' },
-  'HJJ-8': { color_name: 'เทาเข้ม', fabric_width: 3.20, fabric_type: 'DIMOUT สูงพิเศษ', shop_code: '1018-7', shop_name: 'จิงจิง' },
-  'H222': { color_name: 'เเบจน้ำตาล', fabric_width: 3.20, fabric_type: 'DIMOUT สูงพิเศษ', shop_code: '1018-5', shop_name: 'จิงจิง' },
+  'HJJ-5': { color_name: 'เทาเข้ม', fabric_width: 3.20, fabric_type: 'DIMOUT สูงพิเศษ', shop_code: '1018-7', shop_name: 'จิงจิง' },
+  'H222': { color_name: 'เบจน้ำตาล', fabric_width: 3.20, fabric_type: 'DIMOUT สูงพิเศษ', shop_code: '1018-5', shop_name: 'จิงจิง' },
   'H99': { color_name: 'เทาเบจ', fabric_width: 3.20, fabric_type: 'DIMOUT สูงพิเศษ', shop_code: '820-3', shop_name: 'โกลเฮ้าส์ Gold house' },
   'M11': { color_name: 'แมคคาเดเมียแกมเขียว', fabric_width: 3.20, fabric_type: 'DIMOUT สูงพิเศษ', shop_code: 'ha189', shop_name: 'โกลเฮ้าส์ Gold house' },
   'A11': { color_name: 'แมคคาเดเมียแกมครีมขาว', fabric_width: 3.20, fabric_type: 'DIMOUT สูงพิเศษ', shop_code: 'ha188', shop_name: 'โกลเฮ้าส์ Gold house' },
@@ -52,6 +54,10 @@ export const FABRIC_LOOKUP: Record<string, FabricMeta> = {
   'HB85': { color_name: 'เทาเข้ม', fabric_width: 3.20, fabric_type: 'BLACKOUT สูงพิเศษ หน้าหลังเหมือนกัน', shop_code: '8186-4', shop_name: 'จิงจิง' },
   'HB88': { color_name: 'ขาวครีม', fabric_width: 3.20, fabric_type: 'BLACKOUT สูงพิเศษ หน้าหลังเหมือนกัน', shop_code: 'KK1', shop_name: 'จิงจิง' },
   'HB87': { color_name: 'ลินินหม่นขาว', fabric_width: 3.20, fabric_type: 'BLACKOUT สูงพิเศษ หน้าหลังเหมือนกัน', shop_code: 'AF23-22', shop_name: 'Asia fabric' },
+  'HB93': { color_name: 'Mocha Grey', fabric_width: 0, fabric_type: 'BLACKOUT สูงพิเศษ หน้าหลังเหมือนกัน', shop_code: '777-3', shop_name: '' },
+  'HB94': { color_name: 'Cloud Grey', fabric_width: 0, fabric_type: 'BLACKOUT สูงพิเศษ หน้าหลังเหมือนกัน', shop_code: '777-4', shop_name: '' },
+  'HB95': { color_name: 'Soft grey', fabric_width: 0, fabric_type: 'BLACKOUT สูงพิเศษ หน้าหลังเหมือนกัน', shop_code: '777-5', shop_name: '' },
+  'HB96': { color_name: 'Charcoal Grey', fabric_width: 0, fabric_type: 'BLACKOUT สูงพิเศษ หน้าหลังเหมือนกัน', shop_code: '777-6', shop_name: '' },
   'SHB91': { color_name: 'Cotton คอตต้อน', fabric_width: 3.40, fabric_type: 'SUPER HIGH BLACKOUT สูงพิเศษ หน้าหลังเหมือนกัน', shop_code: 'AZ3401', shop_name: 'Amazing อเมซิ่ง' },
   'SHB92': { color_name: 'Cloud Whisper เทาเมฆ', fabric_width: 3.40, fabric_type: 'SUPER HIGH BLACKOUT สูงพิเศษ หน้าหลังเหมือนกัน', shop_code: 'AZ3406', shop_name: 'Amazing อเมซิ่ง' },
   'SHB93': { color_name: 'Stone Echo เทาเข้ม', fabric_width: 3.40, fabric_type: 'SUPER HIGH BLACKOUT สูงพิเศษ หน้าหลังเหมือนกัน', shop_code: 'AZ3407', shop_name: 'Amazing อเมซิ่ง' },
@@ -63,7 +69,7 @@ export const FABRIC_LOOKUP: Record<string, FabricMeta> = {
   'HB-R2': { color_name: 'น้ำตาลนู๊ด', fabric_width: 3.20, fabric_type: 'BLACKOUT สูงพิเศษ เรียบ', shop_code: '8188-7', shop_name: 'จิงจิง' },
   'HB-R3': { color_name: 'เทาเมฆ', fabric_width: 3.20, fabric_type: 'BLACKOUT สูงพิเศษ เรียบ', shop_code: '8188-2', shop_name: 'จิงจิง' },
   'HB-R4': { color_name: 'เทาเข้ม', fabric_width: 3.20, fabric_type: 'BLACKOUT สูงพิเศษ เรียบ', shop_code: '8188-5', shop_name: 'จิงจิง' },
-  'KB-1': { color_name: 'น้ำตาลเทา', fabric_width: 2.80, fabric_type: 'BLACKOUT กาดล้านเมือง หน้าหลังเหมือนกัน', shop_code: 'ASW-1/521-2', shop_name: 'CT store' },
+  'KB-1': { color_name: 'น้ำตาลเทา', fabric_width: 2.80, fabric_type: 'BLACKOUT กาดล้านเมือง หน้าหลังเหมือนกัน', shop_code: 'ASW-1', shop_name: 'CT store' },
   'KB-2': { color_name: 'ขาว', fabric_width: 2.80, fabric_type: 'BLACKOUT กาดล้านเมือง หน้าหลังเหมือนกัน', shop_code: 'ASW-2', shop_name: 'CT store' },
   'KB-3': { color_name: 'ขาวครีม', fabric_width: 2.80, fabric_type: 'BLACKOUT กาดล้านเมือง หน้าหลังเหมือนกัน', shop_code: 'ASW-3', shop_name: 'CT store' },
   'KB-4': { color_name: 'เทาขาว', fabric_width: 2.80, fabric_type: 'BLACKOUT กาดล้านเมือง หน้าหลังเหมือนกัน', shop_code: 'ASW-4', shop_name: 'CT store' },
@@ -75,7 +81,6 @@ export const FABRIC_LOOKUP: Record<string, FabricMeta> = {
   'KB-10': { color_name: 'เทาเข้มกลาง', fabric_width: 2.80, fabric_type: 'BLACKOUT กาดล้านเมือง หน้าหลังเหมือนกัน', shop_code: 'ASW-10', shop_name: 'CT store' },
   'A1': { color_name: 'ครีมเบจ', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'DK85/05', shop_name: 'Darika (DK)' },
   'M21': { color_name: 'เบจอ่อน', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'AU004-27', shop_name: 'ออร่า Aura Art' },
-  'J-DD13': { color_name: 'เทาเมฆ', fabric_width: 3.20, fabric_type: 'BLACKOUT สูงพิเศษ หน้าหลังไม่เหมือนกัน', shop_code: '1021-3', shop_name: 'จิงจิง' },
   'MS01': { color_name: '-', fabric_width: 3.20, fabric_type: 'BLACKOUT สูงพิเศษ เรียบ', shop_code: '8188-1', shop_name: 'จิงจิง' },
   'B82': { color_name: 'เทาเมฆ', fabric_width: 2.80, fabric_type: 'BLACKOUT สูงปกติ หน้าหลังไม่เหมือนกัน', shop_code: '520-10', shop_name: 'จิงจิง' },
   'B16': { color_name: 'ขาวครีม', fabric_width: 2.80, fabric_type: 'BLACKOUT สูงปกติ หน้าหลังไม่เหมือนกัน', shop_code: '520-16', shop_name: 'จิงจิง' },
@@ -86,9 +91,17 @@ export const FABRIC_LOOKUP: Record<string, FabricMeta> = {
   'HB24': { color_name: 'ขาวครีม', fabric_width: 3.20, fabric_type: 'BLACKOUT สูงพิเศษ หน้าหลังเหมือนกัน', shop_code: 'AF23-24', shop_name: 'Asia fabric' },
   'HB25': { color_name: 'อัลมอนด์', fabric_width: 3.20, fabric_type: 'BLACKOUT สูงพิเศษ หน้าหลังเหมือนกัน', shop_code: 'AF23-25', shop_name: 'Asia fabric' },
   'HB26': { color_name: 'ซินนาม่อน', fabric_width: 3.20, fabric_type: 'BLACKOUT สูงพิเศษ หน้าหลังเหมือนกัน', shop_code: 'AF23-26', shop_name: 'Asia fabric' },
-  'HUNTER GREEN': { color_name: 'สีเขียว', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'DK85/16', shop_name: 'Darika (DK)' },
+  'D516': { color_name: 'Hunter green / Forest green', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'DK85-16', shop_name: 'Darika (DK)' },
   'S40': { color_name: 'butter ครีมเนย', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'ART06-40', shop_name: 'ออร่า Aura Art' },
   'S42': { color_name: 'Navy gray เทากรม', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'ART06-42', shop_name: 'ออร่า Aura Art' },
+  // ── รหัสเก่าที่ไม่อยู่ในชีทแล้ว — เก็บไว้ให้ออเดอร์เก่าที่ลงรหัสนี้ยังรู้ชนิดผ้า ──
+  'D00': { color_name: 'ขาวครีม', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'St160-13', shop_name: 'รุ่งโรจน์' },
+  'S22': { color_name: 'เบจน้ำตาล', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'รอหาตัวใหม่', shop_name: 'M&X' },
+  'DS10': { color_name: 'โปร่งลาย Linen', fabric_width: 3.20, fabric_type: 'SHEER ผ้าโปร่ง', shop_code: 'AB58', shop_name: 'จิงจิง' },
+  'DS11': { color_name: 'โปร่งหนา Butter Cup linen Pie', fabric_width: 3.20, fabric_type: 'SHEER ผ้าโปร่ง', shop_code: 'AB41', shop_name: 'จิงจิง' },
+  'HJJ-8': { color_name: 'เทาเข้ม', fabric_width: 3.20, fabric_type: 'DIMOUT สูงพิเศษ', shop_code: '1018-7', shop_name: 'จิงจิง' },
+  'J-DD13': { color_name: 'เทาเมฆ', fabric_width: 3.20, fabric_type: 'BLACKOUT สูงพิเศษ หน้าหลังไม่เหมือนกัน', shop_code: '1021-3', shop_name: 'จิงจิง' },
+  'HUNTER GREEN': { color_name: 'สีเขียว', fabric_width: 2.80, fabric_type: 'DIMOUT สูงปกติ', shop_code: 'DK85/16', shop_name: 'Darika (DK)' },
 }
 
 // แปลงข้อความ fabric_type เต็มของคลัง → ชนิดผ้าแบบสั้นสำหรับใบออเดอร์
@@ -101,9 +114,27 @@ export function shortFabricType(fullType: string | undefined | null): string {
   return ''
 }
 
+// ข้อมูลผ้าจากรหัสสี (ไม่สนตัวพิมพ์เล็กใหญ่/ช่องว่างหัวท้าย) — ไม่รู้จักรหัสคืน null
+export function fabricMeta(code: string | undefined | null): FabricMeta | null {
+  const c = (code ?? '').trim()
+  if (!c) return null
+  const up = c.toUpperCase()
+  return FABRIC_LOOKUP[up] ?? FABRIC_LOOKUP[c] ?? Object.entries(FABRIC_LOOKUP).find(([k]) => k.toUpperCase() === up)?.[1] ?? null
+}
+
+// ตอนแปลงรายการ: รายการผ้าที่มีรหัสสีในแคตตาล็อก → แก้ fabric_type ให้ถูก + ชื่อสีว่างอยู่ เติมชื่อสีจากสต็อก
+// (แอดมินลงแค่ "AB21" → color_name = "โปร่งเรียบหนา Mid-modern") · ถ้าแอดมินเขียนชื่อสีมาเอง ใช้ของแอดมิน
+export function applyFabricCatalog<T extends { color_code?: unknown; color_name?: unknown; fabric_type?: unknown }>(it: T): T {
+  const meta = fabricMeta(typeof it.color_code === 'string' ? it.color_code : null)
+  if (!meta) return it
+  const ft = shortFabricType(meta.fabric_type)
+  const hasName = typeof it.color_name === 'string' && it.color_name.trim() !== ''
+  const name = meta.color_name && meta.color_name !== '-' ? meta.color_name : ''
+  return { ...it, ...(ft ? { fabric_type: ft } : {}), ...(!hasName && name ? { color_name: name } : {}) }
+}
+
 // หาชนิดผ้าแบบสั้นจากรหัสสี (เช่น 'D038' → 'ผ้า Dimout'); คืน '' ถ้าไม่รู้จักรหัส
 export function fabricTypeFromCode(code: string | undefined | null): string {
-  if (!code) return ''
-  const meta = FABRIC_LOOKUP[code.trim().toUpperCase()] ?? FABRIC_LOOKUP[code.trim()]
+  const meta = fabricMeta(code)
   return meta ? shortFabricType(meta.fabric_type) : ''
 }
