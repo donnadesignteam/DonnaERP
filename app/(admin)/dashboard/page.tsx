@@ -559,8 +559,8 @@ export default function DashboardPage() {
             <button onClick={() => setModal({ title: 'ออเดอร์ทั้งหมดของเดือนนี้', orders: [...monthOrders].reverse(), showPrint: true })}
               style={{ display: 'block', background: 'none', border: 'none', padding: 0, marginTop: 1, cursor: 'pointer', fontSize: 13.5, lineHeight: 1.2, color: 'var(--ink-3)', fontFamily: 'inherit' }}>
               สรุปภาพรวมคำสั่งซื้อ ·{' '}
-              <span style={{ fontSize: 15.5, fontWeight: 600, color: 'var(--ink-2)' }}>
-                เดือนนี้ <span style={{ color: 'var(--brand)', fontWeight: 700, fontSize: 18, fontVariantNumeric: 'tabular-nums' }}>{(loading || !clock) ? '—' : monthOrders.length.toLocaleString()}</span> รายการ
+              <span style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--ink-3)' }}>
+                เดือนนี้ <span style={{ color: 'var(--brand)', fontWeight: 700, fontSize: 16.5, fontVariantNumeric: 'tabular-nums' }}>{(loading || !clock) ? '—' : monthOrders.length.toLocaleString()}</span> รายการ
               </span>
             </button>
           </div>
