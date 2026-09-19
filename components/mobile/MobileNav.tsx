@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import StaffNameSync from '@/components/StaffNameSync'
 
 // แถบเมนูล่างของหน้ามือถือ — มีแค่ 4 หมวดที่ผู้ใช้สั่งให้เห็น (ดูอย่างเดียว)
 // หมวดอื่นของ ERP (สต็อก/สั่งซื้อ/วิเคราะห์/พนักงาน/ตั้งค่า) ไม่มีหน้ามือถือ ตั้งใจไม่ใส่
@@ -41,6 +42,7 @@ export default function MobileNav() {
       display: 'flex', background: 'var(--surface)', borderTop: '1px solid var(--border)',
       paddingBottom: 'env(safe-area-inset-bottom)', boxShadow: '0 -1px 8px rgba(0,0,0,0.04)',
     }}>
+      <StaffNameSync />
       {NAV.map(item => {
         // /hub?pick=1 ไม่มีทางเป็นหน้าปัจจุบัน (อยู่คนละ layout) → ไม่ต้องไฮไลต์
         const active = item.href.startsWith('/m/')
