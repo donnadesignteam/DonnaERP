@@ -52,6 +52,9 @@ type ClaimRow = {
 type Kind = 'leave' | 'appeal' | 'board'
 type Item = { key: string; href: string; who: string; what: string; when: string; kind: Kind; ts?: string }
 
+// ของค้างอนุมัติ (ใบลา/อุทธรณ์เคลม) — ปิดไว้ก่อน user สั่ง 19ก.ย.69 "แจ้งแค่เรื่องมีคนโพสตามงานก่อน" · เปิดคืน = true
+const SHOW_APPROVALS = false
+
 const SEEN_KEY = 'dn-board-seen'   // เวลาที่เปิดกระดิ่งดูล่าสุด (ต่อเครื่อง) — ใหม่กว่านี้ = ยังไม่ได้อ่าน
 const readSeen = () => { try { return localStorage.getItem(SEEN_KEY) ?? '' } catch { return '' } }
 const writeSeen = (v: string) => { try { localStorage.setItem(SEEN_KEY, v) } catch { /* ปิดที่เก็บข้อมูล = ไม่จำ */ } }
@@ -75,6 +78,7 @@ export function NotifyProvider({ children }: { children: React.ReactNode }) {
 
   // ── ของค้างอนุมัติ ──
   const loadApprovals = useCallback(async () => {
+    if (!SHOW_APPROVALS) return   // ไม่ดึงเลย = ไม่กิน egress
     const out: Item[] = []
     // ใบลา: ย้อนหลัง 120 วัน + ล่วงหน้า (ใบเก่ากว่านี้ที่ค้างไม่มีใครอนุมัติแล้ว ไม่ต้องดึงมาทุกรอบ)
     const since = new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10)
@@ -231,7 +235,7 @@ export default function NotifyBell() {
           <div style={{ padding: '14px 18px 10px', borderBottom: '1px solid var(--border)' }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>การแจ้งเตือน</div>
             <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>
-              {!ready ? 'กำลังโหลด…' : `ค้างอนุมัติ ${approvals.length} (ใบลา ${leaveCount} · อุทธรณ์ ${appealCount}) · ตามงาน 7 วัน ${board.length}`}
+              {!ready ? 'กำลังโหลด…' : SHOW_APPROVALS ? `ค้างอนุมัติ ${approvals.length} (ใบลา ${leaveCount} · อุทธรณ์ ${appealCount}) · ตามงาน 7 วัน ${board.length}` : `ความเคลื่อนไหวในตามงาน 7 วันล่าสุด · ${board.length} รายการ`}
             </div>
           </div>
 
