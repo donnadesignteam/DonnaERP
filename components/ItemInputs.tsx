@@ -78,7 +78,7 @@ export function ThemedSelect({ value, options, onChange, style }: {
   const { active, setActive, onKeyDown } = useKeys(options.length, open, setOpen, pick, Math.max(0, options.indexOf(value)))
   return (
     <>
-      <button type="button" ref={setAnchor} onClick={() => setOpen(o => !o)} onBlur={() => setOpen(false)} onKeyDown={onKeyDown}
+      <button type="button" data-themed-select="" ref={setAnchor} onClick={() => setOpen(o => !o)} onBlur={() => setOpen(false)} onKeyDown={onKeyDown}
         style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, textAlign: 'left', cursor: 'pointer',
           border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, boxSizing: 'border-box', outline: 'none',
           background: 'var(--surface)', color: 'var(--ink)', fontFamily: 'inherit', ...style }}>

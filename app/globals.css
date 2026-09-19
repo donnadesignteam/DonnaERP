@@ -433,6 +433,8 @@ html.dark .sc-leave { background: #2F2319; } html.dark .sc-closed { background: 
   background: var(--cream-2) !important; border: 1px solid var(--border-2) !important; border-radius: 12px !important; padding: 9px 12px !important; color: var(--ink); font-family: inherit; }
 .sc-modal input:focus, .sc-modal select:focus, .sc-modal textarea:focus,
 .sc-fields input:focus, .sc-fields select:focus, .sc-fields textarea:focus { border-color: var(--brand) !important; box-shadow: 0 0 0 3px rgba(158,106,73,0.12); }
+/* ดรอปดาวน์ธีม (ThemedSelect ในช่องรายการสินค้า) เป็นปุ่ม ไม่ใช่ <select> → ให้หน้าตาเท่าช่องกรอกอื่นในกล่องเดียวกัน */
+.sc-fields button[data-themed-select], .sc-modal button[data-themed-select] { background: var(--cream-2) !important; border: 1px solid var(--border-2) !important; border-radius: 12px !important; padding: 9px 12px !important; color: var(--ink) !important; }
 /* label ที่ทำหน้าที่เป็นปุ่ม (เช่น ปุ่มเลือกไฟล์ในกล่อง Drop ไฟล์) ต้องไม่โดนสีตัวอักษรของ label ทับ */
 .sc-modal label:not([data-btn]), .sc-fields label:not([data-btn]) { color: var(--ink-3) !important; }
 .sc-mcancel { border-radius: 999px !important; background: var(--cream-2) !important; border: 1px solid var(--border-2) !important; color: var(--ink-2) !important; padding: 12px !important; font-family: inherit; }
