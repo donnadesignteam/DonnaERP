@@ -321,7 +321,11 @@ h1, h2, h3 { font-weight: 700; }
 
 /* ช่องแอดมิน/ช่างเย็บที่ยังไม่เลือกชื่อ — ป้ายพีชครีมมุมมนรอบช่องเลือก (เดิมระบายเหลืองเต็มช่องตาราง)
    ‼️ ใช้ background-color ไม่ใช่ background — ไม่งั้นลบลูกศรของช่องเลือกทิ้ง (ดูบล็อกถัดไป) */
-.ow-card td.ow-empty > select, .dn-list td.ow-empty select { background-color: #F6DFC6 !important; border-radius: 999px; padding: 5px 24px 5px 12px !important; min-width: 64px; color: #8A6142 !important; font-weight: 600; }
+.ow-card td.ow-empty > select, .dn-list td.ow-empty select { background-color: #FBE3A6 !important; border-radius: 999px; padding: 5px 24px 5px 12px !important; min-width: 64px; color: #8A5A12 !important; font-weight: 600; }
+/* ‼️ ช่องเลือกในแถวเปลี่ยนเป็น CreamSelect (ปุ่ม .cs-inline ไม่ใช่ <select>) → กฎบรรทัดบนไม่ติด ไฮไลต์เลยหายไป
+   ช่องแอดมิน/ช่างที่ยังไม่ได้เลือก = ป้ายเหลืองมน ให้เห็นว่าตกหล่น (user ขอคืน 19ก.ย.69) */
+.ow-card td.ow-empty .cs-inline, .dn-list td.ow-empty .cs-inline { background-color: #FBE3A6 !important; border-radius: 999px; padding: 5px 12px !important; min-width: 64px; color: #8A5A12 !important; font-weight: 600 !important; box-shadow: none; }
+.ow-card td.ow-empty .cs-inline:hover, .dn-list td.ow-empty .cs-inline:hover, .ow-card td.ow-empty .cs-inline[data-open], .dn-list td.ow-empty .cs-inline[data-open] { background-color: #F7D384 !important; box-shadow: none; }
 
 /* ════ ช่องเลือก <select> ในตารางทุกหน้า — ให้หน้าตาเดียวกับ CreamSelect ════
    เมนูของ <select> เป็นของระบบปฏิบัติการ ใส่อนิเมชั่นไม่ได้ (ถ้าต้องการเมนูคลี่ลงต้องใช้ CreamSelect)
