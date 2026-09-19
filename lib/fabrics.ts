@@ -145,8 +145,17 @@ export function sheerCodeFromName(it: Record<string, unknown>): string | null {
   // เลือกตามความสูง — ถ้าไม่มีตัวที่ตรงความสูงเลย (เช่น Richy มีแต่สูงพิเศษ) ใช้ที่เจอทั้งหมด
   const byHeight = found.filter(([, m]) => isSpecialHeight(m) === wantSpecial)
   const pool = byHeight.length ? byHeight : found
-  // เหลือหลายตัวแต่ชื่อเดียวกัน (เช่น DS03 กับ DS14) → เอาตัวแรกตามลำดับชีท · ชื่อต่างกัน → ไม่เดา
-  return new Set(pool.map(([, m]) => sheerNorm(m.color_name))).size === 1 ? pool[0][0] : null
+  // เหลือหลายตัวแต่ชื่อต่างกัน → ไม่เดา
+  if (new Set(pool.map(([, m]) => sheerNorm(m.color_name))).size !== 1) return null
+  // ชื่อเดียวกันหลายหน้าผ้า (โปร่งเรียบขาวสว่าง = DS03 2.80 / DS14 3.00 · ขาวนวล = DS04 / DS13)
+  // ม่านสูงเกิน 2.63 (ม่านลอนเทปเกิน 2.70) แต่ไม่ได้เขียนสูงพิเศษ → ใช้ตัวหน้าผ้ากว้างกว่า · นอกนั้นตัวแรกตามลำดับชีท
+  const h = Number(it.height) || 0
+  const tall = h > (String(it.type ?? '').includes('ลอนเทป') ? 2.70 : 2.63)
+  if (tall && !wantSpecial) {
+    const wider = [...pool].sort((a, b) => b[1].fabric_width - a[1].fabric_width)[0]
+    if (wider[1].fabric_width > pool[0][1].fabric_width) return wider[0]
+  }
+  return pool[0][0]
 }
 
 // ตอนแปลงรายการ: รายการผ้าที่มีรหัสสีในแคตตาล็อก → แก้ fabric_type ให้ถูก + ชื่อสีว่างอยู่ เติมชื่อสีจากสต็อก
