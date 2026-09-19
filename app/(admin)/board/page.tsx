@@ -1,8 +1,8 @@
 'use client'
 
-// หมวด "กระดานสนทนา" — คุยกันเป็นหัวข้อตามงาน (แทนแชต: เรื่องไม่จมหาย, ผูกกับออเดอร์ได้, ไม่ต้องเปิด realtime ค้าง)
+// หมวด "ตามงาน" (เดิมชื่อกระดานสนทนา) — คุยกันเป็นหัวข้อตามงาน (แทนแชต: เรื่องไม่จมหาย, ผูกกับออเดอร์ได้, ไม่ต้องเปิด realtime ค้าง)
 // ซ้าย = รายการหัวข้อ (ปักหมุดอยู่บนสุด แล้วเรียงตามความเคลื่อนไหวล่าสุด) · ขวา = หัวข้อที่เลือก + ความคิดเห็น
-// ‼️ ข้อมูลตอนนี้อยู่ในเบราว์เซอร์ (lib/boardStore.ts) — โคลนเขียนฐานจริงไม่ได้ · ตารางจริงเตรียมไว้ที่ sql/create_board.sql
+// ข้อมูล: เว็บจริงเก็บใน Supabase (ทุกคนเห็นเหมือนกัน) · โคลนโหมดอ่านอย่างเดียวเก็บในเบราว์เซอร์ — ดู lib/boardStore.ts
 import { useEffect, useMemo, useRef, useState } from 'react'
 import CreamSelect from '@/components/CreamSelect'
 import OrderDetailModal from '@/components/OrderDetailModal'
@@ -95,11 +95,17 @@ export default function BoardPage() {
   const [menu, setMenu] = useState<{ rect: DOMRect } | null>(null)
   const [orderOpen, setOrderOpen] = useState<string | null>(null)
   const [orderMsg, setOrderMsg] = useState('')
+  const [err, setErr] = useState('')
+  // เขียนฐานไม่สำเร็จ (เน็ตหลุด/สิทธิ์) → ขึ้นแถบแดงบนหน้า แทนเงียบหายแล้วดูเหมือนบันทึกแล้ว
+  const safe = async (fn: () => Promise<unknown>) => {
+    try { setErr(''); await fn() } catch (e) { setErr(`บันทึกไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`) }
+  }
   const [me, setMe] = useState('แอดมิน')
   const endRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     listTopics().then(list => { setTopics(list); setLoaded(true) })
+      .catch(e => { setErr(`โหลดหัวข้อไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`); setLoaded(true) })
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMe(currentAuthor())
     // มาจากลิงก์ (เช่นประกาศบนหน้าภาพรวม): ?topic=<id> เปิดหัวข้อนั้น · ?tab=<หมวด> เปิดแท็บนั้น
@@ -133,7 +139,9 @@ export default function BoardPage() {
 
   const send = async () => {
     if (!sel || !draft.trim()) return
-    setTopics(await addComment(sel.id, draft))
+    let ok = false
+    await safe(async () => { setTopics(await addComment(sel.id, draft)); ok = true })
+    if (!ok) return
     setDraft('')
     setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }), 50)
   }
@@ -159,6 +167,13 @@ export default function BoardPage() {
           ＋ สร้างหัวข้อใหม่
         </button>
       </div>
+
+      {err && (
+        <div style={{ background: '#FBE3DF', color: '#A0443A', border: '1px solid #F0C0B7', borderRadius: 12, padding: '10px 14px', fontSize: 13, marginBottom: 14, display: 'flex', gap: 10, alignItems: 'center' }}>
+          <span style={{ flex: 1 }}>{err}</span>
+          <button onClick={() => setErr('')} style={{ border: 'none', background: 'transparent', color: 'inherit', cursor: 'pointer', fontSize: 14 }}>✕</button>
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.45fr) minmax(360px, 1fr)', gap: 20, alignItems: 'start' }} className="bd-grid">
         {/* ── ซ้าย: รายการหัวข้อ ── */}
@@ -237,7 +252,7 @@ export default function BoardPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Pill label={sel.category} bg={catStyle(sel.category).bg} ink={catStyle(sel.category).ink} />
                   {sel.status && (
-                    <CreamSelect value={sel.status} onChange={async v => setTopics(await updateTopic(sel.id, { status: v as BoardStatus }))}
+                    <CreamSelect value={sel.status} onChange={v => safe(async () => setTopics(await updateTopic(sel.id, { status: v as BoardStatus })))}
                       options={BOARD_STATUSES.map(s => ({ value: s, label: s }))} title="สถานะเรื่อง"
                       style={{ height: 26, borderRadius: 999, padding: '0 10px', fontSize: 11.5, fontWeight: 700, background: STATUS_STYLE[sel.status].bg, color: STATUS_STYLE[sel.status].ink, border: 'none' }} />
                   )}
@@ -280,13 +295,13 @@ export default function BoardPage() {
                             <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{c.author}</span>
                             <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>{fullDate(c.created_at)}</span>
                             {c.author === me && (
-                              <button onClick={async () => setTopics(await deleteComment(sel.id, c.id))} title="ลบความคิดเห็นนี้"
+                              <button onClick={() => safe(async () => setTopics(await deleteComment(sel.id, c.id)))} title="ลบความคิดเห็นนี้"
                                 style={{ marginLeft: 'auto', border: 'none', background: 'transparent', color: 'var(--ink-4)', cursor: 'pointer', fontSize: 11 }}>ลบ</button>
                             )}
                           </div>
                           <div style={{ fontSize: 13.5, color: 'var(--ink-2)', marginTop: 3, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}><RichText text={c.body} /></div>
                           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
-                            <button onClick={async () => setTopics(await toggleLike(sel.id, c.id))} title={c.likes.length ? `ถูกใจโดย ${c.likes.join(', ')}` : 'ถูกใจ'}
+                            <button onClick={() => safe(async () => setTopics(await toggleLike(sel.id, c.id)))} title={c.likes.length ? `ถูกใจโดย ${c.likes.join(', ')}` : 'ถูกใจ'}
                               style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: `1px solid ${liked ? 'var(--brand-soft)' : 'var(--border)'}`, background: liked ? '#F4E9DD' : 'var(--surface)', borderRadius: 999, padding: '2px 10px', cursor: 'pointer', fontSize: 12, color: liked ? 'var(--brand)' : 'var(--ink-3)', fontFamily: 'inherit' }}>
                               👍 {c.likes.length || ''}
                             </button>
@@ -329,7 +344,7 @@ export default function BoardPage() {
             <div onClick={() => setMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 9998 }} />
             <AnchoredMenu rect={menu.rect} minWidth={220} className="ow-drop">
               {items.map(it => (
-                <button key={it.label} onClick={async () => { setMenu(null); setTopics(await it.run()) }}
+                <button key={it.label} onClick={() => { setMenu(null); void safe(async () => setTopics(await it.run())) }}
                   style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', color: it.danger ? 'var(--red)' : 'var(--ink)' }}>{it.label}</button>
               ))}
             </AnchoredMenu>
@@ -338,7 +353,7 @@ export default function BoardPage() {
       })()}
 
       {creating && <NewTopicModal onClose={() => setCreating(false)} categories={categories} defaultCategory={tab === 'all' ? 'งานทั่วไป' : tab}
-        onCreate={async t => { const created = await createTopic(t); setTopics(await listTopics()); setSelId(created.id); setCreating(false) }} />}
+        onCreate={t => safe(async () => { const created = await createTopic(t); setTopics(await listTopics()); setSelId(created.id); setCreating(false) })} />}
 
       {orderOpen && <OrderDetailModal id={orderOpen} onClose={() => setOrderOpen(null)} />}
 

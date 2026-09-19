@@ -1,7 +1,10 @@
-// กระดานสนทนา — ที่เก็บข้อมูล
-// ‼️ โคลน donnaweb-design ต่อฐานจริงแบบอ่านอย่างเดียว + ยังไม่มีตาราง → เก็บในเบราว์เซอร์ (localStorage) ไปก่อน
-// ย้ายไปเว็บจริง: รัน sql/create_board.sql แล้วเปลี่ยนฟังก์ชันในไฟล์นี้ให้ยิง Supabase (หน้าจอไม่ต้องแก้ — ชื่อฟังก์ชัน/ชนิดข้อมูลเหมือนเดิม)
+// หมวด "ตามงาน" (เดิมชื่อกระดานสนทนา) — ที่เก็บข้อมูล
+// เว็บจริง = ตาราง Supabase board_topics / board_comments / board_likes (sql/create_board.sql) ทุกคนเห็นเหมือนกัน
+// โคลนโหมดอ่านอย่างเดียว (NEXT_PUBLIC_READ_ONLY=1) เขียนฐานไม่ได้ → เก็บในเบราว์เซอร์ (localStorage) + มีตัวอย่างให้ลองกด
+// ชื่อฟังก์ชัน/ชนิดข้อมูลเหมือนกันทั้งสองแบบ หน้าจอไม่ต้องรู้ว่าเก็บที่ไหน
 import { readStaffSession } from './staffSession'
+import { supabase } from './supabase'
+import { READ_ONLY } from './readOnly'
 
 export const BOARD_CATEGORIES = ['ประกาศ', 'งานทั่วไป', 'งานออเดอร์', 'งานติดตั้ง', 'ปัญหา/แก้ไข', 'ลูกค้า', 'ไอเดีย'] as const
 // หมวดพิมพ์เองได้ — BOARD_CATEGORIES เป็นแค่หมวดตั้งต้นที่แนะนำ
@@ -75,9 +78,9 @@ function mutate(fn: (list: BoardTopic[]) => void): BoardTopic[] {
   return list
 }
 
-export async function listTopics(): Promise<BoardTopic[]> { return load() }
+async function local_listTopics(): Promise<BoardTopic[]> { return load() }
 
-export async function createTopic(t: { category: BoardCategory; title: string; body: string; order_number?: string | null; order_id?: string | null; order_label?: string | null }): Promise<BoardTopic> {
+async function local_createTopic(t: { category: BoardCategory; title: string; body: string; order_number?: string | null; order_id?: string | null; order_label?: string | null }): Promise<BoardTopic> {
   const now = new Date().toISOString()
   const topic: BoardTopic = {
     id: uid(), category: t.category.trim() || 'งานทั่วไป', title: t.title.trim(), body: t.body.trim(), author: currentAuthor(),
@@ -88,7 +91,7 @@ export async function createTopic(t: { category: BoardCategory; title: string; b
   return topic
 }
 
-export async function addComment(topicId: string, body: string): Promise<BoardTopic[]> {
+async function local_addComment(topicId: string, body: string): Promise<BoardTopic[]> {
   const now = new Date().toISOString()
   return mutate(list => {
     const t = list.find(x => x.id === topicId)
@@ -98,7 +101,7 @@ export async function addComment(topicId: string, body: string): Promise<BoardTo
   })
 }
 
-export async function toggleLike(topicId: string, commentId: string): Promise<BoardTopic[]> {
+async function local_toggleLike(topicId: string, commentId: string): Promise<BoardTopic[]> {
   const me = currentAuthor()
   return mutate(list => {
     const c = list.find(x => x.id === topicId)?.comments.find(x => x.id === commentId)
@@ -107,18 +110,18 @@ export async function toggleLike(topicId: string, commentId: string): Promise<Bo
   })
 }
 
-export async function updateTopic(topicId: string, patch: Partial<Pick<BoardTopic, 'pinned' | 'status' | 'title' | 'body' | 'category'>>): Promise<BoardTopic[]> {
+async function local_updateTopic(topicId: string, patch: Partial<Pick<BoardTopic, 'pinned' | 'status' | 'title' | 'body' | 'category'>>): Promise<BoardTopic[]> {
   return mutate(list => {
     const t = list.find(x => x.id === topicId)
     if (t) Object.assign(t, patch)
   })
 }
 
-export async function deleteTopic(topicId: string): Promise<BoardTopic[]> {
+async function local_deleteTopic(topicId: string): Promise<BoardTopic[]> {
   return mutate(list => { const i = list.findIndex(x => x.id === topicId); if (i >= 0) list.splice(i, 1) })
 }
 
-export async function deleteComment(topicId: string, commentId: string): Promise<BoardTopic[]> {
+async function local_deleteComment(topicId: string, commentId: string): Promise<BoardTopic[]> {
   return mutate(list => {
     const t = list.find(x => x.id === topicId)
     if (t) t.comments = t.comments.filter(c => c.id !== commentId)
@@ -127,3 +130,65 @@ export async function deleteComment(topicId: string, commentId: string): Promise
 
 // ล้างข้อมูลทดลองทั้งหมด กลับไปใช้ตัวอย่าง
 export async function resetBoard(): Promise<BoardTopic[]> { const s = seed(); save(s); return s }
+
+// ── ฐานจริง (Supabase) ─────────────────────────────────────────────
+// โหลดทั้งกระดานในคำขอเดียว (หัวข้อ + ความคิดเห็น + คนกดถูกใจ) · ข้อมูลเป็นข้อความสั้น ไม่กิน egress
+type DbLike = { author: string }
+type DbComment = { id: string; author: string; body: string; created_at: string; board_likes: DbLike[] | null }
+type DbTopic = Omit<BoardTopic, 'comments'> & { board_comments: DbComment[] | null }
+
+async function db_listTopics(): Promise<BoardTopic[]> {
+  const { data, error } = await supabase.from('board_topics')
+    .select('*, board_comments(id, author, body, created_at, board_likes(author))')
+    .order('last_activity_at', { ascending: false })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as unknown as DbTopic[]).map(({ board_comments, ...t }) => ({
+    ...t,
+    comments: (board_comments ?? [])
+      .map(c => ({ id: c.id, author: c.author, body: c.body, created_at: c.created_at, likes: (c.board_likes ?? []).map(l => l.author) }))
+      .sort((a, b) => a.created_at.localeCompare(b.created_at)),
+  }))
+}
+const must = <T,>(r: { error: { message: string } | null; data?: unknown }) => { if (r.error) throw new Error(r.error.message); return r.data as T }
+
+async function db_createTopic(t: Parameters<typeof local_createTopic>[0]): Promise<BoardTopic> {
+  const row = must<BoardTopic>(await supabase.from('board_topics').insert({
+    category: t.category.trim() || 'งานทั่วไป', title: t.title.trim(), body: t.body.trim(), author: currentAuthor(),
+    order_number: t.order_number?.trim() || null, order_id: t.order_id || null, order_label: t.order_label || null,
+    status: t.category === 'ปัญหา/แก้ไข' ? 'รอตอบ' : null,
+  }).select().single())
+  return { ...row, comments: [] }
+}
+async function db_addComment(topicId: string, body: string): Promise<BoardTopic[]> {
+  must(await supabase.from('board_comments').insert({ topic_id: topicId, author: currentAuthor(), body: body.trim() }))
+  must(await supabase.from('board_topics').update({ last_activity_at: new Date().toISOString() }).eq('id', topicId))
+  return db_listTopics()
+}
+async function db_toggleLike(_topicId: string, commentId: string): Promise<BoardTopic[]> {
+  const me = currentAuthor()
+  const has = must<{ author: string }[]>(await supabase.from('board_likes').select('author').eq('comment_id', commentId).eq('author', me))
+  if (has?.length) must(await supabase.from('board_likes').delete().eq('comment_id', commentId).eq('author', me))
+  else must(await supabase.from('board_likes').insert({ comment_id: commentId, author: me }))
+  return db_listTopics()
+}
+async function db_updateTopic(topicId: string, patch: Parameters<typeof local_updateTopic>[1]): Promise<BoardTopic[]> {
+  must(await supabase.from('board_topics').update(patch).eq('id', topicId))
+  return db_listTopics()
+}
+async function db_deleteTopic(topicId: string): Promise<BoardTopic[]> {
+  must(await supabase.from('board_topics').delete().eq('id', topicId))   // ความคิดเห็น/ถูกใจ ลบตาม (on delete cascade)
+  return db_listTopics()
+}
+async function db_deleteComment(_topicId: string, commentId: string): Promise<BoardTopic[]> {
+  must(await supabase.from('board_comments').delete().eq('id', commentId))
+  return db_listTopics()
+}
+
+// ── ที่หน้าจอเรียกใช้ ──
+export const listTopics = READ_ONLY ? local_listTopics : db_listTopics
+export const createTopic = READ_ONLY ? local_createTopic : db_createTopic
+export const addComment = READ_ONLY ? local_addComment : db_addComment
+export const toggleLike = READ_ONLY ? local_toggleLike : db_toggleLike
+export const updateTopic = READ_ONLY ? local_updateTopic : db_updateTopic
+export const deleteTopic = READ_ONLY ? local_deleteTopic : db_deleteTopic
+export const deleteComment = READ_ONLY ? local_deleteComment : db_deleteComment
