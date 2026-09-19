@@ -282,6 +282,9 @@ export const shownFields = (it: RawItem): Set<string> => {
   return s
 }
 
+// รางมีแค่ความยาว + พร้อมส่งเสมอ → ช่อง สูง/แบบ ของรางไม่ต้องมีให้กรอก (ตารางโชว์ช่องว่างแทน)
+export const railNoField = (it: RawItem, key: string) => String(it.type ?? '').startsWith('ราง') && (key === 'height' || key === 'supply')
+
 // คอลัมน์ที่จะโชว์ในตารางแก้รายการ — เรียงตาม ITEM_FIELDS เสมอ (ตำแหน่งเดียวกันทุกหน้า)
 export const visibleItemCols = (items: RawItem[], showAll: boolean) => {
   const shown = items.map(shownFields)

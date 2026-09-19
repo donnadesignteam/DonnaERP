@@ -8,7 +8,7 @@ import { supabase } from '@/lib/supabase'
 import { syncRows, byEntryDateDesc } from '@/lib/rowCache'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
-import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, ITEM_FIELDS, ITEM_FIELD_OPTIONS, shownFields, visibleItemCols, itemInputValue, emptyItem as emptyRawItem } from '@/lib/itemFormat'
+import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, ITEM_FIELDS, ITEM_FIELD_OPTIONS, shownFields, visibleItemCols, railNoField, itemInputValue, emptyItem as emptyRawItem } from '@/lib/itemFormat'
 import { railLink } from '@/lib/rail'
 import { installSerial, nextSerial } from '@/lib/serialNo'
 import { buildCustomerBook } from '@/lib/customerBook'
@@ -5042,7 +5042,7 @@ ${body}
               {modalItems.map((item, idx) => {
                 // โชว์เฉพาะช่องที่เกี่ยวกับสินค้าชนิดนี้ + ช่องที่มีข้อมูลอยู่ (กด "ทุกช่อง" ถ้าต้องกรอกช่องอื่น)
                 const shown = shownFields(item)
-                const fields = formShowAll.includes(idx) ? ITEM_FIELDS : ITEM_FIELDS.filter(([, key]) => shown.has(key as string))
+                const fields = (formShowAll.includes(idx) ? ITEM_FIELDS : ITEM_FIELDS.filter(([, key]) => shown.has(key as string))).filter(([, key]) => !railNoField(item, key as string))
                 const hidden = ITEM_FIELDS.length - fields.length
                 return (
                 <div key={idx} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', marginBottom: 8, background: 'var(--bg)' }}>
@@ -5349,7 +5349,7 @@ ${body}
                       <td style={{ padding: '6px 10px', color: 'var(--ink-4)', fontWeight: 500, width: 28 }}>{idx + 1}</td>
                       {cols.map(([, key, type, w]) => (
                         <td key={key} style={{ padding: '4px 6px' }}>
-                          {ITEM_FIELD_OPTIONS[key] ? (
+                          {railNoField(item, key) ? <span style={{ display: 'inline-block', width: w, color: 'var(--ink-4)', fontSize: 12, textAlign: 'center' }}>—</span> : ITEM_FIELD_OPTIONS[key] ? (
                             <select
                               value={String(item[key] ?? ITEM_FIELD_OPTIONS[key][0])}
                               onChange={e => setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: e.target.value } : it) } : null)}

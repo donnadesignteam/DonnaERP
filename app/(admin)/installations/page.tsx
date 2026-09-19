@@ -9,7 +9,7 @@ import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { HOLIDAYS } from '@/lib/holidays'
 import OrderDetailModal from '@/components/OrderDetailModal'
-import { formatItemLines, autoTapeHooks, ITEM_FIELDS, ITEM_FIELD_OPTIONS, visibleItemCols, itemInputValue, emptyItem, type RawItem } from '@/lib/itemFormat'
+import { formatItemLines, autoTapeHooks, ITEM_FIELDS, ITEM_FIELD_OPTIONS, visibleItemCols, railNoField, itemInputValue, emptyItem, type RawItem } from '@/lib/itemFormat'
 import { syncOutsourcePO } from '@/lib/outsourceSync'
 import { recordAction } from '@/lib/history'
 import { prevOf } from '@/lib/trackedDb'
@@ -1906,7 +1906,7 @@ export default function InstallationsPage() {
                       <td style={{ padding: '6px 10px', color: 'var(--ink-4)', fontWeight: 500, width: 28 }}>{idx + 1}</td>
                       {cols.map(([, key, type, w]) => (
                         <td key={key} style={{ padding: '4px 6px' }}>
-                          {ITEM_FIELD_OPTIONS[key] ? (
+                          {railNoField(item, key) ? <span style={{ display: 'inline-block', width: w, color: 'var(--ink-4)', fontSize: 12, textAlign: 'center' }}>—</span> : ITEM_FIELD_OPTIONS[key] ? (
                             <select
                               value={String(item[key] ?? ITEM_FIELD_OPTIONS[key][0])}
                               onChange={e => setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: e.target.value } : it) } : null)}
