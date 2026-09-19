@@ -554,10 +554,10 @@ export default function DashboardPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <span style={{ fontSize: 27, lineHeight: 1 }} aria-hidden>{greet.emoji}</span>
           <div>
-            <h1 style={{ fontSize: 23, fontWeight: 700, color: 'var(--brand)', lineHeight: 1.3 }}>{greet.text}</h1>
+            <h1 style={{ fontSize: 23, fontWeight: 700, color: 'var(--brand)', lineHeight: 1.1 }}>{greet.text}</h1>
             {/* บรรทัดเดิม — ขยายเฉพาะ "เดือนนี้ N รายการ" ให้เด่น · กดแล้วเปิดรายการออเดอร์ของเดือนนี้ */}
             <button onClick={() => setModal({ title: 'ออเดอร์ทั้งหมดของเดือนนี้', orders: [...monthOrders].reverse(), showPrint: true })}
-              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 13.5, color: 'var(--ink-3)', fontFamily: 'inherit' }}>
+              style={{ display: 'block', background: 'none', border: 'none', padding: 0, marginTop: 1, cursor: 'pointer', fontSize: 13.5, lineHeight: 1.2, color: 'var(--ink-3)', fontFamily: 'inherit' }}>
               สรุปภาพรวมคำสั่งซื้อ ·{' '}
               <span style={{ fontSize: 15.5, fontWeight: 600, color: 'var(--ink-2)' }}>
                 เดือนนี้ <span style={{ color: 'var(--brand)', fontWeight: 700, fontSize: 18, fontVariantNumeric: 'tabular-nums' }}>{(loading || !clock) ? '—' : monthOrders.length.toLocaleString()}</span> รายการ
