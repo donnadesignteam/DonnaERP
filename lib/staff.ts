@@ -4,7 +4,7 @@ export type Employee = { code: string; realName: string; nickname: string; role:
 
 export const EMPLOYEES: Employee[] = [
   { code:'DN001', realName:'ฮันนา เจิง', nickname:'ยุน', role:'ผู้บริหาร', dept:'ธุรการ' },
-  { code:'DN002', realName:'ภานุพงศ์ ปิดเมือง', nickname:'สู้', role:'ผู้จัดการทั่วไป', dept:'ธุรการ' },
+  { code:'DN002', realName:'ภานุพงศ์ ปิดเมือง', nickname:'พี่สู้คนเท่', role:'ผู้จัดการทั่วไป', dept:'ธุรการ' },
   { code:'DN003', realName:'จันทร์แก้ว สลีสองสม', nickname:'ดาว', role:'ช่างเย็บ', dept:'ปฏิบัติการ' },
   { code:'DN004', realName:'เกษมณี แสนคำ', nickname:'ยุ้ย', role:'ผู้จัดการฝ่ายผลิต', dept:'ปฏิบัติการ' },
   { code:'DN005', realName:'ปริญดา กายสิทธิ์', nickname:'น้าส้ม', role:'ผู้จัดการร้าน', dept:'ปฏิบัติการ' },
