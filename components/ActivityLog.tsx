@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { isOwnerLogin } from '@/lib/adminActor'
 import {
   type Log, CAT_COLOR, actionLabel, changeSummary, groupByDay, hhmm, actorName,
 } from '@/lib/activityText'
@@ -17,7 +16,7 @@ export default function ActivityLog() {
   const [error, setError] = useState<string | null>(null)
   // เห็นชื่อคนแก้ได้เฉพาะคนที่ล็อกอินด้วยรหัสรวมของร้าน (อ่านคุกกี้ได้เฉพาะฝั่งเบราว์เซอร์)
   const [canSeeNames, setCanSeeNames] = useState(false)
-  useEffect(() => { setCanSeeNames(isOwnerLogin()) }, [])
+  useEffect(() => { setCanSeeNames(true) }, [])   // 19ก.ย.69 user สั่ง: ทุกคนเห็นว่าใครแก้อะไร
 
   const load = useCallback(async (reset: boolean) => {
     setLoading(true)

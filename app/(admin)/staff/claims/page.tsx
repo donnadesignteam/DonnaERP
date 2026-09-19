@@ -10,7 +10,7 @@ import { useEffect, useMemo, useState, Fragment } from 'react'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
-import { isOwnerLogin, claimUpdate } from '@/lib/adminActor'
+import { isManagerLogin, claimUpdate } from '@/lib/adminActor'
 import StaffTabs from '@/components/StaffTabs'
 import { TH_MONTHS } from '@/lib/shopCalendar'
 import { faultPeople, faultShareCount } from '@/lib/claimFault'
@@ -80,7 +80,7 @@ export default function StaffClaimsPage() {
   const [owner, setOwner] = useState<boolean | null>(null)   // null = ยังไม่รู้ (กัน hydration ไม่ตรง)
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { setOwner(isOwnerLogin()) }, [])
+  useEffect(() => { setOwner(isManagerLogin()) }, [])
 
   useEffect(() => {
     ;(async () => {

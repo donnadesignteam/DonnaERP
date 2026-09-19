@@ -8,6 +8,14 @@
 
 export const STAFF_COOKIE = 'donna_staff'
 
+// ‼️ หมวด "พนักงาน" (/staff) และ "วิเคราะห์ข้อมูล" (/analytics) เห็นได้เฉพาะ 3 คนนี้ (user สั่ง 19ก.ย.69)
+//    ยุน DN001 · พี่สู้คนเท่ DN002 · น็อต DN015 — คนอื่นทั้งหมด รวมถึงล็อกอินรหัสรวมของร้าน (แอดมิน) เข้าไม่ได้
+//    ข้อยกเว้น: พนักงานเปิดหน้าข้อมูลของตัวเองได้ (/staff/<รหัสตัวเอง> — ปุ่มในหน้าตั้งค่า)
+//    กันที่ proxy.ts (ฝั่งเซิร์ฟเวอร์ ตรวจลายเซ็นคุกกี้) + ซ่อนเมนูใน Sidebar
+export const MANAGER_CODES = ['DN001', 'DN002', 'DN015']
+export const MANAGER_PATHS = ['/staff', '/analytics']
+export const isManagerPath = (pathname: string) => MANAGER_PATHS.some(p => pathname === p || pathname.startsWith(p + '/'))
+
 // รหัสผ่าน = วันและเดือนที่เริ่มงาน เช่น 31/3/2024 → "313", 8/6/2026 → "86"
 // รับหลายรูปแบบกันพิมพ์ไม่เหมือนกัน (313 / 3103 / 31-3 / 31/03 ก็ผ่านหมด — ตัดอักขระที่ไม่ใช่ตัวเลขทิ้งก่อน)
 export function staffPassVariants(startDate: string): string[] {
@@ -35,6 +43,16 @@ async function sha256(text: string): Promise<string> {
 // ลายเซ็นผูกกับรหัสพนักงาน + SITE_PASS (ปลอมไม่ได้ถ้าไม่รู้ env) — ใช้ทั้งตอนออกคุกกี้และตอนตรวจ
 export const staffSig = (code: string) =>
   sha256(`${code}:${process.env.SITE_PASS || 'no-pass'}:donna-staff-v1`)
+
+// อ่านรหัสพนักงานจากคุกกี้ donna_staff แล้วเช็กลายเซ็น — ปลอมไม่ได้ (คืน null ถ้าไม่มี/ลายเซ็นไม่ตรง)
+export async function verifiedStaffCode(raw: string | undefined | null): Promise<string | null> {
+  if (!raw) return null
+  let v = raw
+  if (v.includes('%7C') || v.includes('%7c')) { try { v = decodeURIComponent(v) } catch { return null } }
+  const [code, , sig] = v.split('|')
+  if (!code || !sig) return null
+  return sig === await staffSig(code) ? code : null
+}
 
 export async function buildStaffCookie(code: string, nickname: string | null): Promise<string> {
   return `${code}|${encodeURIComponent(nickname || '')}|${await staffSig(code)}`

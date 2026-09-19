@@ -6,7 +6,6 @@
 
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { isOwnerLogin } from '@/lib/adminActor'
 import { type Log, actionLabel, changeSummary, actorName, dateTimeLabel } from '@/lib/activityText'
 
 export default function OrderHistory({ orderId, compact = false }: { orderId: string; compact?: boolean }) {
@@ -27,7 +26,7 @@ export default function OrderHistory({ orderId, compact = false }: { orderId: st
       .eq('table_name', 'order_entries').eq('row_id', orderId)
       .order('created_at', { ascending: false }).limit(60)
     setLogs((res.data ?? []) as Log[])
-    setCanSeeNames(isOwnerLogin())
+    setCanSeeNames(true)   // 19ก.ย.69 user สั่ง: ทุกคนเห็นว่าใครแก้อะไร
     setLoaded(true)
     setLoading(false)
   }

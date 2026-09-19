@@ -15,6 +15,7 @@
 
 import { readStaffSession } from './staffSession'
 import { supabase } from './supabase'
+import { MANAGER_CODES } from './staffAuth'
 
 type Row = Record<string, unknown>
 
@@ -125,3 +126,6 @@ export const instInsert = (row: Row): any => supabase.from('installations').inse
 //    เช็คจากคุกกี้ donna_staff: ไม่มี = เข้าด้วยรหัสร้าน
 //    (กันแบบสวยงามไม่ได้ 100% — ลบคุกกี้ตัวเองทิ้งก็เห็นชื่อได้ ถ้าจะกันจริงต้องย้ายไปเช็คฝั่งเซิร์ฟเวอร์)
 export const isOwnerLogin = () => readStaffSession() === null
+
+// ผู้จัดการ (ยุน/พี่สู้คนเท่/น็อต) — เข้าหมวดพนักงาน+วิเคราะห์ข้อมูลได้ และจัดการข้อมูลพนักงานได้ (แทน owner เดิม)
+export const isManagerLogin = () => MANAGER_CODES.includes(readStaffSession()?.code ?? '')

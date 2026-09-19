@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { fetchStaffList, hasVacationRight, createStaff, setStaffActive, type Staff, type NewStaff } from '@/lib/staffDb'
 import StaffTabs from '@/components/StaffTabs'
-import { isOwnerLogin } from '@/lib/adminActor'
+import { isManagerLogin } from '@/lib/adminActor'
 import { useConfirm } from '@/components/ConfirmDialog'
 
 const n = (v: number | null | undefined) => (v == null ? '—' : String(v))
@@ -62,7 +62,7 @@ export default function StaffPage() {
 
   useEffect(() => {
     // อ่านคุกกี้ล็อกอินหลัง mount (ฝั่งเซิร์ฟเวอร์ไม่มี document — อ่านตอน render จะทำให้ hydrate ไม่ตรง)
-    const init = async () => { setOwner(isOwnerLogin()); await load() }
+    const init = async () => { setOwner(isManagerLogin()); await load() }
     void init()
   }, [])
 

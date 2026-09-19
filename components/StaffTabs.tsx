@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { isOwnerLogin } from '@/lib/adminActor'
+import { isManagerLogin } from '@/lib/adminActor'
 
 // แท็บของหมวดพนักงาน (user สั่ง 2 ส.ค. 69 · เพิ่มงานเคลม 17 ส.ค. 69)
 // ownerOnly = เห็นเฉพาะคนที่ล็อกอินด้วยรหัสรวมของร้าน (พนักงานที่ล็อกอินด้วยรหัสตัวเองไม่เห็น)
@@ -18,7 +18,7 @@ export default function StaffTabs() {
   const pathname = usePathname()
   // เช็คหลัง mount เท่านั้น (คุกกี้อ่านได้ฝั่งเบราว์เซอร์) ไม่งั้น HTML ฝั่งเซิร์ฟเวอร์กับฝั่งเบราว์เซอร์ไม่ตรง
   const [owner, setOwner] = useState(false)
-  useEffect(() => { setOwner(isOwnerLogin()) }, [])
+  useEffect(() => { setOwner(isManagerLogin()) }, [])
   return (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
       {TABS.filter(t => !t.ownerOnly || owner).map(t => {

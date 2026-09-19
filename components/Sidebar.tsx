@@ -2,8 +2,10 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
+import { isManagerLogin } from '@/lib/adminActor'
+import { isManagerPath } from '@/lib/staffAuth'
 
 const nav = [
   { href: '/dashboard',      label: 'ภาพรวม',      icon: <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg> },
@@ -24,6 +26,10 @@ const nav = [
 const ICON_X = 24
 
 export default function Sidebar() {
+  // เมนูพนักงาน/วิเคราะห์ข้อมูล เฉพาะผู้จัดการ — อ่านคุกกี้หลังโหลดหน้า (ฝั่งเซิร์ฟเวอร์ซ่อนไว้ก่อน กัน hydration ไม่ตรง)
+  const [manager, setManager] = useState(false)
+  useEffect(() => { setManager(isManagerLogin()) }, [])   // eslint-disable-line react-hooks/set-state-in-effect
+  const navItems = nav.filter(n => manager || !isManagerPath(n.href))
   const pathname = usePathname()
   const [expanded, setExpanded] = useState(false)
 
@@ -73,7 +79,7 @@ export default function Sidebar() {
 
       {/* Nav */}
       <nav style={{ flex: 1, padding: '4px 0' }}>
-        {nav.map(({ href, label, icon }) => {
+        {navItems.map(({ href, label, icon }) => {
           const active = pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
           return (
             <div key={href} style={{ padding: '1px 8px' }}>

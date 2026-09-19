@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { AUTH_COOKIE, authToken } from './lib/auth'
+import { STAFF_COOKIE, MANAGER_CODES, isManagerPath, verifiedStaffCode } from './lib/staffAuth'
 
 // ──────────────────────────────────────────────────────────────
 // Cookie auth gate สำหรับ DonnaERP (Next.js 16 = proxy.ts ไม่ใช่ middleware.ts)
@@ -23,7 +24,20 @@ export async function proxy(request: NextRequest) {
   }
 
   const cookie = request.cookies.get(AUTH_COOKIE)?.value
-  if (cookie === token) return NextResponse.next()
+  if (cookie === token) {
+    // หมวดพนักงาน / วิเคราะห์ข้อมูล — เฉพาะผู้จัดการ (ดู lib/staffAuth.ts) · คนอื่นเด้งกลับหน้าภาพรวม
+    if (isManagerPath(pathname)) {
+      const code = await verifiedStaffCode(request.cookies.get(STAFF_COOKIE)?.value)
+      const ownPage = !!code && pathname === `/staff/${code}`
+      if (!ownPage && !(code && MANAGER_CODES.includes(code))) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/dashboard'
+        url.search = ''
+        return NextResponse.redirect(url)
+      }
+    }
+    return NextResponse.next()
+  }
 
   // ไม่ผ่าน: API ตอบ 401, หน้าเว็บ redirect ไป /login
   if (pathname.startsWith('/api/')) {
