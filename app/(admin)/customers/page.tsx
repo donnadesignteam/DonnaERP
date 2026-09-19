@@ -11,6 +11,7 @@ import { thaiTrackStatus } from '@/lib/trackExtract'
 import { useConfirm } from '@/components/ConfirmDialog'
 // ‼️ แต่ละออเดอร์ใช้การ์ดชุดเดียวกับป๊อปอัปรายละเอียดออเดอร์ (หน้าภาพรวม) — แก้หน้าตาที่ components/OrderDetailModal.tsx ที่เดียว
 import { OrderDetailBody, Card, CAMERA_ICON, DeliveredPill } from '@/components/OrderDetailModal'
+import { topicsForOrders } from '@/lib/boardStore'
 
 type Item = RawItem
 
@@ -133,6 +134,8 @@ function CustomerFolder() {
   const [claims, setClaims] = useState<CustomerClaim[]>([])
   const [installs, setInstalls] = useState<CustomerInstall[]>([])
   const [pos, setPos] = useState<CustomerPO[]>([])
+  // หัวข้อในหมวด "ตามงาน" ที่แท็กออเดอร์ของลูกค้าคนนี้
+  const [topics, setTopics] = useState<Awaited<ReturnType<typeof topicsForOrders>>>([])
   const [loading, setLoading] = useState(true)
   const [delPhoto, setDelPhoto] = useState<string | null>(null) // URL รูปแพ็คที่กำลังลบ
   const [page, setPage] = useState(1)
@@ -193,6 +196,7 @@ function CustomerFolder() {
         .eq('customer_name', name)
         .order('created_at', { ascending: false })
       setPos((po as CustomerPO[]) ?? [])
+      setTopics(await topicsForOrders(((data as Order[]) ?? []).map(o => o.id)))
       setLoading(false)
     })()
   }, [name])
@@ -383,6 +387,22 @@ function CustomerFolder() {
         </FolderGroup>
       )}
 
+      {/* หัวข้อในตามงานที่แท็กออเดอร์ของลูกค้าคนนี้ — กดแล้วเปิดหัวข้อนั้น */}
+      {!loading && topics.length > 0 && (
+        <FolderGroup title="ตามงาน" icon={ICON_CHAT} count={topics.length}>
+          {topics.map(t => (
+            <Link key={t.id} href={`/board?topic=${t.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+              <FolderItem
+                title={t.title}
+                tags={[t.category, t.order_label || (t.order_number ? `#${t.order_number}` : '')]}
+                sub={`${fmtDate(t.created_at)} · โดย ${t.author} · ${t.comment_count} ความคิดเห็น${t.media?.length ? ` · แนบ ${t.media.length} ไฟล์` : ''}`}
+                status={t.status}
+                body={t.body ? <div style={{ whiteSpace: 'pre-wrap', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{t.body}</div> : null} />
+            </Link>
+          ))}
+        </FolderGroup>
+      )}
+
       {/* งานเคลมของลูกค้าคนนี้ — โชว์เฉพาะเมื่อมี */}
       {!loading && claims.length > 0 && (
         <FolderGroup title="งานเคลม" icon={ICON_CLAIM} count={claims.length}>
@@ -413,6 +433,7 @@ function CustomerFolder() {
 // ── กล่องรายการท้ายโฟลเดอร์ (งานติดตั้ง / สั่งซื้อ / เคลม) — ธีมเดียวกับการ์ดออเดอร์ด้านบน ──
 const ICON_TOOL = 'M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085'
 const ICON_CART = 'M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z'
+const ICON_CHAT = 'M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z'
 const ICON_CLAIM = 'M8.25 9.75h4.875a2.625 2.625 0 010 5.25H12M8.25 9.75L10.5 7.5M8.25 9.75L10.5 12m9-7.243V21.75l-3.75-1.5-3.75 1.5-3.75-1.5-3.75 1.5V4.757c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0c1.1.128 1.907 1.077 1.907 2.185z'
 
 function FolderGroup({ title, icon, count, children }: { title: string; icon: string; count: number; children: React.ReactNode }) {

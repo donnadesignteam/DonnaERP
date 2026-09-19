@@ -10,6 +10,7 @@ import AnchoredMenu from '@/components/AnchoredMenu'
 import { INSTALL_ICON_PATH } from '@/components/BrandMark'
 import { supabase } from '@/lib/supabase'
 import { fetchEmployeeOptions, type EmployeeOption } from '@/lib/staffDb'
+import { uploadBoardMedia, MAX_MEDIA, type BoardMedia } from '@/lib/boardMedia'
 import {
   BOARD_CATEGORIES, BOARD_STATUSES, currentAuthor,
   listTopics, createTopic, addComment, toggleLike, updateTopic, deleteTopic, deleteComment,
@@ -92,6 +93,8 @@ export default function BoardPage() {
   const [selId, setSelId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [draft, setDraft] = useState('')
+  const [draftFiles, setDraftFiles] = useState<File[]>([])
+  const [upStatus, setUpStatus] = useState('')
   const [menu, setMenu] = useState<{ rect: DOMRect } | null>(null)
   const [orderOpen, setOrderOpen] = useState<string | null>(null)
   const [orderMsg, setOrderMsg] = useState('')
@@ -135,14 +138,20 @@ export default function BoardPage() {
   const sel = topics.find(t => t.id === selId) ?? shown[0] ?? null
 
   // เลือกหัวข้ออื่น → ล้างกล่องพิมพ์ที่ค้าง
-  const pick = (id: string) => { setSelId(id); setDraft(''); setOrderMsg('') }
+  const pick = (id: string) => { setSelId(id); setDraft(''); setDraftFiles([]); setOrderMsg('') }
 
   const send = async () => {
-    if (!sel || !draft.trim()) return
+    if (!sel || upStatus || (!draft.trim() && !draftFiles.length)) return
     let ok = false
-    await safe(async () => { setTopics(await addComment(sel.id, draft)); ok = true })
+    await safe(async () => {
+      // อัปรูป/คลิปก่อน (ขึ้น R2) แล้วค่อยบันทึกความคิดเห็นพร้อมลิงก์ — อัปไม่ผ่าน = ไม่บันทึก ข้อความยังอยู่ในกล่อง
+      const media = draftFiles.length ? await uploadBoardMedia(draftFiles, setUpStatus) : []
+      setTopics(await addComment(sel.id, draft, media)); ok = true
+    })
+    setUpStatus('')
     if (!ok) return
     setDraft('')
+    setDraftFiles([])
     setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }), 50)
   }
 
@@ -270,6 +279,7 @@ export default function BoardPage() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{sel.author} <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--ink-4)', marginLeft: 6 }}>{fullDate(sel.created_at)}</span></div>
                     <div style={{ fontSize: 13.5, color: 'var(--ink-2)', marginTop: 4, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}><RichText text={sel.body} /></div>
+                    <MediaGrid media={sel.media} />
                     {(sel.order_id || sel.order_number) && (
                       <button onClick={() => sel.order_id ? setOrderOpen(sel.order_id) : openOrder(sel.order_number!)}
                         style={{ marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 8, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--cream-2)', padding: '9px 14px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: 'var(--ink)' }}>
@@ -299,7 +309,8 @@ export default function BoardPage() {
                                 style={{ marginLeft: 'auto', border: 'none', background: 'transparent', color: 'var(--ink-4)', cursor: 'pointer', fontSize: 11 }}>ลบ</button>
                             )}
                           </div>
-                          <div style={{ fontSize: 13.5, color: 'var(--ink-2)', marginTop: 3, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}><RichText text={c.body} /></div>
+                          {c.body && <div style={{ fontSize: 13.5, color: 'var(--ink-2)', marginTop: 3, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}><RichText text={c.body} /></div>}
+                          <MediaGrid media={c.media} small />
                           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
                             <button onClick={() => safe(async () => setTopics(await toggleLike(sel.id, c.id)))} title={c.likes.length ? `ถูกใจโดย ${c.likes.join(', ')}` : 'ถูกใจ'}
                               style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: `1px solid ${liked ? 'var(--brand-soft)' : 'var(--border)'}`, background: liked ? '#F4E9DD' : 'var(--surface)', borderRadius: 999, padding: '2px 10px', cursor: 'pointer', fontSize: 12, color: liked ? 'var(--brand)' : 'var(--ink-3)', fontFamily: 'inherit' }}>
@@ -317,14 +328,18 @@ export default function BoardPage() {
               {/* กล่องตอบ — Enter ส่ง · Shift+Enter ขึ้นบรรทัดใหม่ */}
               <div style={{ padding: '12px 16px 16px', borderTop: '1px solid var(--hairline, var(--border))', display: 'flex', gap: 10, alignItems: 'flex-end' }}>
                 <Avatar name={me} size={32} />
-                <div style={{ flex: 1, border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '8px 10px 8px 14px', display: 'flex', alignItems: 'flex-end', gap: 8 }}>
+                <div style={{ flex: 1, border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '8px 10px 8px 14px' }}>
+                  <PendingFiles files={draftFiles} onRemove={i => setDraftFiles(f => f.filter((_, k) => k !== i))} status={upStatus} />
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
+                  <AttachButton disabled={!!upStatus || draftFiles.length >= MAX_MEDIA} onFiles={fs => setDraftFiles(f => [...f, ...fs].slice(0, MAX_MEDIA))} />
                   <textarea value={draft} onChange={e => setDraft(e.target.value)} rows={2} placeholder="พิมพ์ข้อความ… (พิมพ์ @ชื่อ เพื่อเรียกคน)"
                     onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send() } }}
                     style={{ flex: 1, border: 'none', outline: 'none', resize: 'none', background: 'transparent', fontFamily: 'inherit', fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.5 }} />
-                  <button onClick={send} disabled={!draft.trim()} title="ส่ง"
-                    style={{ width: 38, height: 38, borderRadius: 12, border: 'none', background: draft.trim() ? 'var(--brand)' : 'var(--cream)', color: '#FFF8F0', cursor: draft.trim() ? 'pointer' : 'default', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <button onClick={send} disabled={!!upStatus || (!draft.trim() && !draftFiles.length)} title="ส่ง"
+                    style={{ width: 38, height: 38, borderRadius: 12, border: 'none', background: (draft.trim() || draftFiles.length) && !upStatus ? 'var(--brand)' : 'var(--cream)', color: '#FFF8F0', cursor: (draft.trim() || draftFiles.length) && !upStatus ? 'pointer' : 'default', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <Icon d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" size={18} />
                   </button>
+                  </div>
                 </div>
               </div>
             </>
@@ -367,7 +382,7 @@ export default function BoardPage() {
 
 function NewTopicModal({ onClose, onCreate, defaultCategory, categories }: {
   onClose: () => void
-  onCreate: (t: { category: BoardCategory; title: string; body: string; order_number: string | null; order_id: string | null; order_label: string | null }) => void
+  onCreate: (t: { category: BoardCategory; title: string; body: string; order_number: string | null; order_id: string | null; order_label: string | null; media: BoardMedia[] }) => Promise<unknown> | void
   defaultCategory: BoardCategory
   categories: string[]
 }) {
@@ -375,14 +390,29 @@ function NewTopicModal({ onClose, onCreate, defaultCategory, categories }: {
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [order, setOrder] = useState<OrderHit | null>(null)
+  const [files, setFiles] = useState<File[]>([])
+  const [upStatus, setUpStatus] = useState('')
+  const [upErr, setUpErr] = useState('')
   const [staff, setStaff] = useState<EmployeeOption[]>([])
   useEffect(() => { fetchEmployeeOptions().then(setStaff).catch(() => setStaff([])) }, [])
-  const ok = title.trim().length > 0 && category.trim().length > 0
+  const ok = title.trim().length > 0 && category.trim().length > 0 && !upStatus
+  const submit = async () => {
+    if (!ok) return
+    setUpErr('')
+    try {
+      const media = files.length ? await uploadBoardMedia(files, setUpStatus) : []
+      setUpStatus('กำลังโพสต์…')
+      await onCreate({ category, title, body, order_number: order?.order_number ?? null, order_id: order?.id ?? null, order_label: order ? orderLabel(order) : null, media })
+    } catch (e) {
+      setUpErr(`อัปโหลดไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`)
+    }
+    setUpStatus('')
+  }
   const input: React.CSSProperties = { width: '100%', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 14px', fontSize: 14, outline: 'none', boxSizing: 'border-box', background: 'var(--surface)', color: 'var(--ink)', fontFamily: 'inherit' }
   const label: React.CSSProperties = { fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)', display: 'block', marginBottom: 6 }
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
-      <div onClick={e => e.stopPropagation()} style={{ ...card, width: 560, maxWidth: '100%', padding: 26 }}>
+    <div onClick={() => { if (!upStatus) onClose() }} style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+      <div onClick={e => e.stopPropagation()} style={{ ...card, width: 560, maxWidth: '100%', padding: 26, maxHeight: 'calc(100vh - 48px)', overflowY: 'auto' }}>
         <h3 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)', marginBottom: 18 }}>สร้างหัวข้อใหม่</h3>
         <div style={{ marginBottom: 14 }}>
           <span style={label}>หมวด</span>
@@ -406,9 +436,15 @@ function NewTopicModal({ onClose, onCreate, defaultCategory, categories }: {
           <SmartField multiline value={body} onChange={setBody} staff={staff}
             placeholder="เล่าเรื่องให้คนอ่านเข้าใจ — พิมพ์ @ เพื่อเลือกชื่อพนักงาน" style={{ ...input, resize: 'vertical', lineHeight: 1.55 }} />
         </div>
+        <div style={{ marginBottom: 22 }}>
+          <span style={label}>รูป / คลิป <span style={{ fontWeight: 400, color: 'var(--ink-4)' }}>(ถ้ามี · สูงสุด {MAX_MEDIA} ไฟล์)</span></span>
+          <PendingFiles files={files} onRemove={i => setFiles(f => f.filter((_, k) => k !== i))} status={upStatus} />
+          <AttachButton label="แนบรูป / คลิป" disabled={!!upStatus || files.length >= MAX_MEDIA} onFiles={fs => setFiles(f => [...f, ...fs].slice(0, MAX_MEDIA))} />
+          {upErr && <div style={{ fontSize: 12.5, color: 'var(--red)', marginTop: 6 }}>{upErr}</div>}
+        </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button onClick={onClose} style={{ border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--ink-2)', borderRadius: 999, height: 42, padding: '0 20px', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>ยกเลิก</button>
-          <button disabled={!ok} onClick={() => onCreate({ category, title, body, order_number: order?.order_number ?? null, order_id: order?.id ?? null, order_label: order ? orderLabel(order) : null })}
+          <button disabled={!ok} onClick={submit}
             style={{ border: 'none', background: ok ? 'var(--brand)' : 'var(--cream)', color: '#FFF8F0', borderRadius: 999, height: 42, padding: '0 24px', fontSize: 14, fontWeight: 600, cursor: ok ? 'pointer' : 'default', fontFamily: 'inherit' }}>โพสต์หัวข้อ</button>
         </div>
       </div>
@@ -553,5 +589,78 @@ function SmartField({ value, onChange, staff, order, onOrder, multiline, style, 
       {multiline ? <textarea rows={5} {...common} /> : <input {...common} />}
       <SuggestList items={items} active={active} onPick={pick} />
     </div>
+  )
+}
+
+// ── รูป/คลิปแนบ ──
+const CLIP_ICON = 'M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13'
+
+// ปุ่มแนบ (เลือกได้หลายไฟล์ · รูปและคลิป)
+function AttachButton({ onFiles, disabled, label }: { onFiles: (f: File[]) => void; disabled?: boolean; label?: string }) {
+  const ref = useRef<HTMLInputElement>(null)
+  return (
+    <>
+      <input ref={ref} type="file" accept="image/*,video/*" multiple hidden
+        onChange={e => { const fs = Array.from(e.target.files ?? []); e.target.value = ''; if (fs.length) onFiles(fs) }} />
+      <button type="button" onClick={() => ref.current?.click()} disabled={disabled} title="แนบรูป / คลิป"
+        style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, flexShrink: 0, height: 38, minWidth: 38, padding: label ? '0 14px' : 0,
+          borderRadius: label ? 999 : 12, border: '1px solid var(--border)', background: 'var(--surface)', color: disabled ? 'var(--ink-4)' : 'var(--brand)',
+          cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 13 }}>
+        <Icon d={CLIP_ICON} size={17} />{label}
+      </button>
+    </>
+  )
+}
+
+// ไฟล์ที่เลือกไว้ (ยังไม่อัป) — รูปย่อ/ป้ายคลิป + ปุ่มเอาออก · กำลังอัปโชว์ความคืบหน้า
+function PendingFiles({ files, onRemove, status }: { files: File[]; onRemove: (i: number) => void; status: string }) {
+  const [urls, setUrls] = useState<string[]>([])
+  useEffect(() => {
+    const u = files.map(f => (f.type.startsWith('image/') ? URL.createObjectURL(f) : ''))
+    setUrls(u)   // eslint-disable-line react-hooks/set-state-in-effect
+    return () => u.forEach(x => x && URL.revokeObjectURL(x))
+  }, [files])
+  if (!files.length) return null
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {files.map((f, i) => (
+          <div key={i} style={{ position: 'relative', width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: 'var(--cream)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {urls[i] ? <img src={urls[i]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              : <span style={{ fontSize: 11, color: 'var(--ink-3)', textAlign: 'center', padding: 4 }}>🎬 คลิป</span>}
+            {!status && (
+              <button type="button" onClick={() => onRemove(i)} title="เอาออก"
+                style={{ position: 'absolute', top: 3, right: 3, width: 18, height: 18, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: 11, lineHeight: 1, cursor: 'pointer', padding: 0 }}>✕</button>
+            )}
+          </div>
+        ))}
+      </div>
+      {status && <div style={{ fontSize: 12, color: 'var(--brand)', marginTop: 6 }}>{status}</div>}
+    </div>
+  )
+}
+
+// รูป/คลิปที่โพสต์แล้ว — กดรูปดูเต็มจอ · คลิปเล่นในที่ (โหลดเมื่อกดเล่น ประหยัดเน็ต)
+function MediaGrid({ media, small }: { media?: BoardMedia[]; small?: boolean }) {
+  const [view, setView] = useState<string | null>(null)
+  if (!media?.length) return null
+  const size = small ? 96 : 140
+  return (
+    <>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+        {media.map((m, i) => m.kind === 'video' ? (
+          <video key={i} src={m.url} controls preload="none" playsInline
+            style={{ width: small ? 200 : 260, maxWidth: '100%', borderRadius: 10, background: '#000' }} />
+        ) : (
+          <img key={i} src={m.url} alt={m.name ?? ''} loading="lazy" onClick={() => setView(m.url)}
+            style={{ width: size, height: size, objectFit: 'cover', borderRadius: 10, cursor: 'zoom-in', border: '1px solid var(--border)' }} />
+        ))}
+      </div>
+      {view && (
+        <div onClick={() => setView(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,10,0.85)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, cursor: 'zoom-out' }}>
+          <img src={view} alt="" style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 8 }} />
+        </div>
+      )}
+    </>
   )
 }

@@ -5,6 +5,8 @@
 import { readStaffSession } from './staffSession'
 import { supabase } from './supabase'
 import { READ_ONLY } from './readOnly'
+import type { BoardMedia } from './boardMedia'
+export type { BoardMedia }
 
 export const BOARD_CATEGORIES = ['ประกาศ', 'งานทั่วไป', 'งานออเดอร์', 'งานติดตั้ง', 'ปัญหา/แก้ไข', 'ลูกค้า', 'ไอเดีย'] as const
 // หมวดพิมพ์เองได้ — BOARD_CATEGORIES เป็นแค่หมวดตั้งต้นที่แนะนำ
@@ -14,7 +16,7 @@ export type BoardCategory = string
 export const BOARD_STATUSES = ['รอตอบ', 'กำลังทำ', 'ปิดแล้ว'] as const
 export type BoardStatus = typeof BOARD_STATUSES[number]
 
-export type BoardComment = { id: string; author: string; body: string; created_at: string; likes: string[] }
+export type BoardComment = { id: string; author: string; body: string; created_at: string; likes: string[]; media?: BoardMedia[] }
 export type BoardTopic = {
   id: string
   category: BoardCategory
@@ -28,6 +30,7 @@ export type BoardTopic = {
   pinned: boolean
   created_at: string
   last_activity_at: string
+  media?: BoardMedia[]          // รูป/คลิปแนบตอนโพสต์ (ลิงก์ R2)
   comments: BoardComment[]
 }
 
@@ -80,23 +83,23 @@ function mutate(fn: (list: BoardTopic[]) => void): BoardTopic[] {
 
 async function local_listTopics(): Promise<BoardTopic[]> { return load() }
 
-async function local_createTopic(t: { category: BoardCategory; title: string; body: string; order_number?: string | null; order_id?: string | null; order_label?: string | null }): Promise<BoardTopic> {
+async function local_createTopic(t: { category: BoardCategory; title: string; body: string; order_number?: string | null; order_id?: string | null; order_label?: string | null; media?: BoardMedia[] }): Promise<BoardTopic> {
   const now = new Date().toISOString()
   const topic: BoardTopic = {
     id: uid(), category: t.category.trim() || 'งานทั่วไป', title: t.title.trim(), body: t.body.trim(), author: currentAuthor(),
     order_number: t.order_number?.trim() || null, order_id: t.order_id || null, order_label: t.order_label || null, status: t.category === 'ปัญหา/แก้ไข' ? 'รอตอบ' : null,
-    pinned: false, created_at: now, last_activity_at: now, comments: [],
+    pinned: false, created_at: now, last_activity_at: now, comments: [], media: t.media ?? [],
   }
   mutate(list => { list.unshift(topic) })
   return topic
 }
 
-async function local_addComment(topicId: string, body: string): Promise<BoardTopic[]> {
+async function local_addComment(topicId: string, body: string, media: BoardMedia[] = []): Promise<BoardTopic[]> {
   const now = new Date().toISOString()
   return mutate(list => {
     const t = list.find(x => x.id === topicId)
     if (!t) return
-    t.comments.push({ id: uid(), author: currentAuthor(), body: body.trim(), created_at: now, likes: [] })
+    t.comments.push({ id: uid(), author: currentAuthor(), body: body.trim(), created_at: now, likes: [], media })
     t.last_activity_at = now
   })
 }
@@ -134,18 +137,18 @@ export async function resetBoard(): Promise<BoardTopic[]> { const s = seed(); sa
 // ── ฐานจริง (Supabase) ─────────────────────────────────────────────
 // โหลดทั้งกระดานในคำขอเดียว (หัวข้อ + ความคิดเห็น + คนกดถูกใจ) · ข้อมูลเป็นข้อความสั้น ไม่กิน egress
 type DbLike = { author: string }
-type DbComment = { id: string; author: string; body: string; created_at: string; board_likes: DbLike[] | null }
+type DbComment = { id: string; author: string; body: string; created_at: string; media: BoardMedia[] | null; board_likes: DbLike[] | null }
 type DbTopic = Omit<BoardTopic, 'comments'> & { board_comments: DbComment[] | null }
 
 async function db_listTopics(): Promise<BoardTopic[]> {
   const { data, error } = await supabase.from('board_topics')
-    .select('*, board_comments(id, author, body, created_at, board_likes(author))')
+    .select('*, board_comments(id, author, body, created_at, media, board_likes(author))')
     .order('last_activity_at', { ascending: false })
   if (error) throw new Error(error.message)
   return ((data ?? []) as unknown as DbTopic[]).map(({ board_comments, ...t }) => ({
     ...t,
     comments: (board_comments ?? [])
-      .map(c => ({ id: c.id, author: c.author, body: c.body, created_at: c.created_at, likes: (c.board_likes ?? []).map(l => l.author) }))
+      .map(c => ({ id: c.id, author: c.author, body: c.body, created_at: c.created_at, media: c.media ?? [], likes: (c.board_likes ?? []).map(l => l.author) }))
       .sort((a, b) => a.created_at.localeCompare(b.created_at)),
   }))
 }
@@ -155,12 +158,13 @@ async function db_createTopic(t: Parameters<typeof local_createTopic>[0]): Promi
   const row = must<BoardTopic>(await supabase.from('board_topics').insert({
     category: t.category.trim() || 'งานทั่วไป', title: t.title.trim(), body: t.body.trim(), author: currentAuthor(),
     order_number: t.order_number?.trim() || null, order_id: t.order_id || null, order_label: t.order_label || null,
+    media: t.media ?? [],
     status: t.category === 'ปัญหา/แก้ไข' ? 'รอตอบ' : null,
   }).select().single())
   return { ...row, comments: [] }
 }
-async function db_addComment(topicId: string, body: string): Promise<BoardTopic[]> {
-  must(await supabase.from('board_comments').insert({ topic_id: topicId, author: currentAuthor(), body: body.trim() }))
+async function db_addComment(topicId: string, body: string, media: BoardMedia[] = []): Promise<BoardTopic[]> {
+  must(await supabase.from('board_comments').insert({ topic_id: topicId, author: currentAuthor(), body: body.trim(), media }))
   must(await supabase.from('board_topics').update({ last_activity_at: new Date().toISOString() }).eq('id', topicId))
   return db_listTopics()
 }
@@ -192,3 +196,19 @@ export const toggleLike = READ_ONLY ? local_toggleLike : db_toggleLike
 export const updateTopic = READ_ONLY ? local_updateTopic : db_updateTopic
 export const deleteTopic = READ_ONLY ? local_deleteTopic : db_deleteTopic
 export const deleteComment = READ_ONLY ? local_deleteComment : db_deleteComment
+
+// หัวข้อในตามงานที่ผูกกับออเดอร์เหล่านี้ (ใช้ในโฟลเดอร์ลูกค้า) · ดึงเฉพาะที่ต้องโชว์ + จำนวนความคิดเห็น
+export async function topicsForOrders(orderIds: string[]): Promise<(Omit<BoardTopic, 'comments'> & { comment_count: number })[]> {
+  if (!orderIds.length) return []
+  if (READ_ONLY) {
+    const set = new Set(orderIds)
+    return (await local_listTopics()).filter(t => t.order_id && set.has(t.order_id)).map(({ comments, ...t }) => ({ ...t, comment_count: comments.length }))
+  }
+  const { data, error } = await supabase.from('board_topics')
+    .select('*, board_comments(count)')
+    .in('order_id', orderIds)
+    .order('last_activity_at', { ascending: false })
+  if (error) return []
+  return ((data ?? []) as unknown as (Omit<BoardTopic, 'comments'> & { board_comments: { count: number }[] })[])
+    .map(({ board_comments, ...t }) => ({ ...t, comment_count: board_comments?.[0]?.count ?? 0 }))
+}
