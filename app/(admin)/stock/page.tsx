@@ -1,5 +1,6 @@
 'use client'
 
+import NotifyBell from '@/components/NotifyBell'
 import { useState, useEffect, useRef } from 'react'
 import AnchoredMenu from '@/components/AnchoredMenu'
 import { supabase } from '@/lib/supabase'
@@ -289,10 +290,13 @@ export default function StockPage() {
           <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px', fontFamily: 'inherit' }}>สต็อก</h1>
           <p style={{ fontSize: 14, color: 'var(--ink-3)', marginTop: 4 }}>{items.length} รายการ</p>
         </div>
-        <button onClick={openAdd}
-          style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,122,255,0.3), 0 4px 14px rgba(0,122,255,0.2)', fontFamily: 'inherit' }}>
-          + เพิ่มรายการ
-        </button>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <NotifyBell />
+          <button onClick={openAdd}
+            style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,122,255,0.3), 0 4px 14px rgba(0,122,255,0.2)', fontFamily: 'inherit' }}>
+            + เพิ่มรายการ
+          </button>
+        </div>
       </div>
 
       {error && (

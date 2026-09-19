@@ -1,5 +1,6 @@
 'use client'
 
+import NotifyBell from '@/components/NotifyBell'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import AnchoredMenu from '@/components/AnchoredMenu'
 import Link from 'next/link'
@@ -1282,7 +1283,8 @@ export default function InstallationsPage() {
           <h1 className="sc-title">งานติดตั้ง</h1>
           <p className="sc-sub">นัดวัดหน้างาน ติดตั้ง และงานแก้ของทีมช่าง ในที่เดียว</p>
         </div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <NotifyBell />
           <button className="sc-btn-ghost" onClick={() => setBonusModal(true)}>ยอดติดตั้ง</button>
           <button className="sc-btn-ghost" onClick={openSummary}>สรุปงานติดตั้ง</button>
           <button className="sc-btn-ghost" onClick={() => { setPrintColStep(false); setPrintAsk(true) }}>🖨️ ปริ้น</button>

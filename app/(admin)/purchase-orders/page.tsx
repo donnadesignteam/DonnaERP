@@ -1,4 +1,5 @@
 'use client'
+import NotifyBell from '@/components/NotifyBell'
 import CreamSelect from '@/components/CreamSelect'
 
 import { useState, useEffect } from 'react'
@@ -225,10 +226,13 @@ export default function PurchaseOrdersPage() {
           <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px' }}>สั่งซื้อ</h1>
           <p style={{ fontSize: 14, color: 'var(--ink-3)', marginTop: 4 }}>{rows.length} รายการ</p>
         </div>
-        <button onClick={() => { setPasteText(''); setParseError(''); setModal({ mode: 'add', data: empty() }) }}
-          style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,122,255,0.3)' }}>
-          + เพิ่มรายการ
-        </button>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <NotifyBell />
+          <button onClick={() => { setPasteText(''); setParseError(''); setModal({ mode: 'add', data: empty() }) }}
+            style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,122,255,0.3)' }}>
+            + เพิ่มรายการ
+          </button>
+        </div>
       </div>
 
       {error && (

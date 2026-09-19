@@ -1,5 +1,6 @@
 'use client'
 
+import NotifyBell from '@/components/NotifyBell'
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
@@ -379,6 +380,7 @@ export default function StaffDetailPage() {
       {emp && (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, margin: '14px 0 22px' }}>
+            <div style={{ order: 9 }}><NotifyBell /></div>
             <div style={{ width: 60, height: 60, borderRadius: 30, background: 'linear-gradient(135deg, #A87452, #8A6142)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 24, fontWeight: 700, flexShrink: 0 }}>
               {(emp.nickname || emp.name || '?').charAt(0)}
             </div>

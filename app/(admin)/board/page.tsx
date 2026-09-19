@@ -3,6 +3,7 @@
 // หมวด "ตามงาน" (เดิมชื่อกระดานสนทนา) — คุยกันเป็นหัวข้อตามงาน (แทนแชต: เรื่องไม่จมหาย, ผูกกับออเดอร์ได้, ไม่ต้องเปิด realtime ค้าง)
 // ซ้าย = รายการหัวข้อ (ปักหมุดอยู่บนสุด แล้วเรียงตามความเคลื่อนไหวล่าสุด) · ขวา = หัวข้อที่เลือก + ความคิดเห็น
 // ข้อมูล: เว็บจริงเก็บใน Supabase (ทุกคนเห็นเหมือนกัน) · โคลนโหมดอ่านอย่างเดียวเก็บในเบราว์เซอร์ — ดู lib/boardStore.ts
+import NotifyBell from '@/components/NotifyBell'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import CreamSelect from '@/components/CreamSelect'
 import OrderDetailModal from '@/components/OrderDetailModal'
@@ -171,10 +172,13 @@ export default function BoardPage() {
           <h1 style={{ fontSize: 32, fontWeight: 700, color: '#4A3122', letterSpacing: '-0.5px' }}>ตามงาน</h1>
           <p style={{ fontSize: 15, color: 'var(--ink-2)', marginTop: 2 }}>พูดคุย แลกเปลี่ยนข้อมูล และติดตามงานของทีม</p>
         </div>
-        <button onClick={() => setCreating(true)}
-          style={{ background: 'var(--brand)', color: '#FFF8F0', border: 'none', borderRadius: 999, height: 46, padding: '0 26px', fontSize: 14.5, fontWeight: 600, cursor: 'pointer', boxShadow: '0 3px 10px rgba(158,106,73,0.35)' }}>
-          ＋ สร้างหัวข้อใหม่
-        </button>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <NotifyBell />
+          <button onClick={() => setCreating(true)}
+            style={{ background: 'var(--brand)', color: '#FFF8F0', border: 'none', borderRadius: 999, height: 46, padding: '0 26px', fontSize: 14.5, fontWeight: 600, cursor: 'pointer', boxShadow: '0 3px 10px rgba(158,106,73,0.35)' }}>
+            ＋ สร้างหัวข้อใหม่
+          </button>
+        </div>
       </div>
 
       {err && (

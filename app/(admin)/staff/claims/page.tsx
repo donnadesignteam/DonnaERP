@@ -5,6 +5,7 @@
 // ‼️ ต้องรัน sql/add_claim_fault_review.sql ก่อน ไม่งั้นกดเปลี่ยนสถานะไม่ติด
 // ‼️ หน้านี้เปิดเฉพาะคนที่ล็อกอินด้วยรหัสรวมของร้าน (ไม่ใช่รหัสพนักงานรายคน)
 
+import NotifyBell from '@/components/NotifyBell'
 import { useEffect, useMemo, useState, Fragment } from 'react'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
@@ -196,6 +197,7 @@ export default function StaffClaimsPage() {
 
   return (
     <div>
+      <div style={{ float: 'right', marginLeft: 12 }}><NotifyBell /></div>
       <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', marginBottom: 4, letterSpacing: '-0.5px' }}>งานเคลม</h1>
       <p style={{ color: 'var(--ink-3)', marginBottom: 16, fontSize: 14 }}>
         ใครมีงานเคลมบ้าง — นับจากช่อง &quot;ผิดโดย&quot; ในหมวดงานเคลม (ขึ้นเฉพาะคนที่มีเคส)

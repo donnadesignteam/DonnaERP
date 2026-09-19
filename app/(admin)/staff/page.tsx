@@ -1,5 +1,6 @@
 'use client'
 
+import NotifyBell from '@/components/NotifyBell'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { fetchStaffList, hasVacationRight, createStaff, setStaffActive, type Staff, type NewStaff } from '@/lib/staffDb'
@@ -119,12 +120,15 @@ export default function StaffPage() {
             ข้อมูลพนักงานและสิทธิการลา
           </p>
         </div>
-        {owner && (
-          <button onClick={() => { setMsg(''); setAddOpen(true) }}
-            style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-            + เพิ่มพนักงาน
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <NotifyBell />
+          {owner && (
+            <button onClick={() => { setMsg(''); setAddOpen(true) }}
+              style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+              + เพิ่มพนักงาน
+            </button>
+          )}
+        </div>
       </div>
 
       {msg && (

@@ -1,5 +1,6 @@
 'use client'
 
+import NotifyBell from '@/components/NotifyBell'
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { syncRows, byCreatedAsc } from '@/lib/rowCache'
@@ -429,19 +430,22 @@ export default function AnalyticsPage() {
           </p>
         </div>
         {/* dropdown เดียว: ทั้งหมด + เดือนที่มีออเดอร์ */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--cream-2)', border: '1px solid var(--border-2)', borderRadius: 999, padding: '9px 16px', boxShadow: 'var(--shadow)' }}>
-          <svg width="15" height="15" fill="none" stroke="var(--brand)" strokeWidth="1.6" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/>
-          </svg>
-          <select value={month} onChange={e => setMonth(e.target.value)}
-            style={{ border: 'none', background: 'transparent', fontSize: 13, fontWeight: 600, color: 'var(--ink)', outline: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
-            <option value="">ทั้งหมด</option>
-            {monthOptions.map(m => (
-              <option key={m} value={m}>
-                {new Date(parseInt(m.slice(0, 4)), parseInt(m.slice(5, 7)) - 1, 1).toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })}
-              </option>
-            ))}
-          </select>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <NotifyBell />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--cream-2)', border: '1px solid var(--border-2)', borderRadius: 999, padding: '9px 16px', boxShadow: 'var(--shadow)' }}>
+            <svg width="15" height="15" fill="none" stroke="var(--brand)" strokeWidth="1.6" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/>
+            </svg>
+            <select value={month} onChange={e => setMonth(e.target.value)}
+              style={{ border: 'none', background: 'transparent', fontSize: 13, fontWeight: 600, color: 'var(--ink)', outline: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+              <option value="">ทั้งหมด</option>
+              {monthOptions.map(m => (
+                <option key={m} value={m}>
+                  {new Date(parseInt(m.slice(0, 4)), parseInt(m.slice(5, 7)) - 1, 1).toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
         <button onClick={downloadReport} className="sc-btn-main"
           style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>

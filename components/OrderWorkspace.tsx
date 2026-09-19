@@ -1,5 +1,6 @@
 'use client'
 
+import NotifyBell from '@/components/NotifyBell'
 import { useState, useEffect, useRef, useMemo, useCallback, type SetStateAction } from 'react'
 import { flushSync } from 'react-dom'
 import Link from 'next/link'
@@ -2753,6 +2754,7 @@ ${body}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <NotifyBell />
           {selectedIds.size > 0 && (
             <button onClick={bulkDelete}
               style={{ background: 'var(--red-bg)', color: 'var(--red)', border: '1px solid var(--red)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>

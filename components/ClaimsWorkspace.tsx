@@ -1,5 +1,6 @@
 'use client'
 
+import NotifyBell from '@/components/NotifyBell'
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -1034,6 +1035,7 @@ ${body}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <NotifyBell />
           <button onClick={() => requestPrint(selectedIds.size > 0 ? displayed.filter(r => selectedIds.has(r.id)) : displayed)}
             style={{ background: 'var(--surface)', color: 'var(--brand)', border: '1px solid var(--border)', borderRadius: 999, height: 46, padding: '0 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: 'var(--shadow)' }}>
             🖨️ ปริ้น{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}

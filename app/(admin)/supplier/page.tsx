@@ -1,5 +1,6 @@
 'use client'
 
+import NotifyBell from '@/components/NotifyBell'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
@@ -27,6 +28,7 @@ export default function SupplierPage() {
   return (
     <div>
       <div style={{ marginBottom: 32 }}>
+        <div style={{ float: 'right', marginLeft: 12 }}><NotifyBell /></div>
         <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', marginBottom: 4, letterSpacing: '-0.5px' }}>ซัพพลายเออร์</h1>
         <p style={{ color: 'var(--ink-3)', fontSize: 14 }}>{loading ? '…' : suppliers.length} รายการ</p>
       </div>

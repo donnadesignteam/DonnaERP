@@ -4,6 +4,7 @@
 // ข้อมูลมาจากแถวสแกนของแผนกตัด (production_scans.stage = 'ตัด') ที่บันทึกเมตรไว้ตอนสแกน
 // ‼️ ต้องรัน sql/fabric_meters.sql ก่อน ไม่งั้นคอลัมน์ meters ไม่มี → หน้านี้ขึ้นวิธีแก้ให้
 
+import NotifyBell from '@/components/NotifyBell'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
@@ -114,6 +115,7 @@ export default function CuttingPage() {
 
   return (
     <div>
+      <div style={{ float: 'right', marginLeft: 12 }}><NotifyBell /></div>
       <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', marginBottom: 4, letterSpacing: '-0.5px' }}>ยอดตัดผ้า</h1>
       <p style={{ color: 'var(--ink-3)', marginBottom: 16, fontSize: 14 }}>
         นับจากการสแกนของแผนกตัด — เมตรคิดจากรายการสินค้าในออเดอร์ (ช่างไม่ต้องกรอกเอง)

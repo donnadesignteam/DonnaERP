@@ -4,6 +4,7 @@
 // เจ้าของออเดอร์ = ช่อง "แอดมิน" ของใบนั้น (admin_name/admin_code — ระบบใส่ให้เองหรือแอดมินเลือกเอง)
 // ดูกติกาการใส่ชื่อได้ที่ lib/adminActor.ts
 
+import NotifyBell from '@/components/NotifyBell'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { syncRows, byIdDesc } from '@/lib/rowCache'
@@ -128,6 +129,7 @@ export default function AdminWorkPage() {
 
   return (
     <div>
+      <div style={{ float: 'right', marginLeft: 12 }}><NotifyBell /></div>
       <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', marginBottom: 4, letterSpacing: '-0.5px' }}>งานแอดมิน</h1>
       <p style={{ color: 'var(--ink-3)', marginBottom: 16, fontSize: 14 }}>
         ทั้งทีมทำออเดอร์ได้เท่าไหร่ และแยกเป็นของใครบ้าง (นับตามช่อง &quot;แอดมิน&quot; ของออเดอร์)

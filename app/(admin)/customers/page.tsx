@@ -1,5 +1,6 @@
 'use client'
 
+import NotifyBell from '@/components/NotifyBell'
 import { Suspense, useEffect, useRef, useState } from 'react'
 import Pager from '@/components/Pager'
 import { useSearchParams } from 'next/navigation'
@@ -238,6 +239,7 @@ function CustomerFolder() {
             {name || 'ไม่ระบุชื่อลูกค้า'}
           </h1>
         </div>
+        <div style={{ marginLeft: 'auto' }}><NotifyBell /></div>
       </div>
 
       {/* สรุป */}

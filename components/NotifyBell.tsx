@@ -4,7 +4,7 @@
 //   · ของค้างอนุมัติ: ใบลาที่ยังไม่มีใครตัดสิน + เคลมที่ยื่นอุทธรณ์แล้วยังไม่ได้ตัดสิน
 //   · ความเคลื่อนไหวในหมวด "ตามงาน" 7 วันล่าสุด (หัวข้อใหม่/ตอบกลับ) — เลขแดงนับเฉพาะที่ยังไม่ได้เปิดกระดิ่งดู
 // ‼️ อยู่ทุกหน้า = โหลดบ่อย → กรองที่ฐานข้อมูลก่อนเสมอ (ไม่ดึงทั้งตาราง) กิน egress น้อย
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, createContext, useContext } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
@@ -62,14 +62,16 @@ const ICON: Record<Kind, { bg: string; ink: string; d: string }> = {
   board: { bg: '#EFE3D4', ink: '#6B4326', d: 'M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z' },
 }
 
-export default function NotifyBell() {
-  const [open, setOpen] = useState(false)
+// ข้อมูลกระดิ่งอยู่ที่ NotifyProvider (ครอบทุกหน้าใน SidebarLayout) ตัวเดียว — เปลี่ยนหน้าไม่ต้องโหลดใหม่
+// ปุ่มกระดิ่ง (NotifyBell) วางในหัวหน้าของแต่ละหน้า ข้างซ้ายปุ่มปริ้น/เพิ่มรายการ แล้วอ่านข้อมูลจากที่นี่
+type NotifyState = { approvals: Item[]; board: Item[]; ready: boolean; seen: string; markSeen: () => string }
+const NotifyCtx = createContext<NotifyState | null>(null)
+
+export function NotifyProvider({ children }: { children: React.ReactNode }) {
   const [approvals, setApprovals] = useState<Item[]>([])
   const [board, setBoard] = useState<Item[]>([])
   const [ready, setReady] = useState(false)
   const [seen, setSeen] = useState('')          // เวลาที่เปิดดูล่าสุด
-  const [seenAtOpen, setSeenAtOpen] = useState('')  // ค่าตอนเปิดกล่อง — ไว้ไฮไลต์อันที่เพิ่งเข้ามาระหว่างดู
-  const boxRef = useRef<HTMLDivElement>(null)
 
   // ── ของค้างอนุมัติ ──
   const loadApprovals = useCallback(async () => {
@@ -144,6 +146,22 @@ export default function NotifyBell() {
     return () => { clearInterval(t); window.removeEventListener('board-activity', onBoard) }
   }, [loadApprovals, loadBoard])
 
+  const markSeen = useCallback(() => {
+    const prev = seen
+    const now = new Date().toISOString()
+    setSeen(now); writeSeen(now)
+    return prev
+  }, [seen])
+
+  return <NotifyCtx.Provider value={{ approvals, board, ready, seen, markSeen }}>{children}</NotifyCtx.Provider>
+}
+
+export default function NotifyBell() {
+  const ctx = useContext(NotifyCtx)
+  const [open, setOpen] = useState(false)
+  const [seenAtOpen, setSeenAtOpen] = useState('')  // ค่าตอนเปิดกล่อง — ไว้ไฮไลต์อันที่เพิ่งเข้ามาระหว่างดู
+  const boxRef = useRef<HTMLDivElement>(null)
+
   // คลิกนอกกล่องแล้วปิด
   useEffect(() => {
     if (!open) return
@@ -154,15 +172,13 @@ export default function NotifyBell() {
     return () => document.removeEventListener('mousedown', onDown)
   }, [open])
 
+  if (!ctx) return null
+  const { approvals, board, ready, seen, markSeen } = ctx
   const unread = board.filter(b => (b.ts ?? '') > seen)
   const badge = approvals.length + unread.length
   const toggle = () => {
-    if (!open) {
-      // เปิดดู = อ่านแล้ว · จำค่าก่อนหน้าไว้ไฮไลต์อันใหม่ในรอบนี้
-      setSeenAtOpen(seen)
-      const now = new Date().toISOString()
-      setSeen(now); writeSeen(now)
-    }
+    // เปิดดู = อ่านแล้ว · จำค่าก่อนหน้าไว้ไฮไลต์อันใหม่ในรอบนี้
+    if (!open) setSeenAtOpen(markSeen())
     setOpen(o => !o)
   }
   const leaveCount = approvals.filter(i => i.kind === 'leave').length

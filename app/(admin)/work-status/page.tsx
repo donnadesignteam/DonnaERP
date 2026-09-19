@@ -1,5 +1,6 @@
 'use client'
 
+import NotifyBell from '@/components/NotifyBell'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
@@ -59,6 +60,7 @@ export default function WorkStatusPage() {
 
   return (
     <div>
+      <div style={{ float: 'right', marginLeft: 12 }}><NotifyBell /></div>
       <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', marginBottom: 4, letterSpacing: '-0.5px' }}>สถานะงาน</h1>
       <p style={{ color: 'var(--ink-3)', marginBottom: 32, fontSize: 14 }}>ติดตามความคืบหน้าของงานแต่ละขั้นตอน</p>
 

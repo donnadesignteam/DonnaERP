@@ -5,6 +5,7 @@
 // วิดีโอตอนแกะ + รูป อัพตรงเข้า R2 (โฟลเดอร์ returns/<id>/) แล้วบันทึก URL ลงแถวทันที
 // ช่อง "จากออเดอร์" = ผูกกับงานเคลม (claims) — กดแล้วพิมพ์ค้นเหมือนช่องอื่น (เลขออเดอร์เดิม/ชื่อลูกค้า/เลขพัสดุส่งคืน/เบอร์)
 // ตาราง: sql/create_return_parcels.sql + sql/add_return_parcels_claim.sql (คอลัมน์ claim_id)
+import NotifyBell from '@/components/NotifyBell'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import AnchoredMenu from '@/components/AnchoredMenu'
 import Link from 'next/link'
@@ -450,6 +451,7 @@ export default function ReturnParcelsPage() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <NotifyBell />
           <button onClick={printList} disabled={displayed.length === 0}
             style={{ background: 'var(--surface)', color: 'var(--brand)', border: '1px solid var(--border)', borderRadius: 999, height: 46, padding: '0 20px', fontSize: 14, fontWeight: 600, cursor: displayed.length ? 'pointer' : 'not-allowed', boxShadow: 'var(--shadow)' }}>
             🖨️ ปริ้น

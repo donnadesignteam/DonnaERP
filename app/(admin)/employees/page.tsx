@@ -1,5 +1,6 @@
 'use client'
 
+import NotifyBell from '@/components/NotifyBell'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
@@ -464,7 +465,8 @@ export default function EmployeesPage() {
           <h1 className="sc-title">ปฏิทินร้าน</h1>
           <p className="sc-sub">วันหยุด แคมเปญ ช่วงห้ามลา และใบลาของทีม ในที่เดียว</p>
         </div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <NotifyBell />
           <button className="sc-btn-ghost" onClick={() => window.print()}>🖨️ ปริ้นปฏิทิน</button>
           <button className="sc-btn-main" onClick={() => { setEditId(null); setModal(true) }}>+ เพิ่มรายการ</button>
         </div>

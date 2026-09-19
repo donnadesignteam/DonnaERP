@@ -4,6 +4,7 @@
 // เดิมยัดการ์ด 4 ใบเรียงกันในแถวเดียว กว้างไม่เท่ากัน แต่ละใบมีแถบเลื่อนของตัวเอง อ่านยาก
 // ใหม่: แถบบัญชีด้านบน (ชื่อ + ปุ่มที่ใช้บ่อย) แล้วแบ่งเนื้อหาเป็น 3 แท็บ เปิดทีละเรื่องเต็มความกว้าง
 
+import NotifyBell from '@/components/NotifyBell'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import ActivityLog from '@/components/ActivityLog'
@@ -61,6 +62,7 @@ export default function SettingsPage() {
 
   return (
     <div>
+      <div style={{ float: 'right', marginLeft: 12 }}><NotifyBell /></div>
       <h1 className="sc-title">ตั้งค่า</h1>
       <p className="sc-sub" style={{ marginBottom: 22 }}>บัญชีที่เข้าใช้งาน · ประวัติการแก้ไข · สิ่งที่เพิ่งเพิ่มเข้ามาในเว็บ</p>
 
