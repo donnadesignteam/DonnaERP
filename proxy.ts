@@ -39,9 +39,10 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // กันทุก path ยกเว้น static ของ Next + ไฟล์ PWA (manifest/logo เบราว์เซอร์โหลดแบบไม่มี cookie)
+  // ‼️ ไฟล์รูปใน public (.png/.jpg/.svg ฯลฯ) ต้องยกเว้นด้วย — ตัวย่อรูปของ next/image ดึงรูปแบบไม่มี cookie โดน redirect ไป /login = โลโก้ในแถบเมนูหาย
   // ‼️ manifest.webmanifest ต้องอยู่ในข้อยกเว้น — เดิมตกหล่นทำให้โดน redirect ไป /login
   //    เบราว์เซอร์เลยอ่าน manifest ไม่ได้ (ชื่อ/ไอคอน/start_url ไม่มีผลบน Android)
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|scan-app.webmanifest|sw.js|donna-logo|icon-).*)',
+    '/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|scan-app.webmanifest|sw.js|donna-logo|icon-|.*\.(?:png|jpe?g|svg|webp|gif|ico)$).*)',
   ],
 }
