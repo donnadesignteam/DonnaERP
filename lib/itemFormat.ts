@@ -277,11 +277,8 @@ export const shownFields = (it: RawItem): Set<string> => {
     const v = it[key]
     if (v !== '' && v != null && !(key === 'quantity' && v === 0)) s.add(key as string)
   }
-  // รางทุกแบบ: ไม่ต้องขึ้นช่อง "แบบ" (ค่าในระบบยังเป็นสั่งตัด ใบปริ้นไม่เปลี่ยน) และช่อง "สูง" (รางไม่มีความสูง)
-  if (String(it.type ?? '').startsWith('ราง')) {
-    if (normalizeSupply(it.supply) !== 'พร้อมส่ง') s.delete('supply')
-    if (!Number(it.height)) s.delete('height')
-  }
+  // รางทุกแบบ: ไม่ขึ้นช่อง "แบบ" (รางพร้อมส่งเสมอ — fillItemDefaults ตั้งให้) และช่อง "สูง" (รางมีแค่ความยาว)
+  if (String(it.type ?? '').startsWith('ราง')) { s.delete('supply'); s.delete('height') }
   return s
 }
 
@@ -372,6 +369,8 @@ export function fillItemDefaults(it: RawItem): RawItem {
   const typeName = nameRaw.replace(/\(?\s*(พร้อม\s*ส่?ง|สั่ง\s*ตัด)\s*\)?/g, ' ').replace(/\s+/g, ' ').trim() || nameRaw
   out.type = normalizeItemType(typeName)
   const isRail = String(out.type ?? '').startsWith('ราง')
+  // รางมีแค่ความยาว ไม่มีความสูง · รางพร้อมส่งเสมอ
+  if (isRail) { out.supply = 'พร้อมส่ง'; out.height = 0 }
 
   // ---- ช่องหัวราง: เดิมเก็บปนกันทั้งจำนวนจีบ/ชนิดตะขอ/สีราง/แบ่งผ้า → แยกลงช่องของมัน
   let head = String(out.rail_head ?? '').replace(/\s+/g, ' ').trim()
@@ -583,7 +582,7 @@ export function itemBlockLines(item: RawItem, opts?: { hideNote?: boolean }): { 
   // หมวดพิเศษต่อท้ายบรรทัดขนาด: แบ่งผ้า / เคมี / โซ่ถ่วง / ฝั่งดึง เช่น "(ดึงขวา)" "(แยกกลาง)"
   const pullRaw = (item.pull_side ?? '').trim()
   const extras = [
-    normalizeSupply(item.supply) === 'พร้อมส่ง' ? 'พร้อมส่ง' : '',
+    !isRail && normalizeSupply(item.supply) === 'พร้อมส่ง' ? 'พร้อมส่ง' : '',   // ราง = พร้อมส่งทุกเส้น ไม่ต้องขึ้นป้าย
     (item.fabric_split ?? '').trim(),
     (item.chemical ?? '').trim(),
     (item.weight_chain ?? '').trim(),
