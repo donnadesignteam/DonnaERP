@@ -146,7 +146,7 @@ export default function BoardPage() {
       {/* หัวหน้า — ชุดเดียวกับหน้าอื่นในธีม */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 22 }}>
         <div>
-          <h1 style={{ fontSize: 32, fontWeight: 700, color: '#4A3122', letterSpacing: '-0.5px' }}>กระดานสนทนา</h1>
+          <h1 style={{ fontSize: 32, fontWeight: 700, color: '#4A3122', letterSpacing: '-0.5px' }}>ตามงาน</h1>
           <p style={{ fontSize: 15, color: 'var(--ink-2)', marginTop: 2 }}>พูดคุย แลกเปลี่ยนข้อมูล และติดตามงานของทีม</p>
         </div>
         <button onClick={() => setCreating(true)}
