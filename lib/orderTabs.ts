@@ -20,20 +20,20 @@ export const INSTALL_STATUSES = ['รอดำเนินการ', 'ตัด
 // สีแยกตามขั้นผลิต: รอ=เหลือง → ตัด=ฟ้า → เย็บ=ม่วง → ตรวจสอบ(ผู้ช่วยช่าง)=คราม → รีด=ชมพู → แพ็ค=เขียวอมฟ้า
 // (คำเก่า "กำลังX" สีเดียวกับ "Xแล้ว")
 export const PROD_STATUS_COLOR: Record<string, string> = {
-  'รอดำเนินการ': '#f59e0b',
-  'ตัดผ้าแล้ว': '#0ea5e9',
-  'เย็บแล้ว': '#8b5cf6',
-  'ตรวจสอบแล้ว': '#6366f1',
-  'รีดแล้ว': '#ec4899',
-  'แพ็คแล้ว': '#14b8a6',
-  'กำลังตัด': '#0ea5e9',
-  'กำลังเย็บ': '#8b5cf6',
-  'กำลังรีด': '#ec4899',
-  'กำลังแพ็ค': '#14b8a6',
-  'งานเสร็จ': '#22c55e',
-  'รอจัดส่ง': '#6366f1',
-  'จัดส่งแล้ว': '#22c55e',
-  'รอติดตั้ง': '#f97316',
+  'รอดำเนินการ': '#C79A4B',
+  'ตัดผ้าแล้ว': '#6E8CA0',
+  'เย็บแล้ว': '#9A7BA0',
+  'ตรวจสอบแล้ว': '#7B7FA3',
+  'รีดแล้ว': '#C2848E',
+  'แพ็คแล้ว': '#6E9A92',
+  'กำลังตัด': '#6E8CA0',
+  'กำลังเย็บ': '#9A7BA0',
+  'กำลังรีด': '#C2848E',
+  'กำลังแพ็ค': '#6E9A92',
+  'งานเสร็จ': '#6F8F6A',
+  'รอจัดส่ง': '#7B7FA3',
+  'จัดส่งแล้ว': '#6F8F6A',
+  'รอติดตั้ง': '#B5715A',
 }
 
 export type QuickTab = 'all' | 'platform' | 'outside' | 'install' | 'shipped' | 'cancelled' | 'claim'
@@ -68,10 +68,18 @@ export function effectiveDueDate(r: DueRow): string | null {
   return isOutsideRow ? (r.deadline ?? null) : effShipping(r)
 }
 
+// ‼️ วันของ deadline (งานติดตั้ง/งานนอก) เก็บเป็น YYYY-MM-DD — ห้ามส่งเข้า new Date() ตรงๆ
+//    เพราะ JS อ่านเป็นเวลา UTC เที่ยงคืน = 07:00 ของไทย ทำให้ Math.ceil ปัดขึ้นไปอีก 1 วันเสมอ
+//    (งานที่ต้องติดตั้งวันนี้เลยขึ้นว่า "1 วัน") — ต้องประกอบเป็นวันที่ท้องถิ่นเอง
 export function daysRemaining(dateStr: string): number | null {
   if (!dateStr) return null
-  const m = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
-  const target = m ? new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1])) : new Date(dateStr)
+  const dmy = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+  const ymd = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  const target = dmy
+    ? new Date(parseInt(dmy[3]), parseInt(dmy[2]) - 1, parseInt(dmy[1]))
+    : ymd
+      ? new Date(parseInt(ymd[1]), parseInt(ymd[2]) - 1, parseInt(ymd[3]))
+      : new Date(dateStr)
   const result = Math.ceil((target.getTime() - new Date().setHours(0, 0, 0, 0)) / 86400000)
   return isNaN(result) ? null : result
 }
@@ -89,8 +97,10 @@ export function parseSortDate(s: string | null | undefined): Date | null {
     const d = new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]))
     return isNaN(d.getTime()) ? null : d
   }
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
-    const d = new Date(s)
+  const ymd = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (ymd) {
+    // ประกอบเป็นวันที่ท้องถิ่น (เหตุผลเดียวกับ daysRemaining) ไม่งั้นวันเดียวกันเรียงสลับกับแบบ D/M/YYYY
+    const d = new Date(parseInt(ymd[1]), parseInt(ymd[2]) - 1, parseInt(ymd[3]))
     return isNaN(d.getTime()) ? null : d
   }
   return null
@@ -124,7 +134,7 @@ export function cmpDeadlineSort(a: DeadlineSortRow, b: DeadlineSortRow, dir: 'as
 
 // สี/ข้อความคอลัมน์วันที่เหลือ: เกินกำหนด+0 วัน = แดง (0 = ต้องจัดส่งวันนี้), 1-10 วัน = เหลือง, >10 วัน = เขียว
 export const daysLabel = (d: number) => d < 0 ? `เกิน ${Math.abs(d)} วัน` : d === 0 ? 'ต้องจัดส่งวันนี้' : `${d} วัน`
-export const daysColor = (d: number) => d <= 0 ? 'var(--red)' : d <= 10 ? '#eab308' : '#34c759'
+export const daysColor = (d: number) => d <= 0 ? 'var(--red)' : d <= 10 ? '#C79A4B' : '#6F8F6A'
 
 // แถวนี้อยู่ในแท็บที่เลือกไหม
 // ‼️ จัดส่งแล้ว/ยกเลิก → ไปอยู่แท็บของตัวเองแท็บเดียว หายจากแท็บอื่นทั้งหมด (รวมถึง "ทั้งหมด")
@@ -135,7 +145,7 @@ export function matchQuickTab(r: TabRow, tab: QuickTab): boolean {
   const isCancelled = r.order_status === 'ยกเลิก'
   return tab === 'shipped' ? isShipped
     : tab === 'cancelled' ? isCancelled
-    : tab === 'claim' ? isClaim
+    : tab === 'claim' ? (isClaim && !isShipped && !isCancelled)   // งานเคลมที่ส่งแล้ว/ยกเลิก ย้ายไปแท็บของตัวเองเหมือนออเดอร์ปกติ (user ขอ 15ก.ย.69)
     : (isShipped || isCancelled) ? false
     : tab === 'all' ? true
     : tab === 'platform' ? (!isClaim && PLATFORM_NAMES.includes(p))

@@ -4,6 +4,7 @@
 import { NextResponse } from 'next/server'
 import { S3Client, DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { READ_ONLY } from '@/lib/readOnly'
 
 const r2 = new S3Client({
   region: 'auto',
@@ -22,6 +23,9 @@ export async function POST(req: Request) {
   }
   try {
     const body = await req.json()
+
+    // โหมดอ่านอย่างเดียว (โคลน donnaweb-design ใส่ NEXT_PUBLIC_READ_ONLY=1): ปิดการเขียน/ลบไฟล์บน R2 ของจริง
+    if (READ_ONLY) return NextResponse.json({ error: 'โหมดลองดีไซน์: แก้ไขไฟล์บน R2 ถูกปิดไว้' }, { status: 403 })
 
     if (body.action === 'sign') {
       const key = String(body.key || '')

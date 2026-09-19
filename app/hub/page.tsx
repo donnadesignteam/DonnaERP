@@ -28,7 +28,7 @@ const TOOLS: Tool[] = [
     id: 'erp',
     title: 'ระบบร้าน',
     desc: 'ออเดอร์ · งานเคลม · ปฏิทิน',
-    color: '#C47E3A',
+    color: '#A87452',
     icon: <svg width="30" height="30" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 3h6M7.5 3h9A1.5 1.5 0 0118 4.5v15a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 016 19.5v-15A1.5 1.5 0 017.5 3z"/></svg>,
     // hub ใช้จากแอปมือถือเป็นหลัก → เข้าหน้า ERP เวอร์ชันมือถือ (/m) ไม่ใช่ตารางเดสก์ท็อป
     // บนคอมเข้าเว็บตรงๆ ยังได้ /dashboard เหมือนเดิม (root '/' redirect ไป /dashboard ไม่ได้แตะ)

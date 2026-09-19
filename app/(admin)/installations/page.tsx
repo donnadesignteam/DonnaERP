@@ -8,6 +8,7 @@ import { useInstallPhotos, photoSaveError, type InstallPhoto } from '@/component
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { HOLIDAYS } from '@/lib/holidays'
+import OrderDetailModal from '@/components/OrderDetailModal'
 import { ThemedSelect, SuggestInput } from '@/components/ItemInputs'
 import { formatItemLines, autoTapeHooks, ITEM_FIELDS, ITEM_FIELD_OPTIONS, visibleItemCols, railNoField, itemInputValue, buildItemSuggestions, emptyItem, type RawItem } from '@/lib/itemFormat'
 import { syncOutsourcePO } from '@/lib/outsourceSync'
@@ -26,8 +27,12 @@ import { syncWorkStatus } from '@/lib/workStatusSync'
 import ProvinceSelect from '@/components/ProvinceSelect'
 import { formatOrderLines, linesToHtml, openFormPrintWindow, escPrintHtml, type PrintLine, type PrintableOrder } from '@/lib/orderPrint'
 import QRCode from 'qrcode'
+import { PlatformIcon } from '@/components/BrandMark'
+import CreamSelect from '@/components/CreamSelect'
+import { pillBg, pillInk } from '@/components/OrderDetailModal'
+import { useColumnFilters, SearchPill, MonthSelect, SortSelect, Tab, type FilterDef } from '@/components/ListFilters'
 import { parseMoney } from '@/lib/money'
-import { WORK_TYPES, WORK_TYPE_OPTIONS, ZONES, TECHS, TECH_BY_ZONE,
+import { WORK_PILL_BG, INST_PILL_BG, WORK_TYPES, WORK_TYPE_OPTIONS, ZONES, TECHS, TECH_BY_ZONE,
   normStatus, statusLabel, statusOptions, rowColor, INSTALL_COLUMNS } from '@/lib/installMeta'
 
 
@@ -96,13 +101,31 @@ const ORDER_META_COLS = 'id, order_number, customer_name, items, price, payment_
 // ตัวเลือกของคอลัมน์ที่เป็นข้อมูลใบออเดอร์ — ชุดเดียวกับหมวดออเดอร์ (components/OrderWorkspace.tsx)
 const PAYMENT_STATUSES = ['ยังไม่ชำระ', 'มัดจำ', 'มัดจำ50%', 'ชำระครบ']
 const PAYMENT_STATUS_COLOR: Record<string, string> = {
-  'ยังไม่ชำระ': '#f59e0b', 'มัดจำ': '#8b5cf6', 'มัดจำ50%': '#3b82f6', 'ชำระครบ': '#22c55e',
+  'ยังไม่ชำระ': '#C79A4B', 'มัดจำ': '#9A7BA0', 'มัดจำ50%': '#6E8CA0', 'ชำระครบ': '#6F8F6A',
 }
 const ORDER_ASSIGNED = ['รออัพเดท', 'แจ้งลงหน้าร้าน', 'พี่ฟอง', 'ช่างเชียงใหม่']
 const ADMINS = ['กาย', 'แพท', 'หนูนา', 'ยุน', 'ส้ม', 'เก๋', 'ช่างแพ็ค']
+
+// ช่องเลือกในแถวตาราง — CreamSelect เพื่อให้เมนูคลี่ลงมีอนิเมชั่นและเป็นโทนครีมเหมือนทั้งเว็บ
+function RowSelect({ value, opts, onPick, blank, maxWidth, bold, color }: {
+  value: string; opts: (string | null | undefined)[]; onPick: (v: string) => void
+  blank?: boolean; maxWidth?: number | string; bold?: boolean; color?: string
+}) {
+  return (
+    <CreamSelect value={value} onChange={onPick} className="cs-inline" menuMinWidth={150}
+      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none',
+        fontWeight: bold ? 600 : 400, color: color ?? 'var(--ink)', padding: 0, maxWidth,
+        display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'inherit' }}
+      options={[...(blank ? [{ value: '', label: '—' }] : []), ...Array.from(new Set([...opts, value].filter(Boolean) as string[])).map(o => ({ value: o, label: o }))]}
+      renderValue={o => (<>
+        <span className="cs-value" style={{ color: 'inherit', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o?.label ?? '—'}</span>
+        <svg className="cs-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+      </>)} />
+  )
+}
+
 const INSTALL_STATUS_OPTIONS = ['ติดตั้งแล้ว', 'ติดตั้ง50%']
-const EMPTY_HL = 'rgba(245,158,11,0.42)'
-const daysColor = (d: number) => d <= 0 ? 'var(--red)' : d <= 10 ? '#eab308' : '#34c759'
+const daysColor = (d: number) => d <= 0 ? 'var(--red)' : d <= 10 ? '#C79A4B' : '#6F8F6A'
 
 // ลำดับแถวชุดเดียวกับตารางงานติดตั้งในหมวดออเดอร์ — 3 ชั้น ต้องครบทั้ง 3 ถึงจะตรงกัน
 //   1) ฐานที่หมวดออเดอร์โหลดมา = วันที่สร้างใบ (entry_date) ใหม่→เก่า · วันเท่ากันตัดสินด้วย id ของใบออเดอร์
@@ -181,8 +204,6 @@ const COL_W: Record<string, number> = {
 }
 // คอลัมน์ที่ตัดบรรทัดเดียว (คอลัมน์รายการเป็นหลายบรรทัด จัดการความกว้างในตัวเอง)
 const CLIP_ONE_LINE = (id: string) => id !== 'items' && COL_W[id] != null
-// คอลัมน์รายการโชว์ได้ไม่เกินกี่บรรทัด (เกินนี้ขึ้น "+ อีก N รายการ" เหมือนหมวดออเดอร์)
-const ITEM_LINE_MAX = 3
 const shortDate = (v?: string | null) => v ? new Date(v).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '-'
 // ISO → ค่าที่ช่อง datetime-local รับได้ (เวลาเครื่อง)
 const toLocalInput = (iso: string) => {
@@ -196,59 +217,88 @@ const TH_MONTHS = ['มกราคม','กุมภาพันธ์','มี
 
 function pad(n: number) { return String(n).padStart(4, '0') }
 
-function Calendar({ year, month, installs, onDayClick }: {
-  year: number; month: number; installs: Installation[]; onDayClick: (day: number) => void
+// สีพื้นการ์ดพาสเทลตามสีประจำงาน (rowColor) — ดีไซน์ปฏิทินชุดเดียวกับปฏิทินร้าน (คลาส .sc-* ใน globals.css)
+const CHIP_BG: Record<string, string> = {
+  '#5ac8fa': '#E3EEF2', '#30b0c7': '#DFEDEF', '#C79A4B': '#FBEAD7', '#6F8F6A': '#E6EEE3',
+  '#9A7BA0': '#EFE6EF', 'var(--red)': '#F9E4E1', '#8e8e93': '#ECE9E7',
+}
+const ymdOf = (y: number, m: number, d: number) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+
+function Calendar({ year, month, selDay, view, installs, onDayClick, onOpen }: {
+  year: number; month: number; selDay: number; view: 'month' | 'week' | 'day'; installs: Installation[]
+  onDayClick: (y: number, m: number, d: number) => void
+  onOpen: (ins: Installation) => void   // กดการ์ดนัดหมาย → เปิดออเดอร์ของงานนั้น
 }) {
   const dim = new Date(year, month + 1, 0).getDate()
   const first = (new Date(year, month, 1).getDay() + 6) % 7
-  const cellCount = Math.ceil((first + dim) / 7) * 7
-  const cells = Array.from({ length: cellCount }, (_, i) => {
-    const d = i - first + 1
-    return d > 0 && d <= dim ? d : null
-  })
+  const weekStart = new Date(year, month, selDay - ((new Date(year, month, selDay).getDay() + 6) % 7))
+  const cells: ({ y: number; m: number; d: number } | null)[] = view === 'week'
+    ? Array.from({ length: 7 }, (_, i) => { const dt = new Date(weekStart); dt.setDate(dt.getDate() + i); return { y: dt.getFullYear(), m: dt.getMonth(), d: dt.getDate() } })
+    : Array.from({ length: Math.ceil((first + dim) / 7) * 7 }, (_, i) => { const d = i - first + 1; return d > 0 && d <= dim ? { y: year, m: month, d } : null })
 
+  // การ์ดของวัน: วันหยุด · ร้านปิด · นัดหมาย (เรียงตามเวลา)
+  const itemsOf = (y: number, m: number, d: number, big = false) => {
+    const holiday = HOLIDAYS[ymdOf(y, m, d)]
+    const isSunday = new Date(y, m, d).getDay() === 0
+    const list = installs.filter(ins => {
+      const dt = new Date(ins.appointment_datetime)
+      return dt.getDate() === d && dt.getMonth() === m && dt.getFullYear() === y
+    }).sort((a, b) => a.appointment_datetime.localeCompare(b.appointment_datetime))
+    const out: React.ReactNode[] = []
+    if (holiday) out.push(<Chip key="h" bg="#F6E9DB" dot="#D9AE86" title={holiday} sub="วันหยุดร้าน" big={big} />)
+    if (isSunday) out.push(<Chip key="s" bg="#ECE9E7" dot="#9A9AA6" title="ร้านปิด" sub="วันอาทิตย์" big={big} />)
+    list.forEach(ins => {
+      const c = rowColor(ins)
+      const t = new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+      out.push(<Chip key={ins.id} bg={CHIP_BG[c] ?? '#F1E4D8'} dot={c} big={big} onClick={() => onOpen(ins)}
+        title={ins.customer_real_name || ins.customer_id || '-'}
+        sub={[t, (ins.work_type || '').replace(/^งาน/, ''), big ? ins.province : ''].filter(Boolean).join(' · ')} />)
+    })
+    return out
+  }
+
+  if (view === 'day') {
+    const items = itemsOf(year, month, selDay, true)
+    return (
+      <div className="sc-dayview" onClick={() => onDayClick(year, month, selDay)} style={{ cursor: 'pointer' }}>
+        <div className="sc-dayview-head">{DAYS[(new Date(year, month, selDay).getDay() + 6) % 7]} {selDay} {TH_MONTHS[month]} {year + 543}</div>
+        {items.length === 0 ? <div className="sc-empty">ไม่มีนัดหมายในวันนี้</div> : items}
+      </div>
+    )
+  }
+
+  const todayKey = ymdOf(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())
   return (
-    <div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2, marginBottom: 4 }}>
-        {DAYS.map(d => (
-          <div key={d} style={{ textAlign: 'center', fontSize: 12, fontWeight: 600, color: 'var(--ink-3)', padding: '6px 0' }}>{d}</div>
-        ))}
+    <div className="sc-grid">
+      {DAYS.map(d => <div key={d} className="sc-dow">{d}</div>)}
+      {cells.map((c, i) => {
+        if (!c) return <div key={i} className="sc-cell sc-out" />
+        const items = itemsOf(c.y, c.m, c.d)
+        const max = view === 'week' ? 99 : 3
+        return (
+          <div key={i} onClick={() => onDayClick(c.y, c.m, c.d)}
+            className={`sc-cell${view === 'week' ? ' sc-tall' : ''}${ymdOf(c.y, c.m, c.d) === todayKey ? ' sc-today' : ''}${c.m !== month ? ' sc-dim' : ''}`}>
+            <div className="sc-num">{c.d}</div>
+            {items.slice(0, max)}
+            {items.length > max && <div className="sc-more">+{items.length - max} รายการ</div>}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function Chip({ bg, dot, title, sub, big, onClick }: { bg: string; dot: string; title: string; sub?: string; big?: boolean; onClick?: () => void }) {
+  return (
+    <div className={`sc-chip${big ? ' sc-big' : ''}${onClick ? ' sc-link' : ''}`} style={{ background: bg }}
+      title={onClick ? `${[title, sub].filter(Boolean).join(' · ')} — กดเพื่อเปิดออเดอร์` : [title, sub].filter(Boolean).join(' · ')}
+      onClick={onClick ? e => { e.stopPropagation(); onClick() } : undefined}>
+      <i className="sc-dot" style={{ background: dot }} />
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div className="sc-chip-title">{title}</div>
+        {sub && <div className="sc-chip-sub">{sub}</div>}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2 }}>
-        {cells.map((day, i) => {
-          const dayInstalls = day ? installs.filter(ins => {
-            const dt = new Date(ins.appointment_datetime)
-            return dt.getDate() === day && dt.getMonth() === month && dt.getFullYear() === year
-          }) : []
-          const isToday = day === new Date().getDate() && month === new Date().getMonth() && year === new Date().getFullYear()
-          const holiday = day ? HOLIDAYS[`${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`] : undefined
-          const isSunday = day ? new Date(year, month, day).getDay() === 0 : false
-          return (
-            <div key={i} onClick={() => day && onDayClick(day)}
-              style={{ minHeight: 90, background: day ? (holiday ? '#fff9e6' : isSunday ? '#f4f4f5' : '#fff') : 'transparent', borderRadius: 8, padding: '6px 8px', cursor: day ? 'pointer' : 'default', border: isToday ? '2px solid var(--blue)' : '1px solid rgba(0,0,0,0.06)', transition: 'background 0.1s' }}>
-              {day && (
-                <>
-                  <div style={{ fontSize: 13, fontWeight: isToday ? 700 : 400, color: isToday ? 'var(--blue)' : 'var(--ink)', marginBottom: 4 }}>{day}</div>
-                  {isSunday && <div style={{ fontSize: 9, color: '#6b7280', fontWeight: 600, lineHeight: 1.3, marginBottom: 2 }}>ร้านปิด</div>}
-                  {holiday && <div style={{ fontSize: 9, color: '#b45309', fontWeight: 600, lineHeight: 1.3, marginBottom: 2 }}>{holiday}</div>}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    {dayInstalls.slice(0, 3).map(ins => {
-                      const t = new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
-                      const bg = rowColor(ins)
-                      return (
-                        <div key={ins.id} style={{ background: bg + '22', borderLeft: `3px solid ${bg}`, borderRadius: 3, padding: '2px 5px', fontSize: 10, color: bg, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {t} {ins.customer_real_name || ins.customer_id}
-                        </div>
-                      )
-                    })}
-                    {dayInstalls.length > 3 && <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>+{dayInstalls.length - 3}</div>}
-                  </div>
-                </>
-              )}
-            </div>
-          )
-        })}
-      </div>
+      <svg className="sc-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
     </div>
   )
 }
@@ -272,6 +322,9 @@ export default function InstallationsPage() {
   const [month, setMonth] = useState(new Date().getMonth())
   const [modal, setModal] = useState<{ mode: 'add' | 'edit'; data: Partial<Installation> } | null>(null)
   const [dayModal, setDayModal] = useState<{ day: number; items: Installation[] } | null>(null)
+  const [calView, setCalView] = useState<'month' | 'week' | 'day'>('month')
+  const [orderDetail, setOrderDetail] = useState<string | null>(null)   // กดการ์ดนัดหมาย → รายละเอียดออเดอร์ (ป๊อปอัปชุดเดียวกับหน้าภาพรวม)
+  const [selDay, setSelDay] = useState(new Date().getDate())   // วันที่ยึดของมุมมองสัปดาห์/วัน
   const [saving, setSaving] = useState(false)
   const [apptDate, setApptDate] = useState('')
   const [apptTime, setApptTime] = useState('9:00')
@@ -309,6 +362,33 @@ export default function InstallationsPage() {
     try { localStorage.setItem('inst_hidden_cols', JSON.stringify(next)) } catch {}
     return next
   })
+  // ตัวกรอง/เรียงที่หัวคอลัมน์ — แบบเดียวกับหมวดออเดอร์ (components/ListFilters.tsx)
+  const oeOfRow = (ins: Installation) => (ins.source_order_id ? orderMeta[ins.source_order_id] : undefined)
+  const filterDefs: FilterDef<Installation>[] = [
+    { id: 'days', label: 'วันผลิตที่เหลือ', kind: 'date', get: ins => oeOfRow(ins)?.deadline ?? ins.appointment_datetime?.slice(0, 10) },
+    { id: 'deadline', label: 'วันที่นัดหมาย', kind: 'date', get: ins => ins.appointment_datetime },
+    { id: 'work', label: 'งาน', kind: 'pick', get: ins => ins.work_type },
+    { id: 'print', label: 'ปริ้น', kind: 'bool', get: ins => oeOfRow(ins)?.printed_at, yes: 'ปริ้นแล้ว', no: 'ยังไม่ปริ้น' },
+    { id: 'serial', label: 'Serial', kind: 'text', get: ins => ins.serial_no },
+    { id: 'customer', label: 'ลูกค้า', kind: 'text', get: ins => ins.customer_real_name || ins.customer_id },
+    { id: 'platform', label: 'แพลตฟอร์ม', kind: 'pick', get: ins => ins.platform },
+    { id: 'total', label: 'ยอดทั้งหมด', kind: 'num', get: ins => oeOfRow(ins)?.price },
+    { id: 'payment', label: 'ชำระ', kind: 'pick', get: ins => oeOfRow(ins)?.payment_status },
+    { id: 'paid', label: 'ชำระแล้ว', kind: 'num', get: ins => oeOfRow(ins)?.paid_amount },
+    { id: 'assigned', label: 'ลงออเดอร์', kind: 'pick', get: ins => oeOfRow(ins)?.order_assigned },
+    { id: 'admin', label: 'แอดมิน', kind: 'pick', get: ins => oeOfRow(ins)?.admin_name || ins.entered_by },
+    { id: 'status', label: 'สถานะงาน', kind: 'pick', get: ins => oeOfRow(ins)?.order_status },
+    { id: 'done', label: 'งานเสร็จ', kind: 'bool', get: ins => oeOfRow(ins)?.is_urgent, yes: 'งานเสร็จ', no: 'ยังไม่เสร็จ' },
+    { id: 'installed', label: 'ติดตั้ง', kind: 'pick', get: ins => { const oe = oeOfRow(ins); return oe ? (oe.install_status || (oe.is_dropoff ? 'ติดตั้งแล้ว' : '')) : '' } },
+    { id: 'inststatus', label: 'สถานะ', kind: 'pick', get: ins => ins.installation_status },
+    { id: 'created', label: 'วันที่สร้าง', kind: 'date', get: ins => oeOfRow(ins)?.entry_date ?? oeOfRow(ins)?.created_at ?? ins.created_at },
+    { id: 'province', label: 'จังหวัด', kind: 'pick', get: ins => ins.province },
+    { id: 'zone', label: 'โซน', kind: 'pick', get: ins => ins.install_zone },
+    { id: 'insttech', label: 'ช่างติดตั้ง', kind: 'pick', get: ins => ins.technician_type },
+    { id: 'tech', label: 'ช่างเย็บ', kind: 'pick', get: ins => oeOfRow(ins)?.technician },
+    { id: 'updated', label: 'แก้ไขล่าสุด', kind: 'date', get: ins => ins.updated_at },
+  ]
+  const cf = useColumnFilters(filterDefs)
   // popup แก้รายการสินค้า (แบบเดียวกับหมวดออเดอร์) — บันทึกกลับไปที่ order_entries ต้นทาง
   const [itemsModal, setItemsModal] = useState<{ orderId: string; items: RawItem[]; instId: string } | null>(null)
   // คำแนะนำในช่องรายการสินค้า = คำที่เคยลงในออเดอร์ที่โหลดอยู่ (ไม่ดึงฐานเพิ่ม)
@@ -1072,6 +1152,30 @@ export default function InstallationsPage() {
   }
 
   const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y - 1) } else setMonth(m => m - 1) }
+  // กดการ์ดนัดหมาย: งานที่มาจากหมวดออเดอร์ → เปิดรายละเอียดออเดอร์ · งานที่ลงเองในหน้านี้ (ไม่มีออเดอร์) → เปิดฟอร์มแก้ไข
+  const openInstall = (ins: Installation) => {
+    setDayModal(null)
+    if (ins.source_order_id) { setOrderDetail(ins.source_order_id); return }
+    ph.begin(ins.photos, ins.id)
+    setModal({ mode: 'edit', data: { ...ins } })
+    setApptDate(ins.appointment_datetime?.split('T')[0] ?? '')
+    setApptTime(ins.appointment_datetime ? new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : '9:00')
+  }
+  // ── ปฏิทิน: เลื่อนตามมุมมอง (เดือน/สัปดาห์/วัน) ──
+  const goToDate = (dt: Date) => { setYear(dt.getFullYear()); setMonth(dt.getMonth()); setSelDay(dt.getDate()) }
+  const shiftCal = (dir: number) => {
+    if (calView === 'month') goToDate(new Date(year, month + dir, 1))
+    else goToDate(new Date(year, month, selDay + dir * (calView === 'week' ? 7 : 1)))
+  }
+  const calTitle = (() => {
+    if (calView === 'day') return `${selDay} ${TH_MONTHS[month]} ${year + 543}`
+    if (calView === 'month') return `${TH_MONTHS[month]} ${year + 543}`
+    const st = new Date(year, month, selDay - ((new Date(year, month, selDay).getDay() + 6) % 7))
+    const en = new Date(st); en.setDate(en.getDate() + 6)
+    return st.getMonth() === en.getMonth()
+      ? `${st.getDate()}–${en.getDate()} ${TH_MONTHS[en.getMonth()]} ${en.getFullYear() + 543}`
+      : `${st.getDate()} ${TH_MONTHS[st.getMonth()].slice(0, 3)}. – ${en.getDate()} ${TH_MONTHS[en.getMonth()].slice(0, 3)}. ${en.getFullYear() + 543}`
+  })()
   const nextMonth = () => { if (month === 11) { setMonth(0); setYear(y => y + 1) } else setMonth(m => m + 1) }
 
   // ── สรุปงานติดตั้ง: รวมงานที่ยังไม่เสร็จตั้งแต่วันนี้เป็นต้นไป จัดกลุ่มรายวัน ตามฟอร์แมตที่ทีมใช้ส่งไลน์ ──
@@ -1138,7 +1242,8 @@ export default function InstallationsPage() {
   )
   // เรียงตามลำดับที่ตรึงไว้ตอนโหลด (ชุดเดียวกับหมวดออเดอร์) — แถวที่เพิ่งเพิ่มยังไม่มีในลำดับ ไปต่อท้าย
   const orderMap = new Map(sortOrder.map((id, i) => [id, i]))
-  const displayed = (orderMap.size
+  // เลือกเรียง/กรองที่หัวคอลัมน์ไว้ → ทับลำดับตั้งต้น
+  const displayed = cf.apply(orderMap.size
     ? [...filtered].sort((a, b) => (orderMap.get(a.id) ?? 999999) - (orderMap.get(b.id) ?? 999999))
     : filtered).map(live)
 
@@ -1172,21 +1277,15 @@ export default function InstallationsPage() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px' }}>งานติดตั้ง</h1>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={() => setBonusModal(true)}
-            style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border-2)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-            ยอดติดตั้ง
-          </button>
-          <button onClick={openSummary}
-            style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border-2)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-            สรุปงานติดตั้ง
-          </button>
-          <button onClick={() => { setPrintColStep(false); setPrintAsk(true) }}
-            style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border-2)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-            🖨️ ปริ้น
-          </button>
+      <div className="sc-head">
+        <div>
+          <h1 className="sc-title">งานติดตั้ง</h1>
+          <p className="sc-sub">นัดวัดหน้างาน ติดตั้ง และงานแก้ของทีมช่าง ในที่เดียว</p>
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button className="sc-btn-ghost" onClick={() => setBonusModal(true)}>ยอดติดตั้ง</button>
+          <button className="sc-btn-ghost" onClick={openSummary}>สรุปงานติดตั้ง</button>
+          <button className="sc-btn-ghost" onClick={() => { setPrintColStep(false); setPrintAsk(true) }}>🖨️ ปริ้น</button>
         </div>
       </div>
 
@@ -1197,67 +1296,70 @@ export default function InstallationsPage() {
         </div>
       )}
 
-      {/* Calendar */}
-      <div className="print-area" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '24px', marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-          <button className="no-print" onClick={prevMonth} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 14, background: '#fff' }}>‹</button>
-          <h2 style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', flex: 1, textAlign: 'center' }}>
-            {TH_MONTHS[month]} {year + 543}
-          </h2>
-          <button className="no-print" onClick={nextMonth} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 14, background: '#fff' }}>›</button>
+      {/* Calendar — ดีไซน์ชุดเดียวกับปฏิทินร้าน: แท็บ เดือน/สัปดาห์/วัน · การ์ดพาสเทลมีจุดสี */}
+      <div className="print-area sc-card">
+        <div className="sc-toolbar">
+          <div className="sc-seg no-print">
+            {([['month', 'เดือน'], ['week', 'สัปดาห์'], ['day', 'วัน']] as const).map(([k, l]) => (
+              <button key={k} className={calView === k ? 'on' : ''} onClick={() => setCalView(k)}>{l}</button>
+            ))}
+          </div>
+          <div className="sc-nav">
+            <button className="sc-circle no-print" onClick={() => shiftCal(-1)} aria-label="ก่อนหน้า">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+            </button>
+            <h2 className="sc-month">{calTitle}</h2>
+            <button className="sc-circle no-print" onClick={() => shiftCal(1)} aria-label="ถัดไป">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+            </button>
+            <label className="sc-circle no-print" title="เลือกเดือน" style={{ position: 'relative' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="16" rx="2.5" /><path d="M3 10h18M8 3v4M16 3v4" /></svg>
+              <input type="month" value={`${year}-${String(month + 1).padStart(2, '0')}`}
+                onChange={e => { const [y, m] = e.target.value.split('-').map(Number); if (y && m) goToDate(new Date(y, m - 1, 1)) }}
+                style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
+            </label>
+            <button className="sc-pill no-print" onClick={() => goToDate(new Date())}>วันนี้</button>
+          </div>
+          <div className="sc-legend">
+            {[['#5ac8fa', 'วัดหน้างาน'], ['#C79A4B', 'ติดตั้ง'], ['#C0564A', 'รอแก้'], ['#D9AE86', 'วันหยุด'], ['#9A9AA6', 'ร้านปิด (อา.)']].map(([c, l]) => (
+              <span key={l}><i style={{ background: c }} />{l}</span>
+            ))}
+          </div>
         </div>
-        <Calendar year={year} month={month} installs={calendarInstalls} onDayClick={day => {
+        <Calendar year={year} month={month} selDay={selDay} view={calView} installs={calendarInstalls} onOpen={openInstall} onDayClick={(y, m, d) => {
           const items = calendarInstalls.filter(ins => {
-            const d = new Date(ins.appointment_datetime)
-            return d.getDate() === day && d.getMonth() === month && d.getFullYear() === year
+            const dt = new Date(ins.appointment_datetime)
+            return dt.getDate() === d && dt.getMonth() === m && dt.getFullYear() === y
           })
-          setDayModal({ day, items })
+          if (y !== year || m !== month) { setYear(y); setMonth(m) }
+          setDayModal({ day: d, items })
         }} />
-        {/* Legend */}
-        <div style={{ display: 'flex', gap: 16, marginTop: 16, flexWrap: 'wrap' }}>
-          {[['#5ac8fa', 'วัดหน้างาน'], ['#ff9f0a', 'ติดตั้ง'], ['var(--red)', 'รอแก้'], ['#eab308', 'วันหยุด'], ['#9ca3af', 'ร้านปิด (อา.)']].map(([c, l]) => (
-            <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: c, display: 'inline-block' }} />
-              <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{l}</span>
-            </div>
-          ))}
-        </div>
       </div>
 
-      {/* List */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)' }}>รายการทั้งหมด</h2>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        {/* เลือกโซนติดตั้ง — ชิปชุดนี้ชุดเดียว คุมทั้งปฏิทินด้านบนและตารางรายการด้านล่าง */}
-        <div className="no-print" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {/* กดได้หลายโซนพร้อมกัน (กดซ้ำเพื่อเอาออก) · ไม่เลือกเลย = ทุกโซน */}
-          <button onClick={() => setZoneFilter([])}
-            style={{ padding: '5px 12px', borderRadius: 980, border: zoneFilter.length === 0 ? 'none' : '1px solid var(--border)', background: zoneFilter.length === 0 ? 'var(--blue)' : '#fff', color: zoneFilter.length === 0 ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: zoneFilter.length === 0 ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            ทุกโซน <span style={{ opacity: 0.75 }}>{byMonth.length}</span>
-          </button>
-          {ZONES.map(z => {
-            const on = zoneFilter.includes(z)
-            const n = byMonth.filter(i => i.install_zone === z).length
-            return (
-              <button key={z} onClick={() => setZoneFilter(prev => on ? prev.filter(v => v !== z) : [...prev, z])}
-                style={{ padding: '5px 12px', borderRadius: 980, border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--blue)' : '#fff', color: on ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: on ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                {on ? '✓ ' : ''}{z} <span style={{ opacity: 0.75 }}>{n}</span>
-              </button>
-            )
-          })}
-        </div>
-        <select value={listFilter} onChange={e => setListFilter(e.target.value)}
-          style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 12px', fontSize: 13, outline: 'none' }}>
-          <option value="all">ทั้งหมด</option>
-          {Array.from(new Set(installs.map(ins => {
+      {/* List — แถบเครื่องมือชุดเดียวกับหมวดออเดอร์: ค้นหา + เดือน + เรียง · แท็บโซน + ปุ่มคอลัมน์ชิดขวา */}
+      <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)', marginBottom: 12 }}>รายการทั้งหมด</h2>
+      <div className="no-print" style={{ display: 'flex', gap: 14, marginBottom: 18, flexWrap: 'wrap' }}>
+        <SearchPill value={search} onChange={setSearch} placeholder="ค้นหา ชื่อลูกค้า / แพลตฟอร์ม / จังหวัด / เบอร์ / Serial…" />
+        <MonthSelect value={listFilter} onChange={setListFilter} title="เดือนที่นัดหมาย"
+          months={Array.from(new Set(installs.map(ins => {
             const d = new Date(ins.appointment_datetime)
             return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-          }))).sort().reverse().map(m => (
-            <option key={m} value={m}>{TH_MONTHS[Number(m.split('-')[1]) - 1]} {Number(m.split('-')[0]) + 543}</option>
-          ))}
-        </select>
+          }))).filter(m => !m.includes('NaN')).sort().reverse()} />
+        <SortSelect cf={cf} defs={filterDefs} presets={[['deadline', 'asc'], ['deadline', 'desc'], ['created', 'desc'], ['created', 'asc'], ['updated', 'desc']]} />
+      </div>
+      <div className="no-print" style={{ display: 'flex', gap: 10, marginBottom: 18, alignItems: 'center', flexWrap: 'wrap' }}>
+        {/* เลือกโซนติดตั้ง — ชุดเดียวคุมทั้งปฏิทินด้านบนและตารางรายการ · กดได้หลายโซน (กดซ้ำเพื่อเอาออก) · ทั้งหมด = ทุกโซน + ล้างตัวกรองคอลัมน์ */}
+        <Tab active={zoneFilter.length === 0} count={byMonth.length} onClick={() => { setZoneFilter([]); cf.clearFilters() }}
+          title={cf.anyFilter ? 'กดเพื่อดูทุกโซน + ล้างตัวกรองคอลัมน์' : undefined}>ทั้งหมด</Tab>
+        {ZONES.map(z => {
+          const on = zoneFilter.includes(z)
+          return (
+            <Tab key={z} active={on} count={byMonth.filter(i => i.install_zone === z).length}
+              onClick={() => setZoneFilter(prev => on ? prev.filter(v => v !== z) : [...prev, z])}>{z}</Tab>
+          )
+        })}
         {/* ปุ่มคอลัมน์ — ชุด/ลำดับเดียวกับแท็บงานติดตั้งในหมวดออเดอร์ ติ๊กออกเพื่อซ่อน (จำไว้ในเครื่อง) */}
-        <div className="no-print" style={{ position: 'relative' }}>
+        <div className="no-print" style={{ position: 'relative', marginLeft: 'auto' }}>
           <button onClick={() => setOpenColMenu(v => !v)}
             style={{ padding: '6px 14px', borderRadius: 20, border: hiddenCols.length ? 'none' : '1px solid var(--border)', background: hiddenCols.length ? 'var(--blue)' : 'var(--surface)', color: hiddenCols.length ? '#fff' : 'var(--ink-3)', fontSize: 13, fontWeight: hiddenCols.length ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
             คอลัมน์{hiddenCols.length > 0 && ` (ซ่อน ${hiddenCols.length})`} <span style={{ fontSize: 9, opacity: 0.7 }}>▼</span>
@@ -1283,30 +1385,24 @@ export default function InstallationsPage() {
             </>
           )}
         </div>
-        </div>
-      </div>
-      <div style={{ position: 'relative', marginBottom: 16 }}>
-        <input value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="ค้นหา ชื่อลูกค้า / แพลตฟอร์ม / จังหวัด / เบอร์ / Serial / หมายเหตุ"
-          style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 34px 9px 13px', fontSize: 13, outline: 'none', boxSizing: 'border-box', background: 'var(--surface)' }} />
-        {search && (
-          <button onClick={() => setSearch('')}
-            style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 15 }}>✕</button>
-        )}
       </div>
 
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', overflowX: 'auto' }}>
+      {cf.renderMenu(byZone)}
+      <div className="dn-list-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', overflowX: 'auto' }}>
         {loading ? (
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>กำลังโหลด…</div>
         ) : displayed.length === 0 ? (
-          <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>ไม่มีรายการ</div>
+          <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>
+            {cf.anyFilter ? 'ไม่มีรายการที่ตรงกับตัวกรองคอลัมน์' : 'ไม่มีรายการ'}
+            {cf.anyFilter && <div><button onClick={cf.clearFilters} style={{ marginTop: 10, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--brand)', borderRadius: 999, padding: '6px 16px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>ล้างตัวกรองคอลัมน์</button></div>}
+          </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <table className="dn-list dn-rows" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
                 {/* หัวตาราง = COLS (ชุด/ลำดับเดียวกับแท็บงานติดตั้งในหมวดออเดอร์ ยกเว้นวันผลิตที่เหลือ) */}
                 {COLS.filter(c => showCol(c.id)).map(c => (
-                  <th key={c.id} style={{ textAlign: COL_ALIGN[c.id] ?? 'left', padding: '12px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{c.label}</th>
+                  <th key={c.id} style={{ textAlign: COL_ALIGN[c.id] ?? 'left', padding: '12px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{cf.head(c.id, c.label)}</th>
                 ))}
                 <th style={{ padding: '12px 14px' }} />
               </tr>
@@ -1349,9 +1445,9 @@ export default function InstallationsPage() {
                 const dueDate = oe?.deadline ?? (ins.appointment_datetime ? ins.appointment_datetime.slice(0, 10) : null)
                 const outDays = dueDate ? daysRemaining(dueDate) : null
                 const cells: Record<string, React.ReactNode> = {
-                  days: oe?.order_status === 'ยกเลิก' ? <span style={{ fontWeight: 700, color: '#ef4444' }}>ยกเลิก</span>
-                    : oe?.is_urgent ? <span style={{ fontWeight: 700, color: '#22c55e' }}>งานเสร็จ</span>
-                    : oe?.order_status === 'เสร็จสิ้น' ? <span style={{ fontWeight: 700, color: '#22c55e' }}>เสร็จสิ้น</span>
+                  days: oe?.order_status === 'ยกเลิก' ? <span style={{ fontWeight: 700, color: '#C0563F' }}>ยกเลิก</span>
+                    : oe?.is_urgent ? <span style={{ fontWeight: 700, color: '#6F8F6A' }}>งานเสร็จ</span>
+                    : oe?.order_status === 'เสร็จสิ้น' ? <span style={{ fontWeight: 700, color: '#6F8F6A' }}>เสร็จสิ้น</span>
                     : outDays !== null ? (
                       <span style={{ fontWeight: 700, color: daysColor(outDays) }}>
                         {outDays === 0 ? 'ต้องติดตั้งวันนี้' : daysLabel(outDays)}
@@ -1370,7 +1466,7 @@ export default function InstallationsPage() {
                         {TIMES.map(t => <option key={t}>{t}</option>)}
                       </select>
                       <button onClick={() => clearAppt(ins.id)} title="ล้างวันนัด กลับไปเป็นรอนัดหมาย"
-                        style={{ border: '1px solid #f59e0b', background: 'transparent', borderRadius: 6, padding: '3px 7px', fontSize: 11, cursor: 'pointer', color: '#f59e0b', fontWeight: 600, whiteSpace: 'nowrap' }}>รอนัดหมาย</button>
+                        style={{ border: '1px solid #C79A4B', background: 'transparent', borderRadius: 6, padding: '3px 7px', fontSize: 11, cursor: 'pointer', color: '#C79A4B', fontWeight: 600, whiteSpace: 'nowrap' }}>รอนัดหมาย</button>
                       <button onClick={() => setEditAppt(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 14 }}>✓</button>
                     </div>
                   ) : (
@@ -1384,25 +1480,22 @@ export default function InstallationsPage() {
                     }} style={{ cursor: 'pointer' }}>
                       {/* ข้อความ/สีชุดเดียวกับหมวดออเดอร์: ติดตั้งแล้ว = เขียว · ยังไม่ได้นัด = รอนัดหมาย(ส้ม) · นัดแล้ว = ม่วง */}
                       {instStatusOfOrder === 'ติดตั้งแล้ว' ? (
-                        <span style={{ fontWeight: 700, color: '#22c55e' }}>ติดตั้งแล้ว</span>
+                        <span style={{ fontWeight: 700, color: '#6F8F6A' }}>ติดตั้งแล้ว</span>
                       ) : ins.appointment_datetime ? (
-                        <span style={{ color: '#bf5af2', whiteSpace: 'nowrap' }}>
+                        <span style={{ color: '#9A7BA0', whiteSpace: 'nowrap' }}>
                           {new Date(ins.appointment_datetime).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                           {' '}
                           {new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                         </span>
-                      ) : <span style={{ color: '#f59e0b', fontWeight: 600 }}>รอนัดหมาย</span>}
+                      ) : <span style={{ color: '#C79A4B', fontWeight: 600 }}>รอนัดหมาย</span>}
                     </span>
                   ),
                   work: (
-                    /* งาน — ชิปสีเดียวกับคอลัมน์สถานะของแถวนั้น */
-                    <select value={ins.work_type || ''} onChange={e => updateWorkType(ins.id, e.target.value)}
-                      style={{ background: bg + '22', color: bg, padding: '3px 8px', borderRadius: 980, fontWeight: 600, fontSize: 11, border: 'none', outline: 'none', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none' }}>
-                      <option value="" style={{ background: '#fff', color: 'var(--ink)' }}>—</option>
-                      {Array.from(new Set([...WORK_TYPE_OPTIONS, ins.work_type].filter(Boolean))).map(w => (
-                        <option key={w} value={w} style={{ background: '#fff', color: 'var(--ink)' }}>{w}</option>
-                      ))}
-                    </select>
+                    /* งาน — ป้าย .dn-pill ชุดเดียวกับแท็บงานติดตั้งในหมวดออเดอร์ (พื้นตามลักษณะงาน กดแล้วเลือกได้) */
+                    <CreamSelect value={ins.work_type ?? ''} onChange={v => updateWorkType(ins.id, v)}
+                      className="dn-pill ow-pill" style={{ color: '#6B4326', background: WORK_PILL_BG[ins.work_type ?? ''] ?? '#EFE3D4' }} menuMinWidth={170}
+                      options={Array.from(new Set([...WORK_TYPE_OPTIONS, ins.work_type].filter(Boolean))).map(w => ({ value: w as string, label: w as string }))}
+                      renderValue={o => <span>{o?.label ?? '—'}</span>} />
                   ),
                   /* ปริ้น = ติ๊กว่าปริ้นใบงานนี้แล้ว (ช่องเดียวกับหมวดออเดอร์ = order_entries.printed_at)
                      ปุ่มสั่งปริ้นจริงอยู่ในเมนู ··· ท้ายแถว */
@@ -1410,12 +1503,12 @@ export default function InstallationsPage() {
                     <>
                       <input type="checkbox" checked={!!oe?.printed_at} onChange={e => togglePrinted(oid, e.target.checked)}
                         style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
-                      {oe?.printed_at && (
-                        <div style={{ fontSize: 10, color: '#eab308', fontWeight: 600, marginTop: 2 }}>
-                          {new Date(oe.printed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
-                          {new Date(oe.printed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      )}
+                      {/* ‼️ บรรทัดวันที่มีเสมอ (ยังไม่ปริ้น = บรรทัดเปล่า) ช่องติ๊กทุกแถวจะได้อยู่ระดับเดียวกัน */}
+                      <div aria-hidden={!oe?.printed_at} style={{ fontSize: 10, color: '#A8744F', fontWeight: 600, marginTop: 3, whiteSpace: 'nowrap', visibility: oe?.printed_at ? 'visible' : 'hidden' }}>
+                        {oe?.printed_at
+                          ? `${new Date(oe.printed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} ${new Date(oe.printed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`
+                          : ' '}
+                      </div>
                     </>
                   ) : noOrder,
                   customer: (
@@ -1430,11 +1523,12 @@ export default function InstallationsPage() {
                     </>
                   ),
                   platform: (
-                    <select value={ins.platform || ''} onChange={e => saveInstField(ins.id, 'platform', e.target.value)}
-                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: ins.platform ? 'var(--ink-3)' : 'var(--ink-4)', padding: 0, maxWidth: 140 }}>
-                      <option value="">—</option>
-                      {Array.from(new Set([...PLATFORMS, ins.platform].filter(Boolean))).map(p => <option key={p} value={p as string}>{p}</option>)}
-                    </select>
+                    // ไอคอนแพลตฟอร์มหน้าชื่อ — ชุดเดียวกับหมวดออเดอร์
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
+                      {ins.platform && <PlatformIcon name={ins.platform} size={18} />}
+                      <RowSelect value={ins.platform || ''} opts={PLATFORMS} onPick={v => saveInstField(ins.id, 'platform', v)}
+                        blank maxWidth={140} color={ins.platform ? 'var(--ink-2)' : 'var(--ink-4)'} />
+                    </span>
                   ),
                   items: ins.source_order_id ? (
                     // มาจากหมวดออเดอร์ → จิ้มเปิด popup แก้รายการ บันทึกกลับไปที่ออเดอร์ต้นทาง
@@ -1445,13 +1539,12 @@ export default function InstallationsPage() {
                         (() => {
                           const lines = formatItemLines(orderItems[ins.source_order_id!])
                           return (
-                            <div>
-                              {lines.slice(0, ITEM_LINE_MAX).map((line, k) => (
-                                <div key={k} title={line} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: COL_W.items, fontSize: 11, lineHeight: '1.6', color: k === 0 ? 'var(--ink)' : 'var(--ink-3)' }}>{line}</div>
+                            // แถวสูง 2 บรรทัด (แบบหมวดออเดอร์): มี 2 รายการ = ครบ · เกิน = รายการแรก + "+ อีก N รายการ" · ชี้ดูครบ
+                            <div title={lines.join('\n')} style={{ maxWidth: COL_W.items }}>
+                              {lines.slice(0, lines.length > 2 ? 1 : 2).map((line, k) => (
+                                <div key={k} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 11, color: k === 0 ? 'var(--ink)' : 'var(--ink-3)' }}>{line}</div>
                               ))}
-                              {lines.length > ITEM_LINE_MAX && (
-                                <div style={{ fontSize: 11, lineHeight: '1.6', color: 'var(--ink-4)' }}>+ อีก {lines.length - ITEM_LINE_MAX} รายการ</div>
-                              )}
+                              {lines.length > 2 && <div style={{ fontSize: 10, color: 'var(--ink-4)' }}>+ อีก {lines.length - 1} รายการ</div>}
                             </div>
                           )
                         })()
@@ -1465,62 +1558,50 @@ export default function InstallationsPage() {
                       style={{ border: '1px solid var(--blue)', borderRadius: 6, background: 'transparent', fontSize: 11, width: '100%', outline: 'none', padding: '4px 6px', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }} />
                   ) : (
                     // แถวที่เพิ่มเองในหน้านี้ → จิ้มแก้รายละเอียดงานตรงนี้ได้เลย
-                    <div onClick={() => setEditWork({ id: ins.id, value: ins.work_details ?? '' })}
-                      style={{ cursor: 'text', fontSize: 11, whiteSpace: 'pre-line', color: ins.work_details ? 'var(--ink-3)' : 'var(--ink-4)', minWidth: 60 }}>
+                    <div onClick={() => setEditWork({ id: ins.id, value: ins.work_details ?? '' })} title={ins.work_details || undefined}
+                      style={{ cursor: 'text', fontSize: 11, whiteSpace: 'pre-line', color: ins.work_details ? 'var(--ink-3)' : 'var(--ink-4)', minWidth: 60,
+                        display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                       {ins.work_details || '—'}
                     </div>
                   ),
                   /* ตั้งแต่นี่ลงไป = ข้อมูลของใบออเดอร์ต้นทาง — แก้ตรงนี้ได้เลย (เขียนลง order_entries) */
                   total: oid ? oeNumCell('price') : noOrder,
                   payment: oid ? (
-                    <select value={oe?.payment_status || 'ยังไม่ชำระ'} onChange={e => saveOrderPayment(oid, e.target.value)}
-                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PAYMENT_STATUS_COLOR[oe?.payment_status ?? ''] ?? '#f59e0b', padding: 0 }}>
-                      {PAYMENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
+                    <RowSelect value={oe?.payment_status || 'ยังไม่ชำระ'} opts={PAYMENT_STATUSES} onPick={v => saveOrderPayment(oid, v)}
+                      bold color={PAYMENT_STATUS_COLOR[oe?.payment_status ?? ''] ?? '#C79A4B'} />
                   ) : noOrder,
                   paid: !oid ? noOrder
                     : (!oe?.payment_status || oe.payment_status === 'ยังไม่ชำระ') ? <div style={{ textAlign: 'right', color: 'var(--ink-4)' }}>-</div>
                     : oe.payment_status === 'ชำระครบ' && oe.paid_amount == null
-                      ? <div style={{ textAlign: 'right', fontWeight: 600, color: '#22c55e' }}>{oe.price != null ? Number(oe.price).toLocaleString('th-TH') : '—'}</div>
+                      ? <div style={{ textAlign: 'right', fontWeight: 600, color: '#6F8F6A' }}>{oe.price != null ? Number(oe.price).toLocaleString('th-TH') : '—'}</div>
                       : oeNumCell('paid_amount'),
                   paybefore: !oid ? noOrder
                     : (oe?.payment_status === 'ชำระครบ' || !oe?.payment_status || oe?.payment_status === 'ยังไม่ชำระ')
                       ? <div style={{ textAlign: 'right', color: 'var(--ink-4)' }}>-</div>
                       : autoDeposit != null
-                        ? <div style={{ textAlign: 'right', fontWeight: 600, color: '#3b82f6' }}>{autoDeposit.toLocaleString('th-TH')}</div>
+                        ? <div style={{ textAlign: 'right', fontWeight: 600, color: '#6E8CA0' }}>{autoDeposit.toLocaleString('th-TH')}</div>
                         : oeNumCell('deposit'),
                   assigned: oid ? (
-                    <select value={oe?.order_assigned || 'รออัพเดท'} onChange={e => saveOrder(oid, { order_assigned: e.target.value }, 'แก้ลงออเดอร์ ' + (oe?.customer_name || ''))}
-                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: oe?.order_assigned && oe.order_assigned !== 'รออัพเดท' ? 'var(--ink)' : 'var(--ink-4)', fontWeight: oe?.order_assigned && oe.order_assigned !== 'รออัพเดท' ? 600 : 400, padding: 0 }}>
-                      {ORDER_ASSIGNED.map(o => <option key={o} value={o}>{o}</option>)}
-                    </select>
+                    <RowSelect value={oe?.order_assigned || 'รออัพเดท'} opts={ORDER_ASSIGNED} onPick={v => saveOrder(oid, { order_assigned: v }, 'แก้ลงออเดอร์ ' + (oe?.customer_name || ''))}
+                      bold={!!oe?.order_assigned && oe.order_assigned !== 'รออัพเดท'}
+                      color={oe?.order_assigned && oe.order_assigned !== 'รออัพเดท' ? 'var(--ink)' : 'var(--ink-4)'} />
                   ) : noOrder,
                   admin: oid ? (
-                    <select value={oe?.admin_name || ins.entered_by || ''} onChange={e => saveOrder(oid, { admin_name: e.target.value || null }, 'แก้แอดมิน ' + (oe?.customer_name || ''))}
-                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: (oe?.admin_name || ins.entered_by) ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 80 }}>
-                      <option value="">—</option>
-                      {Array.from(new Set([...ADMINS, ...ENTERED_BY, ins.entered_by].filter(Boolean))).map(a => <option key={a} value={a as string}>{a}</option>)}
-                    </select>
+                    <RowSelect value={oe?.admin_name || ins.entered_by || ''} opts={[...ADMINS, ...ENTERED_BY, ins.entered_by]}
+                      onPick={v => saveOrder(oid, { admin_name: v || null }, 'แก้แอดมิน ' + (oe?.customer_name || ''))}
+                      blank maxWidth={80} color={(oe?.admin_name || ins.entered_by) ? 'var(--ink)' : 'var(--ink-4)'} />
                   ) : <span style={{ color: 'var(--ink-3)' }}>{ins.entered_by || '-'}</span>,
                   status: oid ? (
-                    <>
-                      <select value={oe?.order_status || ''} onChange={e => saveOrder(oid, { order_status: e.target.value }, 'แก้สถานะงาน ' + (oe?.customer_name || ''))}
-                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PROD_STATUS_COLOR[oe?.order_status ?? ''] ?? 'var(--ink-4)', padding: 0 }}>
-                        <option value="">—</option>
-                        {INSTALL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                      {statusChangedAt && (
-                        <div style={{ fontSize: 10, color: 'var(--ink-4)', marginTop: 2, whiteSpace: 'nowrap' }}>
-                          {new Date(statusChangedAt).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
-                          {new Date(statusChangedAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      )}
-                    </>
+                    /* สถานะงาน — ป้าย .dn-pill ชุดเดียวกับหมวดออเดอร์ (statusCell) · จัดส่งแล้ว = ติดตั้งแล้ว */
+                    <CreamSelect value={oe?.order_status || ''} onChange={v => saveOrder(oid, { order_status: v }, 'แก้สถานะงาน ' + (oe?.customer_name || ''))}
+                      className="dn-pill ow-pill" style={{ color: pillInk(oe?.order_status || ''), background: pillBg(oe?.order_status || '') }} menuMinWidth={170}
+                      options={INSTALL_STATUSES.map(st => ({ value: st, label: st === 'จัดส่งแล้ว' ? 'ติดตั้งแล้ว' : st, color: PROD_STATUS_COLOR[st] }))}
+                      renderValue={o => <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{o?.label ?? ((oe?.order_status === 'จัดส่งแล้ว' ? 'ติดตั้งแล้ว' : oe?.order_status) || '—')}</span>} />
                   ) : noOrder,
                   done: oid ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                       <input type="checkbox" checked={!!oe?.is_urgent} onChange={e => toggleOrderDone(oid, e.target.checked)}
-                        style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                        style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                       {oe?.is_urgent && oe.done_at && (editDoneAt === oid ? (
                         <input type="datetime-local" autoFocus defaultValue={toLocalInput(oe.done_at)}
                           onBlur={e => saveDoneAt(oid, e.target.value)}
@@ -1528,7 +1609,7 @@ export default function InstallationsPage() {
                           style={{ fontSize: 10, padding: '1px 4px', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--ink)', background: 'var(--bg)' }} />
                       ) : (
                         <span onClick={() => setEditDoneAt(oid)} title="กดเพื่อแก้วัน-เวลางานเสร็จ"
-                          style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3, cursor: 'pointer', textDecoration: 'underline dotted' }}>
+                          style={{ color: '#6F8F6A', fontSize: 10, lineHeight: 1.3, cursor: 'pointer', textDecoration: 'underline dotted' }}>
                           {new Date(oe.done_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
                           {new Date(oe.done_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                         </span>
@@ -1536,26 +1617,22 @@ export default function InstallationsPage() {
                     </div>
                   ) : noOrder,
                   installed: oid ? (
-                    <select value={instStatusOfOrder} onChange={e => saveOrderInstallStatus(oid, e.target.value)}
-                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: instStatusOfOrder === 'ติดตั้งแล้ว' ? '#22c55e' : instStatusOfOrder === 'ติดตั้ง50%' ? '#f59e0b' : 'var(--ink-4)', padding: 0 }}>
-                      <option value="">—</option>
-                      {INSTALL_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
+                    <RowSelect value={instStatusOfOrder} opts={INSTALL_STATUS_OPTIONS} onPick={v => saveOrderInstallStatus(oid, v)}
+                      blank bold color={instStatusOfOrder === 'ติดตั้งแล้ว' ? '#6F8F6A' : instStatusOfOrder === 'ติดตั้ง50%' ? '#C79A4B' : 'var(--ink-4)'} />
                   ) : noOrder,
                   inststatus: (
-                    <select value={normStatus(ins.installation_status)} onChange={e => updateStatus(ins.id, e.target.value)}
-                      style={{ background: bg + '22', color: bg, padding: '3px 8px', borderRadius: 980, fontWeight: 600, fontSize: 11, border: 'none', outline: 'none', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none' }}>
-                      {Array.from(new Set([...statusOptions(ins.work_type), normStatus(ins.installation_status)])).map(st => (
-                        <option key={st} value={st} style={{ background: '#fff', color: 'var(--ink)' }}>{statusLabel(st, ins.work_type)}</option>
-                      ))}
-                    </select>
+                    /* สถานะ — ป้าย .dn-pill ชุดเดียวกับแท็บงานติดตั้งในหมวดออเดอร์ */
+                    <CreamSelect value={normStatus(ins.installation_status)} onChange={v => updateStatus(ins.id, v)}
+                      className="dn-pill ow-pill" style={{ color: '#6B4326', background: INST_PILL_BG[statusLabel(normStatus(ins.installation_status), ins.work_type)] ?? INST_PILL_BG[normStatus(ins.installation_status)] ?? '#EFE3D4' }} menuMinWidth={170}
+                      options={Array.from(new Set([...statusOptions(ins.work_type), normStatus(ins.installation_status)])).filter(Boolean).map(st => ({ value: st, label: statusLabel(st, ins.work_type) }))}
+                      renderValue={o => <span>{o?.label ?? '—'}</span>} />
                   ),
                   rail: !oid ? noOrder : hasRailItems(oid) ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                       <input type="checkbox" checked={!!oe?.rail_packed} onChange={e => toggleOrderRail(oid, e.target.checked)}
-                        style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                        style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                       {oe?.rail_packed && oe.rail_packed_at && (
-                        <span style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3 }}>
+                        <span style={{ color: '#6F8F6A', fontSize: 10, lineHeight: 1.3 }}>
                           {new Date(oe.rail_packed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
                           {new Date(oe.rail_packed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                         </span>
@@ -1605,25 +1682,16 @@ export default function InstallationsPage() {
                     </div>
                   ),
                   zone: (
-                    <select value={ins.install_zone || ''} onChange={e => updateZone(ins.id, e.target.value)}
-                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: ins.install_zone ? 600 : 400, color: ins.install_zone ? 'var(--ink-2)' : 'var(--ink-4)', padding: 0 }}>
-                      <option value="">—</option>
-                      {ZONES.map(z => <option key={z} value={z}>{z}</option>)}
-                    </select>
+                    <RowSelect value={ins.install_zone || ''} opts={ZONES} onPick={v => updateZone(ins.id, v)}
+                      blank bold={!!ins.install_zone} color={ins.install_zone ? 'var(--ink-2)' : 'var(--ink-4)'} />
                   ),
                   insttech: (
-                    <select value={ins.technician_type || ''} onChange={e => updateTech(ins.id, e.target.value)}
-                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: ins.technician_type ? 600 : 400, color: ins.technician_type ? 'var(--ink-2)' : 'var(--ink-4)', padding: 0 }}>
-                      <option value="">—</option>
-                      {TECHS.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                    <RowSelect value={ins.technician_type || ''} opts={TECHS} onPick={v => updateTech(ins.id, v)}
+                      blank bold={!!ins.technician_type} color={ins.technician_type ? 'var(--ink-2)' : 'var(--ink-4)'} />
                   ),
                   tech: oid ? (
-                    <select value={oe?.technician || ''} onChange={e => saveOrder(oid, { technician: e.target.value || null }, 'แก้ช่างเย็บ ' + (oe?.customer_name || ''))}
-                      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: oe?.technician ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 100 }}>
-                      <option value="">—</option>
-                      {TECH_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                    <RowSelect value={oe?.technician || ''} opts={TECH_OPTIONS} onPick={v => saveOrder(oid, { technician: v || null }, 'แก้ช่างเย็บ ' + (oe?.customer_name || ''))}
+                      blank maxWidth="100%" color={oe?.technician ? 'var(--ink)' : 'var(--ink-4)'} />
                   ) : noOrder,
                   address: oid ? (
                     isOe('address') ? (
@@ -1685,10 +1753,10 @@ export default function InstallationsPage() {
                     </div>
                   ) : <span style={{ color: 'var(--ink-4)' }}>-</span>,
                 }
-                // ช่องที่ยังไม่ได้กรอก → พื้นหลังสีเตือน (ชุดเดียวกับหมวดออเดอร์)
-                const cellBg: Record<string, string | undefined> = {
-                  admin: (oe?.admin_name || ins.entered_by) ? undefined : EMPTY_HL,
-                  tech: oid && !oe?.technician ? EMPTY_HL : undefined,
+                // ช่องแอดมิน/ช่างเย็บที่ยังไม่เลือกชื่อ → ป้ายพีชครีมมุมมน (คลาส .ow-empty ชุดเดียวกับหมวดออเดอร์)
+                const cellEmpty: Record<string, boolean> = {
+                  admin: !!oid && !(oe?.admin_name || ins.entered_by),
+                  tech: !!oid && !oe?.technician,
                 }
                 // ข้อความเต็มของคอลัมน์ที่ถูกตัดท้าย — เอาเมาส์ชี้แล้วอ่านได้
                 const titles: Record<string, string> = {
@@ -1705,11 +1773,11 @@ export default function InstallationsPage() {
                 return (
                   <tr key={ins.id} style={{ borderBottom: '1px solid var(--border)' }}>
                     {COLS.filter(c => showCol(c.id)).map(c => (
-                      <td key={c.id} style={{
+                      <td key={c.id} className={cellEmpty[c.id] ? 'ow-empty' : undefined} style={{
                         padding: c.id === 'items' ? '6px 14px' : '12px 14px',
                         textAlign: COL_ALIGN[c.id] ?? 'left',
-                        background: cellBg[c.id],
-                        ...(COL_W[c.id] != null ? { width: COL_W[c.id], minWidth: COL_W[c.id], maxWidth: COL_W[c.id] } : {}),
+                        // ความกว้างช่อง = ความกว้างเนื้อหา + padding ซ้ายขวา 28 (box-sizing: border-box) ไม่งั้นเนื้อหาล้นทับช่องถัดไป
+                        ...(COL_W[c.id] != null ? { width: COL_W[c.id] + 28, minWidth: COL_W[c.id] + 28, maxWidth: COL_W[c.id] + 28 } : {}),
                       }}>
                         {COL_W[c.id] != null ? (
                           <div title={titles[c.id] || undefined} style={{ width: COL_W[c.id], overflow: 'hidden', ...(CLIP_ONE_LINE(c.id) ? { whiteSpace: 'nowrap' as const, textOverflow: 'ellipsis' } : {}) }}>{cells[c.id]}</div>
@@ -1917,50 +1985,66 @@ export default function InstallationsPage() {
       )}
 
       {/* Day modal */}
+      {orderDetail && <OrderDetailModal id={orderDetail} onClose={() => setOrderDetail(null)} />}
+
       {dayModal && (
-        <div onClick={() => setDayModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 560, maxHeight: '80vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
-              <h2 style={{ fontSize: 17, fontWeight: 700 }}>วันที่ {dayModal.day} {TH_MONTHS[month]} {year + 543}</h2>
-              <button onClick={() => setDayModal(null)} style={{ border: 'none', background: 'rgba(0,0,0,0.10)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>✕</button>
+        <div className="sc-mback" onClick={() => setDayModal(null)}>
+          <div className="sc-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 560 }}>
+            <div className="sc-mhead">
+              <div className="sc-mdate">
+                <div className="sc-mday">{dayModal.day}</div>
+                <div>
+                  <div className="sc-mdow">{['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'][new Date(year, month, dayModal.day).getDay()]}</div>
+                  <div className="sc-mmon">{TH_MONTHS[month]} {year + 543}</div>
+                </div>
+              </div>
+              <button className="sc-mclose" onClick={() => setDayModal(null)} aria-label="ปิด">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+              </button>
             </div>
+
             {(() => {
               const h = HOLIDAYS[`${year}-${String(month + 1).padStart(2, '0')}-${String(dayModal.day).padStart(2, '0')}`]
-              return h ? (
-                <div style={{ background: '#fff9e6', border: '1px solid #f0d98c', borderRadius: 10, padding: '10px 14px', marginBottom: 16, color: '#b45309', fontSize: 13, fontWeight: 600 }}>
-                  🏖️ วันหยุดร้าน · {h}
+              const sun = new Date(year, month, dayModal.day).getDay() === 0
+              return (h || sun) ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {sun && <div className="sc-chip" style={{ background: '#ECE9E7', padding: '10px 14px' }}><i className="sc-dot" style={{ background: '#9A9AA6' }} /><div className="sc-chip-title" style={{ fontSize: 13, flex: 1 }}>ร้านปิด</div><div className="sc-chip-sub" style={{ marginTop: 0, fontSize: 12 }}>วันอาทิตย์</div></div>}
+                  {h && <div className="sc-chip" style={{ background: '#F6E9DB', padding: '10px 14px' }}><i className="sc-dot" style={{ background: '#D9AE86' }} /><div className="sc-chip-title" style={{ fontSize: 13, flex: 1 }}>{h}</div><div className="sc-chip-sub" style={{ marginTop: 0, fontSize: 12 }}>วันหยุดร้าน</div></div>}
                 </div>
               ) : null
             })()}
+
+            <div className="sc-msec">นัดหมาย <span>{dayModal.items.length}</span></div>
             {dayModal.items.length === 0 ? (
-              <p style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 24 }}>ไม่มีนัดหมาย</p>
-            ) : dayModal.items.map(ins => {
+              <div className="sc-mempty">ไม่มีนัดหมาย</div>
+            ) : [...dayModal.items].sort((x, y) => x.appointment_datetime.localeCompare(y.appointment_datetime)).map(ins => {
               const bg = rowColor(ins)
               return (
-                <div key={ins.id} style={{ borderLeft: `4px solid ${bg}`, borderRadius: 10, padding: '14px 16px', background: 'var(--bg)', marginBottom: 12 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{ fontWeight: 700, color: 'var(--ink)' }}>{installSerial(ins.serial_no)}</span>
-                    <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>
-                      {ins.appointment_datetime ? new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : ''}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>{ins.customer_real_name || ins.customer_id}</div>
-                  <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>{ins.work_type} · {ins.province}</div>
-                  {ins.phone && <div style={{ fontSize: 13, marginTop: 4 }}>📞 {ins.phone}</div>}
-                  {ins.location_link && <a href={ins.location_link} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: 'var(--blue)', display: 'block', marginTop: 4 }}>📍 ดูแผนที่</a>}
-                  <div style={{ marginTop: 8 }}>
-                    <span style={{ background: bg + '22', color: bg, padding: '2px 8px', borderRadius: 980, fontSize: 11, fontWeight: 600 }}>{statusLabel(normStatus(ins.installation_status), ins.work_type)}</span>
+                <div key={ins.id} className="sc-mitem sc-link" style={{ background: CHIP_BG[bg] ?? 'var(--cream-2)' }}
+                  title={ins.source_order_id ? 'กดเพื่อเปิดออเดอร์' : 'กดเพื่อแก้ไขรายการ'}
+                  onClick={e => { if ((e.target as HTMLElement).closest('a')) return; openInstall(ins) }}>
+                  <i className="sc-dot" style={{ background: bg }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+                      <span className="sc-mname">{ins.customer_real_name || ins.customer_id} <small>{installSerial(ins.serial_no)}</small></span>
+                      <span className="sc-mtime">{ins.appointment_datetime ? new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.' : ''}</span>
+                    </div>
+                    <div className="sc-mnote" style={{ marginTop: 3 }}>{[ins.work_type, ins.province, ins.install_zone].filter(Boolean).join(' · ')}</div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 8 }}>
+                      <span className="sc-mpill" style={{ color: bg, background: 'rgba(255,255,255,0.65)' }}>{statusLabel(normStatus(ins.installation_status), ins.work_type)}</span>
+                      {ins.phone && <a href={`tel:${ins.phone}`} className="sc-mpill" style={{ textDecoration: 'none', background: 'rgba(255,255,255,0.65)' }}>📞 {ins.phone}</a>}
+                      {ins.location_link && <a href={ins.location_link} target="_blank" rel="noreferrer" className="sc-mpill" style={{ textDecoration: 'none', background: 'rgba(255,255,255,0.65)' }}>📍 ดูแผนที่</a>}
+                    </div>
                   </div>
                 </div>
               )
             })}
-            <button onClick={() => {
+            <button className="sc-madd" onClick={() => {
               const d = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayModal.day).padStart(2, '0')}`
               setDayModal(null)
               openAdd()
               setApptDate(d)
-            }}
-              style={{ marginTop: 8, width: '100%', padding: '10px', borderRadius: 10, border: '1px dashed var(--border-2)', background: 'var(--surface)', color: 'var(--blue)', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
+            }}>
               + เพิ่มรายการวันนี้
             </button>
           </div>
@@ -1999,7 +2083,7 @@ export default function InstallationsPage() {
               <button onClick={() => setSummaryModal(false)}
                 style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ปิด</button>
               <button onClick={async () => { await navigator.clipboard.writeText(summaryText); setSummaryCopied(true); setTimeout(() => setSummaryCopied(false), 2000) }}
-                style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: summaryCopied ? '#34c759' : 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600, transition: 'background 0.15s' }}>
+                style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: summaryCopied ? '#6F8F6A' : 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600, transition: 'background 0.15s' }}>
                 {summaryCopied ? '✓ คัดลอกแล้ว' : 'คัดลอกข้อความ'}
               </button>
             </div>
@@ -2061,7 +2145,7 @@ export default function InstallationsPage() {
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     {([['ทุกช่าง', null], ...TECHS.map(t => [t, t] as [string, string])] as [string, string | null][]).map(([label, val]) => (
                       <button key={label} onClick={() => setBonusTech(val)}
-                        style={{ padding: '5px 12px', borderRadius: 980, border: bonusTech === val ? 'none' : '1px solid var(--border)', background: bonusTech === val ? '#ff9f0a' : '#fff', color: bonusTech === val ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: bonusTech === val ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        style={{ padding: '5px 12px', borderRadius: 980, border: bonusTech === val ? 'none' : '1px solid var(--border)', background: bonusTech === val ? '#C79A4B' : '#fff', color: bonusTech === val ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: bonusTech === val ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                         {label}
                       </button>
                     ))}
@@ -2086,8 +2170,8 @@ export default function InstallationsPage() {
                 {card('งานติดตั้งเสร็จ', `${done.length} งาน`, 'var(--ink)')}
                 {card('รวมยอดติดตั้งสำเร็จ', fmtB(total), 'var(--blue)')}
                 {card('ทุน 80%', fmtB(cost), 'var(--ink-2)')}
-                {card('กำไร 20%', fmtB(profit), '#34c759')}
-                {card('โบนัสรวม 1%', fmtB(bonusTotal), '#ff9f0a')}
+                {card('กำไร 20%', fmtB(profit), '#6F8F6A')}
+                {card('โบนัสรวม 1%', fmtB(bonusTotal), '#C79A4B')}
                 {card(`โบนัสต่อคน (${techCount} คน)`, '฿' + bonusEach.toLocaleString('th-TH'), 'var(--red)')}
               </div>
               {noPrice.length > 0 && (
@@ -2121,7 +2205,7 @@ export default function InstallationsPage() {
                         <td style={{ padding: '10px 14px', color: 'var(--ink-3)' }}>{ins.platform || '-'}</td>
                         <td style={{ padding: '10px 14px', color: 'var(--ink-3)' }}>{ins.install_zone || '-'}</td>
                         <td style={{ padding: '10px 14px', color: 'var(--ink-3)' }}>{ins.technician_type || '-'}</td>
-                        <td style={{ padding: '10px 14px', color: payOf(ins) === 'ชำระครบ' ? '#34c759' : 'var(--ink-3)', fontWeight: payOf(ins) === 'ชำระครบ' ? 600 : 400 }}>{payOf(ins) || '-'}</td>
+                        <td style={{ padding: '10px 14px', color: payOf(ins) === 'ชำระครบ' ? '#6F8F6A' : 'var(--ink-3)', fontWeight: payOf(ins) === 'ชำระครบ' ? 600 : 400 }}>{payOf(ins) || '-'}</td>
                         <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: priceOf(ins) > 0 ? 'var(--ink)' : '#b45309', whiteSpace: 'nowrap' }}>
                           {priceOf(ins) > 0 ? fmtB(priceOf(ins)) : 'ยังไม่ลงราคา'}
                         </td>
@@ -2141,9 +2225,9 @@ export default function InstallationsPage() {
 
       {/* Add/Edit modal */}
       {modal && (
-        <div onMouseDown={e => { if (e.target === e.currentTarget) closeModal() }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 1000, padding: 24 }}>
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 680, maxHeight: '90vh', overflowY: 'auto' }}>
-            <h2 style={{ fontSize: 17, fontWeight: 700, marginBottom: 20 }}>
+        <div className="sc-mback" onMouseDown={e => { if (e.target === e.currentTarget) closeModal() }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 1000, padding: 24 }}>
+          <div className="sc-modal" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 680, maxHeight: '90vh', overflowY: 'auto' }}>
+            <h2 className="sc-mtitle">
               {modal.mode === 'add' ? '+ เพิ่มรายการติดตั้ง' : 'แก้ไขรายการ'}
             </h2>
             {modal.mode === 'add' && (
@@ -2264,9 +2348,9 @@ export default function InstallationsPage() {
             {ph.trigger()}
 
             <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-              <button onClick={closeModal}
+              <button className="sc-mcancel" onClick={closeModal}
                 style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ยกเลิก</button>
-              <button onClick={save} disabled={saving}
+              <button className="sc-msave" onClick={save} disabled={saving}
                 style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
                 {saving ? 'กำลังบันทึก…' : 'บันทึก'}
               </button>

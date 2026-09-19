@@ -10,11 +10,32 @@ import { RED_ZONES, CAMPAIGNS, LEAVE_STATUS_COLOR as STATUS_COLOR, DAYS_TH as DA
 import { EMPLOYEES } from '@/lib/staff'
 import { fetchEmployeeOptions } from '@/lib/staffDb'
 import { recordAction } from '@/lib/history'
+import { tUpdate, prevOf } from '@/lib/trackedDb'
 import { opUpdate, opInsert, opDelete } from '@/lib/historyOps'
-import { tUpdate } from '@/lib/trackedDb'
 import { useConfirm } from '@/components/ConfirmDialog'
 import { LEAVE_TYPES, rangeDays, vacationMaxDays, applyLeaveToStaff, isQuotaApplied, isApproved } from '@/lib/leave'
 import { todayYmd } from '@/lib/thaiDate'
+import { useStableView } from '@/lib/useStableView'
+import CreamSelect from '@/components/CreamSelect'
+import AnchoredMenu from '@/components/AnchoredMenu'
+import { useColumnFilters, useHiddenColumns, SearchPill, MonthSelect, SortSelect, ColumnPicker, Tab, type FilterDef } from '@/components/ListFilters'
+
+// คอลัมน์ของรายการลา (ซ่อน/โชว์ได้ + ตัวกรองหัวคอลัมน์ แบบเดียวกับหมวดออเดอร์)
+const LEAVE_COLS = [
+  { id: 'code', label: 'รหัส' }, { id: 'name', label: 'ชื่อ-นามสกุล' }, { id: 'nickname', label: 'ชื่อเล่น' },
+  { id: 'department', label: 'แผนก' }, { id: 'date', label: 'วันที่ลา' }, { id: 'type', label: 'ประเภท' },
+  { id: 'reason', label: 'เหตุผล' }, { id: 'cert', label: 'ใบรับรอง' }, { id: 'status', label: 'สถานะ' },
+  { id: 'supervisor', label: 'หัวหน้า' }, { id: 'hr', label: 'บุคคล' },
+]
+const APPROVAL_OPTS = ['รออนุมัติ', 'อนุมัติ', 'ไม่อนุมัติ']
+const LEAVE_STATUS_OPTS = ['ใบลาเรียบร้อย', 'ยังไม่เขียนไปลา', 'รออนุมัติ']
+// ป้ายเลือกในรายการลา — .dn-pill ครีมมุมมนชุดเดียวกับป้ายสถานะหมวดออเดอร์ (เขียว = ผ่าน · ชมพู = ไม่ผ่าน/ยังไม่ทำ · ส้มครีม = รอ)
+const LEAVE_PILL: Record<string, { bg: string; dot: string }> = {
+  // เขียวชุดเดียวกับป้าย 'จัดส่งแล้ว' ในหมวดออเดอร์ (DONE_GREEN_* ใน OrderDetailModal)
+  'ใบลาเรียบร้อย': { bg: '#E3F3E0', dot: '#1F8A3B' }, 'อนุมัติ': { bg: '#E3F3E0', dot: '#1F8A3B' },
+  'ยังไม่เขียนไปลา': { bg: '#F0C0B7', dot: '#C0563F' }, 'ไม่อนุมัติ': { bg: '#F0C0B7', dot: '#C0563F' },
+  'รออนุมัติ': { bg: '#F9E0C3', dot: '#C79A4B' },
+}
 
 type Leave = {
   id: string
@@ -92,6 +113,17 @@ export default function EmployeesPage() {
   const [dayModal, setDayModal] = useState<{ ymd: string; day: number; leaves: Leave[] } | null>(null)
   // กล่อง "รออนุมัติ" เหนือรายการลา — แบบเดียวกับปุ่มกรอง "ข้อมูลไม่ครบ / ยังไม่ปริ้น" ในหมวดออเดอร์
   const [pendingFilter, setPendingFilter] = useState(false)
+  // รายการลา: ค้นหา / เดือน / ตัวกรองหัวคอลัมน์ / ซ่อนคอลัมน์
+  const [leaveSearch, setLeaveSearch] = useState('')
+  const [leaveMonth, setLeaveMonth] = useState('all')
+  // เมนู ··· ท้ายแถวรายการลา (แบบเดียวกับหมวดออเดอร์/งานเคลม) — rect ของปุ่ม ให้ AnchoredMenu พลิกขึ้นเองถ้าชิดขอบล่าง
+  const [leaveMenu, setLeaveMenu] = useState<{ id: string; rect: DOMRect } | null>(null)
+  // กำลังแก้ใบลาใบไหน (null = เพิ่มใหม่) — ใช้ฟอร์มเดียวกับ "+ เพิ่มรายการ"
+  const [editId, setEditId] = useState<string | null>(null)
+  const { snapshot, stable, live } = useStableView<Leave>(leaves)
+  const hc = useHiddenColumns('leave_hidden_cols')
+  const [view, setView] = useState<'month' | 'week' | 'day'>('month')
+  const [selDay, setSelDay] = useState(new Date().getDate())   // วันที่ยึดของมุมมองสัปดาห์/วัน
 
   const load = async () => {
     setError('')
@@ -101,6 +133,7 @@ export default function EmployeesPage() {
     const rows = (data ?? []) as Leave[]
     setPageCache('leave_requests', rows)
     setLeaves(rows)
+    snapshot(rows)
     setLoading(false)
   }
 
@@ -160,6 +193,37 @@ export default function EmployeesPage() {
     setSaving(true)
     // แนบใบรับรองแพทย์ถ้ามี (ไม่บังคับ — ไม่แนบก็บันทึกได้)
     const certUrl = certFile ? await uploadCert(certFile, form.employee_code) : null
+
+    // ── แก้ไขใบเดิม ── ไม่แตะสถานะ/การอนุมัติ (แก้ในตารางได้อยู่แล้ว) · ใบรับรองเปลี่ยนเฉพาะตอนเลือกไฟล์ใหม่
+    if (editId) {
+      const old = leaves.find(x => x.id === editId)
+      const patch: Record<string, unknown> = {
+        employee_code: form.employee_code, employee_name: form.employee_name, employee_nickname: form.nickname,
+        department: form.department, leave_date: form.leave_date, leave_end_date: form.leave_end_date || form.leave_date,
+        leave_time: form.leave_time, leave_type: form.leave_type, reason: form.reason,
+        ...(certUrl ? { medical_cert_url: certUrl } : {}),
+      }
+      try {
+        await tUpdate('leave_requests', editId, patch, old ? prevOf(old as unknown as Record<string, unknown>, patch) : {}, `แก้ใบลา ${form.nickname}`, load)
+      } catch (e) {
+        setSaving(false)
+        alert('บันทึกการแก้ไขไม่สำเร็จ: ' + (e instanceof Error ? e.message : String(e)))
+        return
+      }
+      // ‼️ ใบที่หักสิทธิไปแล้ว + เปลี่ยนคน/ประเภท/จำนวนวัน → คืนสิทธิของเดิมแล้วหักของใหม่ (กติกาเดียวกับ updateLeave)
+      if (old && isQuotaApplied(old)) {
+        const oldDays = rangeDays(old.leave_date, old.leave_end_date || old.leave_date)
+        const newDays = rangeDays(form.leave_date, form.leave_end_date || form.leave_date)
+        if (old.employee_code !== form.employee_code || old.leave_type !== form.leave_type || oldDays !== newDays) {
+          await applyLeaveToStaff(old.employee_code, old.leave_type, oldDays, -1)
+          await applyLeaveToStaff(form.employee_code, form.leave_type, newDays, 1)
+        }
+      }
+      setSaving(false)
+      closeLeaveModal()
+      load()
+      return
+    }
     const payload = {
       employee_code: form.employee_code,
       employee_name: form.employee_name,
@@ -204,10 +268,32 @@ export default function EmployeesPage() {
       })
     }
     setSaving(false)
+    closeLeaveModal()
+    load()
+  }
+
+  // ปิดฟอร์ม (เพิ่ม/แก้ไข) แล้วล้างค่าให้พร้อมใช้รอบหน้า
+  const closeLeaveModal = () => {
     setModal(false)
+    setEditId(null)
     setForm({ nickname: '', employee_code: '', employee_name: '', department: '', leave_date: '', leave_end_date: '', leave_time: '08:00', leave_type: '', reason: '' })
     setCertFile(null)
-    load()
+    setConflict('')
+    setSuggestions([])
+  }
+
+  // เปิดฟอร์มแก้ใบลาเดิม — เติมค่าเดิมทุกช่อง
+  const openEditLeave = (l: Leave) => {
+    setEditId(l.id)
+    setForm({
+      nickname: l.employee_nickname || '', employee_code: l.employee_code || '', employee_name: l.employee_name || '',
+      department: l.department || '', leave_date: l.leave_date || '', leave_end_date: l.leave_end_date || l.leave_date || '',
+      leave_time: l.leave_time || '08:00', leave_type: l.leave_type || '', reason: l.reason || '',
+    })
+    setCertFile(null)
+    setConflict('')
+    setSuggestions([])
+    setModal(true)
   }
 
   // แนบ/เปลี่ยนใบรับรองแพทย์ทีหลังจากในตาราง
@@ -287,97 +373,186 @@ export default function EmployeesPage() {
   const isPending = (l: Leave) =>
     !isApproved(l) && l.supervisor_approval !== 'ไม่อนุมัติ' && l.hr_approval !== 'ไม่อนุมัติ'
   const pendingLeaves = leaves.filter(isPending)
-  const shownLeaves = pendingFilter ? pendingLeaves : leaves
+
+  // กรอง/เรียงบนค่า stable (แถวไม่เด้งหนีตอนกดอนุมัติ) แล้วคืนค่าสดก่อนวาด
+  const leaveDefs: FilterDef<Leave>[] = [
+    { id: 'code', label: 'รหัส', kind: 'text', get: l => l.employee_code },
+    { id: 'name', label: 'ชื่อ-นามสกุล', kind: 'text', get: l => l.employee_name },
+    { id: 'nickname', label: 'ชื่อเล่น', kind: 'pick', get: l => l.employee_nickname },
+    { id: 'department', label: 'แผนก', kind: 'pick', get: l => l.department },
+    { id: 'date', label: 'วันที่ลา', kind: 'date', get: l => l.leave_date },
+    { id: 'type', label: 'ประเภท', kind: 'pick', get: l => l.leave_type },
+    { id: 'cert', label: 'ใบรับรอง', kind: 'bool', get: l => l.medical_cert_url, yes: 'แนบใบรับรองแล้ว', no: 'ยังไม่แนบ' },
+    { id: 'status', label: 'สถานะ', kind: 'pick', get: l => l.leave_status, options: ['ใบลาเรียบร้อย', 'ยังไม่เขียนไปลา', 'รออนุมัติ'] },
+    { id: 'supervisor', label: 'หัวหน้า', kind: 'pick', get: l => l.supervisor_approval, options: APPROVAL_OPTS },
+    { id: 'hr', label: 'บุคคล', kind: 'pick', get: l => l.hr_approval, options: APPROVAL_OPTS },
+  ]
+  const lf = useColumnFilters(leaveDefs)
+  const leaveMonths = Array.from(new Set(leaves.map(l => (l.leave_date ?? '').slice(0, 7)).filter(Boolean))).sort().reverse()
+  const monthLeaves = leaves.map(stable).filter(l => leaveMonth === 'all' || (l.leave_date ?? '').slice(0, 7) === leaveMonth)
+  const lq = leaveSearch.trim().toLowerCase()
+  const searchedLeaves = !lq ? monthLeaves : monthLeaves.filter(l =>
+    [l.employee_code, l.employee_name, l.employee_nickname, l.department, l.leave_type, l.reason].some(v => (v ?? '').toLowerCase().includes(lq)))
+  const shownLeaves = lf.apply(pendingFilter ? searchedLeaves.filter(isPending) : searchedLeaves).map(live)
+  // ช่องเลือกในรายการลา = ป้าย .dn-pill กดแล้วเมนูครีมคลี่ลง (CreamSelect ชุดเดียวกับหมวดออเดอร์)
+  const leavePill = (value: string, opts: string[], onPick: (v: string) => void) => (
+    <CreamSelect value={value || ''} onChange={v => { if (v !== value) onPick(v) }}
+      className="dn-pill ow-pill" style={{ color: LEAVE_PILL[value]?.dot === '#1F8A3B' ? '#1F8A3B' : '#6B4326', background: LEAVE_PILL[value]?.bg ?? '#EFE3D4' }} menuMinWidth={170}
+      options={Array.from(new Set([...opts, value].filter(Boolean))).map(o => ({ value: o, label: o, color: LEAVE_PILL[o]?.dot }))}
+      renderValue={o => <span>{o?.label ?? (value || '—')}</span>} />
+  )
+
+  // กดชื่อคนลาในปฏิทิน → เลื่อนลงไปที่แถวใบลานั้นในรายการลา แล้วกระพริบ (ปิดตัวกรอง "รออนุมัติ" ก่อน เผื่อแถวถูกซ่อน)
+  const [flashLeave, setFlashLeave] = useState<string | null>(null)
+  const jumpToLeave = (id: string) => {
+    setDayModal(null)
+    // แถวโดนตัวกรองซ่อนอยู่ → ล้างตัวกรองทั้งหมดก่อน จะได้เลื่อนไปเจอ
+    if (!shownLeaves.some(l => l.id === id)) { setPendingFilter(false); setLeaveSearch(''); setLeaveMonth('all'); lf.clearFilters() }
+    setFlashLeave(null)
+    setTimeout(() => {
+      document.querySelector(`[data-leave-row="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setFlashLeave(id)
+    }, 60)
+  }
+  useEffect(() => {
+    if (!flashLeave) return
+    const t = setTimeout(() => setFlashLeave(null), 3200)
+    return () => clearTimeout(t)
+  }, [flashLeave])
+  // ── ปฏิทิน: เลื่อน/ไปวันที่ ──
+  const goTo = (dt: Date) => { setYear(dt.getFullYear()); setMonth(dt.getMonth()); setSelDay(dt.getDate()) }
+  const shift = (dir: number) => {
+    if (view === 'month') goTo(new Date(year, month + dir, 1))
+    else goTo(new Date(year, month, selDay + dir * (view === 'week' ? 7 : 1)))
+  }
+  const openDay = (ymd: string, d: number, y = year, m = month) => {
+    const dayLeaves = leaves.filter(l => ymd >= l.leave_date && ymd <= (l.leave_end_date || l.leave_date))
+    if (y !== year || m !== month) { setYear(y); setMonth(m) }
+    setDayModal({ ymd, day: d, leaves: dayLeaves })
+  }
+  const weekStart = new Date(year, month, selDay - ((new Date(year, month, selDay).getDay() + 6) % 7))
+  const navTitle = view === 'week'
+    ? (() => { const e = new Date(weekStart); e.setDate(e.getDate() + 6)
+        return weekStart.getMonth() === e.getMonth()
+          ? `${weekStart.getDate()}–${e.getDate()} ${TH_MONTHS[e.getMonth()]} ${e.getFullYear() + 543}`
+          : `${weekStart.getDate()} ${TH_MONTHS[weekStart.getMonth()].slice(0, 3)}. – ${e.getDate()} ${TH_MONTHS[e.getMonth()].slice(0, 3)}. ${e.getFullYear() + 543}` })()
+    : view === 'day' ? `${selDay} ${TH_MONTHS[month]} ${year + 543}`
+    : `${TH_MONTHS[month]} ${year + 543}`
+  // เดือน = เฉพาะแถวที่มีวันจริง (ไม่ต้องครบ 6 แถว) · สัปดาห์ = 7 ช่องของสัปดาห์ที่เลือก
+  const gridCells: ({ y: number; m: number; d: number } | null)[] = view === 'week'
+    ? Array.from({ length: 7 }, (_, i) => { const dt = new Date(weekStart); dt.setDate(dt.getDate() + i); return { y: dt.getFullYear(), m: dt.getMonth(), d: dt.getDate() } })
+    : Array.from({ length: Math.ceil((first + dim) / 7) * 7 }, (_, i) => { const d = i - first + 1; return d > 0 && d <= dim ? { y: year, m: month, d } : null })
+  // รายการของวัน → การ์ดในช่อง (ลำดับ: วันหยุด · ร้านปิด · แคมเปญ · RedZone · ใบลา)
+  const dayItems = (ymd: string): CalItem[] => {
+    const [yy, mm, dd] = ymd.split('-').map(Number)
+    const out: CalItem[] = []
+    if (HOLIDAYS[ymd]) out.push({ key: 'h', kind: 'holiday', title: HOLIDAYS[ymd], sub: 'วันหยุดร้าน' })
+    if (new Date(yy, mm - 1, dd).getDay() === 0) out.push({ key: 's', kind: 'closed', title: 'ร้านปิด', sub: 'วันอาทิตย์' })
+    if (CAMPAIGNS[ymd]) out.push({ key: 'c', kind: 'campaign', title: CAMPAIGNS[ymd], sub: 'แคมเปญ' })
+    if (RED_ZONES.has(ymd)) out.push({ key: 'r', kind: 'redzone', title: 'RedZone', sub: 'ช่วงห้ามลา' })
+    leaves.filter(l => ymd >= l.leave_date && ymd <= (l.leave_end_date || l.leave_date)).forEach(l => out.push({
+      key: l.id, kind: 'leave', title: l.employee_nickname || l.employee_name,
+      sub: [l.leave_type, l.leave_time].filter(Boolean).join(' · '), status: l.leave_status,
+    }))
+    return out
+  }
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px' }}>ปฏิทินร้าน</h1>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={() => window.print()}
-            style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border-2)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-            🖨️ ปริ้นปฏิทิน
-          </button>
-          <button onClick={() => setModal(true)}
-            style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,122,255,0.3)' }}>
-            + เพิ่มรายการ
-          </button>
+      <div className="sc-head">
+        <div>
+          <h1 className="sc-title">ปฏิทินร้าน</h1>
+          <p className="sc-sub">วันหยุด แคมเปญ ช่วงห้ามลา และใบลาของทีม ในที่เดียว</p>
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button className="sc-btn-ghost" onClick={() => window.print()}>🖨️ ปริ้นปฏิทิน</button>
+          <button className="sc-btn-main" onClick={() => { setEditId(null); setModal(true) }}>+ เพิ่มรายการ</button>
         </div>
       </div>
 
-      {/* Calendar */}
-      <div className="print-area" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '24px', marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-          <button className="no-print" onClick={prevMonth} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 14, background: '#fff' }}>‹</button>
-          <h2 style={{ fontSize: 17, fontWeight: 600, flex: 1, textAlign: 'center', color: 'var(--ink)' }}>{TH_MONTHS[month]} {year + 543}</h2>
-          <button className="no-print" onClick={nextMonth} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 14, background: '#fff' }}>›</button>
+      {/* Calendar — ดีไซน์ตามภาพต้นแบบ: แท็บ เดือน/สัปดาห์/วัน · ช่องมีเส้นบาง · รายการเป็นการ์ดพาสเทลมีจุดสี */}
+      <div className="print-area sc-card">
+        <div className="sc-toolbar">
+          <div className="sc-seg no-print">
+            {([['month', 'เดือน'], ['week', 'สัปดาห์'], ['day', 'วัน']] as const).map(([k, l]) => (
+              <button key={k} className={view === k ? 'on' : ''} onClick={() => setView(k)}>{l}</button>
+            ))}
+          </div>
+          <div className="sc-nav">
+            <button className="sc-circle no-print" onClick={() => shift(-1)} aria-label="ก่อนหน้า">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+            </button>
+            <h2 className="sc-month">{navTitle}</h2>
+            <button className="sc-circle no-print" onClick={() => shift(1)} aria-label="ถัดไป">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+            </button>
+            <label className="sc-circle no-print" title="เลือกเดือน" style={{ position: 'relative' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="16" rx="2.5" /><path d="M3 10h18M8 3v4M16 3v4" /></svg>
+              <input type="month" value={`${year}-${String(month + 1).padStart(2, '0')}`}
+                onChange={e => { const [y, m] = e.target.value.split('-').map(Number); if (y && m) goTo(new Date(y, m - 1, 1)) }}
+                style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
+            </label>
+            <button className="sc-pill no-print" onClick={() => goTo(new Date())}>วันนี้</button>
+          </div>
+          <div className="sc-legend">
+            {[['#C0564A', 'RedZone'], ['#C79A4B', 'Campaign'], ['#D9AE86', 'วันหยุด'], ['#A8714F', 'ใบลา'], ['#9A9AA6', 'ร้านปิด (อา.)']].map(([c, l]) => (
+              <span key={l}><i style={{ background: c }} />{l}</span>
+            ))}
+          </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2, marginBottom: 4 }}>
-          {DAYS.map(d => <div key={d} style={{ textAlign: 'center', fontSize: 12, fontWeight: 600, color: 'var(--ink-3)', padding: '6px 0' }}>{d}</div>)}
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2 }}>
-          {cells.map((day, i) => {
-            if (!day) return <div key={i} />
-            const ymd = toYMD(year, month, day)
-            const isRedZone = RED_ZONES.has(ymd)
-            const campaign = CAMPAIGNS[ymd]
-            const holiday = HOLIDAYS[ymd]
-            const dayLeaves = leaves.filter(l => ymd >= l.leave_date && ymd <= (l.leave_end_date || l.leave_date))
-            const isToday = ymd === todayYmd()
-            const isSunday = new Date(year, month, day).getDay() === 0
-
-            let bg = '#fff'
-            if (holiday) bg = '#fff9e6'
-            else if (campaign) bg = '#fff3e6'
-            else if (isRedZone) bg = '#fff0f0'
-            else if (isSunday) bg = '#f4f4f5'
-
+        {view === 'day' ? (
+          (() => {
+            const ymd = toYMD(year, month, selDay)
+            const items = dayItems(ymd)
             return (
-              <div key={i} onClick={() => setDayModal({ ymd, day, leaves: dayLeaves })} style={{ minHeight: 85, background: bg, borderRadius: 8, padding: '6px 7px', border: isToday ? '2px solid var(--blue)' : '1px solid rgba(0,0,0,0.06)', position: 'relative', overflow: 'hidden', cursor: 'pointer' }}>
-                <div style={{ fontSize: 12, fontWeight: isToday ? 700 : 400, color: isToday ? 'var(--blue)' : 'var(--ink)', marginBottom: 2 }}>{day}</div>
-                {isSunday && <div style={{ fontSize: 9, color: '#6b7280', fontWeight: 600, lineHeight: 1.3, marginBottom: 2 }}>ร้านปิด</div>}
-                {holiday && <div style={{ fontSize: 9, color: '#b45309', fontWeight: 600, lineHeight: 1.3, marginBottom: 2 }}>{holiday}</div>}
-                {campaign && <div style={{ fontSize: 9, color: '#c2510a', fontWeight: 600, lineHeight: 1.3, marginBottom: 2 }}>{campaign}</div>}
-                {dayLeaves.slice(0, 2).map(l => (
-                  <div key={l.id} style={{ background: 'var(--blue)22', borderLeft: '2px solid var(--blue)', borderRadius: 2, padding: '1px 4px', fontSize: 9, color: 'var(--blue)', fontWeight: 600, marginBottom: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {l.employee_nickname} ({l.leave_type?.replace('ลา', '')})
-                  </div>
-                ))}
-                {dayLeaves.length > 2 && <div style={{ fontSize: 9, color: 'var(--ink-3)' }}>+{dayLeaves.length - 2}</div>}
+              <div className="sc-dayview">
+                <div className="sc-dayview-head">{DAYS[(new Date(year, month, selDay).getDay() + 6) % 7]} {selDay} {TH_MONTHS[month]} {year + 543}</div>
+                {items.length === 0
+                  ? <div className="sc-empty">ไม่มีรายการในวันนี้</div>
+                  : items.map(it => <EventChip key={it.key} it={it} big onClick={it.kind === 'leave' ? () => jumpToLeave(it.key) : () => openDay(ymd, selDay)} />)}
               </div>
             )
-          })}
-        </div>
-
-        {/* Legend */}
-        <div style={{ display: 'flex', gap: 16, marginTop: 14, flexWrap: 'wrap' }}>
-          {[['var(--red)','RedZone'],['#f59e0b','Campaign'],['#eab308','วันหยุด'],['var(--blue)','ใบลา'],['#9ca3af','ร้านปิด (อา.)']].map(([c,l]) => (
-            <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: c, display: 'inline-block' }} />
-              <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{l}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Leave list */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
-        <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>รายการลา</h2>
-        {/* ปุ่มกรอง "รออนุมัติ" — หน้าตา/พฤติกรรมชุดเดียวกับปุ่ม "ข้อมูลไม่ครบ / ยังไม่ปริ้น" ในหมวดออเดอร์
-            ไม่มีใบรออนุมัติ = ปุ่มหายไปเลย (เหมือนกัน) */}
-        {pendingLeaves.length > 0 && (
-          <button onClick={() => setPendingFilter(f => !f)}
-            title="ใบลาที่ยังไม่มีใครกดอนุมัติ/ไม่อนุมัติ — กดเพื่อดูเฉพาะใบพวกนี้"
-            style={{ padding: '6px 14px', borderRadius: 20, border: pendingFilter ? 'none' : '1px solid var(--border)', background: pendingFilter ? '#f59e0b' : 'var(--surface)', color: pendingFilter ? '#fff' : '#f59e0b', fontSize: 13, fontWeight: pendingFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
-            รออนุมัติ
-            <span style={{ background: pendingFilter ? 'rgba(255,255,255,0.3)' : '#f59e0b22', color: pendingFilter ? '#fff' : '#f59e0b', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
-              {pendingLeaves.length}
-            </span>
-          </button>
+          })()
+        ) : (
+          <div className="sc-grid">
+            {DAYS.map(d => <div key={d} className="sc-dow">{d}</div>)}
+            {gridCells.map((c, i) => {
+              if (!c) return <div key={i} className="sc-cell sc-out" />
+              const ymd = toYMD(c.y, c.m, c.d)
+              const items = dayItems(ymd)
+              const isToday = ymd === todayYmd()
+              const max = view === 'week' ? 99 : 3
+              return (
+                <div key={i} className={`sc-cell${view === 'week' ? ' sc-tall' : ''}${isToday ? ' sc-today' : ''}${c.m !== month ? ' sc-dim' : ''}`}
+                  onClick={() => openDay(ymd, c.d, c.y, c.m)}>
+                  <div className="sc-num">{c.d}</div>
+                  {items.slice(0, max).map(it => <EventChip key={it.key} it={it} onClick={it.kind === 'leave' ? () => jumpToLeave(it.key) : undefined} />)}
+                  {items.length > max && <div className="sc-more">+{items.length - max} รายการ</div>}
+                </div>
+              )
+            })}
+          </div>
         )}
       </div>
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', overflowX: 'auto' }}>
+
+      {/* Leave list — แถบเครื่องมือชุดเดียวกับหมวดออเดอร์: ค้นหา + เดือน + เรียง · แท็บ ทั้งหมด / รออนุมัติ + ปุ่มคอลัมน์ชิดขวา */}
+      <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)', margin: '0 0 12px' }}>รายการลา</h2>
+      <div style={{ display: 'flex', gap: 14, marginBottom: 18, flexWrap: 'wrap' }}>
+        <SearchPill value={leaveSearch} onChange={setLeaveSearch} placeholder="ค้นหา รหัส / ชื่อ / ชื่อเล่น / แผนก / ประเภท / เหตุผล…" />
+        <MonthSelect value={leaveMonth} onChange={setLeaveMonth} months={leaveMonths} title="เดือนที่ลา" />
+        <SortSelect cf={lf} defs={leaveDefs} presets={[['date', 'desc'], ['date', 'asc'], ['nickname', 'asc']]} />
+      </div>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 18, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Tab active={!pendingFilter} count={searchedLeaves.length} onClick={() => { setPendingFilter(false); lf.clearFilters() }}
+          title={lf.anyFilter ? 'กดเพื่อล้างตัวกรองคอลัมน์' : undefined}>ทั้งหมด</Tab>
+        {/* รออนุมัติ = ใบที่ยังไม่มีใครกดอนุมัติ/ไม่อนุมัติ */}
+        <Tab active={pendingFilter} count={searchedLeaves.filter(isPending).length} onClick={() => setPendingFilter(true)}
+          title="ใบลาที่ยังไม่มีใครกดอนุมัติ/ไม่อนุมัติ">รออนุมัติ</Tab>
+        <ColumnPicker cols={LEAVE_COLS} hc={hc} />
+      </div>
+      {lf.renderMenu(searchedLeaves)}
+      <div className="dn-list-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', overflowX: 'auto' }}>
         {error ? (
           <div style={{ padding: 40, textAlign: 'center' }}>
             <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--red)', marginBottom: 4 }}>โหลดข้อมูลไม่สำเร็จ</div>
@@ -388,23 +563,36 @@ export default function EmployeesPage() {
         ) : loading ? (
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>กำลังโหลด…</div>
         ) : shownLeaves.length === 0 ? (
-          <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>{pendingFilter ? 'ไม่มีใบลาที่รออนุมัติ' : 'ไม่มีรายการลา'}</div>
+          <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>
+            {lf.anyFilter ? 'ไม่มีใบลาที่ตรงกับตัวกรองคอลัมน์' : pendingFilter ? 'ไม่มีใบลาที่รออนุมัติ' : 'ไม่มีรายการลา'}
+            {lf.anyFilter && <div><button onClick={lf.clearFilters} style={{ marginTop: 10, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--brand)', borderRadius: 999, padding: '6px 16px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>ล้างตัวกรองคอลัมน์</button></div>}
+          </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <table className="dn-list dn-rows" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
-                {['รหัส','ชื่อ-นามสกุล','ชื่อเล่น','แผนก','วันที่ลา','ประเภท','เหตุผล','ใบรับรอง','สถานะ','หัวหน้า','บุคคล',''].map(h => (
-                  <th key={h} style={{ textAlign: 'left', padding: '11px 13px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
+                {LEAVE_COLS.filter(c => hc.show(c.id)).map(c => (
+                  <th key={c.id} style={{ textAlign: 'left', padding: '11px 13px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{lf.head(c.id, c.label)}</th>
                 ))}
+                <th style={{ padding: '11px 13px' }} />
               </tr>
             </thead>
             <tbody>
               {shownLeaves.map(l => (
-                <tr key={l.id} style={{ borderBottom: '1px solid var(--border)', background: isPending(l) ? '#f59e0b0f' : undefined }}>
+                <tr key={l.id} data-leave-row={l.id} className={flashLeave === l.id ? 'row-flash' : undefined} style={{ borderBottom: '1px solid var(--border)', background: isPending(l) ? '#C79A4B0f' : undefined }}>
+                  {hc.show('code') && (
                   <td style={{ padding: '11px 13px', fontWeight: 700, color: 'var(--blue)' }}>{l.employee_code}</td>
+                  )}
+                  {hc.show('name') && (
                   <td style={{ padding: '11px 13px' }}>{l.employee_name}</td>
+                  )}
+                  {hc.show('nickname') && (
                   <td style={{ padding: '11px 13px' }}>{l.employee_nickname}</td>
+                  )}
+                  {hc.show('department') && (
                   <td style={{ padding: '11px 13px', color: 'var(--ink-3)' }}>{l.department}</td>
+                  )}
+                  {hc.show('date') && (
                   <td style={{ padding: '11px 13px', whiteSpace: 'nowrap' }}>
                     {l.leave_date ? new Date(l.leave_date).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}
                     {l.leave_end_date && l.leave_end_date !== l.leave_date && (
@@ -412,8 +600,14 @@ export default function EmployeesPage() {
                         <span style={{ color: 'var(--ink-3)', fontWeight: 600 }}> ({rangeDays(l.leave_date, l.leave_end_date)} วัน)</span></>
                     )}
                   </td>
+                  )}
+                  {hc.show('type') && (
                   <td style={{ padding: '11px 13px' }}>{l.leave_type}</td>
+                  )}
+                  {hc.show('reason') && (
                   <td style={{ padding: '11px 13px', color: 'var(--ink-3)', maxWidth: 140 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.reason || '-'}</div></td>
+                  )}
+                  {hc.show('cert') && (
                   <td style={{ padding: '11px 13px', whiteSpace: 'nowrap' }}>
                     {l.leave_type !== 'ลาป่วย' ? (
                       <span style={{ color: 'var(--ink-4)' }}>-</span>
@@ -432,27 +626,28 @@ export default function EmployeesPage() {
                       </span>
                     )}
                   </td>
+                  )}
+                  {hc.show('status') && (
                   <td style={{ padding: '11px 13px' }}>
-                    <select value={l.leave_status} onChange={e => updateLeave(l.id, 'leave_status', e.target.value)}
-                      style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 6px', fontSize: 11, outline: 'none' }}>
-                      {['ใบลาเรียบร้อย','ยังไม่เขียนไปลา','รออนุมัติ'].map(o => <option key={o}>{o}</option>)}
-                    </select>
+                    {leavePill(l.leave_status, LEAVE_STATUS_OPTS, v => updateLeave(l.id, 'leave_status', v))}
                   </td>
+                  )}
+                  {hc.show('supervisor') && (
                   <td style={{ padding: '11px 13px' }}>
-                    <select value={l.supervisor_approval} onChange={e => updateLeave(l.id, 'supervisor_approval', e.target.value)}
-                      style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 6px', fontSize: 11, outline: 'none', color: l.supervisor_approval === 'อนุมัติ' ? '#34c759' : l.supervisor_approval === 'ไม่อนุมัติ' ? 'var(--red)' : 'var(--ink-3)' }}>
-                      {['รออนุมัติ','อนุมัติ','ไม่อนุมัติ'].map(o => <option key={o}>{o}</option>)}
-                    </select>
+                    {leavePill(l.supervisor_approval, APPROVAL_OPTS, v => updateLeave(l.id, 'supervisor_approval', v))}
                   </td>
+                  )}
+                  {hc.show('hr') && (
                   <td style={{ padding: '11px 13px' }}>
-                    <select value={l.hr_approval} onChange={e => updateLeave(l.id, 'hr_approval', e.target.value)}
-                      style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 6px', fontSize: 11, outline: 'none', color: l.hr_approval === 'อนุมัติ' ? '#34c759' : l.hr_approval === 'ไม่อนุมัติ' ? 'var(--red)' : 'var(--ink-3)' }}>
-                      {['รออนุมัติ','อนุมัติ','ไม่อนุมัติ'].map(o => <option key={o}>{o}</option>)}
-                    </select>
+                    {leavePill(l.hr_approval, APPROVAL_OPTS, v => updateLeave(l.id, 'hr_approval', v))}
                   </td>
+                  )}
                   <td style={{ padding: '11px 13px' }}>
-                    <button onClick={() => del(l.id)}
-                      style={{ padding: '4px 10px', borderRadius: 6, border: 'none', background: '#ff375f22', color: 'var(--red)', cursor: 'pointer', fontSize: 11 }}>ลบ</button>
+                    <button onClick={e => { const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); setLeaveMenu(m => m?.id === l.id ? null : { id: l.id, rect }) }}
+                      title="ตัวเลือก"
+                      style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: leaveMenu?.id === l.id ? 'var(--bg)' : '#fff', cursor: 'pointer', fontSize: 16, color: 'var(--ink-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', letterSpacing: 1, padding: 0 }}>
+                      ···
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -461,50 +656,74 @@ export default function EmployeesPage() {
         )}
       </div>
 
+      {/* เมนู ··· ของแถวรายการลา */}
+      {leaveMenu && (
+        <>
+          <div onClick={() => setLeaveMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 9998 }} />
+          <AnchoredMenu rect={leaveMenu.rect}>
+            <button onClick={() => { const l = leaves.find(x => x.id === leaveMenu.id); setLeaveMenu(null); if (l) openEditLeave(l) }}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)' }}>
+              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/></svg>
+              แก้ไข
+            </button>
+            <button onClick={() => { const id = leaveMenu.id; setLeaveMenu(null); del(id) }}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--red)' }}>
+              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
+              ลบ
+            </button>
+          </AnchoredMenu>
+        </>
+      )}
+
       {/* Day detail modal (คลิกวันในปฏิทิน) */}
       {dayModal && (
-        <div onClick={() => setDayModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 520, maxHeight: '80vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-              <h2 style={{ fontSize: 17, fontWeight: 700 }}>วันที่ {dayModal.day} {TH_MONTHS[month]} {year + 543}</h2>
-              <button onClick={() => setDayModal(null)} style={{ border: 'none', background: 'rgba(0,0,0,0.10)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>✕</button>
+        <div className="sc-mback" onClick={() => setDayModal(null)}>
+          <div className="sc-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
+            <div className="sc-mhead">
+              <div className="sc-mdate">
+                <div className="sc-mday">{dayModal.day}</div>
+                <div>
+                  <div className="sc-mdow">{['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'][new Date(dayModal.ymd + 'T00:00').getDay()]}</div>
+                  <div className="sc-mmon">{TH_MONTHS[month]} {year + 543}</div>
+                </div>
+              </div>
+              <button className="sc-mclose" onClick={() => setDayModal(null)} aria-label="ปิด">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+              </button>
             </div>
 
-            {/* แถบสถานะวัน */}
-            {new Date(dayModal.ymd + 'T00:00').getDay() === 0 && (
-              <div style={{ background: '#f4f4f5', border: '1px solid #e4e4e7', borderRadius: 10, padding: '9px 14px', marginBottom: 10, color: '#52525b', fontSize: 13, fontWeight: 600 }}>🏪 ร้านปิด (วันอาทิตย์)</div>
-            )}
-            {HOLIDAYS[dayModal.ymd] && (
-              <div style={{ background: '#fff9e6', border: '1px solid #f0d98c', borderRadius: 10, padding: '9px 14px', marginBottom: 10, color: '#b45309', fontSize: 13, fontWeight: 600 }}>🏖️ วันหยุดร้าน · {HOLIDAYS[dayModal.ymd]}</div>
-            )}
-            {CAMPAIGNS[dayModal.ymd] && (
-              <div style={{ background: '#fff3e6', border: '1px solid #f0c89c', borderRadius: 10, padding: '9px 14px', marginBottom: 10, color: '#c2510a', fontSize: 13, fontWeight: 600 }}>📣 แคมเปญ · {CAMPAIGNS[dayModal.ymd]}</div>
-            )}
-            {RED_ZONES.has(dayModal.ymd) && (
-              <div style={{ background: '#fff0f0', border: '1px solid #f5b5b5', borderRadius: 10, padding: '9px 14px', marginBottom: 10, color: 'var(--red)', fontSize: 13, fontWeight: 600 }}>🔴 ช่วงห้ามลา (Red Zone)</div>
-            )}
+            {/* แถบสถานะวัน — การ์ดสีเดียวกับในปฏิทิน */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {new Date(dayModal.ymd + 'T00:00').getDay() === 0 && <ModalTag kind="closed" title="ร้านปิด" sub="วันอาทิตย์" />}
+              {HOLIDAYS[dayModal.ymd] && <ModalTag kind="holiday" title={HOLIDAYS[dayModal.ymd]} sub="วันหยุดร้าน" />}
+              {CAMPAIGNS[dayModal.ymd] && <ModalTag kind="campaign" title={CAMPAIGNS[dayModal.ymd]} sub="แคมเปญ" />}
+              {RED_ZONES.has(dayModal.ymd) && <ModalTag kind="redzone" title="RedZone" sub="ช่วงห้ามลา" />}
+            </div>
 
-            <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 600, margin: '14px 0 8px' }}>การลา ({dayModal.leaves.length})</div>
+            <div className="sc-msec">การลา <span>{dayModal.leaves.length}</span></div>
             {dayModal.leaves.length === 0 ? (
-              <p style={{ color: 'var(--ink-3)', textAlign: 'center', padding: '18px 0', fontSize: 13 }}>ไม่มีการลาในวันนี้</p>
+              <div className="sc-mempty">ไม่มีการลาในวันนี้</div>
             ) : dayModal.leaves.map(l => (
-              <div key={l.id} style={{ borderLeft: '4px solid var(--blue)', borderRadius: 10, padding: '12px 14px', background: 'var(--bg)', marginBottom: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
-                  <span style={{ fontWeight: 700 }}>{l.employee_nickname || l.employee_name} <span style={{ fontWeight: 400, color: 'var(--ink-3)', fontSize: 13 }}>{l.employee_code}{l.department ? ` · ${l.department}` : ''}</span></span>
-                  {l.leave_time && <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{l.leave_time}</span>}
+              <div key={l.id} className="sc-mitem sc-link" title="กดเพื่อไปที่ใบลานี้ในรายการลา"
+                onClick={e => { if ((e.target as HTMLElement).closest('a')) return; jumpToLeave(l.id) }}>
+                <i className="sc-dot" style={{ background: '#A8714F' }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+                    <span className="sc-mname">{l.employee_nickname || l.employee_name} <small>{l.employee_code}{l.department ? ` · ${l.department}` : ''}</small></span>
+                    {l.leave_time && <span className="sc-mtime">{l.leave_time}</span>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 6 }}>
+                    <span className="sc-mpill">{l.leave_type}</span>
+                    {l.leave_status && <span className="sc-mpill" style={{ color: STATUS_COLOR[l.leave_status] || 'var(--ink-3)', background: (STATUS_COLOR[l.leave_status] || '#8B7460') + '1f' }}>{l.leave_status}</span>}
+                    {l.leave_end_date && l.leave_end_date !== l.leave_date && <span className="sc-mtime">{rangeDays(l.leave_date, l.leave_end_date)} วัน</span>}
+                  </div>
+                  {l.reason && <div className="sc-mnote">{l.reason}</div>}
+                  {l.medical_cert_url && <a href={l.medical_cert_url} target="_blank" rel="noreferrer" className="sc-mlink">📄 ใบรับรองแพทย์</a>}
                 </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <span style={{ background: 'var(--blue)22', color: 'var(--blue)', padding: '2px 9px', borderRadius: 980, fontSize: 11, fontWeight: 600 }}>{l.leave_type}</span>
-                  {l.leave_status && <span style={{ fontSize: 12, color: STATUS_COLOR[l.leave_status] || 'var(--ink-3)', fontWeight: 600 }}>{l.leave_status}</span>}
-                  {l.leave_end_date && l.leave_end_date !== l.leave_date && <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>({rangeDays(l.leave_date, l.leave_end_date)} วัน)</span>}
-                </div>
-                {l.reason && <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 6 }}>{l.reason}</div>}
-                {l.medical_cert_url && <a href={l.medical_cert_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: 'var(--blue)', display: 'inline-block', marginTop: 6, textDecoration: 'none' }}>📄 ใบรับรองแพทย์</a>}
               </div>
             ))}
 
-            <button onClick={() => { setForm(f => ({ ...f, leave_date: dayModal.ymd, leave_end_date: dayModal.ymd })); setDayModal(null); setModal(true) }}
-              style={{ marginTop: 8, width: '100%', padding: '10px', borderRadius: 10, border: '1px dashed var(--border-2)', background: 'var(--surface)', color: 'var(--blue)', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
+            <button className="sc-madd" onClick={() => { setForm(f => ({ ...f, leave_date: dayModal.ymd, leave_end_date: dayModal.ymd })); setDayModal(null); setModal(true) }}>
               + เพิ่มลาในวันนี้
             </button>
           </div>
@@ -513,9 +732,9 @@ export default function EmployeesPage() {
 
       {/* Add leave modal */}
       {modal && (
-        <div onClick={() => { setModal(false); setCertFile(null) }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto' }}>
-            <h2 style={{ fontSize: 17, fontWeight: 700, marginBottom: 20 }}>+ เพิ่มรายการลา</h2>
+        <div className="sc-mback" onClick={closeLeaveModal} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+          <div className="sc-modal" onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto' }}>
+            <h2 className="sc-mtitle">{editId ? 'แก้ไขรายการลา' : '+ เพิ่มรายการลา'}</h2>
 
             <div style={{ marginBottom: 14, position: 'relative' }}>
               <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 5 }}>ชื่อพนักงาน (ชื่อเล่น / ชื่อจริง / รหัส)</label>
@@ -547,7 +766,7 @@ export default function EmployeesPage() {
                 {selTenure != null && (
                   <div style={{ gridColumn: '1/-1' }}>
                     <span style={{ color: 'var(--ink-3)' }}>เงื่อนไขลาพักร้อน: </span>
-                    <strong style={{ color: selVacMax === 0 ? 'var(--red)' : '#34c759' }}>
+                    <strong style={{ color: selVacMax === 0 ? 'var(--red)' : '#6F8F6A' }}>
                       {selVacMax === 0 ? 'ยังไม่มีสิทธิ (ทำงานไม่ครบ 1 ปี)' : `ต่อเนื่องได้ไม่เกิน ${selVacMax} วัน/ครั้ง`}
                     </strong>
                   </div>
@@ -599,8 +818,8 @@ export default function EmployeesPage() {
               </select>
               {form.leave_type === 'ลาพักร้อน' && form.employee_code && (
                 <div style={{ marginTop: 8, padding: '9px 13px', borderRadius: 8, fontSize: 12.5, fontWeight: 500,
-                  background: vacBlocked ? '#ff375f11' : '#34c75915',
-                  border: `1px solid ${vacBlocked ? '#ff375f44' : '#34c75944'}`,
+                  background: vacBlocked ? '#ff375f11' : '#6F8F6A15',
+                  border: `1px solid ${vacBlocked ? '#ff375f44' : '#6F8F6A44'}`,
                   color: vacBlocked ? 'var(--red)' : '#1a7f37' }}>
                   {selTenure == null
                     ? '❌ ไม่พบวันเริ่มงานในระบบ — ยังไม่มีสิทธิลาพักร้อน บันทึกไม่ได้ (ใส่วันเริ่มงานในหมวดพนักงานก่อน)'
@@ -618,7 +837,7 @@ export default function EmployeesPage() {
                 <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 5 }}>ใบรับรองแพทย์ <span style={{ color: 'var(--ink-4)' }}>(ไม่บังคับ — แนบทีหลังได้)</span></label>
                 <input type="file" accept="image/*,application/pdf" onChange={e => setCertFile(e.target.files?.[0] || null)}
                   style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
-                {certFile && <div style={{ fontSize: 12, color: '#34c759', marginTop: 5 }}>✓ เลือกไฟล์: {certFile.name}</div>}
+                {certFile && <div style={{ fontSize: 12, color: '#6F8F6A', marginTop: 5 }}>✓ เลือกไฟล์: {certFile.name}</div>}
               </div>
             )}
 
@@ -629,9 +848,9 @@ export default function EmployeesPage() {
             </div>
 
             <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-              <button onClick={() => { setModal(false); setCertFile(null) }}
+              <button className="sc-mcancel" onClick={closeLeaveModal}
                 style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ยกเลิก</button>
-              <button onClick={save} disabled={saving || !form.employee_code || !form.leave_date || !form.leave_type || vacBlocked}
+              <button className="sc-msave" onClick={save} disabled={saving || !form.employee_code || !form.leave_date || !form.leave_type || vacBlocked}
                 style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', cursor: vacBlocked ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 600, opacity: (!form.employee_code || !form.leave_date || !form.leave_type || vacBlocked) ? 0.5 : 1 }}>
                 {saving ? 'กำลังบันทึก…' : 'บันทึก'}
               </button>
@@ -642,6 +861,36 @@ export default function EmployeesPage() {
 
       {/* กล่องยืนยัน (ลบใบลา) — ต้องอยู่ท้ายสุดเพื่อทับทุกโมดัล */}
       {confirmDialog}
+    </div>
+  )
+}
+
+// ── การ์ดรายการในช่องปฏิทิน (สีตามชนิด เหมือนภาพต้นแบบ) ──
+type CalItem = { key: string; kind: 'holiday' | 'closed' | 'campaign' | 'redzone' | 'leave'; title: string; sub?: string; status?: string }
+function EventChip({ it, big, onClick }: { it: CalItem; big?: boolean; onClick?: () => void }) {
+  return (
+    <div className={`sc-chip sc-${it.kind}${big ? ' sc-big' : ''}${onClick ? ' sc-link' : ''}`}
+      onClick={onClick ? e => { e.stopPropagation(); onClick() } : undefined}
+      title={[it.title, it.sub, it.status].filter(Boolean).join(' · ')}>
+      <i className="sc-dot" />
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div className="sc-chip-title">{it.title}</div>
+        {it.sub && <div className="sc-chip-sub">{it.sub}</div>}
+      </div>
+      <svg className="sc-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+    </div>
+  )
+}
+
+// แถบสถานะวันในหน้าต่างรายละเอียดวัน (สีเดียวกับการ์ดในปฏิทิน)
+function ModalTag({ kind, title, sub }: { kind: CalItem['kind']; title: string; sub: string }) {
+  return (
+    <div className={`sc-chip sc-${kind}`} style={{ padding: '10px 14px', cursor: 'default' }}>
+      <i className="sc-dot" />
+      <div style={{ minWidth: 0, flex: 1, display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+        <div className="sc-chip-title" style={{ fontSize: 13 }}>{title}</div>
+        <div className="sc-chip-sub" style={{ marginTop: 0, fontSize: 12 }}>{sub}</div>
+      </div>
     </div>
   )
 }

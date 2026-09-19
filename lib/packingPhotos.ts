@@ -1,6 +1,7 @@
 // อัพโหลด/ลบไฟล์รูปแพ็ค — รูปใหม่เก็บบน Cloudflare R2, รูปเก่ายังอยู่ Supabase Storage (ลบได้ทั้งคู่)
 // ใช้ร่วมกันหน้า /scan และโฟลเดอร์ลูกค้า (customers)
 import { supabase } from '@/lib/supabase'
+import { READ_ONLY } from './readOnly'
 
 // ย่อรูปก่อนอัพ: จำกัดด้านยาวสุด 1024px + JPEG 70% — รูปมือถือ ~4MB เหลือ ~100-150KB
 // ‼️ 5ก.ย.69 ลดจาก 1600px/80% (ได้ ~500KB/รูป กินโควต้า R2 ฟรีเดือนละ ~650MB) — เทียบภาพจริงแล้ว
@@ -24,7 +25,11 @@ export async function compressImage(file: File, maxDim = 1024, quality = 0.7): P
 }
 
 // อัพรูปเข้า R2: ขอ presigned URL จาก /api/r2 แล้ว PUT ตรงเข้า R2 — คืน public URL สำหรับเก็บลง packing_photos
+// ‼️ โคลนลองดีไซน์: ปิดการอัป/ลบไฟล์บน R2 (ของจริงอยู่ที่ donnaweb)
+const RO_MSG = 'โหมดลองดีไซน์: อัปโหลดรูปถูกปิดไว้'
+
 export async function uploadPackingFile(file: File, key: string): Promise<string> {
+  if (READ_ONLY) throw new Error(RO_MSG)
   const ct = file.type || 'image/jpeg'
   const res = await fetch('/api/r2', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -40,6 +45,7 @@ export async function uploadPackingFile(file: File, key: string): Promise<string
 // ลบไฟล์ตามที่มาของ URL: R2 ผ่าน API (handled:true) / รูปเก่า Supabase ลบตรงจาก bucket
 // ลบไฟล์ไม่สำเร็จไม่ throw — ให้ฝั่งเรียกเอา URL ออกจากออเดอร์ต่อได้เสมอ
 export async function deletePackingFile(url: string) {
+  if (READ_ONLY) { console.warn(RO_MSG); return }
   try {
     const res = await fetch('/api/r2', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },

@@ -38,7 +38,8 @@ async function viaBridge(prompt: string): Promise<AskResult> {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-bridge-token': token },
       body: JSON.stringify({ prompt, model: 'haiku' }),
-      signal: AbortSignal.timeout(55000),
+      // โคลนรันบนเครื่องนี้ ไม่ติดลิมิต 60 วิของ Vercel → รอได้นานกว่าตัวจริง (CLI บางรอบช้าถึง ~80 วิ)
+      signal: AbortSignal.timeout(process.env.VERCEL ? 55000 : 120000),
     })
   } catch {
     throw new Error('ต่อเครื่องที่ร้านไม่ได้ (สะพาน Claude ปิดอยู่หรือเน็ตร้านหลุด) ลองใหม่อีกครั้ง')

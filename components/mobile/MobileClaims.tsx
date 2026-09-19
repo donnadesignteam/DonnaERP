@@ -39,13 +39,13 @@ type Claim = {
 
 // ให้ตรงกับ WORKFLOW ใน ClaimsWorkspace (เดสก์ท็อป)
 const WORKFLOW: { key: string; color: string }[] = [
-  { key: 'รอของคืน', color: '#ff9f0a' },
+  { key: 'รอของคืน', color: '#C79A4B' },
   { key: 'ตัดผ้าแล้ว', color: '#30d158' },
   { key: 'เย็บแล้ว', color: '#5e9eff' },
-  { key: 'ตรวจสอบแล้ว', color: '#6366f1' },
-  { key: 'รีดแล้ว', color: '#bf5af2' },
+  { key: 'ตรวจสอบแล้ว', color: '#7B7FA3' },
+  { key: 'รีดแล้ว', color: '#9A7BA0' },
   { key: 'แพ็คแล้ว', color: '#f43f5e' },
-  { key: 'ส่งแล้ว', color: '#34c759' },
+  { key: 'ส่งแล้ว', color: '#6F8F6A' },
 ]
 const STATUS_COLOR = (s: string) => WORKFLOW.find(w => w.key === s)?.color ?? 'var(--ink-4)'
 

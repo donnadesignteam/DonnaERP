@@ -379,7 +379,7 @@ export default function StaffDetailPage() {
       {emp && (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, margin: '14px 0 22px' }}>
-            <div style={{ width: 60, height: 60, borderRadius: 30, background: 'linear-gradient(135deg, #C47E3A, #9D6025)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 24, fontWeight: 700, flexShrink: 0 }}>
+            <div style={{ width: 60, height: 60, borderRadius: 30, background: 'linear-gradient(135deg, #A87452, #8A6142)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 24, fontWeight: 700, flexShrink: 0 }}>
               {(emp.nickname || emp.name || '?').charAt(0)}
             </div>
             <div style={{ flex: 1 }}>
@@ -448,7 +448,7 @@ export default function StaffDetailPage() {
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 14 }}>
                 <BalanceCard title="ลาป่วย คงเหลือ" left={emp.sick.left} avail={emp.sick.avail} used={emp.sick.used} color="#5ac8fa" />
-                <BalanceCard title="ลากิจ คงเหลือ" left={emp.personal.left} avail={emp.personal.avail} used={emp.personal.avail != null && emp.personal.left != null ? emp.personal.avail - emp.personal.left : null} color="#C47E3A" />
+                <BalanceCard title="ลากิจ คงเหลือ" left={emp.personal.left} avail={emp.personal.avail} used={emp.personal.avail != null && emp.personal.left != null ? emp.personal.avail - emp.personal.left : null} color="#A87452" />
                 {hasVacationRight(emp.start_date) ? (
                   <BalanceCard title="ลาพักร้อน คงเหลือ" left={emp.vacation.left} avail={emp.vacation.avail} used={emp.vacation.used} color="#30c759" />
                 ) : (
@@ -474,8 +474,8 @@ export default function StaffDetailPage() {
           {work && work.scans.length > 0 && (
             <>
               <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink)', marginBottom: 12 }}>ออเดอร์ที่ทำ (จากการสแกน) · {work.scans.length}</h2>
-              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'auto', boxShadow: 'var(--shadow)', marginBottom: 26 }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
+              <div className="dn-list-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'auto', boxShadow: 'var(--shadow)', marginBottom: 26 }}>
+                <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
                   <thead><tr>
                     <th style={th}>ออเดอร์</th><th style={th}>ลูกค้า</th><th style={th}>ขั้นที่ทำ</th><th style={th}>สถานะปัจจุบัน</th><th style={th}>ล่าสุด</th>
                   </tr></thead>
@@ -521,8 +521,8 @@ export default function StaffDetailPage() {
               {work.orderSummary.byMonth.length > 0 && (
                 <>
                   <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink)', margin: '12px 0' }}>ยอดขายรายเดือน</h2>
-                  <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'auto', boxShadow: 'var(--shadow)', marginBottom: 26 }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 400 }}>
+                  <div className="dn-list-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'auto', boxShadow: 'var(--shadow)', marginBottom: 26 }}>
+                    <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 400 }}>
                       <thead><tr>
                         <th style={th}>เดือน</th><th style={{ ...th, textAlign: 'right' }}>ออเดอร์</th><th style={{ ...th, textAlign: 'right' }}>ยอดขาย</th>
                       </tr></thead>
@@ -563,8 +563,8 @@ export default function StaffDetailPage() {
                   </span>
                 )}
               </div>
-              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'auto', boxShadow: 'var(--shadow)', marginBottom: 26 }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+              <div className="dn-list-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'auto', boxShadow: 'var(--shadow)', marginBottom: 26 }}>
+                <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
                   <thead><tr>
                     <th style={th}>วันที่</th><th style={th}>ออเดอร์</th><th style={th}>ลูกค้า</th><th style={th}>ประเภท</th><th style={th}>แพลตฟอร์ม</th><th style={th}>สถานะ</th><th style={{ ...th, textAlign: 'right' }}>ยอดขาย</th>
                   </tr></thead>
@@ -597,8 +597,8 @@ export default function StaffDetailPage() {
           {work && work.claims.length > 0 && (
             <>
               <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink)', marginBottom: 12 }}>งานเคลม · {work.claims.length}</h2>
-              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'auto', boxShadow: 'var(--shadow)', marginBottom: 26 }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
+              <div className="dn-list-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'auto', boxShadow: 'var(--shadow)', marginBottom: 26 }}>
+                <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
                   <thead><tr><th style={th}>ออเดอร์เดิม</th><th style={th}>ลูกค้า</th><th style={th}>ประเภทเคลม</th><th style={th}>สถานะ</th></tr></thead>
                   <tbody>
                     {work.claims.map((c, i) => (
@@ -622,8 +622,8 @@ export default function StaffDetailPage() {
           </div>
 
           <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink)', marginBottom: 12 }}>ประวัติการลา ({leaves.length})</h2>
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'auto', boxShadow: 'var(--shadow)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+          <div className="dn-list-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'auto', boxShadow: 'var(--shadow)' }}>
+            <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
               <thead>
                 <tr>
                   <th style={th}>วันที่ลา</th>

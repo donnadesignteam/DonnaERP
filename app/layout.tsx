@@ -27,7 +27,7 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="theme-color" content="#C47E3A" />
+        <meta name="theme-color" content="#A87452" />
       </head>
       <body>
         <ServiceWorkerRegister />

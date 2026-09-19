@@ -28,6 +28,14 @@ export const STATUS_LABEL_BY_WORK: Record<string, Record<string, string>> = {
 // ค่าเดิมของแถวเก่า → สถานะใหม่ที่ความหมายเดียวกัน (ยังไม่ได้ลงมือ = รอนัดหมาย)
 export const STATUS_ALIAS: Record<string, string> = { 'ติดตั้ง': 'รอนัดหมาย', 'วัดหน้างาน': 'รอนัดหมาย' }
 
+// สีพื้นป้าย (.dn-pill) ของคอลัมน์ "งาน" และ "สถานะ" — ชุดเดียวกันทั้งหมวดออเดอร์และตารางใต้ปฏิทินงานติดตั้ง
+export const WORK_PILL_BG: Record<string, string> = { 'งานวัดหน้างาน': '#CFE0EA', 'งานติดตั้ง': '#F9E0C3', 'งานแก้': '#F0C0B7' }
+export const INST_PILL_BG: Record<string, string> = {
+  'รอนัดหมาย': '#F9E0C3', 'นัดหมายแล้ว': '#CFE0EA', 'วัดหน้างานแล้ว': '#CFE6DE',
+  'ติดตั้งเสร็จ': '#E3F3E0', 'ติดตั้ง50%': '#E2D5EC', 'รอแก้': '#F0C0B7',   // ติดตั้งเสร็จ = เขียวชุดเดียวกับ "จัดส่งแล้ว"
+  'รอติดตั้ง': '#F0C0B7',   // ป้ายของ "รอนัดหมาย" ในงานติดตั้ง — สีเดียวกับสถานะงาน "รอติดตั้ง" (แถวเดียวกันจะได้ไม่คนละสี)
+}
+
 export const normStatus = (s?: string | null) => STATUS_ALIAS[s ?? ''] ?? (s ?? '')
 export const statusLabel = (s: string, workType?: string | null) =>
   STATUS_LABEL_BY_WORK[workType ?? '']?.[s] ?? STATUS_LABEL[s] ?? s
@@ -38,14 +46,14 @@ export const STATUS_COLOR: Record<string, string> = {
   'นัดหมายแล้ว': '#5ac8fa',
   'วัดหน้างาน': '#5ac8fa',
   'วัดหน้างานแล้ว': '#30b0c7',
-  'ติดตั้ง': '#ff9f0a',
-  'ติดตั้งเสร็จ': '#34c759',
-  'ติดตั้ง50%': '#bf5af2',
+  'ติดตั้ง': '#C79A4B',
+  'ติดตั้งเสร็จ': '#6F8F6A',
+  'ติดตั้ง50%': '#9A7BA0',
   'รอแก้': 'var(--red)',
 }
 
 // สีของงานที่ยังไม่ลงมือ (รอนัดหมาย/นัดหมายแล้ว) ดูจากลักษณะงาน
-export const WORK_COLOR: Record<string, string> = { 'งานวัดหน้างาน': '#5ac8fa', 'งานติดตั้ง': '#ff9f0a', 'งานแก้': 'var(--red)' }
+export const WORK_COLOR: Record<string, string> = { 'งานวัดหน้างาน': '#5ac8fa', 'งานติดตั้ง': '#C79A4B', 'งานแก้': 'var(--red)' }
 
 // สีประจำแถวงานติดตั้ง — ยังไม่ลงมือ (รอนัดหมาย/นัดหมายแล้ว) ดูจากลักษณะงาน · ที่เหลือดูจากสถานะ
 export const rowColor = (ins: { installation_status?: string | null; work_type?: string | null }) => {

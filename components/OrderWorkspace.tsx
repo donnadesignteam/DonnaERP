@@ -30,7 +30,7 @@ import { stampInsert, oeUpdate, oeInsert, instUpdate, instInsert, claimUpdate } 
 import { useConfirm } from '@/components/ConfirmDialog'
 import AnchoredMenu from '@/components/AnchoredMenu'
 import { usePrintColumns, PrintColumnPicker, printTableHtml, type PrintCol } from '@/components/PrintColumnPicker'
-import { WORK_TYPE_OPTIONS, ZONES, TECHS as INST_TECHS, TECH_BY_ZONE, statusOptions, statusLabel, normStatus, rowColor as instColor, INSTALL_COLUMNS } from '@/lib/installMeta'
+import { WORK_TYPE_OPTIONS, ZONES, TECHS as INST_TECHS, TECH_BY_ZONE, statusOptions, statusLabel, normStatus, rowColor as instColor, INSTALL_COLUMNS, WORK_PILL_BG, INST_PILL_BG } from '@/lib/installMeta'
 import { orderPatchFromInstall, installPatchFromOrder } from '@/lib/installOrderSync'
 import { useStableView } from '@/lib/useStableView'
 import { TH_MONTHS } from '@/lib/shopCalendar'
@@ -40,6 +40,11 @@ import { parseMoney } from '@/lib/money'
 import { formatOrderText, formatOrderHtml } from '@/lib/orderPrint'
 import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
+import { PlatformIcon, CourierIcon, INSTALL_ICON_PATH } from '@/components/BrandMark'
+import CreamSelect from '@/components/CreamSelect'
+import CreamDate from '@/components/CreamDate'
+import { pillBg, pillInk } from '@/components/OrderDetailModal'
+import { READ_ONLY } from '@/lib/readOnly'
 
 type Item = {
   type: string
@@ -237,8 +242,7 @@ const COURIERS = [
 const ADMINS = ['กาย', 'แพท', 'หนูนา', 'ยุน', 'ส้ม', 'เก๋', 'ช่างแพ็ค']
 const TECHS = TECH_OPTIONS   // แก้รายชื่อช่างที่ lib/techs.ts (หน้าเคลมใช้ชุดเดียวกัน)
 
-// ไฮไลต์ช่องที่ยังไม่ได้ลงข้อมูล (คอลัมน์แอดมิน/ช่าง) — สีส้มชุดเดียวกับสถานะ "รอดำเนินการ" (#f59e0b ใน PROD_STATUS_COLOR)
-const EMPTY_HL = 'rgba(245,158,11,0.42)'
+// ไฮไลต์ช่องที่ยังไม่ได้ลงข้อมูล (คอลัมน์แอดมิน/ช่าง) — ป้ายพีชครีมมุมมน อยู่ที่คลาส .ow-empty ใน app/globals.css
 
 const TIMES = ['8:00','9:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00']
 
@@ -252,12 +256,17 @@ function calcShipping(deadline: string, courier: string): string {
   return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()},${time}`
 }
 
+// ‼️ deadline (งานติดตั้ง/งานนอก) เป็น YYYY-MM-DD — new Date() ตรงๆ จะอ่านเป็น UTC เที่ยงคืน
+//    (= 07:00 ไทย) แล้ว Math.ceil ปัดขึ้นอีก 1 วัน งานที่ต้องส่ง/ติดตั้งวันนี้เลยขึ้นว่า "1 วัน"
 function daysRemaining(dateStr: string): number | null {
   if (!dateStr) return null
   let target: Date
-  const m = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
-  if (m) {
-    target = new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]))
+  const dmy = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+  const ymd = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (dmy) {
+    target = new Date(parseInt(dmy[3]), parseInt(dmy[2]) - 1, parseInt(dmy[1]))
+  } else if (ymd) {
+    target = new Date(parseInt(ymd[1]), parseInt(ymd[2]) - 1, parseInt(ymd[3]))
   } else {
     target = new Date(dateStr)
   }
@@ -286,7 +295,7 @@ const carrierTrackUrl = (sh: Shipment) =>
 
 // สี/ข้อความคอลัมน์วันที่เหลือ: เกินกำหนด+0 วัน = แดง (0 = ต้องจัดส่งวันนี้), 1-10 วัน = เหลือง, >10 วัน = เขียว
 const daysLabel = (d: number) => d < 0 ? `เกิน ${Math.abs(d)} วัน` : d === 0 ? 'ต้องจัดส่งวันนี้' : `${d} วัน`
-const daysColor = (d: number) => d <= 0 ? 'var(--red)' : d <= 10 ? '#eab308' : '#34c759'
+const daysColor = (d: number) => d <= 0 ? 'var(--red)' : d <= 10 ? '#C79A4B' : '#6F8F6A'
 
 const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping_datetime' | 'shipped_at' | 'rail_packed' | 'rail_packed_at' | 'done_at' | 'printed_at' | 'status_history' | 'shipments' | 'outsource_at' | 'install_status'> => ({
   entry_date: todayYmd(),
@@ -320,7 +329,7 @@ const emptyForm = (): Omit<Entry, 'id' | 'created_at' | 'updated_at' | 'shipping
 })
 
 const STATUS_COLOR: Record<string, string> = {
-  'อยู่ในกำหนด': '#34c759',
+  'อยู่ในกำหนด': '#6F8F6A',
   'งานเสร็จแล้ว': 'var(--blue)',
 }
 
@@ -329,17 +338,17 @@ const STATUS_COLOR: Record<string, string> = {
 
 const OUTSIDE_STATUSES = ['รอดำเนินการ', 'เสร็จสิ้น', 'รอยอดปลายทาง', 'ยกเลิก']
 const OUTSIDE_STATUS_COLOR: Record<string, string> = {
-  'รอดำเนินการ': '#f59e0b',
-  'เสร็จสิ้น': '#22c55e',
-  'รอยอดปลายทาง': '#3b82f6',
-  'ยกเลิก': '#ef4444',
+  'รอดำเนินการ': '#C79A4B',
+  'เสร็จสิ้น': '#6F8F6A',
+  'รอยอดปลายทาง': '#6E8CA0',
+  'ยกเลิก': '#C0563F',
 }
 const PAYMENT_STATUSES = ['ยังไม่ชำระ', 'มัดจำ', 'มัดจำ50%', 'ชำระครบ']
 const PAYMENT_STATUS_COLOR: Record<string, string> = {
-  'ยังไม่ชำระ': '#f59e0b',
-  'มัดจำ': '#8b5cf6',
-  'มัดจำ50%': '#3b82f6',
-  'ชำระครบ': '#22c55e',
+  'ยังไม่ชำระ': '#C79A4B',
+  'มัดจำ': '#9A7BA0',
+  'มัดจำ50%': '#6E8CA0',
+  'ชำระครบ': '#6F8F6A',
 }
 const ORDER_ASSIGNED = ['รออัพเดท', 'แจ้งลงหน้าร้าน', 'พี่ฟอง', 'ช่างเชียงใหม่']
 
@@ -388,7 +397,9 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
 }
 
 // คอลัมน์รายการโชว์ได้ไม่เกินกี่บรรทัด (เกินนี้ขึ้น "+ อีก N รายการ" แทน แถวจะได้ไม่ยืด)
-const ITEM_LINE_MAX = 3
+// ‼️ แถวทุกแท็บสูงเท่ากัน = 2 บรรทัด 56px (.ow-card tbody tr ใน globals.css) — ช่องไหนซ้อน 2 บรรทัด แถวจะสูงกว่าแถวอื่นทันที
+const PAGE_SIZE = 50
+const DEMO_LOCAL_TICKS = READ_ONLY   // โหมดอ่านอย่างเดียว (โคลน) ติ๊กบนจอได้แต่ไม่บันทึก · เว็บจริง = false
 
 const isClaimRow = (platform: string | null | undefined) => (platform ?? '').startsWith('เคลม:')
 
@@ -440,6 +451,8 @@ const isStatusStale = (r: Entry) => {
 // สถานะติดตั้ง: แถวเก่าที่ติ๊ก checkbox ไว้ (is_dropoff) ให้ถือเป็น "ติดตั้งแล้ว"
 const installStatusOf = (r: Entry) => r.install_status || (r.is_dropoff ? 'ติดตั้งแล้ว' : '')
 const INSTALL_STATUS_OPTIONS = ['ติดตั้งแล้ว', 'ติดตั้ง50%']
+// พื้นป้าย "งาน" / "สถานะ" ของแท็บงานติดตั้ง — โทนพาสเทลชุดเดียวกับ PILL_BG ของหน้าภาพรวม (components/OrderDetailModal.tsx)
+// ตัวหนังสือใช้ #6B4326 หนา 700 เหมือนป้ายสถานะงาน (.dn-pill)
 const linkHref = (l: string) => /^https?:\/\//i.test(l) ? l : `https://${l}`
 
 // แถวที่ id ซ้ำ เก็บอันแรกไว้ (ไม่มีซ้ำ = คืนอาร์เรย์เดิม)
@@ -457,7 +470,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   // เปิดหน้าซ้ำ → โชว์ข้อมูลรอบก่อนทันที แล้ว load() ดึงของใหม่เบื้องหลัง (stale-while-revalidate)
   const cached = getPageCache<{ rows: Entry[]; sortOrder: string[] }>('order_entries')
   const [rows, setRowsRaw] = useState<Entry[]>(() => uniqById(cached?.rows ?? []))
-  // ‼️ 13ก.ย.69 ออเดอร์ขึ้นซ้ำ 2-4 แถว (ลบอันเดียวหายหมด เพราะ id เดียวกัน): realtime INSERT มาถึงระหว่างรอ
+  // ‼️ 13ก.ย.69 (ของจริง f59bd24) ออเดอร์ขึ้นซ้ำ 2-4 แถว (ลบอันเดียวหายหมด เพราะ id เดียวกัน): realtime INSERT มาถึงระหว่างรอ
   //    syncInstallation/อัปรูป แล้วหน้าต่างเพิ่มออเดอร์ต่อท้ายใบเดิมซ้ำอีกรอบ → ทุกครั้งที่ตั้งค่าแถว ตัด id ซ้ำทิ้ง
   const setRows = useCallback((u: SetStateAction<Entry[]>) =>
     setRowsRaw(prev => uniqById(typeof u === 'function' ? u(prev) : u)), [])
@@ -555,6 +568,13 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   // ข้อมูลจากปฏิทินติดตั้ง (installations) ของใบออเดอร์ที่ผูกกันไว้ — orderId → แถวติดตั้ง
   const [instMeta, setInstMeta] = useState<Record<string, InstMeta>>({})
   const [quickFilter, setQuickFilter] = useState<'all' | 'platform' | 'outside' | 'install' | 'claim' | 'shipped' | 'cancelled'>('all')
+  // แบ่งหน้าตาราง หน้าละ PAGE_SIZE แถว (13ก.ย.69 ดีไซน์ใหม่) — เปลี่ยนแท็บ/ค้นหา/เดือน กลับหน้า 1
+  const [page, setPage] = useState(1)
+  // ‼️ โคลนอ่านอย่างเดียว: ติ๊กแล้วบันทึกไม่ได้ ช่องเลยเด้งกลับ → จำค่าที่ติ๊กไว้บนจอเฉยๆ ให้ลองกดดูหน้าตา/อนิเมชั่นได้
+  //    ไม่ส่งอะไรไปฐานข้อมูล · รีเฟรชหน้า = กลับเป็นค่าจริง · ปิดด้วย DEMO_LOCAL_TICKS = false
+  const [demoTicks, setDemoTicks] = useState<Record<string, boolean>>({})
+  const tickVal = (id: string, f: string, real: boolean) => demoTicks[`${id}:${f}`] ?? real
+  const tickSet = (id: string, f: string, v: boolean) => setDemoTicks(m => ({ ...m, [`${id}:${f}`]: v }))
   const [hiddenCols, setHiddenCols] = useState<Record<string, string[]>>(() => {
     if (typeof window === 'undefined') return {}
     try { return JSON.parse(localStorage.getItem(`ow_hidden_cols_${scope}`) || '{}') } catch { return {} }
@@ -1117,23 +1137,14 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   // คอลัมน์สถานะ: dropdown เลือกสถานะ (เปลี่ยนสถานะย้อนได้ด้วยปุ่มเลิกทำ ↶ รวมของทั้งเว็บ)
   const statusCell = (r: Entry) => {
     const flow = r.is_installation ? INSTALL_STATUSES : PROD_STATUSES
-    // เวลาที่ "เปลี่ยนมาเป็นสถานะนี้" — อ่านจากประวัติสถานะ (status_history) ครั้งล่าสุดที่ตรงกับสถานะปัจจุบัน
-    // ใบเก่าที่ยังไม่เคยขยับสถานะหลังมีประวัติ = ไม่มีข้อมูล ไม่ต้องโชว์ (ไม่เดาจาก updated_at เพราะเป็นการแก้ช่องอื่นก็ได้)
-    const hist = Array.isArray(r.status_history) ? r.status_history : []
-    const changedAt = [...hist].reverse().find(h => h.status === (r.order_status || ''))?.at
+    // 13ก.ย.69 เอาวันเวลาที่เปลี่ยนสถานะใต้ป้ายออก (user ขอ) — ดูย้อนหลังได้ในป๊อปอัปรายละเอียดออเดอร์ (ไทม์ไลน์)
     return (
       <td style={{ padding: '8px 14px' }}>
-        <select value={r.order_status || ''} onChange={e => updateField(r.id, 'order_status', e.target.value)}
-          style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PROD_STATUS_COLOR[r.order_status] ?? 'var(--ink-4)', padding: 0 }}>
-          <option value="">—</option>
-          {flow.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        {changedAt && (
-          <div style={{ fontSize: 10, color: 'var(--ink-4)', marginTop: 2, whiteSpace: 'nowrap' }}>
-            {new Date(changedAt).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
-            {new Date(changedAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-          </div>
-        )}
+        {/* ป้ายหน้าตาเดียวกับหน้าภาพรวม (.dn-pill: กว้าง 100 · ตัวน้ำตาลเข้ม · พื้นสีตามขั้นจาก pillBg) — กดแล้วเลือกสถานะได้ */}
+        <CreamSelect value={r.order_status || ''} onChange={v => updateField(r.id, 'order_status', v)}
+          className="dn-pill ow-pill" style={{ color: pillInk(r.order_status || ''), background: pillBg(r.order_status || '') }} menuMinWidth={170}
+          options={flow.map(s => ({ value: s, label: r.is_installation && s === 'จัดส่งแล้ว' ? 'ติดตั้งแล้ว' : s, color: PROD_STATUS_COLOR[s] }))}
+          renderValue={o => <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{o?.label ?? ((r.is_installation && r.order_status === 'จัดส่งแล้ว' ? 'ติดตั้งแล้ว' : r.order_status) || '—')}</span>} />
       </td>
     )
   }
@@ -1151,14 +1162,15 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   // ช่องคอลัมน์ "ปริ้น": ติ๊กถูก = ปริ้นแล้ว + โชว์วันเวลาที่ปริ้น (auto ติ๊กเมื่อกดปริ้นในเมนู ···)
   const printCell = (r: Entry) => (
     <td style={{ padding: '8px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-      <input type="checkbox" checked={!!r.printed_at} onChange={e => togglePrinted(r.id, e.target.checked)}
+      <input type="checkbox" checked={tickVal(r.id, 'printed', !!r.printed_at)} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'printed', e.target.checked) : togglePrinted(r.id, e.target.checked)}
         style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
-      {r.printed_at && (
-        <div style={{ fontSize: 10, color: '#eab308', fontWeight: 600, marginTop: 2 }}>
-          {new Date(r.printed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
-          {new Date(r.printed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-        </div>
-      )}
+      {/* ‼️ บรรทัดวันที่ต้องมีเสมอ (แถวที่ยังไม่ปริ้นใช้บรรทัดเปล่า) ไม่งั้นช่องติ๊กของแต่ละแถว
+          อยู่คนละระดับ — แถวที่ปริ้นแล้วจะถูกดันขึ้นไปครึ่งบรรทัด มองแล้วไม่ตรงแนวกัน */}
+      <div aria-hidden={!r.printed_at} style={{ fontSize: 10, color: '#A8744F', fontWeight: 600, marginTop: 2, whiteSpace: 'nowrap', visibility: r.printed_at ? 'visible' : 'hidden' }}>
+        {r.printed_at
+          ? `${new Date(r.printed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} ${new Date(r.printed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`
+          : ' '}
+      </div>
     </td>
   )
   const printHeader = () => (
@@ -1273,7 +1285,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     )
     return (
       <span onClick={() => setEditShipped(key)} title={`กดเพื่อแก้วัน-เวลา${field === 'done_at' ? 'งานเสร็จ' : 'จัดส่ง'}`}
-        style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3, cursor: 'pointer', textDecoration: 'underline dotted' }}>
+        style={{ color: '#6F8F6A', fontSize: 10, lineHeight: 1.3, cursor: 'pointer', textDecoration: 'underline dotted' }}>
         {new Date(iso).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
         {new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
       </span>
@@ -1958,6 +1970,11 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     : (quickFilter === 'outside' || quickFilter === 'install') ? displayedOut
     : displayed
 
+  const pageCount = Math.max(1, Math.ceil(activeDisplayed.length / PAGE_SIZE))
+  const curPage = Math.min(page, pageCount)
+  const pageSlice = <T,>(rs: T[]) => rs.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE)
+  useEffect(() => { setPage(1) }, [quickFilter, search, month])
+
   useEffect(() => {
     if (selectAllRef.current) {
       const some = activeDisplayed.some(r => selectedIds.has(r.id))
@@ -2318,22 +2335,37 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     openAddFormFor(custStep.type, custStep.extra, name, phone)
   }
 
+  // ช่องเลือกในแถวตาราง (แอดมิน / ช่าง / ลงออเดอร์) — ใช้ CreamSelect ให้เมนูคลี่ลงแบบมีอนิเมชั่นและเป็นโทนครีม
+  const rowSelect = (value: string, opts: string[], onPick: (v: string) => void,
+    o: { maxWidth?: number; title?: string; blank?: boolean; dim?: boolean; bold?: boolean } = {}) => (
+    <CreamSelect value={value} onChange={onPick} className="cs-inline" title={o.title} menuMinWidth={140}
+      style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none',
+        color: o.dim ? 'var(--ink-4)' : 'var(--ink)', fontWeight: o.bold ? 600 : 400, padding: 0, maxWidth: o.maxWidth,
+        display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'inherit' }}
+      options={[...(o.blank ? [{ value: '', label: '—' }] : []), ...Array.from(new Set([...opts, value].filter(Boolean))).map(x => ({ value: x, label: x }))]}
+      renderValue={c => (<>
+        <span className="cs-value" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{c?.label ?? '—'}</span>
+        <svg className="cs-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+      </>)} />
+  )
+
   // ช่องเลือกโซน/ช่าง ในแท็บงานติดตั้ง (ค่าอยู่ตาราง installations)
   const instSelectCell = (orderId: string, ins: InstMeta | undefined, field: 'install_zone' | 'technician_type', opts: string[]) => {
     if (!ins) return <span style={{ color: 'var(--ink-4)' }}>—</span>
     const val = ins[field] ?? ''
     return (
-      <select value={val} onChange={e => {
-        const v = e.target.value
+      <CreamSelect value={val} onChange={v => {
         const patch: Partial<InstMeta> = { [field]: v || null }
         // เลือกโซนที่รู้ชนิดช่างอยู่แล้ว → เติมช่างให้เลย (เหมือนหน้าปฏิทิน) ถ้ายังไม่ได้เลือกช่างไว้
         if (field === 'install_zone' && TECH_BY_ZONE[v] && !ins.technician_type) patch.technician_type = TECH_BY_ZONE[v]
         saveInstMeta(orderId, patch)
-      }} style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: val ? 600 : 400, color: val ? 'var(--ink-2)' : 'var(--ink-4)', padding: 0 }}>
-        <option value="">—</option>
-        {!!val && !opts.includes(val) && <option value={val}>{val}</option>}
-        {opts.map(o => <option key={o} value={o}>{o}</option>)}
-      </select>
+      }} className="cs-inline" menuMinWidth={150}
+        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: val ? 600 : 400, color: val ? 'var(--ink-2)' : 'var(--ink-4)', padding: 0, display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'inherit' }}
+        options={[{ value: '', label: '—' }, ...Array.from(new Set([...opts, val].filter(Boolean))).map(o => ({ value: o, label: o }))]}
+        renderValue={o => (<>
+          <span className="cs-value">{o?.label ?? '—'}</span>
+          <svg className="cs-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+        </>)} />
     )
   }
 
@@ -2666,27 +2698,15 @@ ${body}
 
   const inp = (label: string, key: string, type = 'text') => {
     const rawVal = String(modal?.data[key as keyof typeof modal.data] ?? '')
-    const displayVal = type === 'date'
-      ? rawVal.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$3/$2/$1')
-      : rawVal
     return (
       <div style={{ marginBottom: 14 }}>
         <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>{label}</label>
         {type === 'date' ? (
-          <div style={{ position: 'relative' }}>
-            <input
-              type="date"
-              value={/^\d{4}-\d{2}-\d{2}$/.test(rawVal) ? rawVal : ''}
-              onChange={e => { if (e.target.value) set(key, e.target.value) }}
-              onMouseDown={e => { e.preventDefault(); try { (e.target as HTMLInputElement).showPicker() } catch {} }}
-              style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box', color: displayVal ? 'transparent' : 'var(--ink-3)' }}
-            />
-            {displayVal && (
-              <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, display: 'flex', alignItems: 'center', paddingLeft: 12, fontSize: 13, color: 'var(--ink)', pointerEvents: 'none' }}>
-                {displayVal}
-              </div>
-            )}
-          </div>
+          /* ❗ ใช้ปฏิทินของเราเอง (CreamDate) — ปฏิทินของ input[type=date] เป็น UI ของเบราว์เซอร์ แต่งสีไม่ได้เลย */
+          <CreamDate value={rawVal} onChange={v => set(key, v)}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--cream-2)',
+              border: '1px solid var(--border-2)', borderRadius: 12, padding: '9px 12px', fontSize: 13,
+              cursor: 'pointer', fontFamily: 'inherit', boxSizing: 'border-box' }} />
         ) : (
           <input type="text" value={rawVal} onChange={e => set(key, e.target.value)}
             style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
@@ -2698,11 +2718,18 @@ ${body}
   const sel = (label: string, key: string, options: string[]) => (
     <div style={{ marginBottom: 14 }}>
       <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>{label}</label>
-      <select value={String(modal?.data[key as keyof typeof modal.data] ?? '')} onChange={e => set(key, e.target.value)}
-        style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none' }}>
-        <option value="">— เลือก —</option>
-        {options.map(o => <option key={o}>{o}</option>)}
-      </select>
+      {/* ❗ CreamSelect — เมนูของ <select> เป็นของระบบปฏิบัติการ แต่งสี/ใส่อนิเมชั่นไม่ได้ */}
+      <CreamSelect value={String(modal?.data[key as keyof typeof modal.data] ?? '')} onChange={v => set(key, v)}
+        options={[{ value: '', label: '— เลือก —' }, ...options.map(o => ({ value: o, label: o }))]}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--cream-2)',
+          border: '1px solid var(--border-2)', borderRadius: 12, padding: '9px 12px', fontSize: 13,
+          cursor: 'pointer', fontFamily: 'inherit', boxSizing: 'border-box', textAlign: 'left' }}
+        renderValue={o => (<>
+          <span className="cs-value" style={{ flex: 1, color: o?.value ? 'var(--ink)' : 'var(--ink-4)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {o?.label ?? '— เลือก —'}
+          </span>
+          <svg className="cs-chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+        </>)} />
     </div>
   )
 
@@ -2718,8 +2745,8 @@ ${body}
       {(openFilter || openAction || rowPlatformDropdown || openAllFilter) && <div onClick={() => { setOpenFilter(null); setOutFilterPos(null); setOpenAction(null); setActionRect(null); setRowPlatformDropdown(null); setOpenAllFilter(null) }} style={{ position: 'fixed', inset: 0, zIndex: 150 }} />}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
         <div>
-          <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px' }}>{scope === 'claims' ? 'งานเคลม' : 'ออเดอร์'}</h1>
-          <p style={{ fontSize: 14, color: 'var(--ink-3)', marginTop: 4 }}>
+          <h1 style={{ fontSize: 32, fontWeight: 700, color: '#4A3122', letterSpacing: '-0.5px' }}>{scope === 'claims' ? 'งานเคลม' : 'ออเดอร์'}</h1>
+          <p style={{ fontSize: 15, color: 'var(--ink-2)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
             {month === 'all'
               ? `${scopedRows.length} รายการ`
               : `${scopedRows.filter(r => monthKey(r) === month).length} รายการ · ${monthLabel(month)} (ทั้งหมด ${scopedRows.length})`}
@@ -2737,12 +2764,12 @@ ${body}
                 requestPrint(rows.filter(r => selectedIds.has(r.id)))
               } else { setPrintModalCols(false); setPrintModal(true) }
             }}
-            style={{ background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+            style={{ background: 'var(--surface)', color: 'var(--brand)', border: '1px solid var(--border)', borderRadius: 999, height: 46, padding: '0 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: 'var(--shadow)' }}>
             🖨️ ปริ้น{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
           </button>
           <button onClick={() => { if (scope === 'claims') { setAddType('claim'); setModalTab('form'); setModal({ mode: 'add', data: { ...emptyForm(), shipping_datetime: '' } }); ph.begin([], null); setModalItems([]); setItemsPasteText('') } else setAddTypeModal(true) }}
-            style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,122,255,0.3)' }}>
-            + เพิ่มรายการ
+            style={{ background: 'var(--brand)', color: '#FFF8F0', border: 'none', borderRadius: 999, height: 46, padding: '0 26px', fontSize: 14.5, fontWeight: 600, cursor: 'pointer', boxShadow: '0 3px 10px rgba(158,106,73,0.35)' }}>
+            ＋ เพิ่มรายการ
           </button>
         </div>
       </div>
@@ -2754,10 +2781,11 @@ ${body}
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 14, marginBottom: 18, flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: '1 1 260px', minWidth: 0 }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ชื่อลูกค้า / เลขคำสั่งซื้อ…"
-            style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', paddingRight: search ? 36 : 14, fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+          <svg width="18" height="18" fill="none" stroke="#8B7460" strokeWidth="1.8" viewBox="0 0 24 24" style={{ position: 'absolute', left: 18, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}><circle cx="11" cy="11" r="7" /><path strokeLinecap="round" d="M20 20l-3.5-3.5" /></svg>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ชื่อลูกค้า / เลขคำสั่งซื้อ…" className="ow-field"
+            style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 999, height: 46, padding: '0 16px 0 46px', paddingRight: search ? 40 : 16, fontSize: 13.5, outline: 'none', boxSizing: 'border-box', background: 'var(--surface)', color: 'var(--ink)', boxShadow: 'var(--shadow)' }} />
           {search && (
             <button onClick={() => setSearch('')}
               style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'var(--border)', color: 'var(--ink-3)', borderRadius: '50%', width: 20, height: 20, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, padding: 0 }}>
@@ -2765,28 +2793,35 @@ ${body}
             </button>
           )}
         </div>
-        <select value={month} onChange={e => setMonth(e.target.value)} title="เดือนที่รับออเดอร์"
-          style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontSize: 14, outline: 'none', background: month === 'all' ? 'var(--surface)' : 'var(--blue-bg)', color: 'var(--ink)', fontWeight: month === 'all' ? 400 : 600, cursor: 'pointer', flexShrink: 0 }}>
-          <option value="all">ทุกเดือน</option>
-          {monthOptions.ym.map(k => <option key={k} value={k}>{monthLabel(k)}</option>)}
-          {monthOptions.hasNone && <option value="none">{monthLabel('none')}</option>}
-        </select>
+        <CreamSelect value={month} onChange={setMonth} title="เดือนที่รับออเดอร์" className="ow-select" style={month !== 'all' ? { borderColor: 'var(--brand)' } : undefined}
+          options={[{ value: 'all', label: 'ทุกเดือน' }, ...monthOptions.ym.map(k => ({ value: k, label: monthLabel(k) })), ...(monthOptions.hasNone ? [{ value: 'none', label: monthLabel('none') }] : [])]}
+          renderValue={o => <>
+            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2.5" /><path strokeLinecap="round" d="M3.5 10h17M8 3v4M16 3v4" /></svg>
+            <span className="cs-value">{o?.label}</span>
+            <svg className="cs-chev" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" /></svg>
+          </>} />
         {/* เรียงตามวันที่สร้าง — ใช้ได้ทุกแท็บ (ทับการเรียงของหัวคอลัมน์เมื่อเลือกไว้) */}
-        <select value={createdSort ?? ''} onChange={e => { setCreatedSort((e.target.value || null) as 'asc' | 'desc' | null); setShipDateSort(null) }} title="เรียงตามวันที่สร้าง"
-          style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontSize: 14, outline: 'none', background: createdSort ? 'var(--blue-bg)' : 'var(--surface)', color: 'var(--ink)', fontWeight: createdSort ? 600 : 400, cursor: 'pointer', flexShrink: 0 }}>
-          <option value="">เรียงตามค่าเริ่มต้น</option>
-          <option value="desc">วันที่สร้าง: ใหม่สุด → เก่าสุด</option>
-          <option value="asc">วันที่สร้าง: เก่าสุด → ใหม่สุด</option>
-        </select>
+        <CreamSelect value={createdSort ?? ''} onChange={v => { setCreatedSort((v || null) as 'asc' | 'desc' | null); setShipDateSort(null) }} title="เรียงตามวันที่สร้าง"
+          className="ow-select" style={createdSort ? { borderColor: 'var(--brand)' } : undefined} menuMinWidth={240} align="right"
+          options={[{ value: '', label: 'เรียงตามค่าเริ่มต้น' }, { value: 'desc', label: 'วันที่สร้าง: ใหม่สุด → เก่าสุด' }, { value: 'asc', label: 'วันที่สร้าง: เก่าสุด → ใหม่สุด' }]}
+          renderValue={o => <>
+            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M7 4v16M3.5 16.5L7 20l3.5-3.5M14 6h7M14 11h5M14 16h3" /></svg>
+            <span className="cs-value">{o?.label}</span>
+            <svg className="cs-chev" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" /></svg>
+          </>} />
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        {scope === 'orders' && ([['all', 'ทั้งหมด'], ['platform', 'งานแพลตฟอร์ม'], ['outside', 'งานนอก'], ['install', 'งานติดตั้ง'], ['claim', 'งานเคลม'], ['shipped', 'จัดส่งแล้ว'], ['cancelled', 'ยกเลิก']] as [typeof quickFilter, string][]).map(([val, label]) => (
-          <button key={val} onClick={() => setQuickFilter(val)}
-            style={{ padding: '6px 16px', borderRadius: 20, border: quickFilter === val ? 'none' : '1px solid var(--border)', background: quickFilter === val ? 'var(--blue)' : 'var(--surface)', color: quickFilter === val ? '#fff' : 'var(--ink-3)', fontSize: 13, fontWeight: quickFilter === val ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            {label}
-          </button>
-        ))}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 18, alignItems: 'center', flexWrap: 'wrap' }}>
+        {scope === 'orders' && ([['all', 'ทั้งหมด'], ['platform', 'งานแพลตฟอร์ม'], ['outside', 'งานนอก'], ['install', 'งานติดตั้ง'], ['claim', 'งานเคลม'], ['shipped', 'จัดส่งแล้ว'], ['cancelled', 'ยกเลิก']] as [typeof quickFilter, string][]).map(([val, label]) => {
+          const on = quickFilter === val
+          const n = scopedRows.filter(r => matchQuickTab(r, val as QuickTab)).length   // ตรงกับจำนวนแถวในแท็บ (ทั้งหมด = ไม่รวมจัดส่งแล้ว/ยกเลิก)
+          return (
+            <button key={val} onClick={() => setQuickFilter(val)} className="ow-tab" data-active={on || undefined}>
+              {label}
+              <span className="ow-tab-n">{n.toLocaleString()}</span>
+            </button>
+          )
+        })}
         {searching && (
           <span style={{ fontSize: 12, color: 'var(--ink-3)', whiteSpace: 'nowrap' }} title={quickFilter === 'all' ? 'ค้นทุกใบ รวมจัดส่งแล้ว/ยกเลิก' : `ค้นเฉพาะแท็บ "${tabLabel}" — อยากค้นทุกงานให้กดแท็บ "ทั้งหมด"`}>
             {quickFilter === 'all' ? 'ค้นทุกใบ (รวมจัดส่งแล้ว/ยกเลิก)' : <>ค้นในแท็บ “{tabLabel}”</>}
@@ -2801,7 +2836,7 @@ ${body}
             const isCancelled = r.order_status === 'ยกเลิก'
             const matchQ = quickFilter === 'shipped' ? isShipped
               : quickFilter === 'cancelled' ? isCancelled
-              : quickFilter === 'claim' ? isClaim
+              : quickFilter === 'claim' ? (isClaim && !isShipped && !isCancelled)
               : (isShipped || isCancelled) ? false
               : quickFilter === 'all' ? true
               : quickFilter === 'platform' ? (!isClaim && (p === 'Shopee' || p === 'Tiktok' || p === 'Lazada'))
@@ -2812,9 +2847,9 @@ ${body}
           if (incompleteCount === 0) return null
           return (
             <button onClick={() => setIncompleteFilter(f => !f)}
-              style={{ padding: '6px 14px', borderRadius: 20, border: incompleteFilter ? 'none' : '1px solid var(--border)', background: incompleteFilter ? '#ef4444' : 'var(--surface)', color: incompleteFilter ? '#fff' : '#ef4444', fontSize: 13, fontWeight: incompleteFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+              style={{ padding: '6px 14px', borderRadius: 20, border: incompleteFilter ? 'none' : '1px solid var(--border)', background: incompleteFilter ? '#C0563F' : 'var(--surface)', color: incompleteFilter ? '#fff' : '#C0563F', fontSize: 13, fontWeight: incompleteFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
               ข้อมูลไม่ครบ
-              <span style={{ background: incompleteFilter ? 'rgba(255,255,255,0.3)' : '#ef444422', color: incompleteFilter ? '#fff' : '#ef4444', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
+              <span style={{ background: incompleteFilter ? 'rgba(255,255,255,0.3)' : '#C0563F22', color: incompleteFilter ? '#fff' : '#C0563F', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
                 {incompleteCount}
               </span>
             </button>
@@ -2825,9 +2860,9 @@ ${body}
           if (unprintedCount === 0) return null
           return (
             <button onClick={() => { setUnprintedFilter(f => !f); setPrintedPendingFilter(false) }}
-              style={{ padding: '6px 14px', borderRadius: 20, border: unprintedFilter ? 'none' : '1px solid var(--border)', background: unprintedFilter ? '#eab308' : 'var(--surface)', color: unprintedFilter ? '#fff' : '#eab308', fontSize: 13, fontWeight: unprintedFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+              style={{ padding: '6px 14px', borderRadius: 20, border: unprintedFilter ? 'none' : '1px solid var(--border)', background: unprintedFilter ? '#C79A4B' : 'var(--surface)', color: unprintedFilter ? '#fff' : '#C79A4B', fontSize: 13, fontWeight: unprintedFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
               ยังไม่ปริ้น
-              <span style={{ background: unprintedFilter ? 'rgba(255,255,255,0.3)' : '#eab30822', color: unprintedFilter ? '#fff' : '#eab308', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
+              <span style={{ background: unprintedFilter ? 'rgba(255,255,255,0.3)' : '#C79A4B22', color: unprintedFilter ? '#fff' : '#C79A4B', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
                 {unprintedCount}
               </span>
             </button>
@@ -2839,9 +2874,9 @@ ${body}
           return (
             <button onClick={() => { setPrintedPendingFilter(f => !f); setUnprintedFilter(false) }}
               title="ปริ้นใบงานไปเกิน 24 ชม. แล้ว แต่สถานะยังเป็น รอดำเนินการ"
-              style={{ padding: '6px 14px', borderRadius: 20, border: printedPendingFilter ? 'none' : '1px solid var(--border)', background: printedPendingFilter ? '#3b82f6' : 'var(--surface)', color: printedPendingFilter ? '#fff' : '#3b82f6', fontSize: 13, fontWeight: printedPendingFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+              style={{ padding: '6px 14px', borderRadius: 20, border: printedPendingFilter ? 'none' : '1px solid var(--border)', background: printedPendingFilter ? '#6E8CA0' : 'var(--surface)', color: printedPendingFilter ? '#fff' : '#6E8CA0', fontSize: 13, fontWeight: printedPendingFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
               ปริ้นแล้วแต่ยังไม่ดำเนินการ
-              <span style={{ background: printedPendingFilter ? 'rgba(255,255,255,0.3)' : '#3b82f622', color: printedPendingFilter ? '#fff' : '#3b82f6', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
+              <span style={{ background: printedPendingFilter ? 'rgba(255,255,255,0.3)' : '#6E8CA022', color: printedPendingFilter ? '#fff' : '#6E8CA0', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
                 {printedPendingCount}
               </span>
             </button>
@@ -2853,9 +2888,9 @@ ${body}
           return (
             <button onClick={() => setDropoffPendingFilter(f => !f)}
               title="กด Drop-off ไปเกิน 24 ชม. แล้ว แต่ยังไม่ได้ติ๊กจัดส่ง (รวมใบที่อัพเดท Drop จากไฟล์ Shopee)"
-              style={{ padding: '6px 14px', borderRadius: 20, border: dropoffPendingFilter ? 'none' : '1px solid var(--border)', background: dropoffPendingFilter ? '#f97316' : 'var(--surface)', color: dropoffPendingFilter ? '#fff' : '#f97316', fontSize: 13, fontWeight: dropoffPendingFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+              style={{ padding: '6px 14px', borderRadius: 20, border: dropoffPendingFilter ? 'none' : '1px solid var(--border)', background: dropoffPendingFilter ? '#B5715A' : 'var(--surface)', color: dropoffPendingFilter ? '#fff' : '#B5715A', fontSize: 13, fontWeight: dropoffPendingFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
               กด Drop-off แล้วแต่ยังไม่ได้ส่ง
-              <span style={{ background: dropoffPendingFilter ? 'rgba(255,255,255,0.3)' : '#f9731622', color: dropoffPendingFilter ? '#fff' : '#f97316', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
+              <span style={{ background: dropoffPendingFilter ? 'rgba(255,255,255,0.3)' : '#B5715A22', color: dropoffPendingFilter ? '#fff' : '#B5715A', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
                 {dropoffPendingCount}
               </span>
             </button>
@@ -2867,9 +2902,9 @@ ${body}
           return (
             <button onClick={() => setStatusStaleFilter(f => !f)}
               title="งานแพลตฟอร์มที่ค้างสถานะเดิมมาเกิน 24 ชม."
-              style={{ padding: '6px 14px', borderRadius: 20, border: statusStaleFilter ? 'none' : '1px solid var(--border)', background: statusStaleFilter ? '#a855f7' : 'var(--surface)', color: statusStaleFilter ? '#fff' : '#a855f7', fontSize: 13, fontWeight: statusStaleFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+              style={{ padding: '6px 14px', borderRadius: 20, border: statusStaleFilter ? 'none' : '1px solid var(--border)', background: statusStaleFilter ? '#9A7BA0' : 'var(--surface)', color: statusStaleFilter ? '#fff' : '#9A7BA0', fontSize: 13, fontWeight: statusStaleFilter ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
               สถานะไม่อัพเดท
-              <span style={{ background: statusStaleFilter ? 'rgba(255,255,255,0.3)' : '#a855f722', color: statusStaleFilter ? '#fff' : '#a855f7', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
+              <span style={{ background: statusStaleFilter ? 'rgba(255,255,255,0.3)' : '#9A7BA022', color: statusStaleFilter ? '#fff' : '#9A7BA0', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
                 {statusStaleCount}
               </span>
             </button>
@@ -2884,7 +2919,7 @@ ${body}
             {openColMenu && (
               <>
                 <div onClick={() => setOpenColMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 150 }} />
-                <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 200, maxHeight: 360, overflowY: 'auto' }}>
+                <div className="ow-drop" style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 200, maxHeight: 360, overflowY: 'auto' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 12px 8px', borderBottom: '1px solid var(--border)', marginBottom: 4 }}>
                     <span style={{ fontSize: 11, color: 'var(--ink-4)', fontWeight: 600 }}>ติ๊กออก = ซ่อน</span>
                     {tabHidden.length > 0 && (
@@ -2905,11 +2940,11 @@ ${body}
         )}
       </div>
 
-      <div ref={tableCardRef} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', position: 'relative' }}>
+      <div ref={tableCardRef} className="ow-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 20, boxShadow: '0 4px 16px rgba(120,86,58,0.10)', position: 'relative' }}>
         {outFilterPos && openFilter && (() => {
           const dropStyle = { position: 'absolute' as const, top: outFilterPos.top + 4, left: outFilterPos.left, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0' }
           if (openFilter === 'out-days') return (
-            <div style={{ ...dropStyle, minWidth: 140 }}>
+            <div className="ow-drop" style={{ ...dropStyle, minWidth: 140 }}>
               {([['น้อยไปมาก', 'asc'], ['มากไปน้อย', 'desc']] as [string, 'asc'|'desc'][]).map(([label, val]) => (
                 <div key={label} onClick={() => { setOutDaysSort(val); setOutUpdatedSort(null); setCreatedSort(null); setOpenFilter(null); setOutFilterPos(null) }}
                   style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: outDaysSort === val ? 600 : 400, color: outDaysSort === val ? 'var(--blue)' : 'var(--ink)', background: outDaysSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
@@ -2918,13 +2953,13 @@ ${body}
               ))}
               {/* filter งานเสร็จ: กดเพื่อดูเฉพาะงานเสร็จ กดซ้ำเพื่อยกเลิก */}
               <div onClick={() => { setOutDoneFilter(outDoneFilter === true ? null : true); setOpenFilter(null); setOutFilterPos(null) }}
-                style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: outDoneFilter === true ? 600 : 400, color: outDoneFilter === true ? '#22c55e' : 'var(--ink)', background: outDoneFilter === true ? 'rgba(34,197,94,0.08)' : 'transparent', borderTop: '1px solid var(--border)' }}>
+                style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: outDoneFilter === true ? 600 : 400, color: outDoneFilter === true ? '#6F8F6A' : 'var(--ink)', background: outDoneFilter === true ? 'rgba(34,197,94,0.08)' : 'transparent', borderTop: '1px solid var(--border)' }}>
                 งานเสร็จ {outDoneFilter === true && '✓'}
               </div>
             </div>
           )
           if (openFilter === 'out-deadline') return (
-            <div style={{ ...dropStyle, padding: '12px 14px', minWidth: 220 }}>
+            <div className="ow-drop" style={{ ...dropStyle, padding: '12px 14px', minWidth: 220 }}>
               <div style={{ marginBottom: 8 }}>
                 <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>ตั้งแต่</label>
                 <input type="date" lang="en-GB" value={outDeadlineFrom} onChange={e => setOutDeadlineFrom(e.target.value)} style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
@@ -2939,7 +2974,7 @@ ${body}
             </div>
           )
           if (openFilter === 'out-platform') return (
-            <div style={{ ...dropStyle, minWidth: 180, maxHeight: 260, overflowY: 'auto' }}>
+            <div className="ow-drop" style={{ ...dropStyle, minWidth: 180, maxHeight: 260, overflowY: 'auto' }}>
               {OUTSIDE_PLATFORMS.map(p => (
                 <label key={p} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: outPlatformFilters.includes(p) ? 'var(--blue-bg)' : 'transparent' }}>
                   <input type="checkbox" checked={outPlatformFilters.includes(p)} onChange={() => setOutPlatformFilters(toggleArr(outPlatformFilters, p))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
@@ -2949,7 +2984,7 @@ ${body}
             </div>
           )
           if (openFilter === 'out-payment') return (
-            <div style={{ ...dropStyle, minWidth: 150 }}>
+            <div className="ow-drop" style={{ ...dropStyle, minWidth: 150 }}>
               {PAYMENT_STATUSES.map(s => (
                 <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: outPaymentFilters.includes(s) ? 'var(--blue-bg)' : 'transparent' }}>
                   <input type="checkbox" checked={outPaymentFilters.includes(s)} onChange={() => setOutPaymentFilters(toggleArr(outPaymentFilters, s))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
@@ -2959,7 +2994,7 @@ ${body}
             </div>
           )
           if (openFilter === 'out-assigned') return (
-            <div style={{ ...dropStyle, minWidth: 160 }}>
+            <div className="ow-drop" style={{ ...dropStyle, minWidth: 160 }}>
               {ORDER_ASSIGNED.map(o => (
                 <label key={o} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: outAssignedFilters.includes(o) ? 'var(--blue-bg)' : 'transparent' }}>
                   <input type="checkbox" checked={outAssignedFilters.includes(o)} onChange={() => setOutAssignedFilters(toggleArr(outAssignedFilters, o))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
@@ -2969,7 +3004,7 @@ ${body}
             </div>
           )
           if (openFilter === 'out-admin') return (
-            <div style={{ ...dropStyle, minWidth: 160 }}>
+            <div className="ow-drop" style={{ ...dropStyle, minWidth: 160 }}>
               {adminNames.map(a => (
                 <label key={a} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: outAdminFilters.includes(a) ? 'var(--blue-bg)' : 'transparent' }}>
                   <input type="checkbox" checked={outAdminFilters.includes(a)} onChange={() => setOutAdminFilters(toggleArr(outAdminFilters, a))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
@@ -2979,7 +3014,7 @@ ${body}
             </div>
           )
           if (openFilter === 'out-status') return (
-            <div style={{ ...dropStyle, minWidth: 150 }}>
+            <div className="ow-drop" style={{ ...dropStyle, minWidth: 150 }}>
               {PROD_STATUSES.map(s => (
                 <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: outStatusFilters.includes(s) ? 'var(--blue-bg)' : 'transparent' }}>
                   <input type="checkbox" checked={outStatusFilters.includes(s)} onChange={() => setOutStatusFilters(toggleArr(outStatusFilters, s))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
@@ -2990,7 +3025,7 @@ ${body}
             </div>
           )
           if (openFilter === 'out-done') return (
-            <div style={{ ...dropStyle, minWidth: 150 }}>
+            <div className="ow-drop" style={{ ...dropStyle, minWidth: 150 }}>
               {([['ทั้งหมด', null], ['งานเสร็จเท่านั้น', true], ['ยังไม่เสร็จ', false]] as [string, boolean|null][]).map(([label, val]) => (
                 <button key={String(label)} onClick={() => { setOutDoneFilter(val); setOpenFilter(null); setOutFilterPos(null) }}
                   style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', fontSize: 12, border: 'none', cursor: 'pointer', background: outDoneFilter === val ? 'var(--blue-bg)' : 'transparent', color: outDoneFilter === val ? 'var(--blue)' : 'var(--ink)', fontWeight: outDoneFilter === val ? 600 : 400 }}>
@@ -3000,7 +3035,7 @@ ${body}
             </div>
           )
           if (openFilter === 'out-installed') return (
-            <div style={{ ...dropStyle, minWidth: 150 }}>
+            <div className="ow-drop" style={{ ...dropStyle, minWidth: 150 }}>
               {([['ทั้งหมด', null], ['ติดตั้งแล้ว', true], ['ยังไม่ติดตั้ง', false]] as [string, boolean|null][]).map(([label, val]) => (
                 <button key={String(label)} onClick={() => { setOutInstalledFilter(val); setOpenFilter(null); setOutFilterPos(null) }}
                   style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', fontSize: 12, border: 'none', cursor: 'pointer', background: outInstalledFilter === val ? 'var(--blue-bg)' : 'transparent', color: outInstalledFilter === val ? 'var(--blue)' : 'var(--ink)', fontWeight: outInstalledFilter === val ? 600 : 400 }}>
@@ -3010,7 +3045,7 @@ ${body}
             </div>
           )
           if (openFilter === 'out-created') return (
-            <div style={{ ...dropStyle, minWidth: 170 }}>
+            <div className="ow-drop" style={{ ...dropStyle, minWidth: 170 }}>
               {([['ใหม่สุด → เก่าสุด', 'desc'], ['เก่าสุด → ใหม่สุด', 'asc'], ['ไม่เรียง', null]] as [string, 'asc'|'desc'|null][]).map(([label, val]) => (
                 <div key={label} onClick={() => { setCreatedSort(val); setShipDateSort(null); setOpenFilter(null); setOutFilterPos(null) }}
                   style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: createdSort === val ? 600 : 400, color: createdSort === val ? 'var(--blue)' : 'var(--ink)', background: createdSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
@@ -3020,7 +3055,7 @@ ${body}
             </div>
           )
           if (openFilter === 'out-updated') return (
-            <div style={{ ...dropStyle, minWidth: 160 }}>
+            <div className="ow-drop" style={{ ...dropStyle, minWidth: 160 }}>
               {([['ใหม่สุด-เก่าสุด', 'desc'], ['เก่าสุด-ใหม่สุด', 'asc']] as [string, 'asc'|'desc'][]).map(([label, val]) => (
                 <div key={label} onClick={() => { setOutUpdatedSort(val); setOutDaysSort(null); setCreatedSort(null); setOpenFilter(null); setOutFilterPos(null) }}
                   style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: outUpdatedSort === val ? 600 : 400, color: outUpdatedSort === val ? 'var(--blue)' : 'var(--ink)', background: outUpdatedSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
@@ -3032,7 +3067,7 @@ ${body}
           return null
         })()}
         {rowPlatformDropdown && (
-          <div style={{ position: 'absolute', top: rowPlatformDropdown.pos.top + 4, left: rowPlatformDropdown.pos.left, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 160, maxHeight: 260, overflowY: 'auto', padding: '6px 0' }}>
+          <div className="ow-drop" style={{ position: 'absolute', top: rowPlatformDropdown.pos.top + 4, left: rowPlatformDropdown.pos.left, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 160, maxHeight: 260, overflowY: 'auto', padding: '6px 0' }}>
             {OUTSIDE_PLATFORMS.map(p => (
               <div key={p} onClick={() => { updateField(rowPlatformDropdown.id, 'platform', p); setRowPlatformDropdown(null) }}
                 style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, color: 'var(--ink)', background: 'transparent' }}
@@ -3053,7 +3088,7 @@ ${body}
         ) : (quickFilter === 'outside' || quickFilter === 'install') ? (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
+              <tr style={{ borderBottom: '1px solid var(--border)', background: 'transparent' }}>
                 <th style={{ padding: '10px 14px', width: 36 }}>
                   <input type="checkbox" ref={selectAllRef}
                     checked={activeDisplayed.length > 0 && activeDisplayed.every(r => selectedIds.has(r.id))}
@@ -3141,7 +3176,7 @@ ${body}
                 {showCol('done') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap' }}>
                   <button onClick={e => openOutFilter(e, 'out-done')}
-                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outDoneFilter !== null ? '#22c55e' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outDoneFilter !== null ? '#6F8F6A' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
                     งานเสร็จ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                 </th>
@@ -3152,7 +3187,7 @@ ${body}
                 {quickFilter === 'install' && showCol('installed') && (
                   <th style={{ textAlign: 'center', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap' }}>
                     <button onClick={e => openOutFilter(e, 'out-installed')}
-                      style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outInstalledFilter !== null ? '#22c55e' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                      style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: outInstalledFilter !== null ? '#6F8F6A' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
                       ติดตั้ง <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                     </button>
                   </th>
@@ -3210,7 +3245,7 @@ ${body}
               </tr>
             </thead>
             <tbody>
-              {displayedOut.map(r => {
+              {pageSlice(displayedOut).map(r => {
                 const isEditing = (f: string) => editCell?.id === r.id && editCell.field === f
                 const numCell = (field: 'price' | 'deposit' | 'paid_amount') => {
                   const val = r[field]
@@ -3266,7 +3301,7 @@ ${body}
                       style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, outline: 'none', padding: '2px 0' }} />
                   ) : (
                     <div onClick={() => setEditCell({ id: r.id, field, val })}
-                      style={{ cursor: 'text', whiteSpace: 'nowrap', color: field === 'deadline' ? (val ? '#bf5af2' : 'var(--ink-4)') : (val ? 'var(--ink-3)' : 'var(--ink-4)') }}>
+                      style={{ cursor: 'text', whiteSpace: 'nowrap', color: field === 'deadline' ? (val ? '#9A7BA0' : 'var(--ink-4)') : (val ? 'var(--ink-3)' : 'var(--ink-4)') }}>
                       {display}
                     </div>
                   )
@@ -3302,14 +3337,10 @@ ${body}
                       onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
                       style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: '100%', minWidth: 100, outline: 'none', padding: '2px 0' }} />
                   ) : (
-                    <div onClick={() => setEditCell({ id: r.id, field: 'outsource', val })} style={{ cursor: 'text', minWidth: 60 }}>
+                    // แถวสูง 1 บรรทัด — วันเวลาที่ลงสั่งนอก ชี้เมาส์ดูในทูลทิป
+                    <div onClick={() => setEditCell({ id: r.id, field: 'outsource', val })} style={{ cursor: 'text', minWidth: 60 }}
+                      title={val ? `${val}${r.outsource_at ? ` · ลงเมื่อ ${new Date(r.outsource_at).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}` : ''}` : undefined}>
                       <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160, color: val ? 'var(--ink)' : 'var(--ink-4)' }}>{val || '—'}</div>
-                      {val && r.outsource_at && (
-                        <div style={{ color: 'var(--ink-4)', fontSize: 10, lineHeight: 1.3 }}>
-                          {new Date(r.outsource_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
-                          {new Date(r.outsource_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      )}
                     </div>
                   )
                 }
@@ -3330,17 +3361,17 @@ ${body}
                           {timeOpts.map(t => <option key={t}>{t}</option>)}
                         </select>
                         <button onClick={() => clearInstallDt(r.id)} title="ล้างวันนัด กลับไปเป็นรอนัดหมาย"
-                          style={{ border: '1px solid #f59e0b', background: 'transparent', borderRadius: 6, padding: '3px 7px', fontSize: 11, cursor: 'pointer', color: '#f59e0b', fontWeight: 600, whiteSpace: 'nowrap' }}>รอนัดหมาย</button>
+                          style={{ border: '1px solid #C79A4B', background: 'transparent', borderRadius: 6, padding: '3px 7px', fontSize: 11, cursor: 'pointer', color: '#C79A4B', fontWeight: 600, whiteSpace: 'nowrap' }}>รอนัดหมาย</button>
                         <button onClick={() => setInstallDtEdit(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 14 }}>✓</button>
                       </div>
                     )
                   }
                   const open = () => setInstallDtEdit({ id: r.id, date: (r.deadline || '').slice(0, 10), time: r.install_time || '9:00' })
                   if (!r.deadline) return (
-                    <span onClick={open} title="จิ้มเพื่อนัดวันติดตั้ง" style={{ color: '#f59e0b', fontWeight: 600, cursor: 'pointer' }}>รอนัดหมาย</span>
+                    <span onClick={open} title="จิ้มเพื่อนัดวันติดตั้ง" style={{ color: '#C79A4B', fontWeight: 600, cursor: 'pointer' }}>รอนัดหมาย</span>
                   )
                   return (
-                    <span onClick={open} title="จิ้มเพื่อแก้วันเวลานัด" style={{ cursor: 'pointer', whiteSpace: 'nowrap', color: '#bf5af2' }}>
+                    <span onClick={open} title="จิ้มเพื่อแก้วันเวลานัด" style={{ cursor: 'pointer', whiteSpace: 'nowrap', color: '#9A7BA0' }}>
                       {new Date(r.deadline).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' })}{r.install_time ? ` ${r.install_time}` : ''}
                     </span>
                   )
@@ -3355,7 +3386,7 @@ ${body}
                 const isDone = r.order_status === 'เสร็จสิ้น'
                 const isCancelled = r.order_status === 'ยกเลิก'
                 return (
-                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : r.pinned ? '#F2F2F2' : 'transparent' }}>
+                  <tr key={r.id} className={r.pinned ? 'is-pinned' : undefined} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : r.pinned ? '#F7F0E8' : 'transparent' }}>
                     <td style={{ padding: '12px 14px' }}>
                       <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)}
                         style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
@@ -3363,11 +3394,11 @@ ${body}
                     {showCol('days') && (
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
                       {isCancelled ? (
-                        <span style={{ fontWeight: 700, color: '#ef4444' }}>ยกเลิก</span>
+                        <span style={{ fontWeight: 700, color: '#C0563F' }}>ยกเลิก</span>
                       ) : r.is_urgent ? (
-                        <span style={{ fontWeight: 700, color: '#22c55e' }}>งานเสร็จ</span>
+                        <span style={{ fontWeight: 700, color: '#6F8F6A' }}>งานเสร็จ</span>
                       ) : isDone ? (
-                        <span style={{ fontWeight: 700, color: '#22c55e' }}>เสร็จสิ้น</span>
+                        <span style={{ fontWeight: 700, color: '#6F8F6A' }}>เสร็จสิ้น</span>
                       ) : outDays !== null ? (
                         <span style={{ fontWeight: 700, color: daysColor(outDays) }}>
                           {outDays === 0 && quickFilter === 'install' ? 'ต้องติดตั้งวันนี้' : daysLabel(outDays)}
@@ -3378,8 +3409,8 @@ ${body}
                     {showCol('deadline') && (
                     <td style={{ padding: '8px 14px' }}>
                       {isCancelled ? <span style={{ color: 'var(--ink-4)' }}>-</span>
-                        : r.order_status === 'จัดส่งแล้ว' ? <span style={{ fontWeight: 700, color: '#22c55e' }}>จัดส่งแล้ว</span>
-                        : (quickFilter === 'install' && instStatus === 'ติดตั้งแล้ว') ? <span style={{ fontWeight: 700, color: '#22c55e' }}>ติดตั้งแล้ว</span>
+                        : r.order_status === 'จัดส่งแล้ว' ? <span style={{ fontWeight: 700, color: '#6F8F6A' }}>จัดส่งแล้ว</span>
+                        : (quickFilter === 'install' && instStatus === 'ติดตั้งแล้ว') ? <span style={{ fontWeight: 700, color: '#6F8F6A' }}>ติดตั้งแล้ว</span>
                         : quickFilter === 'install' ? installDtCell()
                         : dateCell('deadline')}
                     </td>
@@ -3387,13 +3418,11 @@ ${body}
                     {quickFilter === 'install' && showCol('work') && (
                     <td style={{ padding: '8px 14px' }}>
                       {ins ? (
-                        // ชิปสีชุดเดียวกับหน้าปฏิทินติดตั้ง (สีตามสถานะของแถวนั้น)
-                        <select value={ins.work_type ?? ''} onChange={e => changeInstWork(r.id, e.target.value)}
-                          style={{ background: instColor(ins) + '22', color: instColor(ins), padding: '3px 8px', borderRadius: 980, fontWeight: 600, fontSize: 11, border: 'none', outline: 'none', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none' }}>
-                          {Array.from(new Set([...WORK_TYPE_OPTIONS, ins.work_type].filter(Boolean))).map(w => (
-                            <option key={w} value={w as string} style={{ background: '#fff', color: 'var(--ink)' }}>{w}</option>
-                          ))}
-                        </select>
+                        // ป้ายแบบหน้าภาพรวม (.dn-pill) — พื้นตามลักษณะงาน กดแล้วเลือกได้
+                        <CreamSelect value={ins.work_type ?? ''} onChange={v => changeInstWork(r.id, v)}
+                          className="dn-pill ow-pill" style={{ color: '#6B4326', background: WORK_PILL_BG[ins.work_type ?? ''] ?? '#EFE3D4' }} menuMinWidth={170}
+                          options={Array.from(new Set([...WORK_TYPE_OPTIONS, ins.work_type].filter(Boolean))).map(w => ({ value: w as string, label: w as string }))}
+                          renderValue={o => <span>{o?.label ?? '—'}</span>} />
                       ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
                     )}
@@ -3405,9 +3434,9 @@ ${body}
                     </td>
                     )}
                     {showCol('customer') && (
-                    <td style={{ padding: '8px 14px', minWidth: 100 }}>
+                    <td style={{ padding: '8px 14px', minWidth: 140 }}>
                       {r.customer_name
-                        ? <Link href={`/customers?name=${encodeURIComponent(r.customer_name)}`} title="ดูประวัติลูกค้า" style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>{r.customer_name}</Link>
+                        ? <Link href={`/customers?name=${encodeURIComponent(r.customer_name)}`} title={r.customer_name} style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word', maxWidth: 180 }}>{r.customer_name}</Link>
                         : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
                     )}
@@ -3419,7 +3448,7 @@ ${body}
                         const pos = { top: btnR.bottom - (cardR?.top ?? 0), left: btnR.left - (cardR?.left ?? 0) }
                         setRowPlatformDropdown(d => d?.id === r.id ? null : { id: r.id, pos })
                       }} style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.platform ? 'var(--ink-3)' : 'var(--ink-4)', padding: 0, maxWidth: 140, textAlign: 'left' }}>
-                        {r.platform || '—'}
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>{r.platform && <PlatformIcon name={r.platform} size={18} />}{r.platform || '—'}</span>
                       </button>
                     </td>
                     )}
@@ -3428,13 +3457,13 @@ ${body}
                       <button onClick={() => { openItemsModal(r) }}
                         style={{ border: 'none', background: 'transparent', fontSize: 11, cursor: 'pointer', padding: 0, color: r.items?.length ? 'var(--ink)' : 'var(--ink-4)', textAlign: 'left', display: 'block', width: '100%' }}>
                         {r.items?.length ? (
-                          <div>
-                            {/* โชว์ไม่เกิน 3 บรรทัด — รายการเยอะแค่ไหนแถวก็ไม่ยืด (กดเปิดดูรายการเต็มได้) */}
-                            {formatItemLines(r.items).slice(0, ITEM_LINE_MAX).map((line, i) => (
-                              <div key={i} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190, lineHeight: '1.6', color: i === 0 ? 'var(--ink)' : 'var(--ink-3)' }}>{line}</div>
+                          // แถวสูง 2 บรรทัด: มี 2 รายการ = โชว์ครบ · เกิน = รายการแรก + "+ อีก N รายการ" · ชี้เมาส์ดูครบทุกรายการ
+                          <div title={formatItemLines(r.items).join('\n')} style={{ maxWidth: 190 }}>
+                            {formatItemLines(r.items).slice(0, formatItemLines(r.items).length > 2 ? 1 : 2).map((line, i) => (
+                              <div key={i} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: i === 0 ? 'var(--ink)' : 'var(--ink-3)' }}>{line}</div>
                             ))}
-                            {formatItemLines(r.items).length > ITEM_LINE_MAX && (
-                              <div style={{ fontSize: 10, color: 'var(--ink-4)' }}>+ อีก {formatItemLines(r.items).length - ITEM_LINE_MAX} รายการ</div>
+                            {formatItemLines(r.items).length > 2 && (
+                              <div style={{ fontSize: 10, color: 'var(--ink-4)' }}>+ อีก {formatItemLines(r.items).length - 1} รายการ</div>
                             )}
                           </div>
                         ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
@@ -3446,10 +3475,14 @@ ${body}
                     )}
                     {showCol('payment') && (
                     <td style={{ padding: '8px 14px' }}>
-                      <select value={r.payment_status || 'ยังไม่ชำระ'} onChange={e => handlePaymentStatus(r, e.target.value)}
-                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PAYMENT_STATUS_COLOR[r.payment_status] ?? '#f59e0b', padding: 0 }}>
-                        {PAYMENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
+                      <CreamSelect value={r.payment_status || 'ยังไม่ชำระ'} onChange={v => handlePaymentStatus(r, v)}
+                        className="cs-inline" menuMinWidth={150}
+                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: PAYMENT_STATUS_COLOR[r.payment_status] ?? '#C79A4B', padding: 0, display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'inherit' }}
+                        options={PAYMENT_STATUSES.map(st => ({ value: st, label: st, color: PAYMENT_STATUS_COLOR[st] }))}
+                        renderValue={o => (<>
+                          <span className="cs-value" style={{ color: 'inherit' }}>{o?.label ?? 'ยังไม่ชำระ'}</span>
+                          <svg className="cs-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+                        </>)} />
                     </td>
                     )}
                     {showCol('paid') && (
@@ -3457,7 +3490,7 @@ ${body}
                       {(!r.payment_status || r.payment_status === 'ยังไม่ชำระ') ? (
                         <div style={{ textAlign: 'right', color: 'var(--ink-4)' }}>-</div>
                       ) : r.payment_status === 'ชำระครบ' && r.paid_amount == null ? (
-                        <div style={{ textAlign: 'right', fontWeight: 600, color: '#22c55e' }}>{r.price != null ? Number(r.price).toLocaleString('th-TH') : '—'}</div>
+                        <div style={{ textAlign: 'right', fontWeight: 600, color: '#6F8F6A' }}>{r.price != null ? Number(r.price).toLocaleString('th-TH') : '—'}</div>
                       ) : numCell('paid_amount')}
                     </td>
                     )}
@@ -3466,83 +3499,81 @@ ${body}
                       {(r.payment_status === 'ชำระครบ' || !r.payment_status || r.payment_status === 'ยังไม่ชำระ') ? (
                         <div style={{ textAlign: 'right', color: 'var(--ink-4)' }}>-</div>
                       ) : autoDeposit != null ? (
-                        <div style={{ textAlign: 'right', fontWeight: 600, color: '#3b82f6' }}>{autoDeposit.toLocaleString('th-TH')}</div>
+                        <div style={{ textAlign: 'right', fontWeight: 600, color: '#6E8CA0' }}>{autoDeposit.toLocaleString('th-TH')}</div>
                       ) : numCell('deposit')}
                     </td>
                     )}
                     {showCol('assigned') && (
                     <td style={{ padding: '8px 14px' }}>
-                      <select value={r.order_assigned || 'รออัพเดท'} onChange={e => updateField(r.id, 'order_assigned', e.target.value)}
-                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.order_assigned && r.order_assigned !== 'รออัพเดท' ? 'var(--ink)' : 'var(--ink-4)', fontWeight: r.order_assigned && r.order_assigned !== 'รออัพเดท' ? 600 : 400, padding: 0 }}>
-                        {ORDER_ASSIGNED.map(o => <option key={o} value={o}>{o}</option>)}
-                      </select>
+                      {rowSelect(r.order_assigned || 'รออัพเดท', ORDER_ASSIGNED, v => updateField(r.id, 'order_assigned', v),
+                        { dim: !r.order_assigned || r.order_assigned === 'รออัพเดท', bold: !!r.order_assigned && r.order_assigned !== 'รออัพเดท' })}
                     </td>
                     )}
                     {/* แอดมิน — ช่องเดียวกับงานแพลตฟอร์ม (เลือกเองได้ · ระบบทับให้เมื่อแอดมินหลักแก้เนื้อออเดอร์) */}
                     {showCol('admin') && (
-                    <td style={{ padding: '8px 14px', background: r.admin_name ? undefined : EMPTY_HL }}>
-                      <select value={r.admin_name || ''} onChange={e => updateField(r.id, 'admin_name', e.target.value)}
-                        title="เลือกเองได้ · ระบบจะเปลี่ยนให้เองเมื่อมีแอดมินหลักมาแก้เนื้อออเดอร์"
-                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.admin_name ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 80 }}>
-                        <option value="">—</option>
-                        {ADMINS.map(a => <option key={a} value={a}>{a}</option>)}
-                      </select>
+                    <td className={r.admin_name ? undefined : 'ow-empty'} style={{ padding: '8px 14px' }}>
+                      {rowSelect(r.admin_name || '', ADMINS, v => updateField(r.id, 'admin_name', v),
+                        { blank: true, maxWidth: 80, dim: !r.admin_name, title: 'เลือกเองได้ · ระบบจะเปลี่ยนให้เองเมื่อมีแอดมินหลักมาแก้เนื้อออเดอร์' })}
                     </td>
                     )}
                     {showCol('status') && statusCell(r)}
                     {showCol('done') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                        <input type="checkbox" checked={!!r.is_urgent} onChange={e => toggleDone(r.id, e.target.checked)}
-                          style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, whiteSpace: 'nowrap' }}>
+                        <input type="checkbox" checked={tickVal(r.id, 'done', !!r.is_urgent)} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'done', e.target.checked) : toggleDone(r.id, e.target.checked)}
+                          style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                         {timeStamp(r, 'done_at')}
                       </div>
                     </td>
                     )}
                     {quickFilter !== 'install' && showCol('shipped') && (
                       <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                          <input type="checkbox" checked={r.order_status === 'จัดส่งแล้ว'} onChange={e => toggleShipped(r.id, e.target.checked)}
-                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
-                          {shippedStamp(r)}
-                          {Array.isArray(r.shipments) && r.shipments.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, whiteSpace: 'nowrap' }}>
+                          <input type="checkbox" checked={tickVal(r.id, 'shipped', r.order_status === 'จัดส่งแล้ว')} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'shipped', e.target.checked) : toggleShipped(r.id, e.target.checked)}
+                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
+                          {/* วันเวลาจัดส่ง + ปุ่มสถานะพัสดุ อยู่บรรทัดเดียวกัน (แถวสูง 2 บรรทัด) */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            {shippedStamp(r)}
+                            {Array.isArray(r.shipments) && r.shipments.length > 0 && (
                             <button onClick={() => { setTrackModal(r.id); setTrackError('') }} title="ดูสถานะพัสดุ"
-                              style={{ border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 6, padding: '1px 6px', fontSize: 10, cursor: 'pointer', color: 'var(--ink-2)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              style={{ border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 6, padding: '0 6px', fontSize: 10, lineHeight: '13px', cursor: 'pointer', color: 'var(--ink-2)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               📦 {thaiTrackStatus(r.shipments[0].status) || `${r.shipments.length} เลขพัสดุ`}
                             </button>
-                          )}
+                            )}
+                          </div>
                         </div>
                       </td>
                     )}
                     {quickFilter === 'install' && showCol('installed') && (
                       <td style={{ padding: '12px 14px', textAlign: 'center' }}>
-                        <select value={instStatus} onChange={e => handleInstallStatus(r, e.target.value)}
-                          style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: instStatus === 'ติดตั้งแล้ว' ? '#22c55e' : instStatus === 'ติดตั้ง50%' ? '#f59e0b' : 'var(--ink-4)', padding: 0 }}>
-                          <option value="">—</option>
-                          {INSTALL_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
+                        <CreamSelect value={instStatus} onChange={v => handleInstallStatus(r, v)}
+                          className="cs-inline" menuMinWidth={140}
+                          style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: 600, color: instStatus === 'ติดตั้งแล้ว' ? '#6F8F6A' : instStatus === 'ติดตั้ง50%' ? '#C79A4B' : 'var(--ink-4)', padding: 0, display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'inherit' }}
+                          options={[{ value: '', label: '—' }, ...INSTALL_STATUS_OPTIONS.map(st => ({ value: st, label: st }))]}
+                          renderValue={o => (<>
+                            <span className="cs-value" style={{ color: 'inherit' }}>{o?.label ?? '—'}</span>
+                            <svg className="cs-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+                          </>)} />
                       </td>
                     )}
                     {quickFilter === 'install' && showCol('inststatus') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center' }}>
                       {ins ? (
-                        <select value={normStatus(ins.installation_status)} onChange={e => saveInstMeta(r.id, { installation_status: e.target.value })}
-                          style={{ background: instColor(ins) + '22', color: instColor(ins), padding: '3px 8px', borderRadius: 980, fontWeight: 600, fontSize: 11, border: 'none', outline: 'none', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none' }}>
-                          {Array.from(new Set([...statusOptions(ins.work_type), normStatus(ins.installation_status)])).map(st => (
-                            <option key={st} value={st} style={{ background: '#fff', color: 'var(--ink)' }}>{statusLabel(st, ins.work_type)}</option>
-                          ))}
-                        </select>
+                        <CreamSelect value={normStatus(ins.installation_status)} onChange={v => saveInstMeta(r.id, { installation_status: v })}
+                          className="dn-pill ow-pill" style={{ color: '#6B4326', background: INST_PILL_BG[statusLabel(normStatus(ins.installation_status), ins.work_type)] ?? INST_PILL_BG[normStatus(ins.installation_status)] ?? '#EFE3D4' }} menuMinWidth={170}
+                          options={Array.from(new Set([...statusOptions(ins.work_type), normStatus(ins.installation_status)])).filter(Boolean).map(st => ({ value: st, label: statusLabel(st, ins.work_type) }))}
+                          renderValue={o => <span>{o?.label ?? '—'}</span>} />
                       ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
                     )}
                     {showCol('rail') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       {hasRail(r) ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                          <input type="checkbox" checked={!!r.rail_packed} onChange={e => toggleRailPacked(r.id, e.target.checked)}
-                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, whiteSpace: 'nowrap' }}>
+                          <input type="checkbox" checked={tickVal(r.id, 'rail', !!r.rail_packed)} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'rail', e.target.checked) : toggleRailPacked(r.id, e.target.checked)}
+                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                           {r.rail_packed && r.rail_packed_at && (
-                            <span style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3 }}>
+                            <span style={{ color: '#6F8F6A', fontSize: 10, lineHeight: 1.3 }}>
                               {new Date(r.rail_packed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
                               {new Date(r.rail_packed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                             </span>
@@ -3569,12 +3600,9 @@ ${body}
                     {/* ช่างเย็บ = ช่อง technician ของใบออเดอร์ (ตัวเลือกชุดเดียวกับคอลัมน์ "ช่าง" ในงานแพลตฟอร์ม)
                         คนละช่องกับ "ช่างติดตั้ง" ที่อยู่ในตาราง installations */}
                     {quickFilter === 'install' && showCol('tech') && (
-                    <td style={{ padding: '8px 14px', background: r.technician ? undefined : EMPTY_HL }}>
-                      <select value={r.technician || ''} onChange={e => updateField(r.id, 'technician', e.target.value)}
-                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.technician ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 100 }}>
-                        <option value="">—</option>
-                        {TECHS.map(t => <option key={t} value={t}>{t}</option>)}
-                      </select>
+                    <td className={r.technician ? undefined : 'ow-empty'} style={{ padding: '8px 14px' }}>
+                      {rowSelect(r.technician || '', TECHS, v => updateField(r.id, 'technician', v),
+                        { blank: true, maxWidth: 100, dim: !r.technician })}
                     </td>
                     )}
                     {showCol('address') && (
@@ -3613,7 +3641,7 @@ ${body}
         ) : (quickFilter === 'all' || quickFilter === 'claim' || quickFilter === 'shipped') ? (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
+              <tr style={{ borderBottom: '1px solid var(--border)', background: 'transparent' }}>
                 <th style={{ padding: '10px 14px', width: 36 }}>
                   <input type="checkbox" ref={selectAllRef}
                     checked={activeDisplayed.length > 0 && activeDisplayed.every(r => selectedIds.has(r.id))}
@@ -3627,7 +3655,7 @@ ${body}
                     วันผลิตที่เหลือ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openAllFilter === 'days' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 140 }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 140 }}>
                       {([['น้อยไปมาก', 'asc'], ['มากไปน้อย', 'desc']] as [string, 'asc'|'desc'][]).map(([label, val]) => (
                         <div key={val} onClick={() => { setAllDaysSort(val); setAllUpdatedSort(null); setCreatedSort(null); setOpenAllFilter(null) }}
                           style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: allDaysSort === val ? 600 : 400, color: allDaysSort === val ? 'var(--blue)' : 'var(--ink)', background: allDaysSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
@@ -3636,7 +3664,7 @@ ${body}
                       ))}
                       {/* filter งานเสร็จ: กดเพื่อดูเฉพาะงานเสร็จ กดซ้ำเพื่อยกเลิก */}
                       <div onClick={() => { setAllDoneFilter(allDoneFilter === true ? null : true); setOpenAllFilter(null) }}
-                        style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: allDoneFilter === true ? 600 : 400, color: allDoneFilter === true ? '#22c55e' : 'var(--ink)', background: allDoneFilter === true ? 'rgba(34,197,94,0.08)' : 'transparent', borderTop: '1px solid var(--border)' }}>
+                        style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: allDoneFilter === true ? 600 : 400, color: allDoneFilter === true ? '#6F8F6A' : 'var(--ink)', background: allDoneFilter === true ? 'rgba(34,197,94,0.08)' : 'transparent', borderTop: '1px solid var(--border)' }}>
                         งานเสร็จ {allDoneFilter === true && '✓'}
                       </div>
                     </div>
@@ -3650,7 +3678,7 @@ ${body}
                     ต้องส่งภายใน <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openAllFilter === 'deadline' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '12px 14px', minWidth: 220 }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '12px 14px', minWidth: 220 }}>
                       <div style={{ marginBottom: 8 }}>
                         <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>ตั้งแต่</label>
                         <input type="date" value={allDeadlineFrom} onChange={e => setAllDeadlineFrom(e.target.value)} style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, outline: 'none', boxSizing: 'border-box' as const }} />
@@ -3683,7 +3711,7 @@ ${body}
                     แพลตฟอร์ม{allPlatformFilters.length > 0 && ` (${allPlatformFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openAllFilter === 'platform' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 180, maxHeight: 280, overflowY: 'auto', padding: '6px 0' }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 180, maxHeight: 280, overflowY: 'auto', padding: '6px 0' }}>
                       {PLATFORMS.concat(OUTSIDE_PLATFORMS.filter(p => !PLATFORMS.includes(p))).map(p => (
                         <label key={p} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: allPlatformFilters.includes(p) ? 'var(--blue-bg)' : 'transparent' }}>
                           <input type="checkbox" checked={allPlatformFilters.includes(p)} onChange={() => setAllPlatformFilters(toggleArr(allPlatformFilters, p))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
@@ -3701,11 +3729,12 @@ ${body}
                     บริษัทจัดส่ง{allCourierFilters.length > 0 && ` (${allCourierFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openAllFilter === 'courier' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 200, maxHeight: 260, overflowY: 'auto', padding: '6px 0' }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 200, maxHeight: 260, overflowY: 'auto', padding: '6px 0' }}>
                       {['งานติดตั้ง', ...new Set(rows.map(r => r.courier).filter(Boolean))].map(c => (
                         <label key={c} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: allCourierFilters.includes(c!) ? 'var(--blue-bg)' : 'transparent' }}>
                           <input type="checkbox" checked={allCourierFilters.includes(c!)} onChange={() => setAllCourierFilters(toggleArr(allCourierFilters, c!))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
-                          {c === 'งานติดตั้ง' ? <span style={{ color: '#f97316', fontWeight: 600 }}>งานติดตั้ง</span> : c}
+                          <CourierIcon name={c === 'งานติดตั้ง' ? null : c!} install={c === 'งานติดตั้ง'} size={16} />
+                          {c === 'งานติดตั้ง' ? <span style={{ color: '#B5715A', fontWeight: 600 }}>งานติดตั้ง</span> : c}
                         </label>
                       ))}
                     </div>
@@ -3719,7 +3748,7 @@ ${body}
                     สถานะงาน{allStatusFilters.length > 0 && ` (${allStatusFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openAllFilter === 'status' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 160, padding: '6px 0' }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 160, padding: '6px 0' }}>
                       {[...PROD_STATUSES, ...INSTALL_STATUSES.filter(s => !PROD_STATUSES.includes(s))].map(s => (
                         <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: allStatusFilters.includes(s) ? 'var(--blue-bg)' : 'transparent' }}>
                           <input type="checkbox" checked={allStatusFilters.includes(s)} onChange={() => setAllStatusFilters(toggleArr(allStatusFilters, s))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
@@ -3734,11 +3763,11 @@ ${body}
                 {showCol('done') && (
                 <th style={{ textAlign: 'center', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
                   <button onClick={() => setOpenAllFilter(openAllFilter === 'done' ? null : 'done')}
-                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: allDoneFilter !== null ? '#22c55e' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: allDoneFilter !== null ? '#6F8F6A' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
                     งานเสร็จ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openAllFilter === 'done' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 150, padding: '6px 0' }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 150, padding: '6px 0' }}>
                       {([['ทั้งหมด', null], ['งานเสร็จเท่านั้น', true], ['ยังไม่เสร็จ', false]] as [string, boolean|null][]).map(([label, val]) => (
                         <button key={String(label)} onClick={() => { setAllDoneFilter(val); setOpenAllFilter(null) }}
                           style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', fontSize: 12, border: 'none', cursor: 'pointer', background: allDoneFilter === val ? 'var(--blue-bg)' : 'transparent', color: allDoneFilter === val ? 'var(--blue)' : 'var(--ink)', fontWeight: allDoneFilter === val ? 600 : 400 }}>
@@ -3765,7 +3794,7 @@ ${body}
                     แก้ไขล่าสุด <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openAllFilter === 'updated' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 160 }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 160 }}>
                       {([['ใหม่สุด-เก่าสุด', 'desc'], ['เก่าสุด-ใหม่สุด', 'asc']] as [string, 'asc'|'desc'][]).map(([label, val]) => (
                         <div key={val} onClick={() => { setAllUpdatedSort(val); setAllDaysSort(null); setCreatedSort(null); setOpenAllFilter(null) }}
                           style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: allUpdatedSort === val ? 600 : 400, color: allUpdatedSort === val ? 'var(--blue)' : 'var(--ink)', background: allUpdatedSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
@@ -3780,12 +3809,12 @@ ${body}
               </tr>
             </thead>
             <tbody>
-              {displayedAll.map(r => {
+              {pageSlice(displayedAll).map(r => {
                 const isOutsideRow = OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation
                 const allEffective = effectiveDueDate(r)   // งานนอก/ติดตั้ง=deadline · แพลตฟอร์ม=effShipping (lib/orderTabs.ts)
                 const allDays = allEffective ? daysRemaining(allEffective) : null
                 return (
-                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : r.pinned ? '#F2F2F2' : 'transparent' }}>
+                  <tr key={r.id} className={r.pinned ? 'is-pinned' : undefined} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : r.pinned ? '#F7F0E8' : 'transparent' }}>
                     <td style={{ padding: '12px 14px' }}>
                       <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)}
                         style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
@@ -3793,9 +3822,9 @@ ${body}
                     {showCol('days') && (
                     <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>
                       {r.order_status === 'จัดส่งแล้ว' ? (
-                        <span style={{ fontWeight: 700, color: '#22c55e' }}>งานเสร็จแล้ว</span>
+                        <span style={{ fontWeight: 700, color: '#6F8F6A' }}>งานเสร็จแล้ว</span>
                       ) : r.is_urgent ? (
-                        <span style={{ fontWeight: 700, color: '#22c55e' }}>งานเสร็จ</span>
+                        <span style={{ fontWeight: 700, color: '#6F8F6A' }}>งานเสร็จ</span>
                       ) : allDays !== null ? (
                         <span style={{ fontWeight: 700, color: daysColor(allDays) }}>
                           {daysLabel(allDays)}
@@ -3804,12 +3833,12 @@ ${body}
                     </td>
                     )}
                     {showCol('deadline') && (
-                    <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', fontWeight: 500, color: '#bf5af2' }}>
+                    <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', fontWeight: 500, color: '#9A7BA0' }}>
                       {!isOutsideRow ? (
-                        r.order_status === 'จัดส่งแล้ว' ? <span style={{ color: '#22c55e', fontWeight: 700 }}>จัดส่งแล้ว</span>
+                        r.order_status === 'จัดส่งแล้ว' ? <span style={{ color: '#6F8F6A', fontWeight: 700 }}>จัดส่งแล้ว</span>
                         : shipDtCell(r, allEffective)
                       ) : (
-                        r.order_status === 'จัดส่งแล้ว' ? <span style={{ color: '#22c55e', fontWeight: 700 }}>จัดส่งแล้ว</span>
+                        r.order_status === 'จัดส่งแล้ว' ? <span style={{ color: '#6F8F6A', fontWeight: 700 }}>จัดส่งแล้ว</span>
                         : r.deadline ? new Date(r.deadline).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>รอกำหนด</span>
                       )}
                     </td>
@@ -3824,26 +3853,30 @@ ${body}
                     </td>
                     )}
                     {showCol('customer') && (
-                    <td style={{ padding: '12px 14px' }}>
+                    <td style={{ padding: '12px 14px', minWidth: 140 }}>
                       {r.customer_name
-                        ? <Link href={`/customers?name=${encodeURIComponent(r.customer_name)}`} title="ดูประวัติลูกค้า" style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>{r.customer_name}</Link>
+                        ? <Link href={`/customers?name=${encodeURIComponent(r.customer_name)}`} title={r.customer_name} style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word', maxWidth: 180 }}>{r.customer_name}</Link>
                         : <span style={{ color: 'var(--ink-4)' }}>-</span>}
                     </td>
                     )}
                     {showCol('platform') && (
-                    <td style={{ padding: '12px 14px', color: 'var(--ink-3)' }}>{r.platform || '-'}</td>
+                    <td style={{ padding: '12px 14px', color: 'var(--ink-2)' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>{r.platform && <PlatformIcon name={r.platform} size={18} />}{r.platform || '-'}</span></td>
                     )}
                     {showCol('courier') && (
                     <td style={{ padding: '12px 14px', color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
-                      {r.is_installation ? <span style={{ color: '#f97316', fontWeight: 600 }}>งานติดตั้ง</span> : r.courier || <span style={{ color: 'var(--ink-4)' }}>-</span>}
+                      {r.is_installation
+                        ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><CourierIcon name={null} install size={18} />งานติดตั้ง</span>
+                        : r.courier
+                          ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><CourierIcon name={r.courier} size={18} />{r.courier}</span>
+                          : <span style={{ color: 'var(--ink-4)' }}>-</span>}
                     </td>
                     )}
                     {showCol('status') && statusCell(r)}
                     {showCol('done') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                        <input type="checkbox" checked={!!r.is_urgent} onChange={e => toggleDone(r.id, e.target.checked)}
-                          style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, whiteSpace: 'nowrap' }}>
+                        <input type="checkbox" checked={tickVal(r.id, 'done', !!r.is_urgent)} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'done', e.target.checked) : toggleDone(r.id, e.target.checked)}
+                          style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                         {timeStamp(r, 'done_at')}
                       </div>
                     </td>
@@ -3853,16 +3886,19 @@ ${body}
                       {r.is_installation ? (
                         <span style={{ color: 'var(--ink-4)' }}>-</span>
                       ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                          <input type="checkbox" checked={r.order_status === 'จัดส่งแล้ว'} onChange={e => toggleShipped(r.id, e.target.checked)}
-                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
-                          {shippedStamp(r)}
-                          {Array.isArray(r.shipments) && r.shipments.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, whiteSpace: 'nowrap' }}>
+                          <input type="checkbox" checked={tickVal(r.id, 'shipped', r.order_status === 'จัดส่งแล้ว')} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'shipped', e.target.checked) : toggleShipped(r.id, e.target.checked)}
+                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
+                          {/* วันเวลาจัดส่ง + ปุ่มสถานะพัสดุ อยู่บรรทัดเดียวกัน (แถวสูง 2 บรรทัด) */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            {shippedStamp(r)}
+                            {Array.isArray(r.shipments) && r.shipments.length > 0 && (
                             <button onClick={() => { setTrackModal(r.id); setTrackError('') }} title="ดูสถานะพัสดุ"
-                              style={{ border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 6, padding: '1px 6px', fontSize: 10, cursor: 'pointer', color: 'var(--ink-2)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              style={{ border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 6, padding: '0 6px', fontSize: 10, lineHeight: '13px', cursor: 'pointer', color: 'var(--ink-2)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               📦 {thaiTrackStatus(r.shipments[0].status) || `${r.shipments.length} เลขพัสดุ`}
                             </button>
-                          )}
+                            )}
+                          </div>
                         </div>
                       )}
                     </td>
@@ -3870,11 +3906,11 @@ ${body}
                     {showCol('rail') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       {hasRail(r) ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                          <input type="checkbox" checked={!!r.rail_packed} onChange={e => toggleRailPacked(r.id, e.target.checked)}
-                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, whiteSpace: 'nowrap' }}>
+                          <input type="checkbox" checked={tickVal(r.id, 'rail', !!r.rail_packed)} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'rail', e.target.checked) : toggleRailPacked(r.id, e.target.checked)}
+                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                           {r.rail_packed && r.rail_packed_at && (
-                            <span style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3 }}>
+                            <span style={{ color: '#6F8F6A', fontSize: 10, lineHeight: 1.3 }}>
                               {new Date(r.rail_packed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
                               {new Date(r.rail_packed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                             </span>
@@ -3911,7 +3947,7 @@ ${body}
                     )}
                     <td style={{ padding: '8px 14px' }}>
                       <button onClick={e => { const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); if (openAction === r.id) { setOpenAction(null); setActionRect(null) } else { setOpenAction(r.id); setActionRect(rect) } }}
-                        style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: openAction === r.id ? 'var(--bg)' : '#fff', cursor: 'pointer', fontSize: 16, color: copiedId === r.id ? '#34c759' : 'var(--ink-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', letterSpacing: 1, transition: 'color 0.2s' }}>
+                        style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: openAction === r.id ? 'var(--bg)' : '#fff', cursor: 'pointer', fontSize: 16, color: copiedId === r.id ? '#6F8F6A' : 'var(--ink-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', letterSpacing: 1, transition: 'color 0.2s' }}>
                         {copiedId === r.id ? '✓' : '···'}
                       </button>
                     </td>
@@ -3923,7 +3959,7 @@ ${body}
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
+              <tr style={{ borderBottom: '1px solid var(--border)', background: 'transparent' }}>
                 <th style={{ padding: '10px 14px', width: 36 }}>
                   <input type="checkbox"
                     ref={selectAllRef}
@@ -3938,7 +3974,7 @@ ${body}
                     วันผลิตที่เหลือ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openFilter === 'days' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 140 }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 140 }}>
                       {([['น้อยไปมาก', 'asc'], ['มากไปน้อย', 'desc']] as [string, 'asc' | 'desc'][]).map(([label, val]) => (
                         <div key={label} onClick={() => { setSortOrder(computeSortOrder(rows, val)); setDaysSort(val); setUpdatedSort(null); setCreatedSort(null); setShipDateSort(null); setOpenFilter(null) }}
                           style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: daysSort === val ? 600 : 400, color: daysSort === val ? 'var(--blue)' : 'var(--ink)', background: daysSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
@@ -3947,7 +3983,7 @@ ${body}
                       ))}
                       {/* filter งานเสร็จ: กดเพื่อดูเฉพาะงานเสร็จ กดซ้ำเพื่อยกเลิก */}
                       <div onClick={() => { setUrgentFilter(urgentFilter === true ? null : true); setOpenFilter(null) }}
-                        style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: urgentFilter === true ? 600 : 400, color: urgentFilter === true ? '#22c55e' : 'var(--ink)', background: urgentFilter === true ? 'rgba(34,197,94,0.08)' : 'transparent', borderTop: '1px solid var(--border)' }}>
+                        style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: urgentFilter === true ? 600 : 400, color: urgentFilter === true ? '#6F8F6A' : 'var(--ink)', background: urgentFilter === true ? 'rgba(34,197,94,0.08)' : 'transparent', borderTop: '1px solid var(--border)' }}>
                         งานเสร็จ {urgentFilter === true && '✓'}
                       </div>
                     </div>
@@ -3961,7 +3997,7 @@ ${body}
                     ต้องส่งภายใน <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openFilter === 'shipping' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '12px 14px', minWidth: 220 }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '12px 14px', minWidth: 220 }}>
                       <div style={{ marginBottom: 10 }}>
                         <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>ตั้งแต่วันที่</label>
                         <input type="date" value={shippingDateFrom} onChange={e => setShippingDateFrom(e.target.value)}
@@ -4002,7 +4038,7 @@ ${body}
                     แพลตฟอร์ม{platformFilters.length > 0 && ` (${platformFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openFilter === 'platform' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 180, maxHeight: 280, overflowY: 'auto', padding: '6px 0' }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 180, maxHeight: 280, overflowY: 'auto', padding: '6px 0' }}>
                       {PLATFORMS.map(p => (
                         <label key={p} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--ink)', fontWeight: 400, background: platformFilters.includes(p) ? 'var(--blue-bg)' : 'transparent' }}>
                           <input type="checkbox" checked={platformFilters.includes(p)} onChange={() => setPlatformFilters(toggleArr(platformFilters, p))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
@@ -4020,10 +4056,11 @@ ${body}
                     บริษัทส่ง{courierFilters.length > 0 && ` (${courierFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openFilter === 'courier' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 260, maxHeight: 280, overflowY: 'auto', padding: '6px 0' }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 260, maxHeight: 280, overflowY: 'auto', padding: '6px 0' }}>
                       {[...new Set([...rows.map(r => r.courier).filter(Boolean), 'Flash Express Bulky', 'LEX TH', 'J&T Express'])].sort().map(c => (
                         <label key={c} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--ink)', fontWeight: 400, background: courierFilters.includes(c!) ? 'var(--blue-bg)' : 'transparent' }}>
                           <input type="checkbox" checked={courierFilters.includes(c!)} onChange={() => setCourierFilters(toggleArr(courierFilters, c!))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
+                          <CourierIcon name={c!} size={16} />
                           {c}
                         </label>
                       ))}
@@ -4038,7 +4075,7 @@ ${body}
                     วันที่ชำระ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openFilter === 'pay-date' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 170 }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 170 }}>
                       {([['ใหม่สุด → เก่าสุด', 'desc'], ['เก่าสุด → ใหม่สุด', 'asc'], ['ไม่เรียง', null]] as [string, 'asc'|'desc'|null][]).map(([label, val]) => (
                         <div key={label} onClick={() => { setCreatedSort(val); setShipDateSort(null); setOpenFilter(null) }}
                           style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: createdSort === val ? 600 : 400, color: createdSort === val ? 'var(--blue)' : 'var(--ink)', background: createdSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
@@ -4056,7 +4093,7 @@ ${body}
                     วันที่ต้องส่ง <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openFilter === 'ship-date' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 170 }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 170 }}>
                       {([['ใหม่สุด → เก่าสุด', 'desc'], ['เก่าสุด → ใหม่สุด', 'asc'], ['ไม่เรียง', null]] as [string, 'asc'|'desc'|null][]).map(([label, val]) => (
                         <div key={label} onClick={() => { setShipDateSort(val); setCreatedSort(null); setOpenFilter(null) }}
                           style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: shipDateSort === val ? 600 : 400, color: shipDateSort === val ? 'var(--blue)' : 'var(--ink)', background: shipDateSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
@@ -4074,7 +4111,7 @@ ${body}
                     แอดมิน{adminFilters.length > 0 && ` (${adminFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openFilter === 'admin' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 140, padding: '6px 0' }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 140, padding: '6px 0' }}>
                       {adminNames.map(a => (
                         <label key={a} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--ink)', fontWeight: 400, background: adminFilters.includes(a) ? 'var(--blue-bg)' : 'transparent' }}>
                           <input type="checkbox" checked={adminFilters.includes(a)} onChange={() => setAdminFilters(toggleArr(adminFilters, a))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
@@ -4092,7 +4129,7 @@ ${body}
                     ช่าง{techFilters.length > 0 && ` (${techFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openFilter === 'tech' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 160, padding: '6px 0' }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 160, padding: '6px 0' }}>
                       {TECHS.map(t => (
                         <label key={t} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--ink)', fontWeight: 400, background: techFilters.includes(t) ? 'var(--blue-bg)' : 'transparent' }}>
                           <input type="checkbox" checked={techFilters.includes(t)} onChange={() => setTechFilters(toggleArr(techFilters, t))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
@@ -4110,7 +4147,7 @@ ${body}
                     สถานะงาน{statusFilters.length > 0 && ` (${statusFilters.length})`} <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openFilter === 'status' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 160, padding: '6px 0' }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 160, padding: '6px 0' }}>
                       {PROD_STATUSES.map(s => (
                         <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--ink)', fontWeight: 400, background: statusFilters.includes(s) ? 'var(--blue-bg)' : 'transparent' }}>
                           <input type="checkbox" checked={statusFilters.includes(s)} onChange={() => setStatusFilters(toggleArr(statusFilters, s))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
@@ -4128,11 +4165,11 @@ ${body}
                 {showCol('done') && (
                 <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 500, whiteSpace: 'nowrap', position: 'relative' }}>
                   <button onClick={() => setOpenFilter(openFilter === 'urgent' ? null : 'urgent')}
-                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: urgentFilter ? '#22c55e' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: urgentFilter ? '#6F8F6A' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
                     งานเสร็จ <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openFilter === 'urgent' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 150, padding: '6px 0' }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, minWidth: 150, padding: '6px 0' }}>
                       {[['ทั้งหมด', null], ['งานเสร็จเท่านั้น', true], ['ยังไม่เสร็จ', false]].map(([label, val]) => (
                         <button key={String(label)} onClick={() => { setUrgentFilter(val as boolean); setOpenFilter(null) }}
                           style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', fontSize: 12, border: 'none', cursor: 'pointer', background: urgentFilter === val ? 'var(--blue-bg)' : 'transparent', color: urgentFilter === val ? 'var(--blue)' : 'var(--ink)', fontWeight: urgentFilter === val ? 600 : 400 }}>
@@ -4165,7 +4202,7 @@ ${body}
                     เวลาที่แก้ไข <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
                   </button>
                   {openFilter === 'updated' && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 150 }}>
+                    <div className="ow-drop" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 150 }}>
                       {([['ใหม่สุด-เก่าสุด', 'desc'], ['เก่าสุด-ใหม่สุด', 'asc']] as [string, 'asc' | 'desc'][]).map(([label, val]) => (
                         <div key={label} onClick={() => { setUpdatedSort(val); setDaysSort(null); setCreatedSort(null); setShipDateSort(null); setOpenFilter(null) }}
                           style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: updatedSort === val ? 600 : 400, color: updatedSort === val ? 'var(--blue)' : 'var(--ink)', background: updatedSort === val ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
@@ -4180,11 +4217,11 @@ ${body}
               </tr>
             </thead>
             <tbody>
-              {displayed.map(r => {
+              {pageSlice(displayed).map(r => {
                 const effectiveShipping = effShipping(r)
                 const days = effectiveShipping ? daysRemaining(effectiveShipping) : null
                 return (
-                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : r.pinned ? '#F2F2F2' : 'transparent' }}>
+                  <tr key={r.id} className={r.pinned ? 'is-pinned' : undefined} style={{ borderBottom: '1px solid var(--border)', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : r.pinned ? '#F7F0E8' : 'transparent' }}>
                     <td style={{ padding: '12px 14px' }}>
                       <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)}
                         style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
@@ -4192,9 +4229,9 @@ ${body}
                     {showCol('days') && (
                     <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>
                       {r.order_status === 'จัดส่งแล้ว' ? (
-                        <span style={{ fontWeight: 700, color: '#22c55e' }}>งานเสร็จแล้ว</span>
+                        <span style={{ fontWeight: 700, color: '#6F8F6A' }}>งานเสร็จแล้ว</span>
                       ) : r.is_urgent ? (
-                        <span style={{ fontWeight: 700, color: '#22c55e' }}>งานเสร็จ</span>
+                        <span style={{ fontWeight: 700, color: '#6F8F6A' }}>งานเสร็จ</span>
                       ) : days !== null ? (
                         <span style={{ fontWeight: 700, color: daysColor(days) }}>
                           {daysLabel(days)}
@@ -4203,9 +4240,9 @@ ${body}
                     </td>
                     )}
                     {showCol('shipping') && (
-                    <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', fontWeight: 500, color: '#bf5af2' }}>
+                    <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', fontWeight: 500, color: '#9A7BA0' }}>
                       {r.order_status === 'จัดส่งแล้ว' ? (
-                        <span style={{ color: '#22c55e', fontWeight: 700 }}>จัดส่งแล้ว</span>
+                        <span style={{ color: '#6F8F6A', fontWeight: 700 }}>จัดส่งแล้ว</span>
                       ) : shipDtCell(r, effectiveShipping)}
                     </td>
                     )}
@@ -4214,9 +4251,9 @@ ${body}
                     <td style={{ padding: '12px 14px', color: 'var(--ink)', fontWeight: 600 }}>{r.order_number || '-'}</td>
                     )}
                     {showCol('customer') && (
-                    <td style={{ padding: '12px 14px' }}>
+                    <td style={{ padding: '12px 14px', minWidth: 140 }}>
                       {r.customer_name
-                        ? <Link href={`/customers?name=${encodeURIComponent(r.customer_name)}`} title="ดูประวัติลูกค้า" style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>{r.customer_name}</Link>
+                        ? <Link href={`/customers?name=${encodeURIComponent(r.customer_name)}`} title={r.customer_name} style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'none', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word', maxWidth: 180 }}>{r.customer_name}</Link>
                         : <span style={{ color: 'var(--ink-4)' }}>-</span>}
                     </td>
                     )}
@@ -4225,7 +4262,7 @@ ${body}
                       {r.price ? `${r.price.toLocaleString('th-TH')} ฿` : '-'}
                       {r.net_income != null && (
                         <div title={`ยอดโอนจริงจากไฟล์รายรับ Shopee${r.net_income_at ? ` · โอนเมื่อ ${r.net_income_at}` : ''}`}
-                          style={{ fontSize: 11, fontWeight: 600, color: '#16a34a' }}>รับจริง {r.net_income.toLocaleString('th-TH')} ฿</div>
+                          style={{ fontSize: 11, fontWeight: 600, color: '#5F7F5A' }}>รับจริง {r.net_income.toLocaleString('th-TH')} ฿</div>
                       )}
                     </td>
                     )}
@@ -4234,13 +4271,13 @@ ${body}
                       <button onClick={() => { openItemsModal(r) }}
                         style={{ border: 'none', background: 'transparent', fontSize: 11, cursor: 'pointer', padding: 0, color: r.items?.length ? 'var(--ink)' : 'var(--ink-4)', textAlign: 'left', display: 'block', width: '100%' }}>
                         {r.items?.length ? (
-                          <div>
-                            {/* โชว์ไม่เกิน 3 บรรทัด — รายการเยอะแค่ไหนแถวก็ไม่ยืด (กดเปิดดูรายการเต็มได้) */}
-                            {formatItemLines(r.items).slice(0, ITEM_LINE_MAX).map((line, i) => (
-                              <div key={i} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 230, lineHeight: '1.6', color: i === 0 ? 'var(--ink)' : 'var(--ink-3)' }}>{line}</div>
+                          // แถวสูง 2 บรรทัด: มี 2 รายการ = โชว์ครบ · เกิน = รายการแรก + "+ อีก N รายการ" · ชี้เมาส์ดูครบทุกรายการ
+                          <div title={formatItemLines(r.items).join('\n')} style={{ maxWidth: 230 }}>
+                            {formatItemLines(r.items).slice(0, formatItemLines(r.items).length > 2 ? 1 : 2).map((line, i) => (
+                              <div key={i} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: i === 0 ? 'var(--ink)' : 'var(--ink-3)' }}>{line}</div>
                             ))}
-                            {formatItemLines(r.items).length > ITEM_LINE_MAX && (
-                              <div style={{ fontSize: 10, color: 'var(--ink-4)' }}>+ อีก {formatItemLines(r.items).length - ITEM_LINE_MAX} รายการ</div>
+                            {formatItemLines(r.items).length > 2 && (
+                              <div style={{ fontSize: 10, color: 'var(--ink-4)' }}>+ อีก {formatItemLines(r.items).length - 1} รายการ</div>
                             )}
                           </div>
                         ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
@@ -4248,16 +4285,19 @@ ${body}
                     </td>
                     )}
                     {showCol('platform') && (
-                    <td style={{ padding: '12px 14px', color: 'var(--ink-3)' }}>{r.platform || '-'}</td>
+                    <td style={{ padding: '12px 14px', color: 'var(--ink-2)' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>{r.platform && <PlatformIcon name={r.platform} size={18} />}{r.platform || '-'}</span></td>
                     )}
                     {showCol('courier') && (
-                    <td style={{ padding: '12px 14px', color: 'var(--ink-3)', maxWidth: 140 }}>
-                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.courier || '-'}</div>
+                    <td style={{ padding: '12px 14px', color: 'var(--ink-3)', maxWidth: 170 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                        {r.courier && <CourierIcon name={r.courier} size={18} />}
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.courier || '-'}</span>
+                      </div>
                     </td>
                     )}
                     {showCol('pay_date') && (
                     <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', color: 'var(--ink-3)' }}>
-                      {r.entry_date ? new Date(r.entry_date).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : <span style={{ color: '#f59e0b', fontWeight: 500 }}>ยังไม่ชำระ</span>}
+                      {r.entry_date ? new Date(r.entry_date).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : <span style={{ color: '#C79A4B', fontWeight: 500 }}>ยังไม่ชำระ</span>}
                     </td>
                     )}
                     {showCol('ship_date') && (
@@ -4268,63 +4308,59 @@ ${body}
                     {showCol('admin') && (
                     // เลือกเองได้เหมือนเดิม + ระบบเปลี่ยนให้เองเมื่อมีแอดมินหลักมาแก้เนื้อออเดอร์ (lib/adminActor.ts)
                     // ยังไม่ได้ลงชื่อ = ไฮไลต์เหลืองให้เห็นว่าตกหล่น (user สั่ง 4 ส.ค. 69)
-                    <td style={{ padding: '8px 14px', background: r.admin_name ? undefined : EMPTY_HL }}>
-                      <select value={r.admin_name || ''} onChange={e => updateField(r.id, 'admin_name', e.target.value)}
-                        title="เลือกเองได้ · ระบบจะเปลี่ยนให้เองเมื่อมีแอดมินหลักมาแก้เนื้อออเดอร์"
-                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.admin_name ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 80 }}>
-                        <option value="">—</option>
-                        {ADMINS.map(a => <option key={a} value={a}>{a}</option>)}
-                      </select>
+                    <td className={r.admin_name ? undefined : 'ow-empty'} style={{ padding: '8px 14px' }}>
+                      {rowSelect(r.admin_name || '', ADMINS, v => updateField(r.id, 'admin_name', v),
+                        { blank: true, maxWidth: 80, dim: !r.admin_name, title: 'เลือกเองได้ · ระบบจะเปลี่ยนให้เองเมื่อมีแอดมินหลักมาแก้เนื้อออเดอร์' })}
                     </td>
                     )}
                     {showCol('tech') && (
-                    <td style={{ padding: '8px 14px', background: r.technician ? undefined : EMPTY_HL }}>
-                      <select value={r.technician || ''} onChange={e => updateField(r.id, 'technician', e.target.value)}
-                        style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', color: r.technician ? 'var(--ink)' : 'var(--ink-4)', padding: 0, maxWidth: 100 }}>
-                        <option value="">—</option>
-                        {TECHS.map(t => <option key={t} value={t}>{t}</option>)}
-                      </select>
+                    <td className={r.technician ? undefined : 'ow-empty'} style={{ padding: '8px 14px' }}>
+                      {rowSelect(r.technician || '', TECHS, v => updateField(r.id, 'technician', v),
+                        { blank: true, maxWidth: 100, dim: !r.technician })}
                     </td>
                     )}
                     {showCol('status') && statusCell(r)}
                     {showCol('dropoff') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center' }}>
-                      <input type="checkbox" checked={!!r.is_dropoff} onChange={e => updateField(r.id, 'is_dropoff', e.target.checked)}
-                        style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6366f1' }} />
+                      <input type="checkbox" checked={tickVal(r.id, 'dropoff', !!r.is_dropoff)} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'dropoff', e.target.checked) : updateField(r.id, 'is_dropoff', e.target.checked)}
+                        style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#7B7FA3' }} />
                     </td>
                     )}
                     {showCol('done') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                        <input type="checkbox" checked={!!r.is_urgent} onChange={e => toggleDone(r.id, e.target.checked)}
-                          style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, whiteSpace: 'nowrap' }}>
+                        <input type="checkbox" checked={tickVal(r.id, 'done', !!r.is_urgent)} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'done', e.target.checked) : toggleDone(r.id, e.target.checked)}
+                          style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                         {timeStamp(r, 'done_at')}
                       </div>
                     </td>
                     )}
                     {showCol('shipped') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                        <input type="checkbox" checked={r.order_status === 'จัดส่งแล้ว'} onChange={e => toggleShipped(r.id, e.target.checked)}
-                          style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
-                        {shippedStamp(r)}
-                        {Array.isArray(r.shipments) && r.shipments.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, whiteSpace: 'nowrap' }}>
+                        <input type="checkbox" checked={tickVal(r.id, 'shipped', r.order_status === 'จัดส่งแล้ว')} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'shipped', e.target.checked) : toggleShipped(r.id, e.target.checked)}
+                          style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
+                        {/* วันเวลาจัดส่ง + ปุ่มสถานะพัสดุ อยู่บรรทัดเดียวกัน (แถวสูง 2 บรรทัด) */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          {shippedStamp(r)}
+                          {Array.isArray(r.shipments) && r.shipments.length > 0 && (
                           <button onClick={() => { setTrackModal(r.id); setTrackError('') }} title="ดูสถานะพัสดุ"
-                            style={{ border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 6, padding: '1px 6px', fontSize: 10, cursor: 'pointer', color: 'var(--ink-2)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            style={{ border: '1px solid var(--border)', background: 'var(--bg)', borderRadius: 6, padding: '0 6px', fontSize: 10, lineHeight: '13px', cursor: 'pointer', color: 'var(--ink-2)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             📦 {thaiTrackStatus(r.shipments[0].status) || `${r.shipments.length} เลขพัสดุ`}
                           </button>
-                        )}
+                          )}
+                        </div>
                       </div>
                     </td>
                     )}
                     {showCol('rail') && (
                     <td style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       {hasRail(r) ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                          <input type="checkbox" checked={!!r.rail_packed} onChange={e => toggleRailPacked(r.id, e.target.checked)}
-                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#22c55e' }} />
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, whiteSpace: 'nowrap' }}>
+                          <input type="checkbox" checked={tickVal(r.id, 'rail', !!r.rail_packed)} onChange={e => DEMO_LOCAL_TICKS ? tickSet(r.id, 'rail', e.target.checked) : toggleRailPacked(r.id, e.target.checked)}
+                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
                           {r.rail_packed && r.rail_packed_at && (
-                            <span style={{ color: '#22c55e', fontSize: 10, lineHeight: 1.3 }}>
+                            <span style={{ color: '#6F8F6A', fontSize: 10, lineHeight: 1.3 }}>
                               {new Date(r.rail_packed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
                               {new Date(r.rail_packed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                             </span>
@@ -4342,14 +4378,10 @@ ${body}
                           onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
                           style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: '100%', outline: 'none', padding: '2px 0' }} />
                       ) : (
-                        <div onClick={() => setEditCell({ id: r.id, field: 'outsource', val: r.outsource ?? '' })} style={{ cursor: 'text', minWidth: 60 }}>
+                        // แถวสูง 1 บรรทัด — วันเวลาที่ลงสั่งนอก ชี้เมาส์ดูในทูลทิป
+                        <div onClick={() => setEditCell({ id: r.id, field: 'outsource', val: r.outsource ?? '' })} style={{ cursor: 'text', minWidth: 60 }}
+                          title={r.outsource ? `${r.outsource}${r.outsource_at ? ` · ลงเมื่อ ${new Date(r.outsource_at).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}` : ''}` : undefined}>
                           <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: r.outsource ? 'var(--ink)' : 'var(--ink-4)' }}>{r.outsource || '—'}</div>
-                          {r.outsource && r.outsource_at && (
-                            <div style={{ color: 'var(--ink-4)', fontSize: 10, lineHeight: 1.3 }}>
-                              {new Date(r.outsource_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
-                              {new Date(r.outsource_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-                            </div>
-                          )}
                         </div>
                       )}
                     </td>
@@ -4398,7 +4430,7 @@ ${body}
                     )}
                     <td style={{ padding: '8px 14px' }}>
                       <button onClick={e => { const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); if (openAction === r.id) { setOpenAction(null); setActionRect(null) } else { setOpenAction(r.id); setActionRect(rect) } }}
-                        style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: openAction === r.id ? 'var(--bg)' : '#fff', cursor: 'pointer', fontSize: 16, color: copiedId === r.id ? '#34c759' : 'var(--ink-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', letterSpacing: 1, transition: 'color 0.2s' }}>
+                        style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: openAction === r.id ? 'var(--bg)' : '#fff', cursor: 'pointer', fontSize: 16, color: copiedId === r.id ? '#6F8F6A' : 'var(--ink-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', letterSpacing: 1, transition: 'color 0.2s' }}>
                         {copiedId === r.id ? '✓' : '···'}
                       </button>
                     </td>
@@ -4409,6 +4441,28 @@ ${body}
           </table>
         )}
         </div>
+        {!loading && activeDisplayed.length > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 22px', borderTop: '1px solid var(--hairline)', flexWrap: 'wrap', gap: 10 }}>
+            <span style={{ fontSize: 12.5, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>
+              แสดง {((curPage - 1) * PAGE_SIZE + 1).toLocaleString()} - {Math.min(curPage * PAGE_SIZE, activeDisplayed.length).toLocaleString()} จากทั้งหมด {activeDisplayed.length.toLocaleString()} รายการ
+            </span>
+            {pageCount > 1 && (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <button className="pg-btn" disabled={curPage === 1} onClick={() => setPage(curPage - 1)} aria-label="หน้าก่อน">‹</button>
+                {(() => {
+                  // โชว์หน้าแรก/สุดท้าย + รอบหน้าปัจจุบัน ที่เว้นใส่ …
+                  const nums = [...new Set([1, curPage - 1, curPage, curPage + 1, pageCount])].filter(n => n >= 1 && n <= pageCount).sort((a, b) => a - b)
+                  const out: (number | '…')[] = []
+                  nums.forEach((n, i) => { if (i && n - nums[i - 1] > 1) out.push('…'); out.push(n) })
+                  return out.map((n, i) => n === '…'
+                    ? <span key={`g${i}`} style={{ color: 'var(--ink-4)', padding: '0 2px' }}>…</span>
+                    : <button key={n} className="pg-btn" data-active={n === curPage || undefined} onClick={() => setPage(n)}>{n}</button>)
+                })()}
+                <button className="pg-btn" disabled={curPage === pageCount} onClick={() => setPage(curPage + 1)} aria-label="หน้าถัดไป">›</button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Global action dropdown */}
@@ -4416,7 +4470,7 @@ ${body}
         const r = rows.find(row => row.id === openAction)
         if (!r) return null
         return (
-          <AnchoredMenu rect={actionRect}>
+          <AnchoredMenu rect={actionRect} className="ow-drop">
             {/* ปักหมุด — ใบที่ปักไว้ลอยขึ้นบนสุดของแท็บ + พื้นหลังเทาจาง (เห็นตรงกันทั้งทีม) */}
             <button onClick={() => { setOpenAction(null); setActionRect(null); void togglePin(r.id) }}
               style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: r.pinned ? 'var(--red)' : 'var(--ink)' }}>
@@ -4424,7 +4478,7 @@ ${body}
               {r.pinned ? 'เอาหมุดออก' : 'ปักหมุด'}
             </button>
             <button onClick={() => copyOrderText(r)}
-              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: copiedId === r.id ? '#34c759' : 'var(--ink)' }}>
+              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: copiedId === r.id ? '#6F8F6A' : 'var(--ink)' }}>
               <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
               {copiedId === r.id ? 'คัดลอกแล้ว' : 'คัดลอก'}
             </button>
@@ -4433,7 +4487,7 @@ ${body}
               <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z"/></svg>
               ปริ้น
               {r.printed_at && (
-                <span style={{ marginLeft: 'auto', fontSize: 10, color: '#eab308', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                <span style={{ marginLeft: 'auto', fontSize: 10, color: '#C79A4B', fontWeight: 600, whiteSpace: 'nowrap' }}>
                   {new Date(r.printed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}
                   {new Date(r.printed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                 </span>
@@ -4701,16 +4755,18 @@ ${body}
         <div
           onMouseDown={e => { modalDownOnBackdrop.current = e.target === e.currentTarget }}
           onClick={e => { if (e.target === e.currentTarget && modalDownOnBackdrop.current) { setModal(null); ph.cancel() } }}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 1000, padding: 24 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: 680, maxHeight: '90vh', overflowY: 'auto' }}>
+          style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 1000, padding: 24 }}>
+          {/* ธีมแบรนด์: การ์ดมุมมน 24 · ช่องกรอกทั้งฟอร์มได้หน้าตาครีมจาก .sc-fields (ไม่ใช้ .sc-modal เพราะฟอร์มจัด padding เองอยู่แล้ว) */}
+          <div onClick={e => e.stopPropagation()} className="sc-fields" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 24, boxShadow: '0 24px 60px rgba(61,43,31,0.22)', width: '100%', maxWidth: 680, maxHeight: '90vh', overflowY: 'auto' }}>
 
             {/* Tabs (add) / Title (edit) */}
             {modal.mode === 'edit' ? (
               <div style={{ padding: '24px 32px 0' }}>
-                <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 24 }}>แก้ไขออเดอร์</h2>
+                <h2 className="sc-mtitle" style={{ fontSize: 19, marginBottom: 24 }}>แก้ไขออเดอร์</h2>
               </div>
             ) : (
-              <div style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
+              /* แท็บเป็นปุ่มแคปซูลในแถบครีม (ชุดเดียวกับ .sc-seg ของปฏิทิน) แทนขีดเส้นใต้แบบเดิม */
+              <div style={{ display: 'flex', gap: 4, margin: '20px 32px 0', padding: 4, background: 'var(--cream-2)', border: '1px solid var(--border)', borderRadius: 999 }}>
                 {/* งานแพลตฟอร์ม: วาง Copy + Drop ไฟล์ (xlsx/csv) · งานนอก: Drop ไฟล์ = PDF ใบเสนอราคา */}
                 {/* ‼️ ไม่มีปุ่มแท็บ "วาง Copy" แล้ว — แต่หน้านั้นยังใช้อยู่ ระบบสลับไปเองเพื่อโชว์ผลหลังวางไฟล์ (ดู setModalTab('paste'))
                     งานแพลตฟอร์ม: ใส่ชื่อลูกค้าแล้ว = ลงทีละใบ จึงไม่มีแท็บ Drop ไฟล์ (ไฟล์เป็นการลงทีเดียวหลายใบ ชื่อมาจากไฟล์) */}
@@ -4725,7 +4781,7 @@ ${body}
                     }
                     setModalTab(t); setPasteRows([]); setIncomeRows([]); setFileParseError('')
                   }}
-                    style={{ flex: 1, padding: '16px 0', fontSize: 14, fontWeight: tabOn(t) ? 600 : 400, border: 'none', borderBottom: tabOn(t) ? '2px solid var(--blue)' : '2px solid transparent', background: 'transparent', cursor: 'pointer', color: tabOn(t) ? 'var(--blue)' : 'var(--ink-3)', transition: 'all 0.15s' }}>
+                    style={{ flex: 1, padding: '10px 0', fontSize: 14, fontWeight: tabOn(t) ? 600 : 500, border: 'none', borderRadius: 999, background: tabOn(t) ? 'var(--brand)' : 'transparent', cursor: 'pointer', color: tabOn(t) ? '#FFF8F0' : 'var(--ink-2)', transition: 'all 0.15s', fontFamily: 'inherit', boxShadow: tabOn(t) ? '0 3px 10px rgba(158,106,73,0.25)' : 'none' }}>
                     {t === 'form' ? 'กรอกฟอร์ม' : 'Drop ไฟล์'}
                   </button>
                 ))}
@@ -4743,7 +4799,7 @@ ${body}
                   const noMatch = incomeRows.filter(r => !r.matchedId).length
                   return (
                     <p style={{ fontSize: 13, marginBottom: 10 }}>
-                      <strong style={{ color: 'var(--blue)' }}>ตรวจพบไฟล์รายรับ (Income)</strong> — {incomeRows.length} ออเดอร์ · ลงยอดใหม่ <strong>{matchNew}</strong>{matchOld > 0 && <> · ทับยอดเดิม <strong style={{ color: '#f59e0b' }}>{matchOld}</strong></>}{noMatch > 0 && <> · ไม่พบในระบบ <strong style={{ color: 'var(--red)' }}>{noMatch}</strong></>}
+                      <strong style={{ color: 'var(--blue)' }}>ตรวจพบไฟล์รายรับ (Income)</strong> — {incomeRows.length} ออเดอร์ · ลงยอดใหม่ <strong>{matchNew}</strong>{matchOld > 0 && <> · ทับยอดเดิม <strong style={{ color: '#C79A4B' }}>{matchOld}</strong></>}{noMatch > 0 && <> · ไม่พบในระบบ <strong style={{ color: 'var(--red)' }}>{noMatch}</strong></>}
                     </p>
                   )
                 })()}
@@ -4761,11 +4817,11 @@ ${body}
                         <tr key={i} style={{ borderBottom: '1px solid var(--border)', opacity: r.matchedId ? 1 : 0.55 }}>
                           <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
                             {!r.matchedId ? (
-                              <span style={{ fontSize: 10, fontWeight: 600, color: '#ef4444', background: '#fee2e2', borderRadius: 4, padding: '2px 6px' }}>ไม่พบในระบบ</span>
+                              <span style={{ fontSize: 10, fontWeight: 600, color: '#C0563F', background: '#fee2e2', borderRadius: 4, padding: '2px 6px' }}>ไม่พบในระบบ</span>
                             ) : r.hasIncome ? (
-                              <span style={{ fontSize: 10, fontWeight: 600, color: '#f59e0b', background: '#fef3c7', borderRadius: 4, padding: '2px 6px' }}>ทับยอดเดิม</span>
+                              <span style={{ fontSize: 10, fontWeight: 600, color: '#C79A4B', background: '#fef3c7', borderRadius: 4, padding: '2px 6px' }}>ทับยอดเดิม</span>
                             ) : (
-                              <span style={{ fontSize: 10, fontWeight: 600, color: '#22c55e', background: '#dcfce7', borderRadius: 4, padding: '2px 6px' }}>ลงยอดใหม่</span>
+                              <span style={{ fontSize: 10, fontWeight: 600, color: '#6F8F6A', background: '#dcfce7', borderRadius: 4, padding: '2px 6px' }}>ลงยอดใหม่</span>
                             )}
                           </td>
                           <td style={{ padding: '7px 10px', fontWeight: 600, color: 'var(--blue)' }}>{r.orderNumber}</td>
@@ -4798,11 +4854,15 @@ ${body}
                     const file = e.dataTransfer.files[0]
                     if (file) { handleQuotePdf(file); setModalTab('form') }
                   }}
-                  style={{ border: `2px dashed ${quoteDragOver ? 'var(--blue)' : 'var(--border)'}`, borderRadius: 12, padding: '48px 24px', textAlign: 'center', background: quoteDragOver ? 'var(--blue-bg)' : 'var(--bg)', transition: 'all 0.15s', marginBottom: 16 }}>
-                  <div style={{ fontSize: 36, marginBottom: 12 }}>📄</div>
+                  style={{ border: `2px dashed ${quoteDragOver ? 'var(--brand)' : 'var(--border-2)'}`, borderRadius: 20, padding: '44px 24px', textAlign: 'center', background: quoteDragOver ? 'var(--cream)' : 'var(--cream-2)', transition: 'all 0.15s', marginBottom: 16 }}>
+                  <span style={{ width: 56, height: 56, borderRadius: 18, background: 'var(--brand)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14, boxShadow: '0 6px 16px rgba(158,106,73,0.25)' }}>
+                    <svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke="#FFF8F0" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z" /><path d="M14 3v5h5" /><path d="M9 13h6M9 17h4" />
+                    </svg>
+                  </span>
                   <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>{orderParsing ? 'กำลังอ่านใบเสนอราคา…' : 'วางไฟล์ใบเสนอราคาที่นี่'}</div>
                   <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 20 }}>รองรับ .pdf</div>
-                  <label style={{ display: 'inline-block', padding: '8px 20px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, cursor: 'pointer', background: 'var(--surface)', color: 'var(--ink)' }}>
+                  <label data-btn style={{ display: 'inline-block', padding: '10px 26px', borderRadius: 999, border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--brand)', color: '#FFF8F0', boxShadow: '0 6px 16px rgba(158,106,73,0.25)' }}>
                     เลือกไฟล์
                     <input type="file" accept=".pdf" style={{ display: 'none' }} onChange={e => {
                       const file = e.target.files?.[0]
@@ -4812,7 +4872,7 @@ ${body}
                   </label>
                 </div>
                 {orderParseError && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 10 }}>{orderParseError}</div>}
-                <div style={{ fontSize: 12, color: 'var(--ink-3)', background: 'var(--bg)', borderRadius: 8, padding: '10px 14px' }}>
+                <div style={{ fontSize: 12, color: 'var(--ink-3)', background: 'var(--cream-2)', border: '1px solid var(--border)', borderRadius: 14, padding: '12px 16px', lineHeight: 1.7 }}>
                   ระบบอ่านชื่อลูกค้า ที่อยู่ เบอร์ ยอดรวม และรายการทุกจุดติดตั้งมากรอกในแท็บ “กรอกฟอร์ม” ให้ตรวจก่อนกดบันทึก
                 </div>
               </div>
@@ -4828,11 +4888,15 @@ ${body}
                     const file = e.dataTransfer.files[0]
                     if (file) handleFile(file)
                   }}
-                  style={{ border: `2px dashed ${fileDragOver ? 'var(--blue)' : 'var(--border)'}`, borderRadius: 12, padding: '48px 24px', textAlign: 'center', background: fileDragOver ? 'var(--blue-bg)' : 'var(--bg)', transition: 'all 0.15s', marginBottom: 16 }}>
-                  <div style={{ fontSize: 36, marginBottom: 12 }}>📂</div>
+                  style={{ border: `2px dashed ${fileDragOver ? 'var(--brand)' : 'var(--border-2)'}`, borderRadius: 20, padding: '44px 24px', textAlign: 'center', background: fileDragOver ? 'var(--cream)' : 'var(--cream-2)', transition: 'all 0.15s', marginBottom: 16 }}>
+                  <span style={{ width: 56, height: 56, borderRadius: 18, background: 'var(--brand)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14, boxShadow: '0 6px 16px rgba(158,106,73,0.25)' }}>
+                    <svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke="#FFF8F0" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 16V7m0 0l-3.2 3.2M12 7l3.2 3.2" /><path d="M4 15v2.5A2.5 2.5 0 006.5 20h11a2.5 2.5 0 002.5-2.5V15" />
+                    </svg>
+                  </span>
                   <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>วางไฟล์ที่นี่</div>
                   <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 20 }}>รองรับ .xlsx, .csv, .txt</div>
-                  <label style={{ display: 'inline-block', padding: '8px 20px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, cursor: 'pointer', background: 'var(--surface)', color: 'var(--ink)' }}>
+                  <label data-btn style={{ display: 'inline-block', padding: '10px 26px', borderRadius: 999, border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--brand)', color: '#FFF8F0', boxShadow: '0 6px 16px rgba(158,106,73,0.25)' }}>
                     เลือกไฟล์
                     <input type="file" accept=".xlsx,.xls,.xlsm,.csv,.txt,.tsv" style={{ display: 'none' }} onChange={e => {
                       const file = e.target.files?.[0]
@@ -4841,7 +4905,7 @@ ${body}
                     }} />
                   </label>
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--ink-3)', background: 'var(--bg)', borderRadius: 8, padding: '10px 14px' }}>
+                <div style={{ fontSize: 12, color: 'var(--ink-3)', background: 'var(--cream-2)', border: '1px solid var(--border)', borderRadius: 14, padding: '12px 16px', lineHeight: 1.7 }}>
                   <strong>ลำดับคอลัมน์ที่รองรับ:</strong> เลขออเดอร์ · ชื่อลูกค้า · วันชำระ · บริษัทขนส่ง · วันต้องส่ง · ราคา · สถานะ · Drop-off<br />
                   <strong>ไฟล์รายรับ Shopee (Income):</strong> วางไฟล์เดียวกันได้เลย ระบบแยกอัตโนมัติ → ลงยอดโอนจริงให้ออเดอร์ที่มีอยู่
                 </div>
@@ -4887,7 +4951,7 @@ ${body}
                       const skipCount = pasteRows.length - saveCount - dropoffCount - shippedCount - cancelCount
                       return (
                         <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 8 }}>
-                          พบ {pasteRows.length} ออเดอร์ — บันทึกใหม่ <strong style={{ color: 'var(--ink)' }}>{saveCount}</strong>{shippedCount > 0 && <> · จัดส่งแล้ว <strong style={{ color: '#22c55e' }}>{shippedCount}</strong></>}{cancelCount > 0 && <> · ย้ายไปหมวดยกเลิก <strong style={{ color: 'var(--red)' }}>{cancelCount}</strong></>}{dropoffCount > 0 && <> · อัพเดท Drop-off <strong style={{ color: '#6366f1' }}>{dropoffCount}</strong></>}{skipCount > 0 && <> · ข้าม <strong style={{ color: 'var(--red)' }}>{skipCount}</strong></>} รายการ
+                          พบ {pasteRows.length} ออเดอร์ — บันทึกใหม่ <strong style={{ color: 'var(--ink)' }}>{saveCount}</strong>{shippedCount > 0 && <> · จัดส่งแล้ว <strong style={{ color: '#6F8F6A' }}>{shippedCount}</strong></>}{cancelCount > 0 && <> · ย้ายไปหมวดยกเลิก <strong style={{ color: 'var(--red)' }}>{cancelCount}</strong></>}{dropoffCount > 0 && <> · อัพเดท Drop-off <strong style={{ color: '#7B7FA3' }}>{dropoffCount}</strong></>}{skipCount > 0 && <> · ข้าม <strong style={{ color: 'var(--red)' }}>{skipCount}</strong></>} รายการ
                         </p>
                       )
                     })()}
@@ -4896,7 +4960,7 @@ ${body}
                         <thead>
                           <tr style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
                             {['สถานะ', 'วันชำระ', 'วันต้องส่ง', 'เลขออเดอร์', 'ราคาสุทธิ', 'ชื่อลูกค้า', 'การจัดส่ง'].map(h => (
-                              <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 500, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{h}</th>
+                              <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#8A6142', whiteSpace: 'nowrap' }}>{h}</th>
                             ))}
                           </tr>
                         </thead>
@@ -4913,20 +4977,20 @@ ${body}
                               <tr key={i} style={{ borderBottom: '1px solid var(--border)', opacity: (saveable || isDropoffUpdate || isShippedRow || isCancelDelete) ? 1 : 0.55 }}>
                                 <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
                                   {isShippedRow ? (
-                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#22c55e', background: '#dcfce7', borderRadius: 4, padding: '2px 6px' }}>จัดส่งแล้ว{r.shippedDate ? ` · ${r.shippedDate}` : ''}</span>
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#6F8F6A', background: '#dcfce7', borderRadius: 4, padding: '2px 6px' }}>จัดส่งแล้ว{r.shippedDate ? ` · ${r.shippedDate}` : ''}</span>
                                   ) : isCancelDelete ? (
-                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#ef4444', background: '#fee2e2', borderRadius: 4, padding: '2px 6px' }}>ย้ายไปหมวดยกเลิก</span>
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#C0563F', background: '#fee2e2', borderRadius: 4, padding: '2px 6px' }}>ย้ายไปหมวดยกเลิก</span>
                                   ) : isDropoffUpdate ? (
-                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#6366f1', background: '#ede9fe', borderRadius: 4, padding: '2px 6px' }}>อัพเดท Drop-off</span>
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#7B7FA3', background: '#ede9fe', borderRadius: 4, padding: '2px 6px' }}>อัพเดท Drop-off</span>
                                   ) : r.isDuplicate ? (
-                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#f59e0b', background: '#fef3c7', borderRadius: 4, padding: '2px 6px' }}>มีออเดอร์นี้แล้ว</span>
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#C79A4B', background: '#fef3c7', borderRadius: 4, padding: '2px 6px' }}>มีออเดอร์นี้แล้ว</span>
                                   ) : isCancelled ? (
-                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#ef4444', background: '#fee2e2', borderRadius: 4, padding: '2px 6px' }}>ยกเลิก</span>
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#C0563F', background: '#fee2e2', borderRadius: 4, padding: '2px 6px' }}>ยกเลิก</span>
                                   ) : r.orderStatus ? (
-                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#22c55e', background: '#dcfce7', borderRadius: 4, padding: '2px 6px' }}>{r.orderStatus}</span>
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: '#6F8F6A', background: '#dcfce7', borderRadius: 4, padding: '2px 6px' }}>{r.orderStatus}</span>
                                   ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                                 </td>
-                                <td style={{ padding: '7px 10px', color: (!r.paymentDate || r.paymentDate === '-') ? '#f59e0b' : undefined, fontWeight: (!r.paymentDate || r.paymentDate === '-') ? 500 : undefined }}>
+                                <td style={{ padding: '7px 10px', color: (!r.paymentDate || r.paymentDate === '-') ? '#C79A4B' : undefined, fontWeight: (!r.paymentDate || r.paymentDate === '-') ? 500 : undefined }}>
                                   {(!r.paymentDate || r.paymentDate === '-') ? 'ยังไม่ชำระ' : r.paymentDate}
                                 </td>
                                 <td style={{ padding: '7px 10px' }}>{r.deadline || '-'}</td>
@@ -4998,7 +5062,7 @@ ${body}
               {!isInstall && !isOutside && (
                 <div style={{ marginBottom: 14 }}>
                   <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>วันและเวลาที่ต้องส่ง</label>
-                  <div style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, background: 'var(--bg)', color: '#bf5af2', fontWeight: 600 }}>
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, background: 'var(--bg)', color: '#9A7BA0', fontWeight: 600 }}>
                     {modal.data.shipping_datetime || calcShipping(modal.data.deadline ?? '', modal.data.courier ?? '') || '— เลือกกำหนดส่ง + บริษัท'}
                   </div>
                 </div>
@@ -5017,7 +5081,7 @@ ${body}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                 <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700 }}>รายการสินค้า</label>
                 <button type="button" onClick={() => setModalItems(prev => [...prev, emptyItem()])}
-                  style={{ fontSize: 12, padding: '3px 10px', border: '1px solid var(--blue)', borderRadius: 6, color: 'var(--blue)', background: 'var(--blue-bg)', cursor: 'pointer' }}>
+                  style={{ fontSize: 12, padding: '5px 14px', border: '1px solid var(--border-2)', borderRadius: 999, color: 'var(--brand)', background: 'var(--cream-2)', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit' }}>
                   + เพิ่มรายการ
                 </button>
               </div>
@@ -5026,7 +5090,7 @@ ${body}
                 onChange={e => { setItemsPasteText(e.target.value); setFormParseError('') }}
                 rows={6}
                 placeholder={"วางข้อความรายการสินค้า — กด ✦ แปลงรายการ ให้ AI แปลงให้อัตโนมัติ"}
-                style={{ width: '100%', border: '1px dashed var(--border)', borderRadius: 6, padding: '8px 10px', fontSize: 12, outline: 'none', resize: 'none', boxSizing: 'border-box', fontFamily: 'monospace', background: 'var(--bg)', color: 'var(--ink)', marginBottom: 6 }}
+                style={{ width: '100%', border: '1px dashed var(--border-2)', borderRadius: 12, padding: '10px 12px', fontSize: 12, outline: 'none', resize: 'none', boxSizing: 'border-box', fontFamily: 'monospace', background: 'var(--cream-2)', color: 'var(--ink)', marginBottom: 6 }}
               />
               {formParseError && (
                 <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 6 }}>{formParseError}</div>
@@ -5035,11 +5099,11 @@ ${body}
                 type="button"
                 onClick={handleFormParseItems}
                 disabled={!itemsPasteText.trim() || formParseLoading}
-                style={{ marginBottom: 8, padding: '6px 16px', borderRadius: 7, border: 'none', background: formParseLoading || !itemsPasteText.trim() ? 'var(--border)' : 'var(--blue)', color: formParseLoading || !itemsPasteText.trim() ? 'var(--ink-3)' : '#fff', fontSize: 12, fontWeight: 600, cursor: formParseLoading || !itemsPasteText.trim() ? 'default' : 'pointer' }}>
+                style={{ marginBottom: 8, padding: '7px 18px', borderRadius: 999, border: 'none', background: formParseLoading || !itemsPasteText.trim() ? 'var(--border)' : 'var(--brand)', color: formParseLoading || !itemsPasteText.trim() ? 'var(--ink-3)' : '#FFF8F0', fontSize: 12, fontWeight: 600, cursor: formParseLoading || !itemsPasteText.trim() ? 'default' : 'pointer', fontFamily: 'inherit', boxShadow: formParseLoading || !itemsPasteText.trim() ? 'none' : '0 5px 14px rgba(158,106,73,0.25)' }}>
                 {formParseLoading ? 'กำลังแปลง…' : '✦ แปลงรายการ'}
               </button>
               {modalItems.length === 0 && !itemsPasteText && (
-                <div style={{ border: '1px dashed var(--border)', borderRadius: 8, padding: '12px', textAlign: 'center', color: 'var(--ink-4)', fontSize: 12 }}>
+                <div style={{ border: '1px dashed var(--border-2)', borderRadius: 14, padding: '14px', textAlign: 'center', color: 'var(--ink-4)', fontSize: 12 }}>
                   ยังไม่มีรายการ
                 </div>
               )}
@@ -5100,10 +5164,16 @@ ${body}
                   </div>
                   <div style={{ marginBottom: 14 }}>
                     <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>ชำระ</label>
-                    <select value={modal.data.payment_status || 'ยังไม่ชำระ'} onChange={e => set('payment_status', e.target.value)}
-                      style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', fontWeight: 600, color: PAYMENT_STATUS_COLOR[modal.data.payment_status ?? ''] ?? '#f59e0b' }}>
-                      {PAYMENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
+                    <CreamSelect value={modal.data.payment_status || 'ยังไม่ชำระ'} onChange={v => set('payment_status', v)}
+                      options={PAYMENT_STATUSES.map(st => ({ value: st, label: st, color: PAYMENT_STATUS_COLOR[st] }))}
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--cream-2)',
+                        border: '1px solid var(--border-2)', borderRadius: 12, padding: '9px 12px', fontSize: 13, fontWeight: 600,
+                        cursor: 'pointer', fontFamily: 'inherit', boxSizing: 'border-box', textAlign: 'left',
+                        color: PAYMENT_STATUS_COLOR[modal.data.payment_status ?? ''] ?? '#C79A4B' }}
+                      renderValue={o => (<>
+                        <span className="cs-value" style={{ flex: 1, color: 'inherit' }}>{o?.label ?? 'ยังไม่ชำระ'}</span>
+                        <svg className="cs-chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+                      </>)} />
                   </div>
                   {(modal.data.payment_status === 'มัดจำ' || modal.data.payment_status === 'มัดจำ50%') && (
                     <div style={{ marginBottom: 14 }}>
@@ -5150,9 +5220,9 @@ ${body}
 
             <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
               <button onClick={() => { setModal(null); setAddType(null); ph.cancel() }}
-                style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ยกเลิก</button>
-              <button onClick={save} disabled={saving}
-                style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
+                className="sc-mcancel" style={{ flex: 1, cursor: 'pointer', fontSize: 14, border: 'none' }}>ยกเลิก</button>
+              <button onClick={save} disabled={saving} className="sc-msave"
+                style={{ flex: 2, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
                 {saving ? 'กำลังบันทึก…' : 'บันทึก'}
               </button>
             </div>
@@ -5178,35 +5248,44 @@ ${body}
       )}
 
       {addTypeModal && (
-        <div onClick={() => setAddTypeModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: 400, padding: '28px 32px' }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>เพิ่มรายการ</h3>
+        <div onClick={() => setAddTypeModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+          <div onClick={e => e.stopPropagation()} className="sc-modal" style={{ maxWidth: 400, padding: '28px 32px' }}>
+            <h3 className="sc-mtitle" style={{ marginBottom: 6 }}>เพิ่มรายการ</h3>
             <p style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 20 }}>เลือกประเภทงาน</p>
+            {/* ‼️ ไอคอนเป็นเส้น SVG โทนแบรนด์ ไม่ใช้อีโมจิ — อีโมจิเป็นสีของระบบปฏิบัติการ คุมโทนไม่ได้
+                และหน้าตาเพี้ยนไปคนละแบบระหว่าง Windows / iPhone / Android */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {([
-                ['งานแพลตฟอร์ม', '🛍️', 'Shopee / Tiktok / Lazada', 'platform', {}],
-                ['งานนอก', '💬', 'Facebook / Line / หน้าร้าน', 'outside', {}],
-                ['งานติดตั้ง', '🔨', 'สั่งพร้อมติดตั้ง', 'install', { is_installation: true }],
-              ] as [string, string, string, 'platform'|'outside'|'install'|'claim', object][]).map(([label, icon, desc, type, extra]) => (
+                ['งานแพลตฟอร์ม', 'M6 8.5h12l-1 11H7zM9.2 8.5V6.6a2.8 2.8 0 015.6 0v1.9', 'Shopee / Tiktok / Lazada', 'platform', {}],
+                ['งานนอก', 'M20 12.2c0 3.3-3.6 6-8 6-.9 0-1.8-.1-2.6-.3L5 19.5l1.2-3A5.6 5.6 0 014 12.2c0-3.3 3.6-6 8-6s8 2.7 8 6z', 'Facebook / Line / หน้าร้าน', 'outside', {}],
+                ['งานติดตั้ง', INSTALL_ICON_PATH, 'สั่งพร้อมติดตั้ง', 'install', { is_installation: true }],
+              ] as [string, string, string, 'platform'|'outside'|'install'|'claim', object][]).map(([label, iconPath, desc, type, extra]) => (
                 <button key={label} onClick={() => {
                   // ขั้นถัดไปคือถามชื่อลูกค้าก่อน (ดู custStep) ฟอร์มจะเปิดหลังได้ชื่อแล้ว
                   // งานแพลตฟอร์มมีทางเลือก "นำเข้าจากไฟล์" ในกล่องนั้นด้วย (ชื่อลูกค้าอยู่ในไฟล์อยู่แล้ว)
                   setAddTypeModal(false)
                   setCustStep({ type, extra })
                 }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', textAlign: 'left', transition: 'border-color 0.15s' }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--blue)')}
-                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}>
-                  <span style={{ fontSize: 24 }}>{icon}</span>
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{label}</div>
+                  style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', borderRadius: 18, border: '1px solid var(--border-2)', background: 'var(--cream-2)', cursor: 'pointer', textAlign: 'left', transition: 'border-color .15s, background .15s, box-shadow .15s, transform .15s', fontFamily: 'inherit' }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--brand)'; e.currentTarget.style.background = 'var(--cream)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(158,106,73,0.16)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-2)'; e.currentTarget.style.background = 'var(--cream-2)'; e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.transform = 'none' }}>
+                  <span style={{ width: 40, height: 40, borderRadius: 14, background: 'var(--brand)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 10px rgba(158,106,73,0.25)' }}>
+                    <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="#FFF8F0" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+                      <path d={iconPath} />
+                    </svg>
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>{label}</div>
                     <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>{desc}</div>
                   </div>
+                  <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="var(--ink-4)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <path d="M9 5l7 7-7 7" />
+                  </svg>
                 </button>
               ))}
             </div>
-            <button onClick={() => setAddTypeModal(false)}
-              style={{ marginTop: 16, width: '100%', padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontSize: 14, color: 'var(--ink-3)' }}>
+            <button onClick={() => setAddTypeModal(false)} className="sc-mcancel"
+              style={{ marginTop: 16, width: '100%', cursor: 'pointer', fontSize: 14, border: 'none' }}>
               ยกเลิก
             </button>
           </div>
@@ -5215,27 +5294,34 @@ ${body}
 
       {/* Print modal */}
       {printModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: printModalCols ? 460 : 380, padding: '28px 32px' }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 16 }}>ปริ้นออเดอร์{printModalCols ? ' — เลือกคอลัมน์' : ''}</h3>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+          {/* ธีมแบรนด์ — ชุดเดียวกับกล่องเพิ่มรายการ */}
+          <div className="sc-fields" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 24, boxShadow: '0 24px 60px rgba(61,43,31,0.22)', width: '100%', maxWidth: printModalCols ? 470 : 400, padding: '26px 30px' }}>
+            <h3 className="sc-mtitle" style={{ marginBottom: 16 }}>ปริ้นออเดอร์{printModalCols ? ' — เลือกคอลัมน์' : ''}</h3>
 
             {printModalCols ? (
               /* ขั้นที่ 2 — เลือกคอลัมน์ที่จะเอาลงตาราง */
               <>
                 <PrintColumnPicker cols={printColDefs()} state={printCols} />
                 <div style={{ display: 'flex', gap: 10 }}>
-                  <button onClick={() => setPrintModalCols(false)}
-                    style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14, color: 'var(--ink-3)' }}>ย้อนกลับ</button>
+                  <button onClick={() => setPrintModalCols(false)} className="sc-mcancel"
+                    style={{ flex: 1, cursor: 'pointer', fontSize: 14, border: 'none' }}>← ย้อนกลับ</button>
                   <button disabled={printColsOn === 0} onClick={() => { setPrintModalCols(false); doPrint() }}
-                    style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: printColsOn === 0 ? 'var(--border)' : 'var(--blue)', color: '#fff', cursor: printColsOn === 0 ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 600 }}>🖨️ ปริ้น</button>
+                    className={printColsOn === 0 ? undefined : 'sc-msave'}
+                    style={{ flex: 2, padding: '12px', borderRadius: 999, border: 'none',
+                      background: printColsOn === 0 ? 'var(--border)' : 'var(--brand)', color: printColsOn === 0 ? 'var(--ink-4)' : '#FFF8F0',
+                      cursor: printColsOn === 0 ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 600, fontFamily: 'inherit' }}>🖨️ ปริ้น</button>
                 </div>
               </>
             ) : (
               <>
               {/* เลือกว่าจะปริ้นอะไร — ตั้งต้นคือตารางของแท็บที่เปิดอยู่ */}
               <div style={{ display: 'grid', gap: 8, marginBottom: 18 }}>
-                <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', cursor: 'pointer', border: `1px solid ${printScope === 'tab' ? 'var(--blue)' : 'var(--border)'}`, borderRadius: 10, padding: '10px 12px' }}>
-                  <input type="radio" checked={printScope === 'tab'} onChange={() => setPrintScope('tab')} style={{ marginTop: 2 }} />
+                {/* ❗ การ์ดตัวเลือก: ที่เลือกอยู่ = พื้นครีม + ขอบสีแบรนด์ */}
+                <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer',
+                  border: `1.5px solid ${printScope === 'tab' ? 'var(--brand)' : 'var(--border-2)'}`, borderRadius: 16, padding: '12px 14px',
+                  background: printScope === 'tab' ? 'var(--cream)' : 'var(--cream-2)', transition: 'background .15s, border-color .15s' }}>
+                  <input type="radio" checked={printScope === 'tab'} onChange={() => setPrintScope('tab')} style={{ marginTop: 2, accentColor: 'var(--brand)' }} />
                   <span>
                     <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>ตารางที่เห็นอยู่ · {tabLabel}</span>
                     <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>
@@ -5243,8 +5329,10 @@ ${body}
                     </span>
                   </span>
                 </label>
-                <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', cursor: 'pointer', border: `1px solid ${printScope === 'days' ? 'var(--blue)' : 'var(--border)'}`, borderRadius: 10, padding: '10px 12px' }}>
-                  <input type="radio" checked={printScope === 'days'} onChange={() => setPrintScope('days')} style={{ marginTop: 2 }} />
+                <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer',
+                  border: `1.5px solid ${printScope === 'days' ? 'var(--brand)' : 'var(--border-2)'}`, borderRadius: 16, padding: '12px 14px',
+                  background: printScope === 'days' ? 'var(--cream)' : 'var(--cream-2)', transition: 'background .15s, border-color .15s' }}>
+                  <input type="radio" checked={printScope === 'days'} onChange={() => setPrintScope('days')} style={{ marginTop: 2, accentColor: 'var(--brand)' }} />
                   <span style={{ flex: 1 }}>
                     <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>เฉพาะงานที่ใกล้ถึงกำหนดส่ง</span>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
@@ -5252,17 +5340,17 @@ ${body}
                       <input type="number" min={0} max={99} value={printMaxDays}
                         onClick={e => { e.stopPropagation(); setPrintScope('days') }}
                         onChange={e => setPrintMaxDays(Number(e.target.value))}
-                        style={{ width: 62, border: '1px solid var(--border)', borderRadius: 8, padding: '5px 8px', fontSize: 15, fontWeight: 700, outline: 'none', textAlign: 'center' }} />
+                        style={{ width: 66, fontSize: 15, fontWeight: 700, outline: 'none', textAlign: 'center' }} />
                       <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>วัน · {getPrintRows(printMaxDays).length} รายการ</span>
                     </span>
                   </span>
                 </label>
               </div>
                 <div style={{ display: 'flex', gap: 10 }}>
-                  <button onClick={() => { setPrintModal(false); setPrintModalCols(false) }}
-                    style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ยกเลิก</button>
-                  <button onClick={() => setPrintModalCols(true)}
-                    style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>ถัดไป · เลือกคอลัมน์</button>
+                  <button onClick={() => { setPrintModal(false); setPrintModalCols(false) }} className="sc-mcancel"
+                    style={{ flex: 1, cursor: 'pointer', fontSize: 14, border: 'none' }}>ยกเลิก</button>
+                  <button onClick={() => setPrintModalCols(true)} className="sc-msave"
+                    style={{ flex: 2, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>ถัดไป · เลือกคอลัมน์</button>
                 </div>
               </>
             )}
@@ -5272,20 +5360,21 @@ ${body}
 
       {/* Items modal */}
       {itemsModal && (
-        <div onClick={closeItemsModal} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 1000, padding: 24 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: 900, maxHeight: '90vh', overflowY: 'auto', padding: '24px 28px' }}>
+        <div onClick={closeItemsModal} style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 1000, padding: 24 }}>
+          {/* ธีมแบรนด์: การ์ดมุมมน 24 · ช่องกรอกทั้งตารางได้หน้าตาครีมจาก .sc-fields */}
+          <div onClick={e => e.stopPropagation()} className="sc-fields" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 24, boxShadow: '0 24px 60px rgba(61,43,31,0.22)', width: '100%', maxWidth: 900, maxHeight: '90vh', overflowY: 'auto', padding: '26px 30px' }}>
 
-            <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', marginBottom: 14 }}>รายการสินค้า</h3>
+            <h3 className="sc-mtitle" style={{ marginBottom: 14 }}>รายการสินค้า</h3>
 
             {/* AI Paste zone */}
-            <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px', marginBottom: 16 }}>
+            <div style={{ background: 'var(--cream-2)', border: '1px solid var(--border-2)', borderRadius: 18, padding: '14px 16px', marginBottom: 16 }}>
               <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 6, fontWeight: 500 }}>วางข้อความรายการสินค้า — AI จะแปลงให้อัตโนมัติ</label>
               <textarea
                 value={itemsModalPasteText}
                 onChange={e => { setItemsModalPasteText(e.target.value); setItemsModalError('') }}
                 rows={4}
                 placeholder={'ตัวอย่าง:\nม่านจีบ CC-101 ขาวนวล กว้าง 2.5 สูง 2.2 จำนวน 1 ชุด\nม่านโปร่ง BB-202 ครีม 1.8x2.0 2 ชุด'}
-                style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 10px', fontSize: 12, outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit', background: '#fff' }}
+                style={{ width: '100%', fontSize: 12, outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }}
               />
               {itemsModalError && (
                 <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 6 }}>{itemsModalError}</div>
@@ -5293,7 +5382,7 @@ ${body}
               <button
                 onClick={handleParseItems}
                 disabled={!itemsModalPasteText.trim() || itemsModalLoading}
-                style={{ marginTop: 8, padding: '7px 18px', borderRadius: 7, border: 'none', background: itemsModalLoading || !itemsModalPasteText.trim() ? 'var(--border)' : 'var(--blue)', color: itemsModalLoading || !itemsModalPasteText.trim() ? 'var(--ink-3)' : '#fff', fontSize: 13, fontWeight: 600, cursor: itemsModalLoading || !itemsModalPasteText.trim() ? 'default' : 'pointer' }}>
+                style={{ marginTop: 10, padding: '8px 20px', borderRadius: 999, border: 'none', background: itemsModalLoading || !itemsModalPasteText.trim() ? 'var(--border)' : 'var(--brand)', color: itemsModalLoading || !itemsModalPasteText.trim() ? 'var(--ink-3)' : '#FFF8F0', fontSize: 13, fontWeight: 600, cursor: itemsModalLoading || !itemsModalPasteText.trim() ? 'default' : 'pointer', fontFamily: 'inherit', boxShadow: itemsModalLoading || !itemsModalPasteText.trim() ? 'none' : '0 5px 14px rgba(158,106,73,0.25)' }}>
                 {itemsModalLoading ? 'กำลังแปลง…' : '✦ แปลงรายการ'}
               </button>
             </div>
@@ -5305,18 +5394,18 @@ ${body}
             <>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
               <button onClick={() => setItemsShowAll(v => !v)}
-                style={{ fontSize: 11, padding: '3px 10px', border: '1px solid var(--border)', borderRadius: 6, background: itemsShowAll ? 'var(--blue-bg)' : 'var(--bg)', color: itemsShowAll ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer' }}>
+                style={{ fontSize: 11, padding: '5px 14px', border: '1px solid var(--border-2)', borderRadius: 999, background: itemsShowAll ? 'var(--cream)' : 'var(--cream-2)', color: itemsShowAll ? 'var(--brand)' : 'var(--ink-3)', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit' }}>
                 {itemsShowAll ? 'โชว์เฉพาะช่องที่ใช้' : `ทุกช่อง (${ITEM_FIELDS.length - cols.length} ช่องที่ซ่อนอยู่)`}
               </button>
             </div>
-            <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'auto', marginBottom: 14 }}>
+            <div style={{ border: '1px solid var(--border-2)', borderRadius: 16, overflow: 'auto', marginBottom: 14 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
-                  <tr style={{ background: '#FAFAFA', borderBottom: '1px solid var(--border)' }}>
+                  <tr style={{ background: 'var(--cream)', borderBottom: '1px solid var(--border)' }}>
                     {['#', ...cols.map(([lbl]) => lbl)].map(h => (
-                      <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 500, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{h}</th>
+                      <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#8A6142', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
-                    <th style={{ padding: '8px 10px', position: 'sticky', right: 0, background: '#FAFAFA', zIndex: 1 }} />
+                    <th style={{ padding: '10px 12px', position: 'sticky', right: 0, background: 'var(--cream)', zIndex: 1 }} />
                   </tr>
                 </thead>
                 <tbody>
@@ -5364,15 +5453,15 @@ ${body}
             })()}
 
             <button onClick={() => setItemsModal(m => m ? { ...m, items: [...m.items, emptyItem()] } : null)}
-              style={{ fontSize: 12, padding: '4px 12px', border: '1px solid var(--blue)', borderRadius: 6, color: 'var(--blue)', background: 'var(--blue-bg)', cursor: 'pointer', marginBottom: 16 }}>
+              style={{ fontSize: 12, padding: '6px 16px', border: '1px solid var(--border-2)', borderRadius: 999, color: 'var(--brand)', background: 'var(--cream-2)', cursor: 'pointer', marginBottom: 16, fontWeight: 600, fontFamily: 'inherit' }}>
               + เพิ่มแถว
             </button>
 
             {itemsModal.instId && ph.trigger()}
 
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={closeItemsModal}
-                style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>
+              <button onClick={closeItemsModal} className="sc-mcancel"
+                style={{ flex: 1, cursor: 'pointer', fontSize: 14, border: 'none' }}>
                 ยกเลิก
               </button>
               <button onClick={async () => {

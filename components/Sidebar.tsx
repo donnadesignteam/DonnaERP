@@ -7,6 +7,7 @@ import { usePathname } from 'next/navigation'
 
 const nav = [
   { href: '/dashboard',      label: 'ภาพรวม',      icon: <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg> },
+  { href: '/board',          label: 'ตามงาน', icon: <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155"/></svg> },
   { href: '/order-entry',    label: 'ออเดอร์',      icon: <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 3h6M7.5 3h9A1.5 1.5 0 0118 4.5v15a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 016 19.5v-15A1.5 1.5 0 017.5 3z"/></svg> },
   { href: '/claims',         label: 'งานเคลม',      icon: <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 9.75h4.875a2.625 2.625 0 010 5.25H12M8.25 9.75L10.5 7.5M8.25 9.75L10.5 12m9-7.243V21.75l-3.75-1.5-3.75 1.5-3.75-1.5-3.75 1.5V4.757c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0c1.1.128 1.907 1.077 1.907 2.185z"/></svg> },
   { href: '/returns',        label: 'พัสดุส่งกลับ',  icon: <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0l-3-3m3 3l3-3M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg> },
@@ -33,7 +34,7 @@ export default function Sidebar() {
       style={{
         width: expanded ? 224 : 64,
         minHeight: '100vh',
-        background: '#1E1208',
+        background: '#946343',
         display: 'flex',
         flexDirection: 'column',
         position: 'fixed',
@@ -42,30 +43,33 @@ export default function Sidebar() {
         overflowX: 'hidden',
         transition: 'width 0.22s ease',
         zIndex: 40,
-        boxShadow: expanded ? '4px 0 24px rgba(0,0,0,0.25)' : 'none',
+        boxShadow: expanded ? '4px 0 28px rgba(120,86,58,0.28)' : 'none',
       }}
     >
-      {/* Brand */}
+      {/* Brand — โลโก้ DONNA DESIGN (หุบ = เฉพาะรูปบ้าน · กาง = โลโก้เต็มพร้อมตัวอักษร) */}
       <Link href="/dashboard" style={{
         textDecoration: 'none',
         display: 'flex',
         alignItems: 'center',
-        height: 72,
-        paddingLeft: expanded ? ICON_X : (64 - 40) / 2,
-        transition: 'padding-left 0.22s ease',
+        justifyContent: 'center',
+        height: expanded ? 112 : 64,
+        padding: expanded ? '14px 24px 6px' : '0',
+        transition: 'height 0.22s ease, padding 0.22s ease',
         flexShrink: 0,
+        overflow: 'hidden',
       }}>
-        <div style={{ width: 40, height: 40, borderRadius: 10, overflow: 'hidden', flexShrink: 0, boxShadow: '0 2px 8px rgba(196,126,58,0.4)' }}>
-          <Image src="/donna-logo.jpg" alt="Donna Design" width={40} height={40} style={{ objectFit: 'cover', width: '100%', height: '100%' }} />
-        </div>
-        <div style={{ paddingLeft: 10, maxWidth: expanded ? 160 : 0, overflow: 'hidden', transition: 'max-width 0.22s ease', flexShrink: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#FAF6F0', letterSpacing: '-0.2px', whiteSpace: 'nowrap' }}>Donna Design</div>
-          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 1, fontWeight: 400, letterSpacing: '0.06em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>ERP System</div>
-        </div>
+        <Image
+          src={expanded ? '/donna-mark.png' : '/donna-house.png'}
+          alt="Donna Design"
+          width={expanded ? 96 : 30}
+          height={expanded ? 95 : 19}
+          priority
+          style={{ objectFit: 'contain', width: expanded ? 96 : 30, height: 'auto' }}
+        />
       </Link>
 
       {/* Divider */}
-      <div style={{ height: 1, background: 'rgba(196,126,58,0.15)', margin: '0 12px 6px', flexShrink: 0 }} />
+      <div style={{ height: 1, background: 'rgba(255,255,255,0.18)', margin: '0 12px 6px', flexShrink: 0 }} />
 
       {/* Nav */}
       <nav style={{ flex: 1, padding: '4px 0' }}>
@@ -79,18 +83,18 @@ export default function Sidebar() {
                 paddingLeft: ICON_X - 8,   /* 8px มาจาก padding ของ div wrapper */
                 paddingTop: 9,
                 paddingBottom: 9,
-                borderRadius: 7,
+                borderRadius: 12,
                 textDecoration: 'none',
                 fontSize: 13,
                 fontWeight: active ? 600 : 400,
-                color: active ? '#FFFFFF' : 'rgba(250,246,240,0.5)',
-                background: active ? 'linear-gradient(135deg, #C47E3A, #9D6025)' : 'transparent',
-                boxShadow: active ? '0 2px 8px rgba(196,126,58,0.35)' : 'none',
+                color: active ? '#9E6A49' : 'rgba(255,251,245,0.86)',
+                background: active ? '#FEFDFA' : 'transparent',
+                boxShadow: active ? '0 2px 8px rgba(90,60,38,0.18)' : 'none',
                 transition: 'background 0.12s, box-shadow 0.12s',
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
               }}>
-                <span style={{ opacity: active ? 1 : 0.7, flexShrink: 0, display: 'flex', width: 16 }}>{icon}</span>
+                <span style={{ opacity: active ? 1 : 0.85, flexShrink: 0, display: 'flex', width: 16 }}>{icon}</span>
                 <span style={{ paddingLeft: 9, maxWidth: expanded ? 160 : 0, overflow: 'hidden', transition: 'max-width 0.22s ease', display: 'flex', flexDirection: 'column', gap: 1 }}>
                   <span style={{ whiteSpace: 'nowrap' }}>{label}</span>
                 </span>
@@ -101,9 +105,11 @@ export default function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div style={{ borderTop: '1px solid rgba(196,126,58,0.12)', flexShrink: 0 }}>
+      <div style={{ borderTop: '1px solid rgba(255,255,255,0.14)', flexShrink: 0 }}>
         <div style={{ paddingLeft: ICON_X, paddingTop: 10, paddingBottom: 14, maxWidth: expanded ? 200 : 0, overflow: 'hidden', transition: 'max-width 0.22s ease' }}>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>v1.0.0</div>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', fontStyle: 'italic', whiteSpace: 'nowrap', lineHeight: 1.35 }}>Small details</div>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', fontStyle: 'italic', whiteSpace: 'nowrap', lineHeight: 1.35 }}>make a big home ♡</div>
+          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', letterSpacing: '0.02em', whiteSpace: 'nowrap', marginTop: 6 }}>v1.0.0</div>
         </div>
       </div>
     </aside>

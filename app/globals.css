@@ -1,60 +1,78 @@
 @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap');
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg:       #FAF8F5;
-  --surface:  #FFFFFF;
-  --border:   #EAE5DF;
-  --border-2: #D9D2C8;
-  --ink:      #1A1008;
-  --ink-2:    #3D2E1E;
-  --ink-3:    #7A6A58;
-  --ink-4:    #A89880;
-  --blue:     #C47E3A;
-  --blue-bg:  #FDF5EC;
-  --red:      #DC2626;
-  --red-bg:   #FEF2F2;
-  --green:    #16A34A;
-  --yellow:   #CA8A04;
-  --purple:   #7C3AED;
-  --radius:   8px;
-  --radius-sm:4px;
-  --shadow:   0 1px 2px rgba(0,0,0,0.05);
-  --shadow-md:0 4px 8px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04);
-  /* ช่องวันในปฏิทิน (วันหยุดร้าน / วันอาทิตย์) — เดิม hardcode สีขาวในไฟล์มือถือ พังตอนโหมดมืด */
-  --cal-holiday: #FFF9E6;
-  --cal-holiday-ink: #B45309;
-  --cal-sunday:  rgba(0,0,0,0.035);
-  /* ช่วงห้ามลา (Red Zone) — ทั้งช่องเป็นสีแดงอ่อน ไม่ใช่แค่ขีดบน */
-  --cal-redzone: #FDE8E8;
-  --cal-redzone-border: #F0B4B4;
+  /* ── โทนสีแบรนด์ Donna Design (อ้างอิงบอร์ดสีในภาพ) ──
+     #A87452 น้ำตาลหลัก · #D9B89A น้ำตาลอ่อน · #F6E8DA ครีมอ่อน · #F9F5EF ครีมขาว · #E7C9B6 เบจชมพู */
+  --bg:       #F8F1EA;
+  --surface:  #FBF7F1;
+  --border:   #F1E8DE;   /* เส้นขอบจาง ๆ ตามภาพต้นแบบ */
+  --border-2: #E4D6C6;
+  --ink:      #3D2B1F;
+  --ink-2:    #5C4534;
+  --ink-3:    #8B7460;
+  --ink-4:    #B39B84;
+  --blue:     #9E6A49;   /* สีเน้นของแบรนด์ (ชื่อตัวแปรเดิม ใช้ทั้งเว็บ) */
+  --blue-bg:  #F6E8DA;
+  --brand:      #9E6A49;
+  --ink-soft: #797979;   /* ดำอ่อน (เทากลาง) สำหรับเนื้อหาในตาราง */
+  --hairline: rgba(138,97,66,0.11);   /* เส้นคั่นแถวในตาราง — จางสุด */
+  --brand-soft: #D9B89A;
+  --cream:      #F0E0D0;
+  --cream-2:    #F9F5EF;
+  --blush:      #E7C9B6;
+  --red:      #C0563F;
+  --red-bg:   #FBEDE8;
+  --green:    #6F8F6A;
+  --yellow:   #C79A4B;
+  --purple:   #9A7BA0;
+  --radius:   14px;
+  --radius-sm:10px;
+  --shadow:   0 2px 8px rgba(120,86,58,0.09);
+  --shadow-md:0 6px 20px rgba(120,86,58,0.13), 0 1px 3px rgba(120,86,58,0.06);
+  /* ช่องวันในปฏิทิน (วันหยุดร้าน / วันอาทิตย์) */
+  --cal-holiday: #FBF0DC;
+  --cal-holiday-ink: #9A6B33;
+  --cal-sunday:  rgba(168,116,82,0.05);
+  /* ช่วงห้ามลา (Red Zone) */
+  --cal-redzone: #F8E3DC;
+  --cal-redzone-border: #E2B9A8;
 }
 
 html.dark {
-  --bg:       #0E0A06;
-  --surface:  #181008;
-  --border:   #2E2218;
-  --border-2: #3E3020;
-  --ink:      #FAF6F0;
-  --ink-2:    #E8DDD0;
-  --ink-3:    #A89278;
-  --ink-4:    #7A6A58;
-  --blue-bg:  #3A2010;
-  --red-bg:   #3B1219;
+  --bg:       #17100B;
+  --surface:  #1F1610;
+  --border:   #34261B;
+  --border-2: #463322;
+  --ink:      #F7EFE5;
+  --ink-2:    #E4D3C0;
+  --ink-3:    #B49C85;
+  --ink-4:    #8A745F;
+  --blue:     #C79268;
+  --blue-bg:  #3A2718;
+  --brand:      #C79268;
+  --ink-soft: #A0A0A0;
+  --hairline: rgba(255,255,255,0.07);
+  --brand-soft: #8A6142;
+  --cream:      #2C2016;
+  --cream-2:    #241A12;
+  --blush:      #3A251C;
+  --red-bg:   #3A1B14;
   --shadow:   0 1px 2px rgba(0,0,0,0.4);
-  --shadow-md:0 4px 12px rgba(0,0,0,0.5);
-  --cal-holiday: #2A1F0C;
-  --cal-holiday-ink: #E0A94A;
-  --cal-sunday:  rgba(255,255,255,0.045);
-  --cal-redzone: #3A1418;
-  --cal-redzone-border: #6B2229;
+  --shadow-md:0 6px 18px rgba(0,0,0,0.5);
+  --cal-holiday: #2E2110;
+  --cal-holiday-ink: #DCA85A;
+  --cal-sunday:  rgba(255,255,255,0.04);
+  --cal-redzone: #3A1B18;
+  --cal-redzone-border: #6B342A;
 }
 
 body {
   background: var(--bg);
   color: var(--ink);
-  font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+  font-family: 'Prompt', 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -79,12 +97,24 @@ tr.claim-flash, tr.claim-flash > td { animation: row-flash 1s ease-in-out 3; }
 .m-card-tap { transition: transform 0.12s ease, background 0.12s ease; }
 .m-card-tap:active { transform: scale(0.985); background: var(--blue-bg); }
 
+/* ใบปริ้นที่แปะไว้ที่ body ตรงๆ — ซ่อนบนหน้าจอ ตอนปริ้นจะยุบทุกอย่างที่ไม่ใช่ใบนี้
+   (ยุบด้วย display ไม่ใช่ visibility ไม่งั้นเนื้อหาหน้าจอยังกินพื้นที่จนได้กระดาษเปล่าตามมา)
+   ‼️ ต้องมี :has() — ยุบเฉพาะหน้าที่มีใบ .print-only อยู่จริง (หน้าภาพรวม) · เดิมยุบทุกหน้า
+      หน้าปฏิทินร้าน/ปฏิทินงานติดตั้งที่ปริ้นด้วย .print-area เลยได้กระดาษเปล่า */
+.print-only { display: none; }
+@media print {
+  body:has(> .print-only) > *:not(.print-only) { display: none !important; }
+  .print-only { display: block !important; }
+}
+
 /* ปริ้นเฉพาะส่วน .print-area (เช่น ปฏิทิน) ซ่อนที่เหลือทั้งหมด */
 @media print {
-  body * { visibility: hidden !important; }
-  .print-area, .print-area * { visibility: visible !important; }
+  /* ยุบทุกอย่างที่ไม่ใช่ปฏิทินและไม่ได้ห่อปฏิทินอยู่ (display: none ไม่กินที่ → ไม่มีกระดาษเปล่าตามมา)
+     แล้วล้างระยะขอบของกล่องที่ห่อ (sidebar เว้นซ้าย 64 / padding หน้า) ให้ปฏิทินชิดมุมกระดาษ */
+  body:not(:has(> .print-only)) *:not(:has(.print-area)):not(.print-area):not(.print-area *) { display: none !important; }
+  body:not(:has(> .print-only)) :has(.print-area) { margin: 0 !important; padding: 0 !important; min-height: 0 !important; background: transparent !important; box-shadow: none !important; border: none !important; }
   .print-area {
-    position: absolute; left: 0; top: 0; width: 100%;
+    width: 100%;
     margin: 0 !important; border: none !important; box-shadow: none !important; padding: 0 !important;
   }
   .print-area, .print-area * {
@@ -99,3 +129,348 @@ tr.claim-flash, tr.claim-flash > td { animation: row-flash 1s ease-in-out 3; }
    (กดที่ตัวเลขยังเปิดปฏิทินได้ ผ่าน showPicker() ที่ผูกไว้ในคอมโพเนนต์) */
 .date-inline::-webkit-calendar-picker-indicator { display: none; -webkit-appearance: none; }
 .date-inline::-webkit-inner-spin-button { display: none; }
+
+/* ── ธีม Donna: การ์ด/แผงมาตรฐาน ── */
+.dn-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); }
+.dn-stat { position: relative; overflow: hidden; border-radius: 18px; padding: 20px 22px; text-align: left;
+           cursor: pointer; border: 1px solid transparent; transition: box-shadow 0.15s ease, border-color 0.15s ease; }
+.dn-stat { box-shadow: 0 4px 14px rgba(120,86,58,0.11); }
+/* ภาพลายเส้นพื้นหลังของการ์ด (กล่อง / รถส่งของ / นาฬิกา) */
+.dn-stat .dn-art { position: absolute; right: 18px; bottom: 4px; opacity: 0.26;
+                   pointer-events: none; display: block; }
+.dn-stat:hover { box-shadow: var(--shadow-md); }
+/* ป้ายสถานะงาน — กว้างเท่ากันทุกแถวเพื่อให้เรียงตรงกันเป็นแนวเดียว (ตามภาพต้นแบบ) */
+.dn-pill { display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+           min-width: 100px; border-radius: 10px; padding: 4px 12px;
+           font-size: 12px; font-weight: 700; }
+/* หัวข้อ = Bold · ตัวเลข = Bold/SemiBold · เนื้อหา = Regular (ตามบอร์ดดีไซน์ของแบรนด์) */
+h1, h2, h3 { font-weight: 700; }
+.dn-table td { font-weight: 500; }
+.dn-table th { font-weight: 500; }
+.dn-field { background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
+            height: 46px; padding: 0 18px; font-size: 13px; color: var(--ink); outline: none; box-shadow: var(--shadow); }
+.dn-field:focus { border-color: var(--brand-soft); }
+/* แถบหัวตาราง = แผ่นครีมมุมมน ไม่ชิดขอบแผง (พื้นอยู่ที่ th เพื่อให้มุมโค้งได้) */
+.dn-table thead tr { background: transparent; }
+.dn-table th { background: var(--cream); font-weight: 600; color: #8A6142; }
+.dn-table thead th:first-child { border-radius: 10px 0 0 10px; }
+.dn-table thead th:last-child  { border-radius: 0 10px 10px 0; }
+/* แถวในตารางสีเดียวกันหมด ไม่สลับสี */
+.dn-table tbody tr { background: transparent; }
+.dn-table tbody tr:hover { background: var(--cream); }
+
+/* แผงเนื้อหาหลัก (หัวข้อ + ตาราง + แถบเลขหน้า อยู่ในกล่องเดียวกัน เหมือนภาพต้นแบบ) */
+.dn-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; box-shadow: 0 4px 16px rgba(120,86,58,0.10); overflow: hidden; }
+.dn-panel > .dn-panel-head { display: flex; align-items: center; gap: 10px; padding: 14px 20px; }
+.dn-panel > .dn-panel-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 20px; flex-wrap: wrap; }
+/* ปุ่มควบคุมบนแถบตัวกรอง — สูงเท่ากันหมด ให้แถวดูสมมาตร */
+.dn-ctrl { height: 46px; display: flex; align-items: center; gap: 10px; padding: 0 18px; border-radius: 999px;
+           background: var(--surface); border: 1px solid var(--border); color: var(--brand); font-size: 13px;
+           cursor: pointer; white-space: nowrap; font-weight: 500; box-shadow: var(--shadow); }
+.dn-ctrl:hover { border-color: var(--brand-soft); }
+.dn-ctrl.is-on { border-color: var(--brand); color: var(--brand); }
+/* ปุ่มคัดลอก: กดแล้วตัวหนังสือจางหาย วงกลมเด้งขึ้น + ขีดติ๊กถูกวาดตัวเอง (ปุ่มกว้างเท่าเดิม ไม่กระตุก) */
+.dn-copy { position: relative; justify-content: center; }
+.dn-copy .dn-copy-label { transition: opacity .15s; }
+.dn-copy.is-done .dn-copy-label { opacity: 0; }
+.dn-copy .dn-copy-check { position: absolute; inset: 0; margin: auto; width: 24px; height: 24px; pointer-events: none; }
+.dn-copy .dn-copy-check circle { fill: var(--brand); transform-origin: center; transform-box: fill-box;
+                                 animation: copy-pop .32s cubic-bezier(.34,1.56,.64,1) both; }
+.dn-copy .dn-copy-check path { fill: none; stroke: #FFF8F0; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round;
+                               stroke-dasharray: 14; stroke-dashoffset: 14; animation: copy-draw .28s .18s ease-out forwards; }
+@keyframes copy-pop  { from { transform: scale(0); } to { transform: scale(1); } }
+@keyframes copy-draw { to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .dn-copy .dn-copy-check circle, .dn-copy .dn-copy-check path { animation: none; stroke-dashoffset: 0; }
+}
+.dn-page { width: 32px; height: 32px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface);
+           color: var(--ink-2); font-size: 12.5px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+           box-shadow: var(--shadow); }
+.dn-page.is-on { background: var(--brand); border-color: var(--brand); color: #FFF8F0; font-weight: 700;
+                 box-shadow: 0 3px 10px rgba(158,106,73,0.35); }
+.dn-page:disabled { opacity: 0.4; cursor: default; }
+
+/* ── ข้อความเด้งบนหัวจอ (แจ้งเตือนช่างสแกนงาน) เลียนแบบ push notification ในมือถือ ── */
+@keyframes toast-in  { from { opacity: 0; transform: translateY(-18px) scale(0.97); }
+                       to   { opacity: 1; transform: none; } }
+@keyframes toast-out { to   { opacity: 0; transform: translateY(-12px) scale(0.97); } }
+
+.toast-stack { position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+               z-index: 2000; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+.toast { pointer-events: auto; min-width: 260px; max-width: calc(100vw - 32px); cursor: pointer;
+         display: flex; align-items: center; gap: 14px; padding: 11px 18px;
+         background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+         box-shadow: 0 10px 30px rgba(90,60,38,0.20), 0 2px 6px rgba(90,60,38,0.10);
+         animation: toast-in 0.30s cubic-bezier(0.2, 0.9, 0.2, 1); }
+.toast.is-out { animation: toast-out 0.25s ease forwards; }
+.toast-icon { width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+              display: inline-flex; align-items: center; justify-content: center; }
+@media (max-width: 480px) { .toast-stack { left: 16px; right: 16px; transform: none; } }
+
+
+/* ── หน้าออเดอร์ ดีไซน์ใหม่ (components/OrderWorkspace.tsx) — สี/ความสูงชุดเดียวกับหน้าภาพรวม (.dn-*) ── */
+.ow-field::placeholder { color: var(--ink-4); }
+.ow-field:focus { border-color: var(--brand-soft) !important; }
+.ow-select { position: relative; display: flex; font-family: inherit; font-size: 13.5px; cursor: pointer; text-align: left; align-items: center; gap: 10px; flex-shrink: 0; height: 46px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 0 14px 0 18px;
+  box-shadow: var(--shadow); color: var(--brand); min-width: 180px; transition: border-color 120ms; }
+.ow-select:hover { border-color: var(--brand-soft); }
+.ow-select[data-on] { border-color: var(--brand); }
+.ow-tab { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink-2); font-size: 13.5px; font-weight: 500;
+  box-shadow: var(--shadow); transition: background 120ms, color 120ms; font-family: inherit; }
+.ow-tab:hover:not([data-active]) { border-color: var(--brand-soft); }
+.ow-tab[data-active] { background: var(--brand); color: #FFF8F0; font-weight: 600; border-color: var(--brand); box-shadow: 0 3px 10px rgba(158,106,73,0.35); }
+.ow-tab-n { font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--cream); color: #8A6142; font-variant-numeric: tabular-nums; }
+.ow-tab[data-active] .ow-tab-n { background: rgba(255,248,240,0.25); color: #FFF8F0; }
+/* หัวตาราง = แผ่นครีมมุมมน เหมือน .dn-table */
+.ow-card > div > table { border-collapse: separate !important; border-spacing: 0; padding: 10px 12px 0; }
+.ow-card table thead tr { background: transparent !important; border-bottom: none !important; }
+.ow-card table thead th { background: var(--cream); color: #8A6142 !important; font-weight: 600 !important; font-size: 12.5px; padding-top: 12px !important; padding-bottom: 12px !important; }
+/* ปุ่มดรอปดาวน์ในหัวคอลัมน์ (วันผลิตที่เหลือ/แพลตฟอร์ม/บริษัทจัดส่ง ฯลฯ) มีสี/ขนาดของตัวเอง → ให้ใช้ของหัวตารางเหมือนกันทุกช่อง (เหมือนหน้าภาพรวม) */
+.ow-card table thead th > button { color: inherit !important; font-size: inherit !important; font-weight: inherit !important; font-family: inherit; }
+.ow-card table thead th:first-child { border-radius: 10px 0 0 10px; }
+.ow-card table thead th:last-child { border-radius: 0 10px 10px 0; }
+.ow-card table tbody td { padding-top: 10px !important; padding-bottom: 10px !important; border-bottom: 1px solid var(--hairline); }
+/* ทุกแท็บของหมวดออเดอร์ แถวสูงเท่ากัน = 56px เนื้อหาไม่เกิน 2 บรรทัด (user ขอ 15ก.ย.69 · ลองมาแล้ว 3 บรรทัด 78px / 1 บรรทัด 48px) — เนื้อหาในช่องจัดกึ่งกลางแนวตั้ง
+   ‼️ ช่องไหนเพิ่มบรรทัดเกิน 3 แถวจะสูงกว่าแถวอื่นทันที (ช่องรายการคุมไว้ที่ itemShown ใน OrderWorkspace) */
+.ow-card table tbody tr { height: 56px; }
+.ow-card table tbody td { vertical-align: middle; line-height: 1.4; }
+.ow-card table tbody tr:not(.is-pinned):hover { background: var(--cream-2) !important; }
+/* แถวปักหมุด — พื้นครีมอ่อน (#F7F0E8) เห็นชัดว่าลอยอยู่บนสุด · ชี้แล้วเข้มขึ้นอีกนิด */
+.ow-card table tbody tr.is-pinned:hover { background: #F2E7DC !important; }
+/* ช่องติ๊กธีมครีม (หน้าออเดอร์) — กล่องมุมมน 6px · ติ๊กแล้วพื้นน้ำตาล + ติ๊กถูกขาววาดขึ้นมา (ขาสั้นก่อนแล้วขายาว) + เด้งเบาๆ
+   ติ๊กถูกคือ ::after ที่มีขอบล่าง+ขวาแล้วหมุน 45° · clip-path ค่อยๆ เปิดจากขาล่างไปขาขวา = เหมือนวาดด้วยปากกา */
+.ow-card table input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none; position: relative; flex-shrink: 0; margin: 0; vertical-align: middle;
+  width: 18px !important; height: 18px !important; border-radius: 6px; cursor: pointer;
+  background: var(--surface); border: 1.6px solid var(--brand-soft);
+  transition: background 140ms, border-color 140ms, box-shadow 140ms;
+}
+.ow-card table input[type="checkbox"]:hover:not(:disabled) { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(158,106,73,0.12); }
+.ow-card table input[type="checkbox"]:focus-visible { outline: 2px solid var(--brand-soft); outline-offset: 2px; }
+.ow-card table input[type="checkbox"]:checked { background: var(--brand); border-color: var(--brand); animation: cb-pop 260ms cubic-bezier(.34,1.56,.64,1); }
+/* ‼️ ตรึงเครื่องหมายถูกไว้กลางกล่องด้วย 50% + translate — อย่ากลับไปใช้ left/top เป็น px
+   เพราะกล่องกับเส้นขอบเปลี่ยนขนาดตามการซูมหน้า ทำให้ติ๊กเบี้ยวไปมุมบน/ขวา */
+.ow-card table input[type="checkbox"]:checked::after {
+  content: ''; position: absolute; left: 50%; top: 50%; width: 4.5px; height: 9px;
+  border: solid #FFF8F0; border-width: 0 2.2px 2.2px 0;
+  transform: translate(-50%, -55%) rotate(45deg);
+  animation: cb-draw 240ms 60ms ease-out both;
+}
+.ow-card table input[type="checkbox"]:indeterminate { background: var(--brand); border-color: var(--brand); }
+.ow-card table input[type="checkbox"]:indeterminate::after {
+  content: ''; position: absolute; left: 3.5px; right: 3.5px; top: 50%; height: 2.2px; margin-top: -1.1px; border-radius: 2px; background: #FFF8F0;
+}
+.ow-card table input[type="checkbox"]:disabled { opacity: 0.45; cursor: default; }
+@keyframes cb-pop { 0% { transform: scale(0.82); } 60% { transform: scale(1.1); } 100% { transform: scale(1); } }
+@keyframes cb-draw { 0% { clip-path: inset(100% 100% 0 0); } 45% { clip-path: inset(78% 0 0 0); } 100% { clip-path: inset(0 0 0 0); } }
+@media (prefers-reduced-motion: reduce) { .ow-card table input[type="checkbox"]:checked, .ow-card table input[type="checkbox"]:checked::after { animation: none; } }
+.pg-btn { min-width: 32px; height: 32px; padding: 0 8px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface);
+  color: var(--ink-2); font-size: 12.5px; cursor: pointer; font-variant-numeric: tabular-nums; font-family: inherit; box-shadow: var(--shadow); }
+.pg-btn:hover:not(:disabled):not([data-active]) { border-color: var(--brand-soft); }
+.pg-btn[data-active] { background: var(--brand); color: #FFF8F0; border-color: var(--brand); font-weight: 700; box-shadow: 0 3px 10px rgba(158,106,73,0.35); }
+.pg-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* ปุ่มของ CreamSelect (components/CreamSelect.tsx) */
+.ow-select .cs-value { flex: 1; color: var(--ink-2); white-space: nowrap; }
+.cs-chev { flex-shrink: 0; transition: transform 160ms ease; }
+[data-open] > .cs-chev { transform: rotate(180deg); }
+/* ป้ายสถานะในหน้าออเดอร์ = .dn-pill ของหน้าภาพรวม (กว้าง/สี/ความหนาเดียวกัน) + เป็นปุ่มกดเลือกได้ */
+.ow-pill { border: none; font-family: inherit; cursor: pointer; white-space: nowrap; line-height: inherit; transition: box-shadow 120ms; }
+.ow-pill:hover, .ow-pill[data-open] { box-shadow: inset 0 0 0 1.5px rgba(107,67,38,0.28); }
+.ow-pill:focus-visible, .ow-select:focus-visible, .cs-inline:focus-visible { outline: 2px solid var(--brand-soft); outline-offset: 2px; }
+
+/* ‼️ ช่องเลือกในแถวตาราง ใช้ .cs-inline ไม่ใช่ .ow-select
+   (.ow-select เป็นปุ่มบนแถบเครื่องมือ — สูง 46px กว้างอย่างน้อย 180px ถ้าเอามาใส่ในแถว ช่องจะกว้างเกิน
+    และตัวหนังสือถูกดันไปชิดซ้ายเพราะลูกศรโดนผลักไปสุดขอบขวา) */
+.cs-inline { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-width: 0;
+  background: transparent; border: none; padding: 0; cursor: pointer; font-family: inherit; text-align: left;
+  border-radius: 999px; transition: background-color 140ms ease, box-shadow 140ms ease; }
+.cs-inline .cs-value { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: inherit; }
+.cs-inline:hover, .cs-inline[data-open] { background-color: var(--cream-2); box-shadow: 0 0 0 5px var(--cream-2); }
+.cs-inline .cs-chev { opacity: 0.55; }
+.cs-inline:hover .cs-chev, .cs-inline[data-open] .cs-chev { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .cs-inline { transition: none; } }
+
+/* รายการที่เลื่อนลงมา — ครีม มุมมน เงานุ่ม (ใช้กับ CreamSelect + เมนูลอยเดิมในหน้าออเดอร์ .ow-drop) */
+.cs-menu, .ow-drop {
+  background: var(--surface) !important; border: 1px solid var(--border) !important; border-radius: 14px !important;
+  box-shadow: 0 12px 32px rgba(120,86,58,0.16), 0 2px 6px rgba(120,86,58,0.06) !important;
+  transform-origin: top center; animation: cs-drop 300ms cubic-bezier(.22,1,.36,1) both;
+}
+.cs-menu { z-index: 10000; padding: 6px; overflow-y: auto; }
+.cs-menu.is-up { transform-origin: bottom center; animation-name: cs-rise; }
+.ow-drop { overflow: hidden; }
+/* ม่านคลี่ลงจากขอบบน (clip-path) + เลื่อนลงนิดหน่อย · รายการข้างในไหลตามทีละข้อ */
+@keyframes cs-drop { from { opacity: 0.4; clip-path: inset(0 0 100% 0 round 14px); transform: translateY(-10px); } to { opacity: 1; clip-path: inset(0 0 0 0 round 14px); transform: none; } }
+@keyframes cs-rise { from { opacity: 0.4; clip-path: inset(100% 0 0 0 round 14px); transform: translateY(10px); } to { opacity: 1; clip-path: inset(0 0 0 0 round 14px); transform: none; } }
+.cs-menu .cs-item, .ow-drop > * { animation: cs-item-in 260ms cubic-bezier(.22,1,.36,1) both; }
+.ow-drop > *:nth-child(2) { animation-delay: 22ms; } .ow-drop > *:nth-child(3) { animation-delay: 44ms; }
+.ow-drop > *:nth-child(4) { animation-delay: 66ms; } .ow-drop > *:nth-child(5) { animation-delay: 88ms; }
+.ow-drop > *:nth-child(6) { animation-delay: 110ms; } .ow-drop > *:nth-child(n+7) { animation-delay: 132ms; }
+@keyframes cs-item-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.cs-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 10px; font-size: 13px;
+  color: var(--ink-2); cursor: pointer; white-space: nowrap; }
+.cs-item[data-hi] { background: var(--cream-2); }
+.cs-item[data-selected] { background: var(--cream); font-weight: 600; }
+.cs-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+/* ข้อในเมนูลอยเดิม: ชี้แล้วพื้นครีม */
+.ow-drop > div:hover, .ow-drop > label:hover, .ow-drop > button:hover { background: var(--cream-2) !important; }
+@media (prefers-reduced-motion: reduce) { .cs-menu, .ow-drop, .cs-menu .cs-item, .ow-drop > * { animation: none; } .cs-chev { transition: none; } }
+
+/* ช่องแอดมิน/ช่างเย็บที่ยังไม่เลือกชื่อ — ป้ายพีชครีมมุมมนรอบช่องเลือก (เดิมระบายเหลืองเต็มช่องตาราง)
+   ‼️ ใช้ background-color ไม่ใช่ background — ไม่งั้นลบลูกศรของช่องเลือกทิ้ง (ดูบล็อกถัดไป) */
+.ow-card td.ow-empty > select, .dn-list td.ow-empty select { background-color: #F6DFC6 !important; border-radius: 999px; padding: 5px 24px 5px 12px !important; min-width: 64px; color: #8A6142 !important; font-weight: 600; }
+
+/* ════ ช่องเลือก <select> ในตารางทุกหน้า — ให้หน้าตาเดียวกับ CreamSelect ════
+   เมนูของ <select> เป็นของระบบปฏิบัติการ ใส่อนิเมชั่นไม่ได้ (ถ้าต้องการเมนูคลี่ลงต้องใช้ CreamSelect)
+   แต่ตัวช่องคุมได้ — พื้นครีมมุมมน ลูกศรของเราเอง ชี้/โฟกัสแล้วค่อยๆ เปลี่ยน */
+table.dn-list select, .ow-card table select, .sc-fields select, .sc-modal select {
+  appearance: none; -webkit-appearance: none; cursor: pointer;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238B7460' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>") !important;
+  background-repeat: no-repeat !important; background-position: right 7px center !important; background-size: 11px !important;
+  padding-right: 22px !important; border-radius: 999px !important;
+  transition: background-color 150ms ease, box-shadow 150ms ease, color 150ms ease;
+}
+table.dn-list select:hover:not(:disabled), .ow-card table select:hover:not(:disabled),
+.sc-fields select:hover:not(:disabled), .sc-modal select:hover:not(:disabled) {
+  background-color: var(--cream) !important; box-shadow: inset 0 0 0 1px var(--border-2);
+}
+table.dn-list select:focus-visible, .ow-card table select:focus-visible,
+.sc-fields select:focus-visible, .sc-modal select:focus-visible { outline: 2px solid var(--brand-soft); outline-offset: 1px; }
+/* รายการในเมนูของระบบ — อย่างน้อยให้พื้น/ตัวอักษรเป็นโทนครีมบนเบราว์เซอร์ที่ยอมให้แต่ง */
+table.dn-list select option, .ow-card table select option, .sc-fields select option, .sc-modal select option { background: var(--surface); color: var(--ink); }
+@media (prefers-reduced-motion: reduce) { table.dn-list select, .ow-card table select { transition: none; } }
+
+/* ════ ปฏิทินร้าน (/employees) — ดีไซน์ตามภาพต้นแบบ 14ก.ย.69 ════ */
+.sc-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
+.sc-title { font-size: 30px; font-weight: 700; color: var(--ink); letter-spacing: -0.4px; line-height: 1.2; }
+.sc-sub { font-size: 14px; color: var(--ink-3); margin-top: 4px; }
+.sc-btn-main { background: var(--brand); color: #FFF8F0; border: none; border-radius: 999px; padding: 12px 24px; font-size: 14px; font-weight: 600; cursor: pointer; box-shadow: 0 6px 16px rgba(158,106,73,0.28); font-family: inherit; }
+.sc-btn-main:hover { filter: brightness(1.05); }
+.sc-btn-ghost { background: var(--cream-2); color: var(--ink); border: 1px solid var(--border-2); border-radius: 999px; padding: 11px 20px; font-size: 14px; font-weight: 500; cursor: pointer; box-shadow: var(--shadow); font-family: inherit; }
+.sc-card { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 24px; box-shadow: 0 10px 30px rgba(120,86,58,0.07); padding: 20px 20px 22px; margin-bottom: 28px; overflow: hidden; }
+.sc-toolbar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 14px; margin-bottom: 18px; }
+.sc-seg { display: inline-flex; background: var(--cream-2); border: 1px solid var(--border); border-radius: 999px; padding: 4px; justify-self: start; }
+.sc-seg button { border: none; background: transparent; color: var(--ink-2); font-size: 14px; font-weight: 500; padding: 8px 24px; border-radius: 999px; cursor: pointer; font-family: inherit; }
+.sc-seg button.on { background: var(--brand); color: #FFF8F0; font-weight: 600; box-shadow: 0 3px 10px rgba(158,106,73,0.25); }
+.sc-nav { display: flex; align-items: center; gap: 10px; }
+.sc-month { font-size: 19px; font-weight: 700; color: var(--ink); min-width: 170px; text-align: center; white-space: nowrap; }
+.sc-circle { width: 42px; height: 42px; border-radius: 999px; border: 1px solid var(--border-2); background: var(--cream-2); color: var(--ink-2); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.sc-circle:hover, .sc-pill:hover { background: var(--cream); }
+.sc-pill { height: 42px; padding: 0 20px; border-radius: 999px; border: 1px solid var(--border-2); background: var(--cream-2); color: var(--ink-2); font-size: 14px; cursor: pointer; font-family: inherit; }
+.sc-legend { display: flex; gap: 16px; flex-wrap: wrap; justify-self: end; font-size: 13px; color: var(--ink-2); }
+.sc-legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.sc-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.sc-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border: 1px solid var(--hairline); border-radius: 16px; overflow: hidden; background: var(--cream-2); }
+.sc-dow { text-align: center; font-size: 13px; font-weight: 600; color: var(--ink-3); padding: 12px 0; border-bottom: 1px solid var(--hairline); border-right: 1px solid var(--hairline); }
+.sc-dow:nth-child(7n) { border-right: none; }
+.sc-cell { min-height: 116px; padding: 10px 10px 8px; border-right: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); cursor: pointer; display: flex; flex-direction: column; gap: 6px; min-width: 0; transition: background .15s; }
+.sc-grid > .sc-cell:nth-child(7n) { border-right: none; }
+.sc-cell:hover { background: rgba(240,224,208,0.35); }
+.sc-tall { min-height: 420px; }
+.sc-out { cursor: default; background: rgba(240,224,208,0.12); }
+.sc-out:hover { background: rgba(240,224,208,0.12); }
+.sc-dim .sc-num { color: var(--ink-4); }
+.sc-num { font-size: 15px; font-weight: 500; color: var(--ink); line-height: 1; padding: 2px 2px 4px; }
+.sc-today { box-shadow: inset 0 0 0 2px var(--brand); border-radius: 12px; }
+.sc-today .sc-num { color: var(--brand); font-weight: 700; }
+.sc-chip { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; border: 1px solid transparent; box-shadow: 0 1px 2px rgba(120,86,58,0.05); min-width: 0; }
+.sc-chip:hover { border-color: rgba(158,106,73,0.45); }
+.sc-dot { width: 7px; height: 7px; border-radius: 999px; flex-shrink: 0; align-self: flex-start; margin-top: 5px; }
+.sc-chip-title { font-size: 12px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-chip-sub { font-size: 11px; color: var(--ink-3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-chev { color: var(--ink-4); flex-shrink: 0; }
+.sc-redzone  { background: #F9E4E1; } .sc-redzone .sc-dot  { background: #C0564A; }
+.sc-campaign { background: #FBEAD7; } .sc-campaign .sc-dot { background: #C79A4B; }
+.sc-holiday  { background: #F6E9DB; } .sc-holiday .sc-dot  { background: #D9AE86; }
+.sc-leave    { background: #F1E4D8; } .sc-leave .sc-dot    { background: #A8714F; }
+.sc-closed   { background: #ECE9E7; } .sc-closed .sc-dot   { background: #9A9AA6; }
+.sc-more { font-size: 11px; color: var(--ink-3); padding-left: 4px; }
+.sc-dayview { border: 1px solid var(--hairline); border-radius: 16px; background: var(--cream-2); padding: 18px; display: flex; flex-direction: column; gap: 10px; min-height: 320px; }
+.sc-dayview-head { font-size: 15px; font-weight: 600; color: var(--ink-2); margin-bottom: 4px; }
+.sc-big { padding: 14px 16px; cursor: pointer; } .sc-big .sc-chip-title { font-size: 14px; } .sc-big .sc-chip-sub { font-size: 12.5px; }
+.sc-empty { color: var(--ink-4); font-size: 13px; padding: 30px 0; text-align: center; }
+html.dark .sc-redzone { background: #3A2320; } html.dark .sc-campaign { background: #3A2B1B; } html.dark .sc-holiday { background: #33261B; }
+html.dark .sc-leave { background: #2F2319; } html.dark .sc-closed { background: #2A2624; }
+@media (max-width: 1100px) { .sc-toolbar { grid-template-columns: 1fr; justify-items: start; } .sc-legend { justify-self: start; } }
+
+/* ── หน้าต่างรายละเอียดวัน / เพิ่มรายการ ของปฏิทิน (ธีมเดียวกับ .sc-card) ── */
+.sc-mback { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(61,43,31,0.32) !important; backdrop-filter: blur(3px); animation: sc-fade .18s ease both; }
+.sc-modal { background: var(--surface) !important; border: 1px solid var(--border) !important; border-radius: 24px !important; box-shadow: 0 24px 60px rgba(61,43,31,0.22) !important; padding: 24px !important; width: 100%; max-height: 86vh; overflow-y: auto; animation: sc-pop .22s cubic-bezier(.22,1,.36,1) both; }
+@keyframes sc-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sc-pop { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+.sc-mhead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.sc-mdate { display: flex; align-items: center; gap: 12px; }
+.sc-mday { width: 52px; height: 52px; border-radius: 16px; background: var(--brand); color: #FFF8F0; font-size: 24px; font-weight: 700; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 14px rgba(158,106,73,0.25); }
+.sc-mdow { font-size: 17px; font-weight: 700; color: var(--ink); line-height: 1.2; }
+.sc-mmon { font-size: 13px; color: var(--ink-3); margin-top: 2px; }
+.sc-mclose { width: 36px; height: 36px; border-radius: 999px; border: 1px solid var(--border-2); background: var(--cream-2); color: var(--ink-2); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.sc-mclose:hover { background: var(--cream); }
+.sc-mtitle { font-size: 19px; font-weight: 700; color: var(--ink); margin-bottom: 18px; }
+.sc-msec { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--ink-2); margin: 18px 0 10px; }
+.sc-msec span { background: var(--cream); color: #8A6142; border-radius: 999px; padding: 1px 9px; font-size: 12px; }
+.sc-mempty { text-align: center; color: var(--ink-4); font-size: 13px; padding: 22px 0; border: 1px dashed var(--border-2); border-radius: 14px; }
+.sc-mitem { display: flex; gap: 10px; padding: 14px 16px; border-radius: 14px; background: #F1E4D8; margin-bottom: 10px; }
+.sc-mitem .sc-dot { margin-top: 7px; }
+.sc-mname { font-size: 14px; font-weight: 700; color: var(--ink); }
+.sc-mname small { font-size: 12px; font-weight: 400; color: var(--ink-3); margin-left: 4px; }
+.sc-mtime { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.sc-mpill { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 600; color: #8A6142; background: rgba(255,255,255,0.6); border-radius: 999px; padding: 3px 10px; }
+.sc-mnote { font-size: 12.5px; color: var(--ink-3); margin-top: 6px; }
+.sc-mlink { display: inline-block; font-size: 12px; color: var(--brand); margin-top: 6px; text-decoration: none; }
+.sc-madd { width: 100%; margin-top: 6px; padding: 12px; border-radius: 999px; border: 1.5px dashed rgba(158,106,73,0.45); background: transparent; color: var(--brand); font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.sc-madd:hover { background: var(--cream-2); border-style: solid; }
+/* .sc-fields = เอาเฉพาะหน้าตาช่องกรอกของธีมไปใช้ กับกล่องที่จัด layout เองอยู่แล้ว (เช่น ฟอร์มเพิ่ม/แก้ออเดอร์)
+   ถ้าใส่ .sc-modal ทั้งก้อนจะโดน padding/max-height ของการ์ดทับ layout เดิม */
+.sc-modal input:not([type=checkbox]):not([type=radio]):not([type=file]), .sc-modal select, .sc-modal textarea,
+.sc-fields input:not([type=checkbox]):not([type=radio]):not([type=file]), .sc-fields select, .sc-fields textarea {
+  background: var(--cream-2) !important; border: 1px solid var(--border-2) !important; border-radius: 12px !important; padding: 9px 12px !important; color: var(--ink); font-family: inherit; }
+.sc-modal input:focus, .sc-modal select:focus, .sc-modal textarea:focus,
+.sc-fields input:focus, .sc-fields select:focus, .sc-fields textarea:focus { border-color: var(--brand) !important; box-shadow: 0 0 0 3px rgba(158,106,73,0.12); }
+/* label ที่ทำหน้าที่เป็นปุ่ม (เช่น ปุ่มเลือกไฟล์ในกล่อง Drop ไฟล์) ต้องไม่โดนสีตัวอักษรของ label ทับ */
+.sc-modal label:not([data-btn]), .sc-fields label:not([data-btn]) { color: var(--ink-3) !important; }
+.sc-mcancel { border-radius: 999px !important; background: var(--cream-2) !important; border: 1px solid var(--border-2) !important; color: var(--ink-2) !important; padding: 12px !important; font-family: inherit; }
+.sc-msave { border-radius: 999px !important; background: var(--brand) !important; color: #FFF8F0 !important; padding: 12px !important; box-shadow: 0 6px 16px rgba(158,106,73,0.25); font-family: inherit; }
+
+/* ════ ตารางรายการทุกหน้า — หน้าตาเดียวกับตารางหน้าออเดอร์/ภาพรวม (ใส่ className="dn-list" ที่ <table>) ════ */
+table.dn-list { border-collapse: separate !important; border-spacing: 0 !important; font-size: 12.5px !important; padding: 10px 12px 4px; }
+/* การ์ดที่ครอบตาราง — ขนาดมุม/เงา/ขอบเท่าการ์ดตารางหน้าออเดอร์ */
+.dn-list-card { background: var(--surface) !important; border: 1px solid var(--border) !important; border-radius: 20px !important; box-shadow: 0 4px 16px rgba(120,86,58,0.10) !important; }
+table.dn-list thead tr { background: transparent !important; border-bottom: none !important; }
+table.dn-list thead th { background: var(--cream) !important; color: #8A6142 !important; font-weight: 600 !important; font-size: 12.5px !important; padding: 12px 14px !important; line-height: 1.4; border-bottom: none !important; white-space: nowrap; }
+table.dn-list thead th > button { color: inherit !important; font-size: inherit !important; font-weight: inherit !important; font-family: inherit; }
+table.dn-list thead th:first-child { border-radius: 10px 0 0 10px; }
+table.dn-list thead th:last-child { border-radius: 0 10px 10px 0; }
+table.dn-list tbody tr { border-bottom: none !important; }
+table.dn-list tbody td { padding: 12px 14px !important; border-bottom: 1px solid var(--hairline) !important; font-size: 12.5px !important; line-height: 1.5; }
+/* ตัวหนา/ลิงก์ในช่องไม่ให้ใหญ่กว่าตัวหนังสือตาราง (บางหน้าตั้ง 13-15px ไว้เอง) */
+table.dn-list tbody td > b, table.dn-list tbody td > strong, table.dn-list tbody td > a, table.dn-list tbody td > span > b { font-size: inherit !important; }
+table.dn-list tbody tr:last-child td { border-bottom: none !important; }
+table.dn-list tbody tr:hover { background: var(--cream-2) !important; }
+/* .dn-rows = แถวสูงเท่าตารางหมวดออเดอร์/หน้าภาพรวม (56px = เนื้อหาไม่เกิน 2 บรรทัด) — งานเคลม/พัสดุส่งกลับ/ปฏิทินงานติดตั้ง/ปฏิทินร้าน/พนักงาน/สต็อก/สั่งซื้อ (user ขอ 15ก.ย.69)
+   line-height 1.4 ให้ 3 บรรทัดพอดี 78 · ‼️ช่องไหนเกิน 3 บรรทัดแถวจะสูงกว่าแถวอื่น ต้องตัดในช่องนั้นเอง */
+table.dn-list.dn-rows tbody tr { height: 56px; }
+/* หน้างานเคลม: ข้อความยาวกว่าที่อื่น (สาเหตุ/วิธีแก้ไข/ที่อยู่) ให้แถวสูงพอ 3 บรรทัด */
+table.dn-list.dn-rows-3 tbody tr { height: 74px; }
+table.dn-list.dn-rows tbody td { vertical-align: middle !important; line-height: 1.4; padding-top: 10px !important; padding-bottom: 10px !important; }
+/* แถบรูป/คลิปเลื่อนข้างในแถวตาราง — ซ่อนแถบเลื่อน (กินความสูงแถว) ยังลาก/Shift+ล้อเมาส์เลื่อนได้ */
+.dn-hscroll { scrollbar-width: none; }
+.dn-hscroll::-webkit-scrollbar { display: none; }
+table.dn-list input[type="checkbox"] { appearance: none; -webkit-appearance: none; width: 18px; height: 18px; border-radius: 6px; border: 1.5px solid var(--border-2); background: var(--cream-2); cursor: pointer; position: relative; vertical-align: middle; margin: 0; }
+table.dn-list input[type="checkbox"]:hover:not(:disabled) { border-color: var(--brand); }
+table.dn-list input[type="checkbox"]:checked { background: var(--brand); border-color: var(--brand); }
+/* ‼️ กลางกล่องด้วย 50% + translate เหมือนช่องติ๊กของหมวดออเดอร์ (เหตุผลเดียวกับคอมเมนต์ด้านบน) */
+table.dn-list input[type="checkbox"]:checked::after { content: ''; position: absolute; left: 50%; top: 50%; width: 5px; height: 10px; border: solid #FFF8F0; border-width: 0 2px 2px 0; transform: translate(-50%, -55%) rotate(45deg); }
+
+/* การ์ดในปฏิทินที่กดแล้วไปต่อได้ (นัดหมาย → ออเดอร์ · ใบลา → แถวในรายการลา) */
+.sc-link { cursor: pointer; transition: transform .12s, box-shadow .12s, border-color .12s; }
+.sc-link:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(120,86,58,0.14); border-color: rgba(158,106,73,0.45); }
+.sc-mitem.sc-link { border: 1px solid transparent; }
+/* แถวที่เด้งมาจากลิงก์ กระพริบน้ำตาลอ่อน 3 ครั้ง */
+@keyframes row-flash { 0%,100% { background-color: transparent; } 50% { background-color: #e8d5bf; } }
+tr.row-flash, tr.row-flash > td { animation: row-flash 1s ease-in-out 3; }
+/* โฟลเดอร์ลูกค้า: รายละเอียดออเดอร์แบ่ง 2 คอลัมน์ให้เต็มจอ · จอแคบกลับเป็นคอลัมน์เดียว */
+.odb-cols { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 0 14px; align-items: start; }
+@media (max-width: 1100px) { .odb-cols { grid-template-columns: minmax(0, 1fr); } }

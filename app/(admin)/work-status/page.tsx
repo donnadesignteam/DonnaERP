@@ -7,17 +7,17 @@ import { getPageCache, setPageCache } from '@/lib/pageCache'
 
 // สีแยกตามขั้นผลิต — ให้ตรงกับหน้าออเดอร์ (PROD_STATUS_COLOR ใน OrderWorkspace)
 const statusColor: Record<string, string> = {
-  'รอดำเนินการ': '#ff9f0a',
-  'ตัดผ้าแล้ว': '#0ea5e9',
-  'เย็บแล้ว': '#8b5cf6',
-  'ตรวจสอบแล้ว': '#6366f1',
-  'รีดแล้ว': '#ec4899',
-  'แพ็คแล้ว': '#14b8a6',
-  'กำลังตัด': '#0ea5e9',
-  'กำลังเย็บ': '#8b5cf6',
-  'กำลังรีด': '#ec4899',
-  'กำลังแพ็ค': '#14b8a6',
-  'สำเร็จ': '#34c759',
+  'รอดำเนินการ': '#C79A4B',
+  'ตัดผ้าแล้ว': '#6E8CA0',
+  'เย็บแล้ว': '#9A7BA0',
+  'ตรวจสอบแล้ว': '#7B7FA3',
+  'รีดแล้ว': '#C2848E',
+  'แพ็คแล้ว': '#6E9A92',
+  'กำลังตัด': '#6E8CA0',
+  'กำลังเย็บ': '#9A7BA0',
+  'กำลังรีด': '#C2848E',
+  'กำลังแพ็ค': '#6E9A92',
+  'สำเร็จ': '#6F8F6A',
 }
 
 const stages = ['รอดำเนินการ', 'ตัดผ้าแล้ว', 'เย็บแล้ว', 'ตรวจสอบแล้ว', 'รีดแล้ว', 'แพ็คแล้ว', 'สำเร็จ']
@@ -110,8 +110,8 @@ export default function WorkStatusPage() {
           {workStatus.length > 0 && (
             <div style={{ marginTop: 40 }}>
               <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 16, color: 'var(--ink)' }}>บันทึกสถานะแผนก</h2>
-              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <div className="dn-list-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
+                <table className="dn-list" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
                       <th style={{ textAlign: 'left', padding: '14px 20px', color: 'var(--ink-3)', fontWeight: 500 }}>เลขที่ออเดอร์</th>

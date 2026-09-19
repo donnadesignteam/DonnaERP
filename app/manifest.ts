@@ -12,7 +12,7 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: '/',
     display: 'standalone',
     background_color: '#FAF8F5',
-    theme_color: '#C47E3A',
+    theme_color: '#A87452',
     // ‼️ user สั่งกลับมาใช้รูปโลโก้เดิม (donna-logo.jpg) — icon-hub-*.png ที่เคยทำให้
     //    มีเส้นขาวของกรอบโลโก้ขึ้นบนไอคอน อย่าเสนอเปลี่ยนกลับ
     //    (icon-192/512.png ในโฟลเดอร์ public เป็นธีม QR ของแอปสแกน ห้ามเอามาใช้กับ hub)

@@ -10,6 +10,7 @@ export default function SidebarLayout({ children }: { children: React.ReactNode 
       <Sidebar />
       <main style={{
         flex: 1,
+        minWidth: 0,
         marginLeft: 64,
         minHeight: '100vh',
       }}>

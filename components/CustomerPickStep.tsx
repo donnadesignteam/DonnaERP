@@ -20,7 +20,7 @@ export default function CustomerPickStep({ book, onPick, onBack, onClose, altLab
   const typed = query.trim()
 
   // ‼️ ปิดกล่องเฉพาะตอน "กดลงแล้วปล่อย" บนพื้นหลังทั้งคู่
-  //    ไม่งั้นลากเลือกข้อความในกล่องแล้วปล่อยเมาส์นอกกล่อง เบราว์เซอร์ยิง click ที่พื้นหลัง → กล่องปิดทิ้งงานที่พิมพ์ไว้
+  //    ไม่งั้นลากเลือกข้อความในกล่องแล้วปล่อยเมาส์นอกกล่อง เบราว์เซอร์ยิง click ที่พื้นหลัง → กล่องปิดเอง
   const downOnBackdrop = useRef(false)
   const backdropDown = (e: React.MouseEvent) => { downOnBackdrop.current = e.target === e.currentTarget }
   const backdropClick = (e: React.MouseEvent) => {
@@ -28,26 +28,27 @@ export default function CustomerPickStep({ book, onPick, onBack, onClose, altLab
     downOnBackdrop.current = false
   }
 
+  // ธีมแบรนด์: ฉากหลังน้ำตาลอุ่น การ์ดมุมมน 24 ช่องกรอก/ปุ่มใช้ชุด .sc-modal เหมือนป๊อปอัปปฏิทิน
   return (
-    <div onMouseDown={backdropDown} onClick={backdropClick} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: 460, padding: '26px 28px', display: 'flex', flexDirection: 'column', maxHeight: '80vh' }}>
-        <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 16 }}>ชื่อลูกค้า</h3>
+    <div onMouseDown={backdropDown} onClick={backdropClick} style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+      <div className="sc-modal" style={{ maxWidth: 460, display: 'flex', flexDirection: 'column', maxHeight: '80vh', overflowY: 'visible', padding: '26px 28px' }}>
+        <h3 className="sc-mtitle" style={{ marginBottom: 16 }}>ชื่อลูกค้า</h3>
         <input autoFocus type="text" value={query} onChange={e => setQuery(e.target.value)}
           placeholder="ชื่อลูกค้า / เบอร์โทร / เลขคำสั่งซื้อ…"
-          style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 9, padding: '10px 13px', fontSize: 14, outline: 'none', boxSizing: 'border-box', marginBottom: 12 }} />
+          style={{ width: '100%', fontSize: 14, outline: 'none', boxSizing: 'border-box', marginBottom: 12 }} />
 
         <div style={{ fontSize: 11, color: 'var(--ink-4)', fontWeight: 600, marginBottom: 7 }}>
           {typed ? `ลูกค้าเดิมที่ตรงกับที่ค้น ${matches.length} คน` : 'ลูกค้าล่าสุด'}
         </div>
-        <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, marginBottom: 12, border: '1px solid var(--border)', borderRadius: 10 }}>
+        <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, marginBottom: 12, border: '1px solid var(--border-2)', borderRadius: 16, background: 'var(--cream-2)', overflowX: 'hidden' }}>
           {matches.length === 0 ? (
             <div style={{ padding: '22px 14px', textAlign: 'center', fontSize: 13, color: 'var(--ink-4)' }}>
               ไม่เจอลูกค้าชื่อนี้ — กดปุ่มข้างล่างเพื่อเพิ่มเป็นลูกค้าใหม่
             </div>
           ) : matches.map((c, i) => (
             <button key={c.name} type="button" onClick={() => onPick(c.name, c.phone)}
-              style={{ display: 'block', width: '100%', padding: '9px 13px', border: 'none', borderTop: i === 0 ? 'none' : '1px solid var(--border)', background: 'transparent', cursor: 'pointer', textAlign: 'left', fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg)')}
+              style={{ display: 'block', width: '100%', padding: '11px 14px', border: 'none', borderTop: i === 0 ? 'none' : '1px solid var(--hairline)', background: 'transparent', cursor: 'pointer', textAlign: 'left', fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'inherit' }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--cream)')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
               {c.name}
             </button>
@@ -55,7 +56,8 @@ export default function CustomerPickStep({ book, onPick, onBack, onClose, altLab
         </div>
 
         <button type="button" disabled={!typed} onClick={() => onPick(typed, '')}
-          style={{ width: '100%', padding: '11px', borderRadius: 10, border: 'none', background: typed ? 'var(--blue)' : 'var(--border)', color: '#fff', fontSize: 13.5, fontWeight: 600, cursor: typed ? 'pointer' : 'default' }}>
+          className={typed ? 'sc-msave' : undefined}
+          style={{ width: '100%', padding: '12px', borderRadius: 999, border: 'none', background: typed ? 'var(--brand)' : 'var(--border)', color: typed ? '#FFF8F0' : 'var(--ink-4)', fontSize: 13.5, fontWeight: 600, cursor: typed ? 'pointer' : 'default', fontFamily: 'inherit' }}>
           {typed ? `+ เพิ่มลูกค้าใหม่ “${typed}”` : '+ เพิ่มลูกค้าใหม่ (พิมพ์ชื่อก่อน)'}
         </button>
         {altLabel && onAlt && (
@@ -66,13 +68,13 @@ export default function CustomerPickStep({ book, onPick, onBack, onClose, altLab
               <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
             </div>
             <button type="button" onClick={onAlt}
-              style={{ width: '100%', padding: '11px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--ink)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>
+              className="sc-btn-ghost" style={{ width: '100%', padding: '11px', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>
               {altLabel}
             </button>
           </>
         )}
         <button type="button" onClick={onBack ?? onClose}
-          style={{ marginTop: 9, width: '100%', padding: '9px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontSize: 13, color: 'var(--ink-3)' }}>
+          className="sc-mcancel" style={{ marginTop: 9, width: '100%', cursor: 'pointer', fontSize: 13, border: 'none' }}>
           {onBack ? '← ย้อนกลับ' : 'ยกเลิก'}
         </button>
       </div>

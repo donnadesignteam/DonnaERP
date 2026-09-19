@@ -1,4 +1,5 @@
 'use client'
+import CreamSelect from '@/components/CreamSelect'
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
@@ -27,9 +28,11 @@ type PO = {
   updated_at: string
 }
 
+// พื้นป้ายสถานะ — โทนพาสเทลชุดเดียวกับหน้าออเดอร์ (ตัวอักษรใช้ #6B4326 เหมือนกันหมด)
+const PILL_BG: Record<string, string> = { 'รอของ': '#F9E0C3', 'ของเข้าแล้ว': '#E3F3E0' }
 const STATUS_COLOR: Record<string, string> = {
-  'รอของ': '#ff9f0a',
-  'ของเข้าแล้ว': '#34c759',
+  'รอของ': '#C79A4B',
+  'ของเข้าแล้ว': '#6F8F6A',
 }
 
 const empty = (): Omit<PO, 'id' | 'created_at' | 'updated_at'> => ({
@@ -202,7 +205,13 @@ export default function PurchaseOrdersPage() {
 
   // กรองบนค่า "ตอนโหลดหน้า" (stable) แล้วคืนค่าสด (live) ก่อนวาด
   const stableRows = rows.map(stable)
-  const byStatus = filter === 'all' ? stableRows : stableRows.filter(r => r.status === filter)
+  // ‼️ แท็บ "ทั้งหมด" = งานที่ยังไม่จบ — ของที่เข้าแล้วย้ายไปอยู่แท็บ "ของเข้าแล้ว" อย่างเดียว
+  //    (กติกาเดียวกับหมวดออเดอร์ที่ใบจัดส่งแล้วไม่ขึ้นในแท็บทั้งหมด)
+  const byStatus = filter === 'all'
+    ? stableRows.filter(r => r.status !== 'ของเข้าแล้ว')
+    : stableRows.filter(r => r.status === filter)
+  const tabCount = (f: 'all' | 'รอของ' | 'ของเข้าแล้ว') =>
+    f === 'all' ? stableRows.filter(r => r.status !== 'ของเข้าแล้ว').length : stableRows.filter(r => r.status === f).length
   const q = search.trim().toLowerCase()
   const displayed = (!q ? byStatus : byStatus.filter(r =>
     [r.customer_name, r.order_number, r.items, r.supplier, r.notes, r.status]
@@ -244,13 +253,16 @@ export default function PurchaseOrdersPage() {
       <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
         {(['all', 'รอของ', 'ของเข้าแล้ว'] as const).map(f => (
           <button key={f} onClick={() => setFilter(f)}
-            style={{ padding: '6px 16px', borderRadius: 980, fontSize: 13, fontWeight: 500, border: 'none', cursor: 'pointer', background: filter === f ? 'var(--blue)' : 'rgba(0,0,0,0.10)', color: filter === f ? '#fff' : 'var(--ink)' }}>
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 16px', borderRadius: 999, fontSize: 13, fontWeight: 600, border: filter === f ? 'none' : '1px solid var(--border-2)', cursor: 'pointer', fontFamily: 'inherit', background: filter === f ? 'var(--brand)' : 'var(--cream-2)', color: filter === f ? '#FFF8F0' : 'var(--ink-2)', boxShadow: filter === f ? '0 3px 10px rgba(158,106,73,0.25)' : 'none' }}>
             {f === 'all' ? 'ทั้งหมด' : f}
+            <span style={{ fontSize: 11, fontWeight: 700, borderRadius: 999, padding: '1px 8px', background: filter === f ? 'rgba(255,248,240,0.22)' : 'var(--cream)', color: filter === f ? '#FFF8F0' : '#8A6142' }}>
+              {tabCount(f).toLocaleString('th-TH')}
+            </span>
           </button>
         ))}
       </div>
 
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
+      <div className="dn-list-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
         {loading ? (
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>กำลังโหลด…</div>
         ) : displayed.length === 0 ? (
@@ -258,7 +270,7 @@ export default function PurchaseOrdersPage() {
             <div style={{ fontSize: 36, marginBottom: 12 }}>🛒</div>ไม่มีรายการสั่งซื้อ
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <table className="dn-list dn-rows" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
                 {['ชื่อลูกค้า', 'เลขคำสั่งซื้อ', 'รายการ', 'Supplier', 'สถานะ', 'แก้ไขล่าสุด', ''].map(h => (
@@ -276,20 +288,19 @@ export default function PurchaseOrdersPage() {
                   </td>
                   <td style={{ padding: '13px 16px', color: 'var(--ink)', fontWeight: 500 }}>{r.order_number || '-'}</td>
                   <td style={{ padding: '13px 16px', color: 'var(--ink-3)', maxWidth: 200 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.items || '-'}</div></td>
-                  <td style={{ padding: '13px 16px' }}>{r.supplier || '-'}</td>
+                  <td title={r.supplier || undefined} style={{ padding: '13px 16px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200 }}>{r.supplier || '-'}</td>
                   <td style={{ padding: '13px 16px' }}>
-                    <select value={r.status} onChange={e => updateStatus(r.id, e.target.value)}
-                      style={{ border: 'none', background: (STATUS_COLOR[r.status] ?? 'var(--ink-3)') + '22', color: STATUS_COLOR[r.status] ?? 'var(--ink-3)', borderRadius: 980, padding: '3px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer', outline: 'none' }}>
-                      <option>รอของ</option>
-                      <option>ของเข้าแล้ว</option>
-                    </select>
+                    <CreamSelect value={r.status} onChange={v => updateStatus(r.id, v)} className="cs-inline" menuMinWidth={150}
+                      style={{ border: 'none', background: PILL_BG[r.status] ?? '#EFE3D4', color: '#6B4326', borderRadius: 999, padding: '4px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', outline: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, fontFamily: 'inherit', minWidth: 118, boxSizing: 'border-box' }}
+                      options={[{ value: 'รอของ', label: 'รอของ', color: STATUS_COLOR['รอของ'] }, { value: 'ของเข้าแล้ว', label: 'ของเข้าแล้ว', color: STATUS_COLOR['ของเข้าแล้ว'] }]}
+                      renderValue={o => (<>
+                        <span className="cs-value" style={{ color: 'inherit', flex: 1, textAlign: 'center' }}>{o?.label ?? r.status}</span>
+                        <svg className="cs-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+                      </>)} />
                   </td>
                   <td style={{ padding: '13px 16px', whiteSpace: 'nowrap', color: 'var(--ink-4)', fontSize: 11 }}>
                     {r.updated_at ? (
-                      <div>
-                        <div>{new Date(r.updated_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}</div>
-                        <div>{new Date(r.updated_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>
-                      </div>
+                      <span>{new Date(r.updated_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}{new Date(r.updated_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</span>
                     ) : '-'}
                   </td>
                   <td style={{ padding: '13px 16px' }}>

@@ -42,11 +42,13 @@ type StockItem = {
 const getStatus = (n: number) =>
   n === 0 ? 'ของหมด' : n <= 3 ? 'ควรสั่ง' : n <= 6 ? 'ของเหลือน้อย' : 'ปกติ'
 
+// ป้ายสถานะ — พื้นพาสเทลชุดเดียวกับหน้าออเดอร์ (PILL_BG) · ตัวอักษรน้ำตาลเข้ม #6B4326 เหมือนกันทุกป้าย
+const PILL_INK = '#6B4326'
 const statusStyle = (s: string): React.CSSProperties => {
-  if (s === 'ของหมด') return { background: 'rgba(220,38,38,0.08)', color: 'var(--red)' }
-  if (s === 'ควรสั่ง') return { background: 'rgba(255,159,10,0.1)', color: '#b45309' }
-  if (s === 'ของเหลือน้อย') return { background: 'rgba(255,204,0,0.12)', color: '#92600a' }
-  return { background: 'rgba(52,199,89,0.1)', color: '#1a7f37' }
+  if (s === 'ของหมด') return { background: '#F0C0B7', color: PILL_INK }
+  if (s === 'ควรสั่ง') return { background: '#F9E0C3', color: PILL_INK }
+  if (s === 'ของเหลือน้อย') return { background: '#FBEEDC', color: PILL_INK }
+  return { background: '#E3F3E0', color: PILL_INK }
 }
 
 const empty = (): Omit<StockItem, 'id' | 'updated_at'> => ({
@@ -306,7 +308,7 @@ export default function StockPage() {
           {([
             { status: 'ควรสั่ง', color: '#d97706', bg: 'rgba(217,119,6,0.06)', border: 'rgba(217,119,6,0.18)',
               icon: <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z"/></svg> },
-            { status: 'ของหมด', color: '#ef4444', bg: 'rgba(239,68,68,0.06)', border: 'rgba(239,68,68,0.18)',
+            { status: 'ของหมด', color: '#C0563F', bg: 'rgba(239,68,68,0.06)', border: 'rgba(239,68,68,0.18)',
               icon: <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0l-3-3m3 3l3-3M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg> },
           ]).map(({ status, color, bg, border, icon }) => {
             const list = items.filter(i => getStatus(i.roll_count) === status)
@@ -402,7 +404,7 @@ export default function StockPage() {
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา รหัสผ้า / ชื่อสี / รหัสร้าน / ร้าน / ลักษณะผ้า…"
         style={{ ...inputStyle, marginBottom: 16 }} />
 
-      <div ref={tableCardRef} style={{ ...cardStyle, position: 'relative' }}>
+      <div className="dn-list-card" ref={tableCardRef} style={{ ...cardStyle, position: 'relative' }}>
         <div style={{ overflowX: 'auto' }}>
         {loading ? (
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>กำลังโหลด…</div>
@@ -412,7 +414,7 @@ export default function StockPage() {
             ไม่มีข้อมูลสต็อก
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <table className="dn-list dn-rows" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
                 {(['รหัสผ้า', 'ชื่อสี'] as const).map(h => (
@@ -459,7 +461,7 @@ export default function StockPage() {
                   <td style={{ padding: '12px 14px', color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
                     {item.fabric_width != null ? `${item.fabric_width} ม.` : '-'}
                   </td>
-                  <td style={{ padding: '12px 14px', color: 'var(--ink-3)', maxWidth: 180 }}>{item.fabric_type || '-'}</td>
+                  <td title={item.fabric_type || undefined} style={{ padding: '12px 14px', color: 'var(--ink-3)', maxWidth: 180, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.fabric_type || '-'}</td>
                   <td style={{ padding: '12px 14px', color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{item.shop_code || '-'}</td>
                   <td style={{ padding: '12px 14px', color: 'var(--ink)' }}>{item.shop_name || '-'}</td>
                   {quickFilter !== 'waiting' && (
@@ -490,7 +492,7 @@ export default function StockPage() {
                     </td>
                   ))}
                   <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', textAlign: 'center' }}>
-                    <span style={{ fontSize: 12, borderRadius: 20, padding: '3px 10px', fontWeight: 500, whiteSpace: 'nowrap', ...statusStyle(getStatus(item.roll_count)) }}>
+                    <span style={{ fontSize: 12, borderRadius: 999, padding: '4px 12px', fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 96, boxSizing: 'border-box', ...statusStyle(getStatus(item.roll_count)) }}>
                       {getStatus(item.roll_count)}
                     </span>
                     {item.ordered_at && (
@@ -521,10 +523,7 @@ export default function StockPage() {
                   </td>
                   <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', color: 'var(--ink-4)', fontSize: 11 }}>
                     {item.updated_at ? (
-                      <div>
-                        <div>{new Date(item.updated_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}</div>
-                        <div>{new Date(item.updated_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>
-                      </div>
+                      <span>{new Date(item.updated_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}{' '}{new Date(item.updated_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</span>
                     ) : '-'}
                   </td>
                   <td style={{ padding: '12px 14px' }}>

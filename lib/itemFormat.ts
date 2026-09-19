@@ -598,7 +598,8 @@ export function itemBlockLines(item: RawItem, opts?: { hideNote?: boolean }): { 
   const wStr = widthText(item.width)
   const hStr = heightText(item.height)
   // สูงแบบ "ซ2.845*ข3.345" มี label ซ้าย/ขวาในตัวแล้ว ไม่ต้องเติม "ส" นำหน้า
-  const dim = wStr && hStr ? (/^[\d.]+$/.test(hStr) ? `ก${wStr}*ส${hStr}` : `ก${wStr}*${hStr}`) : wStr ? `ก${wStr}` : ''
+  // รางมีแต่ความยาว → ขึ้นตัวเลขเฉย ๆ "2.00 = 1 ชุด" ไม่ต้องมี ก นำหน้า
+  const dim = wStr && hStr ? (/^[\d.]+$/.test(hStr) ? `ก${wStr}*ส${hStr}` : `ก${wStr}*${hStr}`) : wStr ? (isRail ? wStr : `ก${wStr}`) : ''
   // กระดูม/ตะขอ เช่น "(30+30)" — ใส่ต่อท้ายบรรทัดขนาดให้เหมือนใบออเดอร์ต้นฉบับ
   // เผื่อบางเคสเก็บมาไม่มีวงเล็บ (30+30) ให้เติมวงเล็บให้เอง
   const hooksRaw = (item.hooks ?? '').trim()

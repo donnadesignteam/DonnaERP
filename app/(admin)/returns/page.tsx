@@ -19,6 +19,10 @@ import { useConfirm } from '@/components/ConfirmDialog'
 import { nextSerial, matchSerial } from '@/lib/serialNo'
 import { buildCustomerBook, type CustomerEntry } from '@/lib/customerBook'
 import CustomerPickStep from '@/components/CustomerPickStep'
+import CreamSelect from '@/components/CreamSelect'
+import { CourierIcon } from '@/components/BrandMark'
+import { useStableView } from '@/lib/useStableView'
+import { TH_MONTHS } from '@/lib/shopCalendar'
 
 type Media = { url: string; name?: string; caption?: string }
 type Parcel = {
@@ -54,6 +58,34 @@ const COLS: { key: TextKey; label: string; w: number; multiline?: boolean; carri
   { key: 'address', label: 'ที่อยู่', w: 220, multiline: true },
   { key: 'phone', label: 'เบอร์โทร', w: 110 },
 ]
+
+// ── ตัวกรอง/เรียงที่หัวคอลัมน์ + ซ่อน/โชว์คอลัมน์ (แบบเดียวกับหน้างานเคลม/ออเดอร์) ──
+// date = เรียง + ช่วงวันที่ · pick = เรียง + ติ๊กเลือกค่า · text = เรียง · bool = มี/ไม่มี
+type ColKind = 'date' | 'pick' | 'text' | 'bool'
+type ColId = 'created' | 'serial' | TextKey | 'videos' | 'photos' | 'claim'
+const NONE = '(ไม่ระบุ)'
+const FILTER_DEFS: { id: ColId; kind: ColKind; get: (r: Parcel) => string | number | null | undefined; yes?: string; no?: string }[] = [
+  { id: 'created', kind: 'date', get: r => r.created_at },
+  { id: 'serial', kind: 'text', get: r => r.serial_no },
+  { id: 'sender_name', kind: 'text', get: r => r.sender_name },
+  { id: 'carrier', kind: 'pick', get: r => r.carrier },
+  { id: 'tracking_no', kind: 'text', get: r => r.tracking_no },
+  { id: 'orig_carrier', kind: 'pick', get: r => r.orig_carrier },
+  { id: 'orig_tracking_no', kind: 'text', get: r => r.orig_tracking_no },
+  { id: 'orig_order_number', kind: 'text', get: r => r.orig_order_number },
+  { id: 'videos', kind: 'bool', get: r => (r.videos?.length ?? 0) || null, yes: 'มีวิดีโอ', no: 'ยังไม่มีวิดีโอ' },
+  { id: 'photos', kind: 'bool', get: r => (r.photos?.length ?? 0) || null, yes: 'มีรูป', no: 'ยังไม่มีรูป' },
+  { id: 'claim', kind: 'bool', get: r => r.claim_id, yes: 'ผูกงานเคลมแล้ว', no: 'ยังไม่ผูกงานเคลม' },
+]
+const SORT_LABELS: Record<ColKind, [string, string]> = {
+  date: ['เก่าสุด → ใหม่สุด', 'ใหม่สุด → เก่าสุด'], pick: ['ก → ฮ', 'ฮ → ก'], text: ['ก → ฮ', 'ฮ → ก'], bool: ['', ''],
+}
+const ALL_COLS: { id: ColId; label: string }[] = [
+  { id: 'created', label: 'วันที่ลง' }, { id: 'serial', label: 'Serial' },
+  ...COLS.map(c => ({ id: c.key as ColId, label: c.label })),
+  { id: 'videos', label: 'วิดีโอตอนแกะ' }, { id: 'photos', label: 'รูป' }, { id: 'claim', label: 'จากออเดอร์' },
+]
+const colLabel = (id: ColId) => ALL_COLS.find(c => c.id === id)!.label
 
 const TABLE = 'return_parcels'
 const SQL_FILE = 'sql/create_return_parcels.sql'
@@ -99,6 +131,19 @@ export default function ReturnParcelsPage() {
   const [editing, setEditing] = useState<string | null>(null)          // `${id}:${key}` ช่องที่กำลังพิมพ์
   const [uploading, setUploading] = useState<Record<string, string>>({}) // `${id}:videos` → "45%"
   const [actionMenu, setActionMenu] = useState<{ id: string; rect: DOMRect } | null>(null)   // rect ของปุ่ม ··· (AnchoredMenu พลิกขึ้นเองถ้าชิดขอบล่าง)
+  // แถวไม่กระโดดหนีตอนแก้ช่องที่กำลังเรียง/กรองอยู่ — กรอง+เรียงด้วย stable() แสดงผลด้วย live()
+  const { snapshot, stable, live } = useStableView<Parcel>(rows)
+  const [colSort, setColSort] = useState<{ key: ColId; dir: 'asc' | 'desc' } | null>(null)
+  const [colPick, setColPick] = useState<Partial<Record<ColId, string[]>>>({})
+  const [colRange, setColRange] = useState<Partial<Record<ColId, { from: string; to: string }>>>({})
+  const [colBool, setColBool] = useState<Partial<Record<ColId, boolean | null>>>({})
+  const [colMenu, setColMenu] = useState<{ key: ColId; rect: DOMRect } | null>(null)
+  const [hiddenCols, setHiddenCols] = useState<ColId[]>([])
+  useEffect(() => { try { const v = JSON.parse(localStorage.getItem('returns_hidden_cols') || '[]'); if (Array.isArray(v)) setHiddenCols(v) } catch {} }, [])
+  const saveHidden = (next: ColId[]) => { setHiddenCols(next); try { localStorage.setItem('returns_hidden_cols', JSON.stringify(next)) } catch {} }
+  const showCol = (id: ColId) => !hiddenCols.includes(id)
+  const [openColPicker, setOpenColPicker] = useState(false)
+  const [month, setMonth] = useState('all')   // 'all' | 'YYYY-MM' (เดือนที่ลงพัสดุ)
   const { ask, confirmDialog } = useConfirm()
 
   const load = async () => {
@@ -107,6 +152,7 @@ export default function ReturnParcelsPage() {
     if (err) { setError(`โหลดข้อมูลไม่ได้: ${noTableMsg(err.message)}`); setLoading(false); return }
     setPageCache(TABLE, data)
     setRows(data)
+    snapshot(data)
     setLoading(false)
     const ids = [...new Set(data.map(r => r.claim_id).filter(Boolean))] as string[]
     if (ids.length) {
@@ -120,7 +166,7 @@ export default function ReturnParcelsPage() {
   }
   useEffect(() => {
     const cached = getPageCache<Parcel[]>(TABLE)
-    if (cached) { setRows(cached); setLoading(false) }
+    if (cached) { setRows(cached); snapshot(cached); setLoading(false) }
     load()
   }, [])
 
@@ -143,6 +189,8 @@ export default function ReturnParcelsPage() {
   // ‼️ กันลงชื่อลูกค้าคนเดียวกันคนละแบบจนโฟลเดอร์ลูกค้าแตก — ค้นจากชื่อที่เคยลงไว้ในใบออเดอร์
   //    ดึงรายชื่อตอนกดเพิ่มครั้งแรกครั้งเดียว และดึงแค่ 4 ช่อง (ประหยัด Egress ของ Supabase)
   const [custStep, setCustStep] = useState(false)
+  // กล่องแก้ไขทั้งใบ (เมนู ··· → แก้ไข) — แก้หลายช่องแล้วกดบันทึกทีเดียว
+  const [editModal, setEditModal] = useState<{ id: string; data: Record<TextKey, string> } | null>(null)
   const [orderNames, setOrderNames] = useState<{ name: string | null; phone: string | null; order_number: string | null; date: string | null }[] | null>(null)
 
   const customerBook: CustomerEntry[] = useMemo(() => buildCustomerBook([
@@ -290,26 +338,127 @@ export default function ReturnParcelsPage() {
   }
 
   const q = search.trim().toLowerCase()
-  const displayed = !q ? rows : rows.filter(r => {
+  // ตัวเลือกเดือน (ยึดวันที่ลงพัสดุ)
+  const monthKey = (r: Parcel) => r.created_at ? new Date(r.created_at).toLocaleDateString('en-CA').slice(0, 7) : ''
+  const monthOptions = useMemo(() => Array.from(new Set(rows.map(monthKey).filter(Boolean))).sort().reverse(), [rows])
+  const monthLabel = (k: string) => { const [y, m] = k.split('-'); return `${TH_MONTHS[Number(m) - 1]} ${Number(y) + 543}` }
+  const monthRows = rows.map(stable).filter(r => month === 'all' || monthKey(r) === month)
+  const stableRows = monthRows
+  const filtered = stableRows.filter(r => {
     const c = r.claim_id ? claims[r.claim_id] : null
-    return matchSerial(r.serial_no, q) ||
-      [r.sender_name, r.items, r.carrier, r.tracking_no, r.orig_carrier, r.orig_tracking_no, r.orig_order_number, r.address, r.phone, c?.original_order_number, c?.customer_username]
-        .some(v => (v ?? '').toLowerCase().includes(q))
+    const matchSearch = !q || matchSerial(r.serial_no, q) || [r.sender_name, r.items, r.carrier, r.tracking_no, r.orig_carrier, r.orig_tracking_no, r.orig_order_number, r.address, r.phone, c?.original_order_number, c?.customer_username]
+      .some(v => (v ?? '').toLowerCase().includes(q))
+    // ตัวกรองหัวคอลัมน์
+    const matchCols = FILTER_DEFS.every(d => {
+      const v = d.get(r)
+      if (d.kind === 'pick') { const p = colPick[d.id]; return !p?.length || p.includes(String(v ?? '') || NONE) }
+      if (d.kind === 'date') {
+        const rg = colRange[d.id]; if (!rg?.from && !rg?.to) return true
+        const ymd = v ? new Date(String(v)).toLocaleDateString('en-CA') : ''; if (!ymd) return false
+        return (!rg.from || ymd >= rg.from) && (!rg.to || ymd <= rg.to)
+      }
+      if (d.kind === 'bool') { const b = colBool[d.id]; return b == null || !!v === b }
+      return true
+    })
+    return matchSearch && matchCols
   })
+  if (colSort) {
+    const def = FILTER_DEFS.find(d => d.id === colSort.key)!
+    const dir = colSort.dir === 'asc' ? 1 : -1
+    filtered.sort((a, b) => {
+      const va = def.get(a), vb = def.get(b)
+      const ea = va == null || va === '', eb = vb == null || vb === ''
+      if (ea || eb) return ea === eb ? 0 : ea ? 1 : -1   // ค่าว่างไปท้ายเสมอ
+      return String(va).localeCompare(String(vb), 'th', { numeric: true }) * dir
+    })
+  }
+  const displayed = filtered.map(live)
+  const anyColFilter = FILTER_DEFS.some(d => (colPick[d.id]?.length ?? 0) > 0 || !!(colRange[d.id]?.from || colRange[d.id]?.to) || colBool[d.id] != null)
+  const clearColFilters = () => { setColPick({}); setColRange({}); setColBool({}) }
+  const colActive = (id: ColId) => colSort?.key === id || (colPick[id]?.length ?? 0) > 0 || !!(colRange[id]?.from || colRange[id]?.to) || colBool[id] != null
+  const colValues = (id: ColId): string[] => {
+    const get = FILTER_DEFS.find(d => d.id === id)?.get
+    if (!get) return []
+    const vals = Array.from(new Set(stableRows.map(r => String(get(r) ?? '') || NONE)))
+    return vals.filter(v => v !== NONE).sort((a, b) => a.localeCompare(b, 'th')).concat(vals.includes(NONE) ? [NONE] : [])
+  }
+
+  // ปริ้นตารางตามที่กรอง/เรียง/โชว์คอลัมน์อยู่บนจอ (วิดีโอ/รูป = จำนวน)
+  const printList = () => {
+    const esc = (v: unknown) => String(v ?? '').replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]!))
+    const cell = (r: Parcel, id: ColId): string => {
+      if (id === 'created') return esc(new Date(r.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' }))
+      if (id === 'serial') return esc(r.serial_no || '-')
+      if (id === 'videos') return r.videos?.length ? `${r.videos.length} คลิป` : '-'
+      if (id === 'photos') return r.photos?.length ? `${r.photos.length} รูป` : '-'
+      if (id === 'claim') { const c = r.claim_id ? claims[r.claim_id] : null; return c ? esc(claimLabel(c)) : '-' }
+      return esc(r[id] || '-').replace(/\n/g, '<br>')
+    }
+    const cols = ALL_COLS.filter(c => showCol(c.id))
+    const title = `พัสดุส่งกลับ ${displayed.length} รายการ${month !== 'all' ? ` · ${monthLabel(month)}` : ''}`
+    const win = window.open('', '_blank', 'width=1200,height=750')
+    if (!win) { setError('เบราว์เซอร์บล็อก popup — โปรดอนุญาต popup เพื่อปริ้น'); return }
+    win.document.open()
+    win.document.write(`<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><title>${esc(title)}</title><style>
+  body { font-family: 'Sarabun', 'Noto Sans Thai', sans-serif; font-size: 12px; color: #000; margin: 0; padding: 16px; }
+  h2 { font-size: 14px; margin: 0 0 10px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #aaa; padding: 5px 8px; text-align: left; vertical-align: top; }
+  th { background: #f0f0f0; font-weight: 700; white-space: nowrap; }
+  tr { break-inside: avoid; }
+  @page { margin: 0; }
+  @media print { body { padding: 14mm; } .toolbar { display: none !important; } }
+  .toolbar { position: fixed; top: 10px; right: 10px; background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 8px 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.18); }
+  .toolbar button { padding: 8px 20px; border-radius: 8px; border: none; background: #1a1a1a; color: #fff; cursor: pointer; font-size: 14px; font-weight: 700; font-family: inherit; }
+</style></head><body>
+<div class="toolbar"><button onclick="window.print()">🖨 ปริ้น</button></div>
+<h2>${esc(title)}</h2>
+<table><thead><tr><th>#</th>${cols.map(c => `<th>${esc(c.label)}</th>`).join('')}</tr></thead>
+<tbody>${displayed.map((r, i) => `<tr><td>${i + 1}</td>${cols.map(c => `<td>${cell(r, c.id)}</td>`).join('')}</tr>`).join('')}</tbody></table>
+</body></html>`)
+    win.document.close(); win.focus()
+  }
+
+  // หัวคอลัมน์ — คอลัมน์ที่กรอง/เรียงได้เป็นปุ่มมี ▼
+  const headCell = (id: ColId, style: React.CSSProperties) => {
+    const def = FILTER_DEFS.find(d => d.id === id)
+    const text = colLabel(id)
+    if (!def) return <th key={id} style={style}>{text}</th>
+    const n = colPick[id]?.length ?? 0
+    return (
+      <th key={id} style={style}>
+        <button onClick={e => { const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); setColMenu(m => m?.key === id ? null : { key: id, rect }) }}
+          style={{ border: 'none', background: 'transparent', fontSize: 'inherit', fontWeight: 500, color: colActive(id) ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', gap: 3, fontFamily: 'inherit' }}>
+          {text}{n > 0 && ` (${n})`}
+          {colSort?.key === id && <span style={{ fontSize: 10 }}>{colSort.dir === 'asc' ? '↑' : '↓'}</span>}
+          <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+        </button>
+      </th>
+    )
+  }
 
   const th: React.CSSProperties = { textAlign: 'left', padding: '11px 12px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#FAFAFA', zIndex: 1, borderBottom: '1px solid var(--border)' }
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+      {/* หัวหน้า — ชุดเดียวกับหน้าออเดอร์/งานเคลม: ชื่อหมวด + จำนวนรายการ · ปุ่มปริ้น / เพิ่มรายการ มุมขวา */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 28 }}>
         <div>
-          <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px' }}>พัสดุส่งกลับ</h1>
-          <p style={{ fontSize: 14, color: 'var(--ink-3)', marginTop: 4 }}>{rows.length} รายการ</p>
+          <h1 style={{ fontSize: 32, fontWeight: 700, color: '#4A3122', letterSpacing: '-0.5px' }}>พัสดุส่งกลับ</h1>
+          <p style={{ fontSize: 15, color: 'var(--ink-2)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
+            {month === 'all' ? `${rows.length} รายการ` : `${monthRows.length} รายการ · ${monthLabel(month)} (ทั้งหมด ${rows.length})`}
+          </p>
         </div>
-        <button onClick={openAdd}
-          style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,122,255,0.3)' }}>
-          + เพิ่มพัสดุ
-        </button>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button onClick={printList} disabled={displayed.length === 0}
+            style={{ background: 'var(--surface)', color: 'var(--brand)', border: '1px solid var(--border)', borderRadius: 999, height: 46, padding: '0 20px', fontSize: 14, fontWeight: 600, cursor: displayed.length ? 'pointer' : 'not-allowed', boxShadow: 'var(--shadow)' }}>
+            🖨️ ปริ้น
+          </button>
+          <button onClick={openAdd}
+            style={{ background: 'var(--brand)', color: '#FFF8F0', border: 'none', borderRadius: 999, height: 46, padding: '0 26px', fontSize: 14.5, fontWeight: 600, cursor: 'pointer', boxShadow: '0 3px 10px rgba(158,106,73,0.35)' }}>
+            ＋ เพิ่มรายการ
+          </button>
+        </div>
       </div>
 
       {custStep && (
@@ -325,36 +474,101 @@ export default function ReturnParcelsPage() {
         </div>
       )}
 
-      <div style={{ position: 'relative', marginBottom: 16 }}>
-        <input value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="ค้นหา ชื่อ / เลขพัสดุ / เลขออเดอร์ / เบอร์ / ที่อยู่ / รายการ"
-          style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', paddingRight: search ? 36 : 14, fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
-        {search && (
-          <button onClick={() => setSearch('')}
-            style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'var(--border)', color: 'var(--ink-3)', borderRadius: '50%', width: 20, height: 20, cursor: 'pointer', fontSize: 12, lineHeight: 1, padding: 0 }}>✕</button>
-        )}
+      <div style={{ display: 'flex', gap: 14, marginBottom: 18, flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: '1 1 260px', minWidth: 0 }}>
+          <svg width="18" height="18" fill="none" stroke="#8B7460" strokeWidth="1.8" viewBox="0 0 24 24" style={{ position: 'absolute', left: 18, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}><circle cx="11" cy="11" r="7" /><path strokeLinecap="round" d="M20 20l-3.5-3.5" /></svg>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ชื่อ / เลขพัสดุ / เลขออเดอร์ / เบอร์…" className="ow-field"
+            style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 999, height: 46, padding: '0 16px 0 46px', paddingRight: search ? 40 : 16, fontSize: 13.5, outline: 'none', boxSizing: 'border-box', background: 'var(--surface)', color: 'var(--ink)', boxShadow: 'var(--shadow)' }} />
+          {search && (
+            <button onClick={() => setSearch('')}
+              style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'var(--border)', color: 'var(--ink-3)', borderRadius: '50%', width: 20, height: 20, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, padding: 0 }}>
+              ✕
+            </button>
+          )}
+        </div>
+        <CreamSelect value={month} onChange={setMonth} title="เดือนที่ลงพัสดุ" className="ow-select" style={month !== 'all' ? { borderColor: 'var(--brand)' } : undefined}
+          options={[{ value: 'all', label: 'ทุกเดือน' }, ...monthOptions.map(k => ({ value: k, label: monthLabel(k) }))]}
+          renderValue={o => <>
+            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2.5" /><path strokeLinecap="round" d="M3.5 10h17M8 3v4M16 3v4" /></svg>
+            <span className="cs-value">{o?.label}</span>
+            <svg className="cs-chev" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" /></svg>
+          </>} />
+        {/* เรียงลำดับ — ใช้ state เดียวกับการเรียงที่หัวคอลัมน์ */}
+        <CreamSelect value={colSort ? `${colSort.key}:${colSort.dir}` : ''} title="เรียงลำดับ"
+          onChange={v => { if (!v) setColSort(null); else { const [key, dir] = v.split(':'); setColSort({ key: key as ColId, dir: dir as 'asc' | 'desc' }) } }}
+          className="ow-select" style={colSort ? { borderColor: 'var(--brand)' } : undefined} menuMinWidth={250} align="right"
+          options={[
+            { value: '', label: 'เรียงตามค่าเริ่มต้น' },
+            { value: 'created:desc', label: 'วันที่ลง: ใหม่สุด → เก่าสุด' },
+            { value: 'created:asc', label: 'วันที่ลง: เก่าสุด → ใหม่สุด' },
+            { value: 'sender_name:asc', label: 'ชื่อ: ก → ฮ' },
+            { value: 'serial:desc', label: 'Serial: มากไปน้อย' },
+            ...(colSort && !['created:desc', 'created:asc', 'sender_name:asc', 'serial:desc'].includes(`${colSort.key}:${colSort.dir}`)
+              ? [{ value: `${colSort.key}:${colSort.dir}`, label: `${colLabel(colSort.key)}: ${SORT_LABELS[FILTER_DEFS.find(d => d.id === colSort.key)!.kind][colSort.dir === 'asc' ? 0 : 1]}` }]
+              : []),
+          ]}
+          renderValue={o => <>
+            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M7 4v16M3.5 16.5L7 20l3.5-3.5M14 6h7M14 11h5M14 16h3" /></svg>
+            <span className="cs-value">{o?.label}</span>
+            <svg className="cs-chev" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" /></svg>
+          </>} />
+      </div>
+
+      {/* แถวที่ 2 — ปุ่มคอลัมน์ชิดขวา ตำแหน่งเดียวกับแถวแท็บของหน้าออเดอร์ */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 18, alignItems: 'center', flexWrap: 'wrap' }}>
+        {/* แท็บ ทั้งหมด — แบบเดียวกับหมวดออเดอร์ · กดแล้วล้างตัวกรองคอลัมน์ (จำนวน = ตามเดือน/คำค้น/ตัวกรองที่ใช้อยู่) */}
+        <button onClick={clearColFilters} className="ow-tab" data-active title={anyColFilter ? 'กดเพื่อล้างตัวกรองคอลัมน์' : undefined}>
+          ทั้งหมด
+          <span className="ow-tab-n">{displayed.length.toLocaleString()}</span>
+        </button>
+        {/* เลือกคอลัมน์ที่จะโชว์ — ติ๊กออก = ซ่อน */}
+        <div style={{ position: 'relative', marginLeft: 'auto' }}>
+          <button onClick={() => setOpenColPicker(v => !v)}
+            style={{ padding: '6px 14px', borderRadius: 20, border: hiddenCols.length ? 'none' : '1px solid var(--border)', background: hiddenCols.length ? 'var(--blue)' : 'var(--surface)', color: hiddenCols.length ? '#fff' : 'var(--ink-3)', fontSize: 13, fontWeight: hiddenCols.length ? 600 : 400, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+            คอลัมน์{hiddenCols.length > 0 && ` (ซ่อน ${hiddenCols.length})`} <span style={{ fontSize: 9, opacity: 0.7 }}>▼</span>
+          </button>
+          {openColPicker && (
+            <>
+              <div onClick={() => setOpenColPicker(false)} style={{ position: 'fixed', inset: 0, zIndex: 150 }} />
+              <div className="ow-drop" style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 200, maxHeight: 360, overflowY: 'auto' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 12px 8px', borderBottom: '1px solid var(--border)', marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, color: 'var(--ink-4)', fontWeight: 600 }}>ติ๊กออก = ซ่อน</span>
+                  {hiddenCols.length > 0 && (
+                    <button onClick={() => saveHidden([])} style={{ border: 'none', background: 'transparent', color: 'var(--blue)', fontSize: 11, cursor: 'pointer', padding: 0 }}>โชว์ทั้งหมด</button>
+                  )}
+                </div>
+                {ALL_COLS.map(c => (
+                  <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--ink)' }}>
+                    <input type="checkbox" checked={showCol(c.id)} onChange={() => saveHidden(showCol(c.id) ? [...hiddenCols, c.id] : hiddenCols.filter(x => x !== c.id))} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }} />
+                    {c.label}
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* คอลัมน์เยอะเกินจอ → เลื่อนทั้งหน้าแนวนอนเหมือนหมวดออเดอร์ (ไม่มีกล่องเลื่อนแยก หัวตารางค้างบนจอตอนเลื่อนลง) */}
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', width: 'max-content', minWidth: '100%' }}>
+      <div className="dn-list-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', width: 'max-content', minWidth: '100%' }}>
         {loading ? (
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)' }}>กำลังโหลด…</div>
+        ) : displayed.length === 0 && anyColFilter ? (
+          <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)', fontSize: 14 }}>
+            ไม่มีพัสดุที่ตรงกับตัวกรองคอลัมน์
+            <div><button onClick={clearColFilters} style={{ marginTop: 10, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--brand)', borderRadius: 999, padding: '6px 16px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>ล้างตัวกรองคอลัมน์</button></div>
+          </div>
         ) : displayed.length === 0 ? (
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)', fontSize: 14 }}>
             <div style={{ fontSize: 36, marginBottom: 12 }}>📦</div>
             {q ? <>ไม่เจอ &quot;{search}&quot; — <button onClick={() => setSearch('')} style={{ border: 'none', background: 'none', color: 'var(--blue)', cursor: 'pointer', fontSize: 14, padding: 0 }}>ล้างคำค้น</button></>
-               : <>ยังไม่มีพัสดุส่งกลับ — กด &quot;+ เพิ่มพัสดุ&quot; ด้านบนเพื่อเริ่มลงรายการแรก</>}
+               : <>ยังไม่มีพัสดุส่งกลับ — กด &quot;＋ เพิ่มรายการ&quot; ด้านบนเพื่อเริ่มลงรายการแรก</>}
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 13 }}>
+          <table className="dn-list dn-rows" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 13 }}>
             <thead>
               <tr>
-                <th style={th}>วันที่ลง</th>
-                <th style={th}>Serial</th>
-                {COLS.map(c => <th key={c.key} style={th}>{c.label}</th>)}
-                <th style={th}>วิดีโอตอนแกะ</th>
-                <th style={th}>รูป</th>
-                <th style={th}>จากออเดอร์</th>
+                {ALL_COLS.filter(c => showCol(c.id)).map(c => headCell(c.id, th))}
                 <th style={{ ...th, width: 40 }} />
               </tr>
             </thead>
@@ -363,13 +577,17 @@ export default function ReturnParcelsPage() {
                 const td: React.CSSProperties = { padding: '6px 8px', borderBottom: '1px solid var(--border)', verticalAlign: 'top' }
                 return (
                   <tr key={r.id}>
+                    {showCol('created') && (
                     <td style={{ ...td, padding: '12px', whiteSpace: 'nowrap', color: 'var(--ink-3)', fontSize: 12 }}>
                       {new Date(r.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}
                     </td>
+                    )}
+                    {showCol('serial') && (
                     <td style={{ ...td, padding: '12px', whiteSpace: 'nowrap', fontWeight: 700, color: 'var(--ink)', fontSize: 12 }}>
                       {r.serial_no || <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>—</span>}
                     </td>
-                    {COLS.map(c => (
+                    )}
+                    {COLS.filter(c => showCol(c.key)).map(c => (
                       <td key={c.key} style={{ ...td, minWidth: c.w, maxWidth: c.w + 80 }}>
                         <EditCell value={r[c.key] ?? ''} multiline={c.multiline} carrier={c.carrier} label={c.label}
                           customerLink={c.key === 'sender_name'}
@@ -384,16 +602,21 @@ export default function ReturnParcelsPage() {
                       </td>
                     ))}
                     {/* วิดีโอตอนแกะ */}
+                    {showCol('videos') && (
                     <td style={{ ...td, minWidth: 130 }}>
                       <MediaCell kind="videos" list={r.videos ?? []} busy={uploading[`${r.id}:videos`]}
                         onAdd={f => addMedia(r, 'videos', f)} onRemove={i => removeMedia(r, 'videos', i)} />
                     </td>
+                    )}
                     {/* รูป */}
+                    {showCol('photos') && (
                     <td style={{ ...td, minWidth: 150 }}>
                       <MediaCell kind="photos" list={r.photos ?? []} busy={uploading[`${r.id}:photos`]}
                         onAdd={f => addMedia(r, 'photos', f)} onRemove={i => removeMedia(r, 'photos', i)} />
                     </td>
+                    )}
                     {/* จากออเดอร์ = งานเคลมที่ผูก — กดแล้วพิมพ์ค้นเหมือนช่องอื่น */}
+                    {showCol('claim') && (
                     <td style={{ ...td, minWidth: 170, maxWidth: 240 }}>
                       <ClaimCell claim={r.claim_id ? claims[r.claim_id] ?? null : null} linked={!!r.claim_id}
                         editing={editing === `${r.id}:claim`}
@@ -404,6 +627,7 @@ export default function ReturnParcelsPage() {
                           if ((c?.id ?? null) !== r.claim_id) void pickClaim(r, c)
                         }} />
                     </td>
+                    )}
                     <td style={{ ...td, padding: '8px' }}>
                       <button onClick={e => {
                         const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
@@ -419,6 +643,67 @@ export default function ReturnParcelsPage() {
         )}
       </div>
 
+      {/* เมนูหัวคอลัมน์ — เรียง/กรอง */}
+      {colMenu && (() => {
+        const def = FILTER_DEFS.find(d => d.id === colMenu.key)!
+        const k = def.id
+        const close = () => setColMenu(null)
+        const opt = (text: string, active: boolean, onClick: () => void) => (
+          <div key={text} onClick={onClick}
+            style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: active ? 600 : 400, color: active ? 'var(--blue)' : 'var(--ink)', background: active ? 'rgba(196,126,58,0.08)' : 'transparent' }}>
+            {text}
+          </div>
+        )
+        const left = Math.max(8, Math.min(colMenu.rect.left, window.innerWidth - 240))
+        const picked = colPick[k] ?? []
+        const range = colRange[k] ?? { from: '', to: '' }
+        return (
+          <>
+            <div onClick={close} style={{ position: 'fixed', inset: 0, zIndex: 150 }} />
+            <div className="ow-drop" style={{ position: 'fixed', top: colMenu.rect.bottom + 4, left, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 200, padding: '6px 0', minWidth: 180, maxHeight: '60vh', overflowY: 'auto' }}>
+              {def.kind === 'bool' ? (
+                ([['ทั้งหมด', null], [def.yes!, true], [def.no!, false]] as [string, boolean | null][]).map(([text, val]) =>
+                  opt(text, (colBool[k] ?? null) === val, () => { setColBool(p => ({ ...p, [k]: val })); close() }))
+              ) : (
+                <>
+                  {([['asc', SORT_LABELS[def.kind][0]], ['desc', SORT_LABELS[def.kind][1]]] as ['asc' | 'desc', string][]).map(([dir, text]) =>
+                    opt(text, colSort?.key === k && colSort.dir === dir, () => { setColSort({ key: k, dir }); close() }))}
+                  {colSort?.key === k && opt('ไม่เรียง', false, () => { setColSort(null); close() })}
+                </>
+              )}
+              {def.kind === 'date' && (
+                <div style={{ padding: '10px 14px 6px', borderTop: '1px solid var(--border)', marginTop: 4 }}>
+                  {([['from', 'ตั้งแต่'], ['to', 'ถึงวันที่']] as ['from' | 'to', string][]).map(([f, text]) => (
+                    <div key={f} style={{ marginBottom: 8 }}>
+                      <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>{text}</label>
+                      <input type="date" lang="en-GB" value={range[f]} onChange={e => setColRange(p => ({ ...p, [k]: { ...range, [f]: e.target.value } }))}
+                        style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+                    </div>
+                  ))}
+                  {(range.from || range.to) && (
+                    <button onClick={() => setColRange(p => ({ ...p, [k]: { from: '', to: '' } }))} style={{ fontSize: 11, border: 'none', background: 'transparent', color: 'var(--ink-4)', cursor: 'pointer', padding: 0 }}>ล้างช่วงวันที่</button>
+                  )}
+                </div>
+              )}
+              {def.kind === 'pick' && (
+                <div style={{ borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 4 }}>
+                  {colValues(k).map(v => (
+                    <label key={v} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 12, background: picked.includes(v) ? 'var(--blue-bg)' : 'transparent' }}>
+                      <input type="checkbox" checked={picked.includes(v)} style={{ cursor: 'pointer', accentColor: 'var(--blue)' }}
+                        onChange={() => setColPick(p => ({ ...p, [k]: picked.includes(v) ? picked.filter(x => x !== v) : [...picked, v] }))} />
+                      <span style={{ color: v === NONE ? 'var(--ink-4)' : 'var(--ink)' }}>{v}</span>
+                    </label>
+                  ))}
+                  {picked.length > 0 && (
+                    <button onClick={() => setColPick(p => ({ ...p, [k]: [] }))} style={{ fontSize: 11, border: 'none', background: 'transparent', color: 'var(--ink-4)', cursor: 'pointer', padding: '6px 12px 2px' }}>ล้างที่เลือก</button>
+                  )}
+                </div>
+              )}
+            </div>
+          </>
+        )
+      })()}
+
       {actionMenu && (() => {
         const r = rows.find(x => x.id === actionMenu.id)
         if (!r) return null
@@ -426,15 +711,91 @@ export default function ReturnParcelsPage() {
           <>
             <div onMouseDown={() => setActionMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 1500 }} />
             {/* ‼️ เดิมวางใต้ปุ่มตายตัว แถวล่างสุดของจอเมนูตกขอบ เห็นตัวเลือกไม่ครบ → AnchoredMenu พลิกขึ้นด้านบนให้เอง */}
-            <AnchoredMenu rect={actionMenu.rect} minWidth={120} style={{ width: 120, background: '#fff', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', padding: 0, overflow: 'hidden' }}>
+            <AnchoredMenu rect={actionMenu.rect} minWidth={130} style={{ width: 130, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: '0 12px 32px rgba(120,86,58,0.16)', padding: 5, overflow: 'hidden' }}>
+              <button onClick={() => {
+                setActionMenu(null)
+                setEditModal({ id: r.id, data: Object.fromEntries(COLS.map(c => [c.key, String(r[c.key] ?? '')])) as Record<TextKey, string> })
+              }}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, color: 'var(--ink-2)', borderRadius: 10, fontFamily: 'inherit' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--cream-2)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>แก้ไข</button>
               <button onClick={() => { setActionMenu(null); void delRow(r) }}
-                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: '#fff', cursor: 'pointer', fontSize: 13, color: 'var(--red)' }}>ลบแถวนี้</button>
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, color: 'var(--red)', borderRadius: 10, fontFamily: 'inherit' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--red-bg)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>ลบแถวนี้</button>
             </AnchoredMenu>
           </>
         )
       })()}
 
       {/* ชี้เมาส์ที่ช่อง = ขึ้นกรอบจางๆ บอกว่ากดแก้ได้ */}
+
+      {/* กล่องแก้ไขทั้งใบ (เมนู ··· → แก้ไข) — ธีมเดียวกับฟอร์มหน้าอื่น */}
+      {editModal && (() => {
+        const row = rows.find(x => x.id === editModal.id)
+        if (!row) return null
+        const setF = (k: TextKey, v: string) => setEditModal(m => (m ? { ...m, data: { ...m.data, [k]: v } } : m))
+        const save = async () => {
+          const patch: Partial<Parcel> = {}
+          for (const c of COLS) {
+            const next = editModal.data[c.key].trim()
+            if (next !== String(row[c.key] ?? '')) (patch as Record<string, unknown>)[c.key] = next || null
+          }
+          setEditModal(null)
+          if (Object.keys(patch).length) await saveField(row, patch, 'แก้ไขพัสดุส่งกลับ')
+        }
+        return (
+          <div onMouseDown={e => { if (e.target === e.currentTarget) setEditModal(null) }}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1600, padding: 24 }}>
+            <div className="sc-fields" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 24,
+              boxShadow: '0 24px 60px rgba(61,43,31,0.22)', width: '100%', maxWidth: 680, maxHeight: '88vh', overflowY: 'auto', padding: '26px 30px' }}>
+              <h3 className="sc-mtitle" style={{ marginBottom: 4 }}>แก้ไขพัสดุส่งกลับ</h3>
+              <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 18 }}>{row.serial_no ? `เลขที่ใบ ${row.serial_no}` : 'แก้หลายช่องแล้วกดบันทึกทีเดียว'}</p>
+
+              {/* ‼️ วางช่องเป็น 2 คอลัมน์จับคู่กันให้สมดุลแบบฟอร์มออเดอร์/งานเคลม
+                  (เดิมปล่อยไหลอัตโนมัติ ช่องเดี่ยวเลยเหลือที่ว่างครึ่งแถว) */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px 14px', marginBottom: 18 }}>
+                {(['sender_name', 'phone', 'carrier', 'tracking_no', 'orig_carrier', 'orig_tracking_no', 'orig_order_number', 'items', 'address'] as TextKey[]).map(k => {
+                  const c = COLS.find(x => x.key === k)!
+                  const full = c.multiline || k === 'orig_order_number'
+                  return (
+                    <div key={k} style={{ gridColumn: full ? '1 / -1' : undefined }}>
+                      <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>{c.label}</label>
+                      {c.multiline ? (
+                        <textarea value={editModal.data[k]} onChange={e => setF(k, e.target.value)} rows={2}
+                          style={{ width: '100%', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                      ) : (
+                        <input type="text" value={editModal.data[k]} onChange={e => setF(k, e.target.value)}
+                          list={c.carrier ? 'return-carriers' : undefined}
+                          style={{ width: '100%', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* วิดีโอ/รูป — อัพโหลดจากในกล่องแก้ไขได้เลย (บันทึกทันทีที่อัพเสร็จ ไม่ต้องรอกดบันทึก) */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px 14px', marginBottom: 18 }}>
+                {(['videos', 'photos'] as const).map(kind => (
+                  <div key={kind} style={{ background: 'var(--cream-2)', border: '1px solid var(--border-2)', borderRadius: 16, padding: '12px 14px' }}>
+                    <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 8 }}>
+                      {kind === 'videos' ? 'วิดีโอตอนแกะ' : 'รูปพัสดุ'}
+                      <span style={{ fontWeight: 400, color: 'var(--ink-4)', marginLeft: 6 }}>({(row[kind] ?? []).length})</span>
+                    </label>
+                    <MediaCell kind={kind} list={row[kind] ?? []} busy={uploading[`${row.id}:${kind}`]}
+                      onAdd={f => addMedia(row, kind, f)} onRemove={i => removeMedia(row, kind, i)} />
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => setEditModal(null)} className="sc-mcancel" style={{ flex: 1, cursor: 'pointer', fontSize: 14, border: 'none' }}>ยกเลิก</button>
+                <button onClick={() => void save()} className="sc-msave" style={{ flex: 2, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>บันทึก</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* กล่องยืนยัน — ต้องอยู่ท้ายสุดเพื่อทับทุกหน้าต่าง */}
       {confirmDialog}
@@ -457,7 +818,9 @@ function EditCell({ value, editing, onStart, onDone, multiline, carrier, label, 
   return (
     <div onClick={onStart} title={value || `กดเพื่อแก้${label}`} className="rp-cell"
       style={{ cursor: 'text', minHeight: 18, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: value ? 'var(--ink)' : 'var(--ink-4)' }}>
-      {value || '—'}
+      {carrier && value
+        ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><CourierIcon name={value} size={18} />{value}</span>
+        : value || '—'}
     </div>
   )
 }
@@ -491,25 +854,26 @@ function MediaCell({ kind, list, busy, onAdd, onRemove }: {
   const input = useRef<HTMLInputElement>(null)
   const isVideo = kind === 'videos'
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '4px 0' }}>
+    // ‼️ แถวตารางสูงคงที่ (.dn-rows) — เรียงแถวเดียว มีหลายรูป/คลิปเลื่อนซ้ายขวาดู ไม่ขึ้นบรรทัดใหม่
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
       {list.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        <div className="dn-hscroll" style={{ display: 'flex', flexWrap: 'nowrap', gap: 8, overflowX: 'auto', maxWidth: 190, padding: '2px 6px 0 0' }}>
           {list.map((m, i) => (
-            <div key={m.url} style={{ position: 'relative' }}>
+            <div key={m.url} style={{ position: 'relative', flexShrink: 0 }}>
               <a href={m.url} target="_blank" rel="noreferrer" title={isVideo ? `เปิดวิดีโอ ${m.name ?? ''}` : 'เปิดรูปขนาดเต็ม'}
                 style={isVideo
-                  ? { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--blue)', textDecoration: 'none', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 22px 4px 8px' }
+                  ? { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--blue)', textDecoration: 'none', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 20px 2px 8px' }
                   : { display: 'block' }}>
-                {isVideo ? <>▶ คลิป {i + 1}</> : <img src={m.url} alt="รูปพัสดุ" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)', display: 'block' }} />}
+                {isVideo ? <>▶ คลิป {i + 1}</> : <img src={m.url} alt="รูปพัสดุ" style={{ width: 28, height: 28, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)', display: 'block' }} />}
               </a>
               <button onClick={() => onRemove(i)} title="เอาออก"
-                style={{ position: 'absolute', top: isVideo ? 3 : -6, right: isVideo ? 3 : -6, width: 18, height: 18, borderRadius: '50%', border: 'none', background: 'rgba(15,23,42,0.65)', color: '#fff', fontSize: 10, lineHeight: 1, cursor: 'pointer', padding: 0 }}>✕</button>
+                style={{ position: 'absolute', top: isVideo ? 2 : -4, right: isVideo ? 2 : -4, width: 15, height: 15, borderRadius: '50%', border: 'none', background: 'rgba(15,23,42,0.65)', color: '#fff', fontSize: 10, lineHeight: 1, cursor: 'pointer', padding: 0 }}>✕</button>
             </div>
           ))}
         </div>
       )}
       <button type="button" onClick={() => input.current?.click()} disabled={!!busy}
-        style={{ alignSelf: 'flex-start', border: '1px dashed #ccc', background: 'transparent', color: busy ? 'var(--ink-3)' : 'var(--blue)', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: busy ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>
+        style={{ flexShrink: 0, border: '1px dashed #ccc', background: 'transparent', color: busy ? 'var(--ink-3)' : 'var(--blue)', borderRadius: 6, padding: '2px 10px', fontSize: 12, cursor: busy ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>
         {busy ? `กำลังอัพ ${busy}` : isVideo ? '+ วิดีโอ' : '+ รูป'}
       </button>
       <input ref={input} type="file" accept={isVideo ? 'video/*' : 'image/*'} multiple style={{ display: 'none' }}
@@ -527,18 +891,16 @@ function ClaimCell({ claim, linked, editing, onStart, onCancel, onPick }: {
   if (editing) return <ClaimSearch linked={linked} onCancel={onCancel} onPick={onPick} />
   return (
     <div onClick={onStart} title="กดเพื่อค้นงานเคลม" className="rp-cell"
-      style={{ padding: '6px 8px', borderRadius: 6, cursor: 'text', minHeight: 20, overflow: 'hidden' }}>
+      style={{ padding: '2px 8px', borderRadius: 6, cursor: 'text', minHeight: 20, overflow: 'hidden', display: 'flex', alignItems: 'baseline', gap: 6, whiteSpace: 'nowrap' }}>
       {!linked ? <span style={{ color: 'var(--ink-4)' }}>—</span>
         : !claim ? <span style={{ color: 'var(--ink-4)' }}>กำลังโหลด…</span>
         : <>
             {/* กดชื่อ → ไปหน้างานเคลมแล้วกระพริบแถวใบนั้น (/claims?focus=<id>) · กดส่วนอื่นของช่อง = ค้นเปลี่ยนใบ */}
-            <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              <Link href={`/claims?focus=${claim.id}`} onClick={e => e.stopPropagation()} title="เปิดงานเคลมใบนี้"
-                style={{ color: 'var(--blue)', fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 2, cursor: 'pointer' }}>{claimLabel(claim)}</Link>
-            </div>
-            <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <Link href={`/claims?focus=${claim.id}`} onClick={e => e.stopPropagation()} title="เปิดงานเคลมใบนี้"
+              style={{ color: 'var(--brand)', fontWeight: 600, flexShrink: 0, textDecoration: 'underline', textUnderlineOffset: 2 }}>{claimLabel(claim)}</Link>
+            <span style={{ fontSize: 11.5, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
               {[claim.customer_username ? claim.original_order_number : null, claim.channel, claim.status].filter(Boolean).join(' · ') || 'งานเคลม'}
-            </div>
+            </span>
           </>}
     </div>
   )

@@ -5,6 +5,8 @@ import { supabase } from '@/lib/supabase'
 import { syncRows, byCreatedAsc } from '@/lib/rowCache'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
+import { PlatformIcon } from '@/components/BrandMark'
+import { KpiCard, Donut, StatusTile, TopProducts, RankList, MiniStats, DeptCards } from './report'
 
 type StatusEvent = { status: string; at: string; by?: string | null }
 type OrderRow = {
@@ -18,6 +20,8 @@ type OrderRow = {
   platform: string | null
   is_installation: boolean
   status_history: StatusEvent[] | null
+  customer_name: string | null
+  items: { type?: string; quantity?: number | string }[] | null
 }
 type ScanRow = { order_number: string; status: string; tech_name: string | null; scanned_at: string }
 type ClaimRow = { id: string; created_at: string; status: string | null; fault: string | null; refund_amount: number | null; claim_type: string | null }
@@ -26,11 +30,12 @@ type AllData = { orders: OrderRow[]; scans: ScanRow[]; claims: ClaimRow[] }
 
 // ลำดับขั้นผลิต + สีตามชุดเดียวกับหน้าออเดอร์/dashboard (PROD_STATUS_COLOR)
 const STAGES = [
-  { status: 'ตัดผ้าแล้ว', label: 'แผนกตัดผ้า', color: '#0ea5e9' },
-  { status: 'เย็บแล้ว',   label: 'แผนกเย็บผ้า', color: '#8b5cf6' },
-  { status: 'ตรวจสอบแล้ว', label: 'ผู้ช่วยช่าง', color: '#6366f1' },
-  { status: 'รีดแล้ว',    label: 'แผนกรีดผ้า',  color: '#ec4899' },
-  { status: 'แพ็คแล้ว',   label: 'แผนกแพ็คสินค้า', color: '#14b8a6' },
+  // สีแท่งของแต่ละขั้น — ไล่โทนแบรนด์จากเข้มไปอ่อน (เดิมเป็นฟ้า/ม่วง/ชมพู/เขียว คนละโทนกับทั้งเว็บ)
+  { status: 'ตัดผ้าแล้ว', label: 'แผนกตัดผ้า', color: '#8A5A38' },
+  { status: 'เย็บแล้ว',   label: 'แผนกเย็บผ้า', color: '#A87452' },
+  { status: 'ตรวจสอบแล้ว', label: 'ผู้ช่วยช่าง', color: '#BE8A63' },
+  { status: 'รีดแล้ว',    label: 'แผนกรีดผ้า',  color: '#D0A57F' },
+  { status: 'แพ็คแล้ว',   label: 'แผนกแพ็คสินค้า', color: '#E0BE9C' },
 ]
 
 const DAY = 86400000
@@ -59,66 +64,29 @@ function fmtBaht(n: number): string {
 
 // ---------- ชิ้นส่วน UI ----------
 
+// หัวข้อคั่นแต่ละส่วนของหน้า — เลขลำดับ + ชื่อ + คำอธิบายว่าส่วนนี้ตอบคำถามอะไร
+function Section({ n, title, sub }: { n: number; title: string; sub: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, margin: '30px 0 14px' }}>
+      <span style={{ width: 28, height: 28, borderRadius: 10, background: 'var(--brand)', color: '#FFF8F0',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700,
+        flexShrink: 0, boxShadow: '0 4px 10px rgba(158,106,73,0.25)' }}>{n}</span>
+      <div>
+        <h2 style={{ fontSize: 17, fontWeight: 700, color: '#74401E', lineHeight: 1.25 }}>{title}</h2>
+        <p style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>{sub}</p>
+      </div>
+    </div>
+  )
+}
+
 function Card({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
   return (
-    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: 'var(--shadow)', padding: '18px 20px' }}>
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 20, boxShadow: '0 4px 16px rgba(120,86,58,0.10)', padding: '20px 22px' }}>
       <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{title}</div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>{title}</div>
         {sub && <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 3 }}>{sub}</div>}
       </div>
       {children}
-    </div>
-  )
-}
-
-function StatTile({ label, value, sub, color, icon }: { label: string; value: string; sub?: string; color: string; icon: React.ReactNode }) {
-  return (
-    <div style={{ flex: '1 1 200px', minWidth: 200, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: 'var(--shadow)', padding: '16px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
-      <div style={{ width: 40, height: 40, borderRadius: 10, background: color + '1A', color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        {icon}
-      </div>
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 500 }}>{label}</div>
-        <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink)', lineHeight: 1.25, marginTop: 2 }}>{value}</div>
-        {sub && <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2 }}>{sub}</div>}
-      </div>
-    </div>
-  )
-}
-
-// แถบนอน: ป้ายชื่อ + แท่ง + ตัวเลขกำกับทุกแถว (ไม่พึ่งสีอย่างเดียว)
-function HBar({ label, value, max, color, valueText, subText }: { label: string; value: number; max: number; color: string; valueText: string; subText?: string }) {
-  const pct = max > 0 ? Math.max(2, Math.round((value / max) * 100)) : 0
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 0' }} title={`${label}: ${valueText}${subText ? ` (${subText})` : ''}`}>
-      <div style={{ width: 110, fontSize: 12.5, color: 'var(--ink-2)', fontWeight: 500, flexShrink: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
-      <div style={{ flex: 1, height: 18, background: 'var(--bg)', borderRadius: 4, overflow: 'hidden' }}>
-        <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 4, transition: 'width 0.3s ease' }} />
-      </div>
-      <div style={{ width: 120, fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', flexShrink: 0, textAlign: 'right' }}>
-        {valueText}
-        {subText && <span style={{ fontWeight: 400, color: 'var(--ink-4)', fontSize: 11 }}> · {subText}</span>}
-      </div>
-    </div>
-  )
-}
-
-// กราฟแท่งรายเดือน (ซีรีส์เดียว สีทองแดงแบรนด์ + ตัวเลขบนแท่ง)
-function MonthBars({ data, fmt }: { data: { label: string; value: number | null }[]; fmt: (v: number) => string }) {
-  const max = Math.max(...data.map(d => d.value ?? 0), 1)
-  return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, height: 150, paddingTop: 18 }}>
-      {data.map((d, i) => {
-        const h = d.value != null && d.value > 0 ? Math.max(4, Math.round((d.value / max) * 100)) : 0
-        return (
-          <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, height: '100%', justifyContent: 'flex-end' }}
-            title={`${d.label}: ${d.value != null ? fmt(d.value) : 'ไม่มีข้อมูล'}`}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--ink-2)', whiteSpace: 'nowrap' }}>{d.value != null ? fmt(d.value) : '—'}</div>
-            <div style={{ width: '100%', maxWidth: 44, height: `${h}%`, minHeight: d.value != null && d.value > 0 ? 4 : 0, background: 'var(--blue)', borderRadius: '4px 4px 0 0', opacity: 0.9 }} />
-            <div style={{ fontSize: 10.5, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{d.label}</div>
-          </div>
-        )
-      })}
     </div>
   )
 }
@@ -136,9 +104,9 @@ export default function AnalyticsPage() {
       const [o, s, c] = await Promise.all([
         // ออเดอร์: จำไว้ในเครื่อง ขอเฉพาะใบที่เปลี่ยน (lib/rowCache.ts) — มี status_history ก้อนใหญ่
         syncRows<OrderRow>({
-          key: 'analytics', table: 'order_entries', sort: byCreatedAsc,
-          select: 'id,order_number,order_status,created_at,shipped_at,deadline,price,platform,is_installation,status_history',
-          full: () => supabase.from('order_entries').select('id,order_number,order_status,created_at,shipped_at,deadline,price,platform,is_installation,status_history').order('created_at', { ascending: true }).order('id', { ascending: true }),
+          key: 'analytics2', table: 'order_entries', sort: byCreatedAsc,
+          select: 'id,order_number,order_status,created_at,shipped_at,deadline,price,platform,is_installation,status_history,customer_name,items',
+          full: () => supabase.from('order_entries').select('id,order_number,order_status,created_at,shipped_at,deadline,price,platform,is_installation,status_history,customer_name,items').order('created_at', { ascending: true }).order('id', { ascending: true }),
         }),
         fetchAllRows<ScanRow>(() => supabase.from('production_scans').select('order_number,status,tech_name,scanned_at').order('scanned_at', { ascending: true }).order('id', { ascending: true })),
         fetchAllRows<ClaimRow>(() => supabase.from('claims').select('id,created_at,status,fault,refund_amount,claim_type').order('created_at', { ascending: true }).order('id', { ascending: true })),
@@ -312,7 +280,100 @@ export default function AnalyticsPage() {
 
     const revenue = shipped.reduce((sum, o) => sum + (o.price ?? 0), 0)
 
+    // ══ ส่วนรายงาน (การ์ดตัวเลข / กราฟแนวโน้ม / โดนัท / สถานะ / สินค้า / ออเดอร์ล่าสุด) ══
+    const ymOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const latest = [...liveOrders].reverse().find(o => o.created_at)?.created_at?.slice(0, 7)
+    const curKey = month || latest || ymOf(new Date())
+    const [cy, cm] = curKey.split('-').map(Number)
+    const prevKey = ymOf(new Date(cy, cm - 2, 1))
+
+    const inMonth = (o: OrderRow, key: string) => o.created_at?.startsWith(key)
+    const curOrders = liveOrders.filter(o => inMonth(o, curKey))
+    const prevOrders = liveOrders.filter(o => inMonth(o, prevKey))
+    const sumPrice = (arr: OrderRow[]) => arr.reduce((t, o) => t + (o.price ?? 0), 0)
+    const pctChange = (now: number, before: number) => (before > 0 ? ((now - before) / before) * 100 : null)
+
+    // ลูกค้าใหม่ = ชื่อที่เพิ่งมีออเดอร์ใบแรกในเดือนนั้น (ดูจากออเดอร์ทั้งหมดที่มี)
+    const firstSeen = new Map<string, string>()
+    for (const o of liveOrders) {
+      const name = (o.customer_name ?? '').trim()
+      if (!name || !o.created_at) continue
+      const prev2 = firstSeen.get(name)
+      if (!prev2 || o.created_at < prev2) firstSeen.set(name, o.created_at)
+    }
+    const newCustIn = (key: string) => [...firstSeen.values()].filter(t => t.startsWith(key)).length
+
+    // การ์ดตัวเลข: ค่าใช้ตามช่วงที่เลือก · % เทียบเดือนก่อน (เฉพาะตอนเลือกเดือนเจาะจง)
+    const scopeShipped = orders.filter(o => o.order_status === 'จัดส่งแล้ว')
+    const kpi = {
+      revenue: sumPrice(orders),
+      orderCount: orders.length,
+      shippedCount2: scopeShipped.length,
+      newCustomers: month ? newCustIn(month) : firstSeen.size,
+      dRevenue: month ? pctChange(sumPrice(curOrders), sumPrice(prevOrders)) : null,
+      dOrders: month ? pctChange(curOrders.length, prevOrders.length) : null,
+      dShipped: month ? pctChange(curOrders.filter(o => o.order_status === 'จัดส่งแล้ว').length, prevOrders.filter(o => o.order_status === 'จัดส่งแล้ว').length) : null,
+      dCustomers: month ? pctChange(newCustIn(curKey), newCustIn(prevKey)) : null,
+    }
+
+    const monthName = (key: string) => new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, 1)
+      .toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })
+
+    // โดนัท: ยอดขายแยกตามแพลตฟอร์ม
+    const DONUT_COLORS = ['#8A5A38', '#A87452', '#BE8A63', '#D0A57F', '#E0BE9C', '#EAD3BB']
+    const platRevMap = new Map<string, number>()
+    for (const o of orders) {
+      const k = o.is_installation ? 'งานติดตั้ง' : (o.platform || 'ไม่ระบุ')
+      platRevMap.set(k, (platRevMap.get(k) ?? 0) + (o.price ?? 0))
+    }
+    const platRevSorted = [...platRevMap.entries()].sort((a, b) => b[1] - a[1])
+    const platTop = platRevSorted.slice(0, 5)
+    const platRest = platRevSorted.slice(5).reduce((t, [, v]) => t + v, 0)
+    const platRevenue = [
+      ...platTop.map(([label, value], i) => ({ label, value, color: DONUT_COLORS[i] })),
+      ...(platRest > 0 ? [{ label: 'อื่นๆ', value: platRest, color: DONUT_COLORS[5] }] : []),
+    ]
+    const platRevTotal = platRevenue.reduce((t, p) => t + p.value, 0)
+
+    // สถานะออเดอร์ (นับใบที่ยกเลิกแยกต่างหาก เพราะตัดออกจาก liveOrders ไปแล้ว)
+    const cancelled = data.orders.filter(o => o.order_status === 'ยกเลิก' && inRange(o.created_at)).length
+    const countBy = (st: string) => orders.filter(o => o.order_status === st).length
+    const statusTiles = [
+      { key: 'รอดำเนินการ', label: 'รอดำเนินการ', n: countBy('รอดำเนินการ'), bg: '#FBEEDC' },
+      { key: 'ตัดผ้าแล้ว', label: 'ตัดผ้าแล้ว', n: countBy('ตัดผ้าแล้ว'), bg: '#E7EEF3' },
+      { key: 'เย็บแล้ว', label: 'เย็บแล้ว', n: countBy('เย็บแล้ว'), bg: '#EDE7F2' },
+      { key: 'รีดแล้ว', label: 'รีดแล้ว', n: countBy('รีดแล้ว'), bg: '#F5E9EB' },
+      { key: 'แพ็คแล้ว', label: 'แพ็คแล้ว', n: countBy('แพ็คแล้ว'), bg: '#E6F0EE' },
+      { key: 'จัดส่งแล้ว', label: 'จัดส่งแล้ว', n: countBy('จัดส่งแล้ว'), bg: '#E3F3E0' },
+      { key: 'ยกเลิก', label: 'ยกเลิก', n: cancelled, bg: '#FBEDE8' },
+    ]
+    const statusTotal = orders.length + cancelled
+
+    // สินค้ายอดนิยม — นับจำนวน "ใบ" ที่มีสินค้าชนิดนั้น
+    const prodMap = new Map<string, number>()
+    for (const o of orders) {
+      if (!Array.isArray(o.items)) continue
+      const types = new Set(o.items.map(it => (it?.type ?? '').trim()).filter(Boolean))
+      types.forEach(t => prodMap.set(t, (prodMap.get(t) ?? 0) + 1))
+    }
+    const topProducts = [...prodMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)
+      .map(([name, count]) => ({ name, count }))
+    const withItems = orders.filter(o => Array.isArray(o.items) && o.items.length > 0).length
+
+    // ผลงานแยกตามแผนก (ดูง่ายกว่าแยกตามคน — คนหนึ่งมักทำแค่ 1-2 ขั้น)
+    const depts = techCols.map(c => {
+      const people = techs.map(t => ({ name: t.name, n: t.rec[c.status] ?? 0 })).filter(x => x.n > 0).sort((a, b) => b.n - a.n)
+      return { label: c.label, color: c.color === 'var(--ink-2)' ? '#B39B84' : c.color, total: people.reduce((t, x) => t + x.n, 0), people }
+    }).filter(d => d.total > 0).sort((a, b) => b.total - a.total)
+
+    // ออเดอร์ล่าสุด 5 ใบ
+    const recent = [...orders].sort((a, b) => (a.created_at < b.created_at ? 1 : -1)).slice(0, 5)
+
     return {
+      curKey, prevKey, monthNameCur: monthName(curKey), monthNamePrev: monthName(prevKey),
+      kpi,
+      platRevenue, platRevTotal, statusTiles, statusTotal, cancelled,
+      topProducts, withItems, recent, depts,
       orders, claims, stageMed, totalProdMed: median(totalProd), totalProdN: totalProd.length,
       shipMed: median(shipDur), shipN: shipDur.length,
       onTimePct: withDeadline.length > 0 ? Math.round((onTime.length / withDeadline.length) * 100) : null,
@@ -321,23 +382,55 @@ export default function AnalyticsPage() {
     }
   }, [data, month])
 
-  const maxStage = Math.max(...stats.stageMed.map(s => s.med ?? 0), 1)
-  const maxPlat = Math.max(...stats.platforms.map(p => p[1]), 1)
-  const maxFault = Math.max(...stats.faults.map(f => f[1]), 1)
+  // ขั้นที่กินเวลามากที่สุด — ติดป้าย "ช้าสุด" ไว้ให้เห็นทันทีว่าคอขวดอยู่ตรงไหน
+  const slowestStage = stats.stageMed.some(s => s.n > 0)
+    ? stats.stageMed.reduce((a, b) => ((b.med ?? 0) > (a.med ?? 0) ? b : a)).status
+    : null
+
+  // ดาวน์โหลดรายงานเป็นไฟล์ CSV (เปิดใน Excel ได้เลย — ใส่ BOM กันภาษาไทยเพี้ยน)
+  const downloadReport = () => {
+    const rows: (string | number)[][] = [
+      ['รายงานร้าน Donna Design'],
+      ['ช่วงเวลา', month ? stats.monthNameCur : 'ทั้งหมด'],
+      [],
+      ['ภาพรวม'],
+      ['ยอดขายรวม (บาท)', stats.kpi.revenue],
+      ['จำนวนออเดอร์', stats.kpi.orderCount],
+      ['จัดส่งสำเร็จ', stats.kpi.shippedCount2],
+      ['ลูกค้าใหม่', stats.kpi.newCustomers],
+      [],
+      ['สถานะออเดอร์', 'จำนวน'],
+      ['ทั้งหมด', stats.statusTotal],
+      ...stats.statusTiles.map(t => [t.label, t.n]),
+      [],
+      ['ยอดขายตามแพลตฟอร์ม', 'บาท'],
+      ...stats.platRevenue.map(pl => [pl.label, pl.value]),
+      [],
+      ['สินค้ายอดนิยม', 'จำนวนออเดอร์'],
+      ...stats.topProducts.map(r => [r.name, r.count]),
+    ]
+    const csv = rows.map(r => r.map(c => (typeof c === 'string' && /[",\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c)).join(',')).join('\r\n')
+    const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `รายงาน-${month || 'ทั้งหมด'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <div>
       {/* หัวเรื่อง + ตัวเลือกช่วงเวลา */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 22, flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>วิเคราะห์ข้อมูล</h1>
-          <p style={{ fontSize: 12.5, color: 'var(--ink-3)', margin: '4px 0 0' }}>
-            เวลาแต่ละแผนก · เวลาจัดส่ง · เคลม · แพลตฟอร์ม — ค่าเวลาใช้ค่ากลาง (median) กันงานค้างนานผิดปกติดึงค่าเพี้ยน
+          <h1 className="sc-title" style={{ margin: 0 }}>รายงานและข้อมูล</h1>
+          <p className="sc-sub" style={{ margin: '4px 0 0' }}>
+            ภาพรวมยอดขาย สถานะออเดอร์ และสถิติสำคัญของร้าน
           </p>
         </div>
         {/* dropdown เดียว: ทั้งหมด + เดือนที่มีออเดอร์ */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '7px 12px' }}>
-          <svg width="15" height="15" fill="none" stroke="var(--blue)" strokeWidth="1.6" viewBox="0 0 24 24">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--cream-2)', border: '1px solid var(--border-2)', borderRadius: 999, padding: '9px 16px', boxShadow: 'var(--shadow)' }}>
+          <svg width="15" height="15" fill="none" stroke="var(--brand)" strokeWidth="1.6" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/>
           </svg>
           <select value={month} onChange={e => setMonth(e.target.value)}
@@ -350,95 +443,122 @@ export default function AnalyticsPage() {
             ))}
           </select>
         </div>
+        <button onClick={downloadReport} className="sc-btn-main"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.9" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16" />
+          </svg>
+          ดาวน์โหลดรายงาน
+        </button>
       </div>
 
       {loading && <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>กำลังโหลดข้อมูล...</p>}
 
-      {/* การ์ดสรุป */}
-      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 22 }}>
-        <StatTile label="เวลาผลิตรวม (ตัด → แพ็ค)" value={fmtDur(stats.totalProdMed)} sub={`จาก ${stats.totalProdN} ออเดอร์`} color="#C47E3A"
-          icon={<svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>} />
-        <StatTile label="เวลาจัดส่ง (ลงออเดอร์ → ส่ง)" value={stats.shipMed != null ? `${Math.round((stats.shipMed / DAY) * 10) / 10} วัน` : '—'} sub={`จาก ${stats.shipN} ออเดอร์ที่จัดส่งแล้ว`} color="#6366F1"
-          icon={<svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 00-3.213-9.193 2.056 2.056 0 00-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 00-10.026 0 1.106 1.106 0 00-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12"/></svg>} />
-        <StatTile label="ส่งทันกำหนด" value={stats.onTimePct != null ? `${stats.onTimePct}%` : '—'} sub={`จาก ${stats.onTimeN} ออเดอร์ที่มีกำหนดส่ง`} color="#16A34A"
-          icon={<svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>} />
-        <StatTile label="ยอดขายที่จัดส่งแล้ว" value={fmtBaht(stats.revenue)} sub={`${stats.shippedCount} ออเดอร์ · เคลม ${stats.claims.length} เคส (${stats.claimRate.toFixed(1)}%)`} color="#DC2626"
-          icon={<svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>} />
+      <Section n={1} title="ภาพรวม" sub={month ? `ตัวเลขของ ${stats.monthNameCur} · เทียบกับ ${stats.monthNamePrev}` : 'ตัวเลขรวมทุกเดือน — เลือกเดือนมุมขวาบนเพื่อดูการเปลี่ยนแปลงเทียบเดือนก่อน'} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))', gap: 12 }}>
+        <KpiCard label="ยอดขายรวม" value={stats.kpi.revenue.toLocaleString('th-TH', { maximumFractionDigits: 0 })} unit="฿"
+          delta={stats.kpi.dRevenue}
+          icon={<svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12l-1 12H7zM9.2 7V5.6a2.8 2.8 0 015.6 0V7"/></svg>} />
+        <KpiCard label="จำนวนออเดอร์" value={stats.kpi.orderCount.toLocaleString('th-TH')} unit="ใบ"
+          delta={stats.kpi.dOrders}
+          icon={<svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8zM14 3v5h5M9 13h6M9 17h4"/></svg>} />
+        <KpiCard label="จัดส่งสำเร็จ" value={stats.kpi.shippedCount2.toLocaleString('th-TH')} unit="ใบ"
+          delta={stats.kpi.dShipped}
+          icon={<svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5h10v9H3zM13 10.5h4l3 3v3h-7zM6.5 19.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3zm11 0a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/></svg>} />
+        <KpiCard label="ลูกค้าใหม่" value={stats.kpi.newCustomers.toLocaleString('th-TH')} unit="ราย"
+          delta={stats.kpi.dCustomers}
+          icon={<svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 12a4 4 0 100-8 4 4 0 000 8zM4.5 20a7.5 7.5 0 0115 0"/></svg>} />
       </div>
 
-      {/* เวลาเฉลี่ยแต่ละแผนก + กราฟรายเดือน */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 14, marginBottom: 22 }}>
-        <Card title="เวลาที่ใช้แต่ละแผนก" sub="นับจากขั้นก่อนหน้าเสร็จ → ขั้นนี้เสร็จ (จากสแกนผลิต + เปลี่ยนสถานะในเว็บ, ขั้นตัดนับจากวันลงออเดอร์)">
-          {stats.stageMed.map(st => (
-            <HBar key={st.status} label={st.label} value={st.med ?? 0} max={maxStage} color={st.color}
-              valueText={fmtDur(st.med)} subText={`${st.n} งาน`} />
-          ))}
-          {stats.stageMed.every(s => s.n === 0) && !loading && (
-            <p style={{ color: 'var(--ink-3)', fontSize: 12.5, textAlign: 'center', padding: '12px 0' }}>ยังไม่มีข้อมูลสแกนผลิตในช่วงนี้</p>
-          )}
-        </Card>
-        <Card title="ออเดอร์ใหม่รายเดือน" sub="นับตามวันที่ลงออเดอร์ 6 เดือนล่าสุด">
-          <MonthBars data={stats.monthOrders} fmt={v => v.toLocaleString()} />
-        </Card>
-        <Card title="เวลาจัดส่งรายเดือน (วัน)" sub="ค่ากลางของ ลงออเดอร์ → จัดส่งแล้ว ตามเดือนที่จัดส่ง">
-          <MonthBars data={stats.monthShipDays} fmt={v => `${v}`} />
-        </Card>
-      </div>
-
-      {/* พนักงานผลิต + เคลม + แพลตฟอร์ม */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 14 }}>
-        <Card title="ผลงานพนักงานผลิต" sub="จำนวนงานที่สแกนในช่วงที่เลือก แยกตามขั้น (รวมสถานะอื่นที่มีการสแกนด้วย)">
-          {stats.techs.length === 0 ? (
-            <p style={{ color: 'var(--ink-3)', fontSize: 12.5, textAlign: 'center', padding: '12px 0' }}>ไม่มีข้อมูล</p>
-          ) : (
-            <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--ink-3)', fontWeight: 500, fontSize: 11.5 }}>ชื่อ</th>
-                  {stats.techCols.map(st => (
-                    <th key={st.status} style={{ textAlign: 'center', padding: '6px 8px', color: st.color, fontWeight: 600, fontSize: 11.5, whiteSpace: 'nowrap' }}>{st.label}</th>
-                  ))}
-                  <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--ink-3)', fontWeight: 500, fontSize: 11.5 }}>รวม</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stats.techs.map(t => (
-                  <tr key={t.name} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '7px 8px', fontWeight: 600, color: 'var(--ink)' }}>{t.name}</td>
-                    {stats.techCols.map(st => (
-                      <td key={st.status} style={{ textAlign: 'center', padding: '7px 8px', color: t.rec[st.status] ? 'var(--ink-2)' : 'var(--ink-4)' }}>{t.rec[st.status] ?? '-'}</td>
-                    ))}
-                    <td style={{ textAlign: 'right', padding: '7px 8px', fontWeight: 700, color: 'var(--blue)' }}>{t.total}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <Section n={2} title="แพลตฟอร์ม" sub="เงินมาจากช่องทางไหนมากที่สุด และลูกค้าสั่งสินค้าชนิดไหนมากที่สุด" />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 14, alignItems: 'start' }}>
+        <Card title="ยอดขายแยกตามแพลตฟอร์ม" sub="รวมยอดเงินของออเดอร์ในช่วงที่เลือก">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
+            <Donut parts={stats.platRevenue} total={stats.platRevTotal} />
+            <div style={{ flex: 1, minWidth: 220 }}>
+              {stats.platRevenue.map(pl => (
+                <div key={pl.label} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', fontSize: 12.5 }}>
+                  {['อื่นๆ', 'งานติดตั้ง', 'ไม่ระบุ'].includes(pl.label)
+                    ? <span style={{ width: 20, height: 20, borderRadius: '50%', background: pl.color, flexShrink: 0, display: 'inline-block' }} />
+                    : <PlatformIcon name={pl.label} size={20} />}
+                  {/* ❗ ชื่อกว้างตามข้อความ แล้วดัน % / ยอดเงินมาชิดกัน — ไม่งั้นกลางจะโหว่ */}
+                  <span style={{ flex: 1, minWidth: 0, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pl.label}</span>
+                  <span style={{ width: 44, textAlign: 'right', color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>
+                    {stats.platRevTotal ? `${((pl.value / stats.platRevTotal) * 100).toFixed(1)}%` : '—'}
+                  </span>
+                  <span style={{ width: 86, textAlign: 'right', fontWeight: 700, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
+                    {pl.value.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+                  </span>
+                  <span style={{ color: 'var(--ink-4)', fontSize: 11 }}>฿</span>
+                </div>
+              ))}
             </div>
-          )}
+          </div>
         </Card>
-        <Card title="งานเคลม" sub={`เคลมที่เปิดในช่วงที่เลือก ${stats.claims.length} เคส · เงินคืนรวม ${fmtBaht(stats.refundSum)}`}>
+        <Card title="สินค้ายอดนิยม" sub={`5 อันดับชนิดสินค้าที่ถูกสั่งมากที่สุด · จาก ${stats.withItems.toLocaleString('th-TH')} ใบที่กรอกรายการไว้`}>
+          <TopProducts rows={stats.topProducts} total={stats.withItems} />
+        </Card>
+      </div>
+
+      <Section n={3} title="สถานะงานตอนนี้" sub="ออเดอร์ในช่วงที่เลือกค้างอยู่ขั้นไหนบ้าง" />
+      <Card title="สถานะออเดอร์" sub="จำนวนออเดอร์ในแต่ละสถานะ (นับใบที่ลงในช่วงที่เลือก)">
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <StatusTile label="ทั้งหมด" count={stats.statusTotal} bg="var(--cream)" active
+            icon={<svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><path strokeLinecap="round" d="M12 7.5V12l3 2" /></svg>} />
+          {stats.statusTiles.map(t => (
+            <StatusTile key={t.key} label={t.label} count={t.n} bg={t.bg}
+              pct={stats.statusTotal ? `${((t.n / stats.statusTotal) * 100).toFixed(1)}%` : undefined}
+              icon={<svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /></svg>} />
+          ))}
+        </div>
+      </Card>
+
+      <Section n={4} title="ความเร็วการทำงาน" sub="งานหนึ่งใบค้างที่ขั้นไหนนานที่สุด และส่งถึงมือลูกค้าเร็วขึ้นหรือช้าลง — ทุกตัวเลขเป็นค่ากลาง (median)" />
+      <Card title="เวลาที่ใช้แต่ละขั้น และเวลาส่งรายเดือน" sub="ซ้าย = เรียงตามลำดับขั้นงาน · ขวา = ลงออเดอร์ → จัดส่งแล้ว (น้อยวันกว่า = ดีกว่า)">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 22 }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-3)', marginBottom: 4 }}>งานค้างที่แผนกไหนนานสุด</div>
+            <RankList rows={[...stats.stageMed].sort((a, b) => (b.med ?? 0) - (a.med ?? 0)).map(st => ({
+              name: st.label, value: fmtDur(st.med), note: `${st.n.toLocaleString('th-TH')} งาน`,
+              tag: slowestStage && st.status === slowestStage ? 'ช้าสุด' : undefined,
+            }))} />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-3)', marginBottom: 4 }}>ส่งถึงมือลูกค้า (วัน) — 6 เดือนล่าสุด</div>
+            <MiniStats items={stats.monthShipDays.map(m => ({ label: m.label, value: m.value == null ? '—' : `${m.value}`, sub: m.value == null ? 'ไม่มีข้อมูล' : 'วัน' }))} />
+          </div>
+        </div>
+      </Card>
+
+      <Section n={5} title="ปริมาณงานและคุณภาพงาน" sub="งานเข้ามาเดือนละกี่ใบ และเคลมมาจากฝั่งไหนมากที่สุด" />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 14, alignItems: 'start' }}>
+        <Card title="ออเดอร์ใหม่รายเดือน" sub="นับตามวันที่ลงออเดอร์ 6 เดือนล่าสุด">
+          <MiniStats items={stats.monthOrders.map(m => ({ label: m.label, value: (m.value ?? 0).toLocaleString('th-TH'), sub: 'ใบ' }))} />
+        </Card>
+        <Card title="งานเคลม แยกตามฝ่ายผิด" sub={`เคลมที่เปิดในช่วงที่เลือก ${stats.claims.length} เคส · เงินคืนรวม ${fmtBaht(stats.refundSum)}`}>
           {stats.faults.length === 0 ? (
             <p style={{ color: 'var(--ink-3)', fontSize: 12.5, textAlign: 'center', padding: '12px 0' }}>ไม่มีเคลมในช่วงนี้</p>
           ) : (
-            <>
-              <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginBottom: 4 }}>แยกตามฝ่ายผิด</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {stats.faults.map(([fault, n]) => (
-                <HBar key={fault} label={fault} value={n} max={maxFault} color="#DC2626"
-                  valueText={`${n} เคส`} subText={`${Math.round((n / stats.claims.length) * 100)}%`} />
+                <div key={fault} style={{ flex: '1 1 120px', minWidth: 120, background: '#FBEDE8', border: '1px solid var(--hairline)',
+                  borderRadius: 14, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>{fault}</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: '#C0563F', lineHeight: 1.3 }}>{n.toLocaleString('th-TH')}</div>
+                  <div style={{ fontSize: 10.5, color: 'var(--ink-4)' }}>
+                    {stats.claims.length ? `${Math.round((n / stats.claims.length) * 100)}% ของเคลมทั้งหมด` : '—'}
+                  </div>
+                </div>
               ))}
-            </>
+            </div>
           )}
         </Card>
-        <Card title="ออเดอร์แยกตามช่องทาง" sub="นับออเดอร์ที่ลงในช่วงที่เลือก">
-          {stats.platforms.length === 0 ? (
-            <p style={{ color: 'var(--ink-3)', fontSize: 12.5, textAlign: 'center', padding: '12px 0' }}>ไม่มีข้อมูล</p>
-          ) : stats.platforms.map(([plat, n]) => (
-            <HBar key={plat} label={plat} value={n} max={maxPlat} color="var(--blue)"
-              valueText={`${n}`} subText={stats.orders.length ? `${Math.round((n / stats.orders.length) * 100)}%` : undefined} />
-          ))}
-        </Card>
       </div>
+
+      <Section n={6} title="ผลงานผลิต แยกตามแผนก" sub="แต่ละแผนกสแกนไปกี่ใบ และใครเป็นคนทำ" />
+      <Card title="จำนวนงานที่สแกน แยกตามแผนก" sub="ตัวเลขขวาบน = ยอดรวมของแผนก · ด้านล่างคือคนที่ทำ เรียงจากมากไปน้อย">
+        <DeptCards depts={stats.depts} />
+      </Card>
     </div>
   )
 }

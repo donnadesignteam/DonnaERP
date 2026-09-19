@@ -223,7 +223,7 @@ export default function MobileCustomer() {
             {([
               ['ออเดอร์', `${orders.length}`, 'var(--blue)'],
               ['ยอดรวม', `${total.toLocaleString('th-TH')} ฿`, 'var(--blue)'],
-              ...(installs.length ? [['ติดตั้ง', `${installs.length}`, '#ff9f0a']] : []),
+              ...(installs.length ? [['ติดตั้ง', `${installs.length}`, '#C79A4B']] : []),
               ...(pos.length ? [['สั่งซื้อ', `${pos.length}`, 'var(--blue)']] : []),
               ...(claims.length ? [['งานเคลม', `${claims.length}`, 'var(--red)']] : []),
             ] as [string, string, string][]).map(([label, val, color]) => (
@@ -404,7 +404,7 @@ export default function MobileCustomer() {
                   <div key={p.id} style={cardBox}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
                       <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{p.supplier || 'ไม่ระบุร้าน'}</span>
-                      <span style={{ fontSize: 11.5, fontWeight: 700, color: p.status === 'ของเข้าแล้ว' ? 'var(--green)' : '#ff9f0a', flexShrink: 0 }}>{p.status}</span>
+                      <span style={{ fontSize: 11.5, fontWeight: 700, color: p.status === 'ของเข้าแล้ว' ? 'var(--green)' : '#C79A4B', flexShrink: 0 }}>{p.status}</span>
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 2 }}>
                       {[p.order_number, fmtDate(p.created_at)].filter(Boolean).join(' · ')}
