@@ -164,7 +164,12 @@ export default function BoardPage() {
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหาหัวข้อ, คีย์เวิร์ด, ชื่อพนักงาน หรือเลขออเดอร์…" className="ow-field"
                 style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 999, height: 42, padding: '0 16px 0 42px', fontSize: 13.5, outline: 'none', boxSizing: 'border-box', background: 'var(--surface)', color: 'var(--ink)' }} />
             </div>
-            <CreamSelect value={sort} onChange={setSort} options={SORTS} className="ow-select" style={{ height: 42 }} align="right" />
+            <CreamSelect value={sort} onChange={setSort} options={SORTS} className="ow-select" style={{ height: 42 }} align="right"
+              renderValue={o => <>
+                <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M7 4v16M3.5 16.5L7 20l3.5-3.5M14 6h7M14 11h5M14 16h3" /></svg>
+                <span className="cs-value">{o?.label}</span>
+                <svg className="cs-chev" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" /></svg>
+              </>} />
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
             {(['all', ...BOARD_CATEGORIES] as const).map(k => (
