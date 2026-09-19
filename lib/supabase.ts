@@ -3,7 +3,8 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-const raw = createClient(supabaseUrl, supabaseAnonKey)
+// accessToken เอง = ข้าม auth.getSession() (บน Safari ค้างได้ → ปุ่มบันทึกค้าง) — ดูเหตุผลในเว็บจริง
+const raw = createClient(supabaseUrl, supabaseAnonKey, { accessToken: async () => supabaseAnonKey })
 
 // ‼️ โคลนสำหรับลองดีไซน์เท่านั้น (donnaweb-design) — ต่อฐานข้อมูลจริงแบบ "อ่านได้ เขียนไม่ได้"
 // insert/update/upsert/delete และการอัป/ลบไฟล์ จะไม่ถูกส่งออกไป คืน error ให้หน้าจอแสดงตามปกติ

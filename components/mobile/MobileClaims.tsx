@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { matchSerial } from '@/lib/serialNo'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
@@ -12,6 +13,7 @@ import { usePhotoViewer, type Photo } from './PhotoStrip'
 
 // หน้างานเคลมบนมือถือ — ดูอย่างเดียว แก้ไม่ได้ (คนละไฟล์กับ ClaimsWorkspace ของเดสก์ท็อป)
 type Claim = {
+  serial_no?: string | null
   id: string
   claim_date: string | null
   channel: string | null
@@ -59,7 +61,7 @@ export default function MobileClaims() {
 
   const load = async () => {
     // ‼️ เลือกเฉพาะคอลัมน์ที่การ์ดใช้ + created_at (ใช้ใน order by) — เดิม select('*') ดึงทุกคอลัมน์เปลืองเน็ตมือถือ
-    const COLS = 'id, claim_date, created_at, channel, customer_username, original_order_number, claim_type, fault, cause, items, ship_name, ship_address, refund_amount, money_direction, money_status, status, notes, admin_name, closed_at'
+    const COLS = 'id, serial_no, claim_date, created_at, channel, customer_username, original_order_number, claim_type, fault, cause, items, ship_name, ship_address, refund_amount, money_direction, money_status, status, notes, admin_name, closed_at'
     const query = (cols: string) => fetchAllRows<Claim>(() =>
       supabase.from('claims').select(cols)
         .order('claim_date', { ascending: false, nullsFirst: false })
@@ -101,6 +103,7 @@ export default function MobileClaims() {
       return (r.customer_username ?? '').toLowerCase().includes(q)
         || (r.original_order_number ?? '').toLowerCase().includes(q)
         || (r.cause ?? '').toLowerCase().includes(q)
+        || matchSerial(r.serial_no, q)
     })
   }, [rows, tab, search])
 

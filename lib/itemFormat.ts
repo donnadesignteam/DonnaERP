@@ -282,6 +282,28 @@ export const shownFields = (it: RawItem): Set<string> => {
   return s
 }
 
+// ช่องที่พิมพ์แล้วขึ้นคำที่เคยลงไว้ (ช่องตัวเลข/กระดูม/หมายเหตุ/ราคา ไม่ต้อง — ค่าไม่ซ้ำกัน)
+const SUGGEST_KEYS = ['type', 'eyelet_color', 'rail_head', 'pleat', 'hook_type', 'rail_color', 'opacity', 'model', 'slat_size',
+  'fabric_type', 'color_code', 'color_name', 'color_desc', 'unit', 'orientation', 'fabric_split', 'chemical', 'weight_chain', 'pull_side', 'outsource'] as const
+// คำแนะนำต่อช่อง = คำที่เคยลงในรายการที่โหลดอยู่ในหน้าแล้ว (ไม่ดึงฐานเพิ่ม) เรียงจากใช้บ่อยสุด
+export function buildItemSuggestions(lists: Iterable<unknown>): Record<string, string[]> {
+  const count: Record<string, Map<string, number>> = {}
+  for (const k of SUGGEST_KEYS) count[k] = new Map()
+  for (const list of lists) {
+    if (!Array.isArray(list)) continue
+    for (const it of list as Record<string, unknown>[]) {
+      if (!it || typeof it !== 'object') continue
+      for (const k of SUGGEST_KEYS) {
+        const v = typeof it[k] === 'string' ? (it[k] as string).replace(/\s+/g, ' ').trim() : ''
+        if (v && v.length <= 60) count[k].set(v, (count[k].get(v) ?? 0) + 1)
+      }
+    }
+  }
+  const out: Record<string, string[]> = {}
+  for (const k of SUGGEST_KEYS) out[k] = [...count[k].entries()].sort((a, b) => b[1] - a[1]).slice(0, 200).map(([v]) => v)
+  return out
+}
+
 // รางมีแค่ความยาว + พร้อมส่งเสมอ → ช่อง สูง/แบบ ของรางไม่ต้องมีให้กรอก (ตารางโชว์ช่องว่างแทน)
 export const railNoField = (it: RawItem, key: string) => String(it.type ?? '').startsWith('ราง') && (key === 'height' || key === 'supply')
 

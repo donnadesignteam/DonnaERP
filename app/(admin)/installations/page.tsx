@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import AnchoredMenu from '@/components/AnchoredMenu'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -9,14 +9,16 @@ import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { HOLIDAYS } from '@/lib/holidays'
 import OrderDetailModal from '@/components/OrderDetailModal'
-import { formatItemLines, autoTapeHooks, ITEM_FIELDS, ITEM_FIELD_OPTIONS, visibleItemCols, railNoField, itemInputValue, emptyItem, type RawItem } from '@/lib/itemFormat'
+import { ThemedSelect, SuggestInput } from '@/components/ItemInputs'
+import { formatItemLines, autoTapeHooks, ITEM_FIELDS, ITEM_FIELD_OPTIONS, visibleItemCols, railNoField, itemInputValue, buildItemSuggestions, emptyItem, type RawItem } from '@/lib/itemFormat'
 import { syncOutsourcePO } from '@/lib/outsourceSync'
 import { recordAction } from '@/lib/history'
+import { opUpdate, opInsert, opDelete } from '@/lib/historyOps'
 import { prevOf } from '@/lib/trackedDb'
 import { useStableView } from '@/lib/useStableView'
 import { oeUpdate, instUpdate, instInsert } from '@/lib/adminActor'
 import { useConfirm } from '@/components/ConfirmDialog'
-import { installSerial, serialNum } from '@/lib/serialNo'
+import { installSerial, serialNum, matchSerial } from '@/lib/serialNo'
 import { usePrintColumns, PrintColumnPicker, printTableHtml, type PrintCol } from '@/components/PrintColumnPicker'
 import { createOrderForInstall, orderPatchFromInstall } from '@/lib/installOrderSync'
 import { PROD_STATUS_COLOR, INSTALL_STATUSES, daysRemaining, daysLabel, cmpDaysSort, cmpDeadlineSort } from '@/lib/orderTabs'
@@ -102,7 +104,7 @@ const PAYMENT_STATUS_COLOR: Record<string, string> = {
   'ยังไม่ชำระ': '#C79A4B', 'มัดจำ': '#9A7BA0', 'มัดจำ50%': '#6E8CA0', 'ชำระครบ': '#6F8F6A',
 }
 const ORDER_ASSIGNED = ['รออัพเดท', 'แจ้งลงหน้าร้าน', 'พี่ฟอง', 'ช่างเชียงใหม่']
-const ADMINS = ['กาย', 'แพท', 'หนูนา', 'ยุน', 'ส้ม', 'เก๋']
+const ADMINS = ['กาย', 'แพท', 'หนูนา', 'ยุน', 'ส้ม', 'เก๋', 'ช่างแพ็ค']
 
 // ช่องเลือกในแถวตาราง — CreamSelect เพื่อให้เมนูคลี่ลงมีอนิเมชั่นและเป็นโทนครีมเหมือนทั้งเว็บ
 function RowSelect({ value, opts, onPick, blank, maxWidth, bold, color }: {
@@ -389,6 +391,8 @@ export default function InstallationsPage() {
   const cf = useColumnFilters(filterDefs)
   // popup แก้รายการสินค้า (แบบเดียวกับหมวดออเดอร์) — บันทึกกลับไปที่ order_entries ต้นทาง
   const [itemsModal, setItemsModal] = useState<{ orderId: string; items: RawItem[]; instId: string } | null>(null)
+  // คำแนะนำในช่องรายการสินค้า = คำที่เคยลงในออเดอร์ที่โหลดอยู่ (ไม่ดึงฐานเพิ่ม)
+  const itemSuggest = useMemo(() => buildItemSuggestions(Object.values(orderItems)), [orderItems])
   const [itemsPasteText, setItemsPasteText] = useState('')
   const [itemsParsing, setItemsParsing] = useState(false)
   const [itemsError, setItemsError] = useState('')
@@ -593,6 +597,8 @@ export default function InstallationsPage() {
       label,
       undo: async () => { await instUpdate(prev).eq('id', id); await load() },
       redo: async () => { await instUpdate(patch).eq('id', id); await load() },
+      undoOps: [opUpdate('installations', id, prev)],
+      redoOps: [opUpdate('installations', id, patch)],
     })
   }
 
@@ -622,6 +628,8 @@ export default function InstallationsPage() {
           label: `เพิ่มงานติดตั้ง ${name}`,
           undo: async () => { await supabase.from('installations').delete().eq('id', saved.id); await load() },
           redo: async () => { await instInsert(saved); await load() },
+          undoOps: [opDelete('installations', saved.id)],
+          redoOps: [opInsert('installations', saved)],
         })
       }
     } else {
@@ -827,6 +835,8 @@ export default function InstallationsPage() {
       label,
       undo: async () => { await oeUpdate(prev).eq('id', orderId); await load() },
       redo: async () => { await oeUpdate(full).eq('id', orderId); await load() },
+      undoOps: [opUpdate('order_entries', orderId, prev)],
+      redoOps: [opUpdate('order_entries', orderId, full)],
     })
     return true
   }
@@ -975,13 +985,18 @@ export default function InstallationsPage() {
     const row = installs.find(i => i.id === id)
     setError('')
     try {
+      // แปะชื่อคนลบก่อน (trigger ประวัติอ่านชื่อจากแถวที่กำลังถูกลบ) — แก้แค่ updated_at ไม่ขึ้นเป็นรายการแก้ในประวัติ
+      await instUpdate({ updated_at: new Date().toISOString() }).eq('id', id)
       // ‼️ ลบไม่สำเร็จต้องฟ้องเสมอ ห้ามเงียบ (เดิมไม่ได้เช็ค error เลยดูเหมือนกดปุ่มไม่ติด)
       const { error: err } = await supabase.from('installations').delete().eq('id', id)
       if (err) { setError(`ลบไม่สำเร็จ: ${err.message}`); return }
       if (row) recordAction({
         label: `ลบงานติดตั้ง ${row.customer_real_name || row.serial_no || ''}`,
-        undo: async () => { await instInsert(row); await load() },
-        redo: async () => { await supabase.from('installations').delete().eq('id', id); await load() },
+        // ‼️ เช็ค error ด้วย — เดิมย้อนพลาดแล้วเงียบ (เคสลบงานติดตั้ง MIL 15ก.ย.69)
+        undo: async () => { const { error: e } = await instInsert(row); if (e) throw e; await load() },
+        redo: async () => { const { error: e } = await supabase.from('installations').delete().eq('id', id); if (e) throw e; await load() },
+        undoOps: [opInsert('installations', row)],
+        redoOps: [opDelete('installations', id)],
       })
       load()
     } catch (e) {
@@ -1221,8 +1236,8 @@ export default function InstallationsPage() {
   })
   const byZone = zoneFilter.length ? byMonth.filter(ins => zoneFilter.includes(ins.install_zone)) : byMonth
   const q = search.trim().toLowerCase()
-  const filtered = !q ? byZone : byZone.filter(ins =>
-    [ins.serial_no, installSerial(ins.serial_no), ins.customer_real_name, ins.customer_id, ins.platform, ins.province, ins.install_zone, ins.phone, ins.installation_status, ins.notes]
+  const filtered = !q ? byZone : byZone.filter(ins => matchSerial(installSerial(ins.serial_no), q) ||
+    [ins.customer_real_name, ins.customer_id, ins.platform, ins.province, ins.install_zone, ins.phone, ins.installation_status, ins.notes]
       .some(v => (v ?? '').toLowerCase().includes(q))
   )
   // เรียงตามลำดับที่ตรึงไว้ตอนโหลด (ชุดเดียวกับหมวดออเดอร์) — แถวที่เพิ่งเพิ่มยังไม่มีในลำดับ ไปต่อท้าย
@@ -1907,21 +1922,19 @@ export default function InstallationsPage() {
                       {cols.map(([, key, type, w]) => (
                         <td key={key} style={{ padding: '4px 6px' }}>
                           {railNoField(item, key) ? <span style={{ display: 'inline-block', width: w, color: 'var(--ink-4)', fontSize: 12, textAlign: 'center' }}>—</span> : ITEM_FIELD_OPTIONS[key] ? (
-                            <select
-                              value={String(item[key] ?? ITEM_FIELD_OPTIONS[key][0])}
-                              onChange={e => setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: e.target.value } : it) } : null)}
-                              style={{ width: w, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: 12, outline: 'none', boxSizing: 'border-box', background: '#fff', cursor: 'pointer' }}>
-                              {ITEM_FIELD_OPTIONS[key].map(o => <option key={o} value={o}>{o}</option>)}
-                            </select>
+                            <ThemedSelect value={String(item[key] ?? ITEM_FIELD_OPTIONS[key][0])} options={ITEM_FIELD_OPTIONS[key]}
+                              onChange={v => setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: v } : it) } : null)}
+                              style={{ width: w, borderRadius: 4, padding: '4px 6px' }} />
                           ) : (
-                          <input
+                          <SuggestInput
                             type={type}
                             step={type === 'number' ? '0.01' : undefined}
                             value={key === 'hooks' && !(item.hooks ?? '').toString().trim()
                               ? autoTapeHooks(item)                                  /* ว่าง → โชว์กระดูมที่คำนวณจากม่านลอนเทป (พิมพ์ทับได้) */
                               : (item[key] == null ? '' : String(item[key]))}
-                            onChange={e => {
-                              const val = itemInputValue(key, e.target.value)
+                            suggestions={itemSuggest[key as string]}
+                            onChange={v => {
+                              const val = itemInputValue(key, v)
                               setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: val } : it) } : null)
                             }}
                             style={{ width: w, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }}

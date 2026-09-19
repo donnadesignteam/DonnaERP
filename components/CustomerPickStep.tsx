@@ -4,7 +4,7 @@
 // ‼️ กันแอดมินลงชื่อลูกค้าคนเดียวกันคนละแบบ: ให้ค้นชื่อเดิมก่อน เจอแล้วกดเลือกจะได้ชื่อสะกดเดิมเป๊ะ
 //    ไม่เจอค่อยกด "+ เพิ่มลูกค้าใหม่" · ตรรกะการค้นอยู่ที่ lib/customerBook.ts
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { matchCustomers, type CustomerEntry } from '@/lib/customerBook'
 
 export default function CustomerPickStep({ book, onPick, onBack, onClose, altLabel, onAlt }: {
@@ -19,10 +19,19 @@ export default function CustomerPickStep({ book, onPick, onBack, onClose, altLab
   const matches = useMemo(() => matchCustomers(book, query), [book, query])
   const typed = query.trim()
 
+  // ‼️ ปิดกล่องเฉพาะตอน "กดลงแล้วปล่อย" บนพื้นหลังทั้งคู่
+  //    ไม่งั้นลากเลือกข้อความในกล่องแล้วปล่อยเมาส์นอกกล่อง เบราว์เซอร์ยิง click ที่พื้นหลัง → กล่องปิดเอง
+  const downOnBackdrop = useRef(false)
+  const backdropDown = (e: React.MouseEvent) => { downOnBackdrop.current = e.target === e.currentTarget }
+  const backdropClick = (e: React.MouseEvent) => {
+    if (downOnBackdrop.current && e.target === e.currentTarget) onClose()
+    downOnBackdrop.current = false
+  }
+
   // ธีมแบรนด์: ฉากหลังน้ำตาลอุ่น การ์ดมุมมน 24 ช่องกรอก/ปุ่มใช้ชุด .sc-modal เหมือนป๊อปอัปปฏิทิน
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
-      <div onClick={e => e.stopPropagation()} className="sc-modal" style={{ maxWidth: 460, display: 'flex', flexDirection: 'column', maxHeight: '80vh', overflowY: 'visible', padding: '26px 28px' }}>
+    <div onMouseDown={backdropDown} onClick={backdropClick} style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+      <div className="sc-modal" style={{ maxWidth: 460, display: 'flex', flexDirection: 'column', maxHeight: '80vh', overflowY: 'visible', padding: '26px 28px' }}>
         <h3 className="sc-mtitle" style={{ marginBottom: 16 }}>ชื่อลูกค้า</h3>
         <input autoFocus type="text" value={query} onChange={e => setQuery(e.target.value)}
           placeholder="ชื่อลูกค้า / เบอร์โทร / เลขคำสั่งซื้อ…"

@@ -12,6 +12,7 @@ import { usePullToRefresh, PullIndicator, CardSkeleton } from './mobileUi'
 import MyActivity from '@/components/MyActivity'
 import { compressImage, uploadPackingFile } from '@/lib/packingPhotos'
 import { TH_MONTHS } from '@/lib/shopCalendar'
+import { splitFaultBy, faultShareCount } from '@/lib/claimFault'
 
 // แดชบอร์ด "ของฉัน" — พนักงานที่ล็อกอินด้วยรหัสตัวเองเห็นเฉพาะข้อมูลของตัวเอง
 // เข้าจากปุ่มมุมขวาบนของหน้า /hub · ข้อมูลชุดเดียวกับหน้าเดสก์ท็อป /staff/[code] แต่ตัดส่วนของแอดมิน
@@ -29,6 +30,7 @@ type ClaimFault = {
   customer_username: string | null
   claim_type: string | null
   fault: string | null
+  fault_by: string | null            // ผิดโดย — อาจมีหลายชื่อคั่นด้วย ", "
   fix_method: string | null
   fault_review: string | null
   fault_appeal: string | null        // ข้อความอุทธรณ์ที่พนักงานยื่นเอง (ต้องรัน sql/add_claim_fault_appeal.sql)
@@ -41,6 +43,8 @@ type ClaimFault = {
 
 // มูลค่าที่ทำผิดของเคสหนึ่ง = ค่าส่งกลับ + ค่าส่งคืน + ราคาประเมิน (สูตรเดียวกับหน้า /staff/claims ของผู้จัดการ)
 const claimCost = (c: ClaimFault) => (c.ship_back_cost ?? 0) + (c.ship_return_cost ?? 0) + (c.estimated_price ?? 0)
+// ผิดร่วมกันหลายคน → ส่วนที่คนนี้ต้องรับ = ค่าเคลม ÷ จำนวนผู้ผิด (สูตรเดียวกับ /staff/claims)
+const claimShare = (c: ClaimFault) => claimCost(c) / faultShareCount(c.fault_by)
 const baht = (v: number) => (v ? '฿' + Math.round(v).toLocaleString('th-TH') : '—')
 
 // สถานะผลตรวจสอบเคสที่ถูกลงชื่อว่า "ผิดโดย" คนนี้ — พนักงานเห็นอย่างเดียว เปลี่ยนได้เฉพาะบัญชีร้าน (/staff/claims)
@@ -54,14 +58,16 @@ const CLAIM_REVIEW_COLOR: Record<string, string> = {
 // เคสเคลมที่ช่อง "ผิดโดย" เป็นชื่อของคนนี้ (ชื่อในช่องนั้นเก็บเป็น ชื่อเล่น หรือ ชื่อจริง — เทียบทั้งสองแบบ)
 async function fetchMyFaultClaims(names: string[]): Promise<ClaimFault[]> {
   if (!names.length) return []
-  const COLS = 'id, claim_date, original_order_number, customer_username, claim_type, fault, fix_method, ship_back_cost, ship_return_cost, estimated_price'
+  const COLS = 'id, claim_date, original_order_number, customer_username, claim_type, fault, fault_by, fix_method, ship_back_cost, ship_return_cost, estimated_price'
+  // ช่องผิดโดยอาจเป็น "ชื่อ1, ชื่อ2" → ดึงแถวที่มีชื่อนี้อยู่ในข้อความ แล้วกรองให้ตรงชื่อเป๊ะอีกชั้น
+  const byName = names.map(n => `fault_by.ilike."*${n.replace(/["*,()]/g, '')}*"`).join(',')
   // ยังไม่ได้รัน sql/add_claim_appeal_photos.sql / add_claim_fault_appeal.sql / add_claim_fault_review.sql → ถอยไปดึงแบบไม่มีคอลัมน์ใหม่ จะได้เห็นเคสก่อน
-  let r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(`${COLS}, fault_review, fault_appeal, fault_appeal_at, fault_appeal_photos`).in('fault_by', names).order('id', { ascending: true }))
-  if (r.error) r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(`${COLS}, fault_review, fault_appeal, fault_appeal_at`).in('fault_by', names).order('id', { ascending: true }))
-  if (r.error) r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(`${COLS}, fault_review`).in('fault_by', names).order('id', { ascending: true }))
-  if (r.error) r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(COLS).in('fault_by', names).order('id', { ascending: true }))
+  let r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(`${COLS}, fault_review, fault_appeal, fault_appeal_at, fault_appeal_photos`).or(byName).order('id', { ascending: true }))
+  if (r.error) r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(`${COLS}, fault_review, fault_appeal, fault_appeal_at`).or(byName).order('id', { ascending: true }))
+  if (r.error) r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(`${COLS}, fault_review`).or(byName).order('id', { ascending: true }))
+  if (r.error) r = await fetchAllRows<ClaimFault>(() => supabase.from('claims').select(COLS).or(byName).order('id', { ascending: true }))
   if (r.error) return []
-  return [...((r.data as ClaimFault[]) ?? [])].sort((a, b) => (b.claim_date ?? '').localeCompare(a.claim_date ?? ''))
+  return [...((r.data as ClaimFault[]) ?? [])].filter(c => splitFaultBy(c.fault_by).some(n => names.includes(n))).sort((a, b) => (b.claim_date ?? '').localeCompare(a.claim_date ?? ''))
 }
 
 const STAGE_ORDER = ['ตัด', 'เย็บ', 'ผู้ช่วยช่าง', 'รีด', 'แพ็ค', 'แพ็คราง', 'จัดส่งแล้ว']
@@ -404,8 +410,8 @@ export default function MobileMe() {
     total: monthClaims.length,
     pending: monthClaims.filter(c => !c.fault_review).length,
     guilty: monthClaims.filter(c => c.fault_review === 'ตรวจสอบแล้วผิดจริง').length,
-    cost: monthClaims.reduce((sum, c) => sum + claimCost(c), 0),
-    guiltyCost: monthClaims.filter(c => c.fault_review === 'ตรวจสอบแล้วผิดจริง').reduce((sum, c) => sum + claimCost(c), 0),
+    cost: monthClaims.reduce((sum, c) => sum + claimShare(c), 0),
+    guiltyCost: monthClaims.filter(c => c.fault_review === 'ตรวจสอบแล้วผิดจริง').reduce((sum, c) => sum + claimShare(c), 0),
   }
   // ค้นในงานที่ทำผิด — ชื่อลูกค้า เลขออเดอร์ ประเภท สาเหตุ วิธีแก้ไข หรือสถานะผลตรวจสอบ
   const cq = claimQuery.trim().toLowerCase()
@@ -669,7 +675,10 @@ export default function MobileMe() {
                           {/* มูลค่าที่ทำผิด = ค่าส่งกลับ + ค่าส่งคืน + ราคาประเมิน (ตัวเลขชุดเดียวกับที่ผู้จัดการเห็น) */}
                           <div style={{ marginTop: 6, display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
                             <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>มูลค่าที่ทำผิด</span>
-                            <span style={{ fontSize: 13.5, fontWeight: 700, color: claimCost(c) ? 'var(--ink)' : 'var(--ink-4)' }}>{baht(claimCost(c))}</span>
+                            <span style={{ fontSize: 13.5, fontWeight: 700, color: claimCost(c) ? 'var(--ink)' : 'var(--ink-4)' }}>{baht(claimShare(c))}</span>
+                            {faultShareCount(c.fault_by) > 1 && claimCost(c) > 0 && (
+                              <span style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 600 }}>ผิดร่วม {faultShareCount(c.fault_by)} คน หารจาก {baht(claimCost(c))} ({c.fault_by})</span>
+                            )}
                             <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>
                               {claimCost(c)
                                 ? ([['ค่าส่งกลับ', c.ship_back_cost], ['ค่าส่งคืน', c.ship_return_cost], ['ราคาประเมิน', c.estimated_price]] as [string, number | null][])

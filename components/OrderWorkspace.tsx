@@ -8,9 +8,9 @@ import { supabase } from '@/lib/supabase'
 import { syncRows, byEntryDateDesc } from '@/lib/rowCache'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
-import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, ITEM_FIELDS, ITEM_FIELD_OPTIONS, shownFields, visibleItemCols, railNoField, itemInputValue, emptyItem as emptyRawItem } from '@/lib/itemFormat'
+import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, ITEM_FIELDS, ITEM_FIELD_OPTIONS, shownFields, visibleItemCols, railNoField, itemInputValue, buildItemSuggestions, emptyItem as emptyRawItem } from '@/lib/itemFormat'
 import { railLink } from '@/lib/rail'
-import { installSerial, nextSerial } from '@/lib/serialNo'
+import { installSerial, nextSerial, matchSerial } from '@/lib/serialNo'
 import { buildCustomerBook } from '@/lib/customerBook'
 import CustomerPickStep from '@/components/CustomerPickStep'
 import { TECH_OPTIONS } from '@/lib/techs'
@@ -20,9 +20,11 @@ import { effShipping } from '@/lib/shipping'
 import { thaiTrackStatus } from '@/lib/trackExtract'
 import { syncOutsourcePO, markPOReceivedForOrders } from '@/lib/outsourceSync'
 import { useInstallPhotos, photoSaveError } from '@/components/InstallPhotos'
+import { ThemedSelect, SuggestInput } from '@/components/ItemInputs'
 import ProvinceSelect from '@/components/ProvinceSelect'
 import { syncWorkStatus as syncWorkStatusExact } from '@/lib/workStatusSync'
 import { recordAction } from '@/lib/history'
+import { opUpdate, opInsert, opDelete } from '@/lib/historyOps'
 import { prevOf } from '@/lib/trackedDb'
 import { stampInsert, oeUpdate, oeInsert, instUpdate, instInsert, claimUpdate } from '@/lib/adminActor'
 import { useConfirm } from '@/components/ConfirmDialog'
@@ -236,7 +238,7 @@ const COURIERS = [
 
 // ตัวเลือกในช่องแอดมิน (เลือกเอง) — user กำหนดรายชื่อชุดนี้เอง
 // ‼️ คนละชุดกับ BONUS_ADMINS ใน lib/adminActor.ts (กลุ่มที่ระบบใส่ชื่อให้อัตโนมัติ)
-const ADMINS = ['กาย', 'แพท', 'หนูนา', 'ยุน', 'ส้ม', 'เก๋']
+const ADMINS = ['กาย', 'แพท', 'หนูนา', 'ยุน', 'ส้ม', 'เก๋', 'ช่างแพ็ค']
 const TECHS = TECH_OPTIONS   // แก้รายชื่อช่างที่ lib/techs.ts (หน้าเคลมใช้ชุดเดียวกัน)
 
 // ไฮไลต์ช่องที่ยังไม่ได้ลงข้อมูล (คอลัมน์แอดมิน/ช่าง) — ป้ายพีชครีมมุมมน อยู่ที่คลาส .ow-empty ใน app/globals.css
@@ -531,6 +533,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [modalItems, setModalItems] = useState<Item[]>([])
   const [itemsModal, setItemsModal] = useState<{ id: string; items: Item[]; instId: string | null } | null>(null)
+  // คำแนะนำในช่องรายการสินค้า = คำที่เคยลงในออเดอร์ที่โหลดอยู่ (ไม่ดึงฐานเพิ่ม)
+  const itemSuggest = useMemo(() => buildItemSuggestions(rows.map(r => r.items)), [rows])
   // รูปหน้างาน (งานติดตั้ง) — คอมโพเนนต์กลางตัวเดียวกับหน้างานติดตั้ง
   const ph = useInstallPhotos()
   const [itemsPasteText, setItemsPasteText] = useState('')
@@ -655,7 +659,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       [i.source_order_id as string, { id: i.id, work_type: i.work_type, serial_no: i.serial_no, installation_status: i.installation_status,
         install_zone: i.install_zone, technician_type: i.technician_type }])))
     // งานเคลมจากหน้าเคลม (ตาราง claims) → โชว์ปนในหมวดออเดอร์ด้วย จะได้เรียงวันที่เหลือรวมกัน
-    const CLAIM_COLS = 'id, claim_date, channel, customer_username, original_order_number, items, status, is_urgent, notes, courier, printed_at, shipped_at, admin_name, estimated_price, created_at, updated_at'
+    const CLAIM_COLS = 'id, serial_no, claim_date, channel, customer_username, original_order_number, items, status, is_urgent, notes, courier, printed_at, shipped_at, admin_name, estimated_price, created_at, updated_at'
     let claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(`${CLAIM_COLS}, deadline, technician, pinned, pinned_at, serial_no`).order('id', { ascending: true }))
     // ยังไม่ได้รัน sql/add_serial_no.sql → ดึงแบบไม่มีเลขที่ใบไปก่อน (คอลัมน์ Serial ของงานเคลมจะขึ้น —)
     if (claimRes.error) claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(`${CLAIM_COLS}, deadline, technician, pinned, pinned_at`).order('id', { ascending: true }))
@@ -783,10 +787,45 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     }
   }
 
+  // Safari รุ่นก่อน 16 ไม่มี AbortSignal.timeout — เรียกตรงๆ จะพังทั้งการบันทึก จึงเช็กก่อนใช้
+  const abortAfter = (ms: number): AbortSignal | undefined => {
+    try { return typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(ms) : undefined } catch { return undefined }
+  }
+
+  // ‼️ กันปุ่มค้าง "กำลังบันทึก…" — คำสั่งที่ยิงไปแล้วเซิร์ฟเวอร์ไม่ตอบ (เน็ตสะดุด/คิวค้าง)
+  //    จะแขวนตลอดกาลถ้าไม่ใส่เวลาจำกัด แอดมินจะเข้าใจว่าเว็บพัง กดอะไรไม่ได้เลย
+  // (ใช้ Awaited<P> ไม่ใช่ PromiseLike<T> — ตัว builder ของ supabase ทำให้ TS เดาชนิดผลลัพธ์ไม่ออก)
+  async function withTimeout<P extends PromiseLike<unknown>>(p: P, what: string, ms = 25000): Promise<Awaited<P>> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await Promise.race([
+        p as PromiseLike<Awaited<P>>,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`${what}: เซิร์ฟเวอร์ไม่ตอบใน ${Math.round(ms / 1000)} วินาที — เน็ตอาจสะดุด กดบันทึกอีกครั้งได้เลย`)), ms)
+        }),
+      ])
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
+  }
+
   const save = async () => {
     if (!modal) return
     setSaving(true)
     setError('')
+    try {
+      await saveInner()
+    } catch (e) {
+      // พังกลางทาง (เน็ตหลุด/หมดเวลา) — บอกสาเหตุแล้วปล่อยให้กดใหม่ได้ ไม่ปิดกล่อง
+      setError(`บันทึกไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      // ‼️ ต้องอยู่ใน finally เสมอ ไม่งั้นถ้าหลุด throw ปุ่มจะค้างคำว่า "กำลังบันทึก…" ตลอด
+      setSaving(false)
+    }
+  }
+
+  const saveInner = async () => {
+    if (!modal) return
     const d = modal.data
     const now = new Date().toISOString()
     // งานเคลม: บังคับให้ platform ขึ้นต้นด้วย "เคลม:" เสมอ เพื่อให้ไปอยู่ tab งานเคลม
@@ -847,17 +886,25 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       // เลขที่ใบงานนอก DR0001 — ออกเฉพาะงานนอก (งานติดตั้งใช้เลขของปฏิทิน · งานแพลตฟอร์มไม่มีเลข)
       // ‼️ ถามเลขล่าสุดจากฐานตอนกดบันทึก ไม่ใช้เลขในหน้าจอ (แอดมินหลายคนเปิดค้างไว้พร้อมกัน)
       if (!payload.is_installation && OUTSIDE_PLATFORMS.includes(String(payload.platform ?? '')) && !isClaimRow(payload.platform)) {
-        const { data: used, error: serErr } = await supabase.from('order_entries').select('serial_no').like('serial_no', 'DR%')
+        const { data: used, error: serErr } = await withTimeout(supabase.from('order_entries').select('serial_no').like('serial_no', 'DR%'), 'ขอเลขที่ใบ')
         // ยังไม่ได้รัน sql/add_serial_no.sql (ไม่มีคอลัมน์) → ข้ามไป บันทึกได้ตามปกติ ไม่พัง
         if (!serErr) (payload as Record<string, unknown>).serial_no = nextSerial('outside', (used ?? []).map(x => (x as { serial_no: string | null }).serial_no))
       }
-      const res = await oeInsert(payload).select().single()
-      if (res.error) { setSaving(false); setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
+      // abortSignal = ยกเลิกคำขอที่ค้างจริงๆ (ไม่ใช่แค่เลิกรอ) — กดใหม่แล้วได้การเชื่อมต่อใหม่ ไม่ไปต่อคิวเดิมที่ตายแล้ว
+      const qIns = oeInsert(payload).select().single()
+      const sigIns = abortAfter(20000)
+      const res = await withTimeout(sigIns ? qIns.abortSignal(sigIns) : qIns, 'บันทึกออเดอร์')
+      if (res.error) { setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
       const saved = res.data as Entry
-      await syncInstallation({ ...payload, admin_name: d.admin_name || null }, saved.id)
-      if (payload.is_installation) await saveOrderPhotos(saved.id)
-      if (outsourceVal) await syncOutsourcePO(saved.id, payload.customer_name, payload.order_number, outsourceVal, modalItems)
-      setSaving(false)
+      // ‼️ ใบออเดอร์บันทึกลงฐานแล้ว — งานต่อเนื่อง (ปฏิทินติดตั้ง/รูป/ใบสั่งซื้อ) ถ้าพลาดต้องไม่ทำให้
+      //    ใบที่บันทึกไปแล้วดูเหมือนบันทึกไม่สำเร็จ จึงจับ error แยกแล้วแจ้งเป็นคำเตือนแทน
+      try {
+        await withTimeout(syncInstallation({ ...payload, admin_name: d.admin_name || null }, saved.id), 'ซิงค์ปฏิทินงานติดตั้ง')
+        if (payload.is_installation) await withTimeout(saveOrderPhotos(saved.id), 'บันทึกรูปหน้างาน')
+        if (outsourceVal) await withTimeout(syncOutsourcePO(saved.id, payload.customer_name, payload.order_number, outsourceVal, modalItems), 'ซิงค์ใบสั่งซื้อ')
+      } catch (e) {
+        setError(`บันทึกออเดอร์แล้ว แต่ ${e instanceof Error ? e.message : String(e)}`)
+      }
       setRows(prev => prev.some(r => r.id === saved.id) ? prev.map(r => r.id === saved.id ? { ...r, ...saved } : r) : [saved, ...prev])
       recordAction({
         label: `เพิ่มออเดอร์ ${oname}`,
@@ -874,6 +921,9 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
           if (outsourceVal) await syncOutsourcePO(saved.id, payload.customer_name, payload.order_number, outsourceVal, modalItems)
           await load()
         },
+        // หลังรีเฟรช: ย้อน = ลบครบเหมือนเดิม · ทำซ้ำ = ใส่ใบออเดอร์กลับ (งานติดตั้ง/สั่งซื้อที่ผูกกัน เปิดใบแล้วกดบันทึกอีกครั้ง)
+        undoOps: [opDelete('installations', saved.id, 'source_order_id'), opDelete('purchase_orders', saved.id, 'source_order_id'), opDelete('order_entries', saved.id)],
+        redoOps: [opInsert('order_entries', saved)],
       })
     } else {
       const orig = rows.find(r => r.id === d.id)
@@ -883,17 +933,22 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       // ‼️ maybeSingle ไม่ใช่ single — ถ้า update ไม่โดนแถวไหนเลย single() จะโยน PGRST116
       //    ("Cannot coerce the result to a single JSON object") ซึ่งแอดมินอ่านไม่รู้เรื่อง
       //    เกิดได้เมื่อแถวถูกลบไปแล้ว หรือเป็นแถวงานเคลม (id อยู่ตาราง claims ไม่ใช่ order_entries)
-      const res = await oeUpdate(payload).eq('id', d.id).select().maybeSingle()
-      if (res.error) { setSaving(false); setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
+      const qUpd = oeUpdate(payload).eq('id', d.id).select().maybeSingle()
+      const sigUpd = abortAfter(20000)
+      const res = await withTimeout(sigUpd ? qUpd.abortSignal(sigUpd) : qUpd, 'บันทึกออเดอร์')
+      if (res.error) { setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
       if (!res.data) {
-        setSaving(false)
         setError('บันทึกไม่สำเร็จ: ไม่พบใบนี้ในตารางออเดอร์แล้ว — ถ้าเป็นงานเคลมให้แก้ที่หน้าเคลม (เมนู ··· → แก้ไข (ไปหน้าเคลม)) ถ้าไม่ใช่ ให้รีเฟรชหน้าแล้วลองใหม่')
         return
       }
-      await syncInstallation({ ...payload, admin_name: d.admin_name || null }, String(d.id))
-      if (payload.is_installation) await saveOrderPhotos(String(d.id))
-      if (outsourceVal || prevOutsource) await syncOutsourcePO(String(d.id), payload.customer_name, payload.order_number, outsourceVal, modalItems)
-      setSaving(false)
+      // งานต่อเนื่องพลาดไม่ทำให้ใบที่บันทึกแล้วหาย — แจ้งเป็นคำเตือนแทน (เหตุผลเดียวกับตอนเพิ่มใบใหม่)
+      try {
+        await withTimeout(syncInstallation({ ...payload, admin_name: d.admin_name || null }, String(d.id)), 'ซิงค์ปฏิทินงานติดตั้ง')
+        if (payload.is_installation) await withTimeout(saveOrderPhotos(String(d.id)), 'บันทึกรูปหน้างาน')
+        if (outsourceVal || prevOutsource) await withTimeout(syncOutsourcePO(String(d.id), payload.customer_name, payload.order_number, outsourceVal, modalItems), 'ซิงค์ใบสั่งซื้อ')
+      } catch (e) {
+        setError(`บันทึกออเดอร์แล้ว แต่ ${e instanceof Error ? e.message : String(e)}`)
+      }
       setRows(prev => prev.map(r => r.id === d.id ? res.data as Entry : r))
       if (orig) trackOrderField(String(d.id), payload, prevOf(orig, payload), `แก้ออเดอร์ ${oname}`)
     }
@@ -916,8 +971,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       setRows(prev => prev.filter(r => r.id !== id))
       if (row) recordAction({
         label: `ลบออเดอร์ ${row.order_number || row.customer_name || ''}`,
-        undo: async () => { await supabase.from('order_entries').insert(row); await load() },
-        redo: async () => { await supabase.from('order_entries').delete().eq('id', id); await load() },
+        undo: async () => { const { error: e } = await supabase.from('order_entries').insert(row); if (e) throw e; await load() },
+        redo: async () => { const { error: e } = await supabase.from('order_entries').delete().eq('id', id); if (e) throw e; await load() },
+        undoOps: [opInsert('order_entries', row)],
+        redoOps: [opDelete('order_entries', id)],
       })
     } catch (e) {
       setError(`ลบไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`)
@@ -978,8 +1035,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       setRows(prev => prev.filter(r => !ids.includes(r.id)))
       if (deleted.length) recordAction({
         label: `ลบออเดอร์ ${deleted.length} รายการ`,
-        undo: async () => { await supabase.from('order_entries').insert(deleted); await load() },
-        redo: async () => { await supabase.from('order_entries').delete().in('id', ids); await load() },
+        undo: async () => { const { error: e } = await supabase.from('order_entries').insert(deleted); if (e) throw e; await load() },
+        redo: async () => { const { error: e } = await supabase.from('order_entries').delete().in('id', ids); if (e) throw e; await load() },
+        undoOps: [opInsert('order_entries', deleted)],
+        redoOps: [opDelete('order_entries', ids)],
       })
     } catch (e) {
       setError(`ลบไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`)
@@ -1056,6 +1115,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       label: `แก้${what} ${row?.order_number || row?.customer_name || ''}`,
       undo: async () => { await applyField(id, field, old); await load() },
       redo: async () => { await applyField(id, field, value); await load() },
+      // หลังรีเฟรช: แก้ค่ากลับตรงๆ (งานเคลมที่โชว์ปนอยู่ เขียนตาราง claims ตามช่องที่จับคู่กันไว้)
+      ...(row && isClaimEntry(row)
+        ? { undoOps: [opUpdate('claims', id, claimFieldPatch(field, old) ?? {})], redoOps: [opUpdate('claims', id, claimFieldPatch(field, value) ?? {})] }
+        : { undoOps: [opUpdate('order_entries', id, { [field]: old })], redoOps: [opUpdate('order_entries', id, { [field]: value })] }),
     })
   }
 
@@ -1065,6 +1128,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       label,
       undo: async () => { await oeUpdate(prev).eq('id', id); await load() },
       redo: async () => { await oeUpdate(patch).eq('id', id); await load() },
+      undoOps: [opUpdate('order_entries', id, prev)],
+      redoOps: [opUpdate('order_entries', id, patch)],
     })
   }
 
@@ -1768,7 +1833,9 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const displayedFrozen = scopedRows.filter(r => {
     const matchMonth = month === 'all' || monthKey(r) === month
     const matchSearch = (r.customer_name ?? '').toLowerCase().includes(search.toLowerCase()) ||
-      (r.order_number ?? '').toLowerCase().includes(search.toLowerCase())
+      (r.order_number ?? '').toLowerCase().includes(search.toLowerCase()) ||
+      // เลขที่ใบ: DR (งานนอก) / DM (เคลม) อยู่ในแถว · IN (งานติดตั้ง) อยู่ในแถวปฏิทินที่ผูกกับใบนี้
+      (!!search.trim() && (matchSerial(r.serial_no, search) || matchSerial(installSerial(instMeta[r.id]?.serial_no), search)))
     const matchStatus = statusFilters.length === 0 || statusFilters.includes(r.order_status ?? '')
     const matchPlatform = platformFilters.length === 0 || platformFilters.includes(r.platform ?? '')
     const matchCourier = courierFilters.length === 0 || courierFilters.includes(r.courier ?? '')
@@ -5062,20 +5129,17 @@ ${body}
                       <div key={key} style={key === 'type' ? { gridColumn: 'span 2' } : undefined}>
                         <label style={{ fontSize: 11, color: 'var(--ink-4)', display: 'block', marginBottom: 2 }}>{lbl}</label>
                         {ITEM_FIELD_OPTIONS[key] ? (
-                          <select
-                            value={String(item[key] ?? ITEM_FIELD_OPTIONS[key][0])}
-                            onChange={e => setModalItems(prev => prev.map((it, i) => i === idx ? { ...it, [key]: e.target.value } : it))}
-                            style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 7px', fontSize: 12, outline: 'none', boxSizing: 'border-box', background: '#fff', cursor: 'pointer' }}>
-                            {ITEM_FIELD_OPTIONS[key].map(o => <option key={o} value={o}>{o}</option>)}
-                          </select>
+                          <ThemedSelect value={String(item[key] ?? ITEM_FIELD_OPTIONS[key][0])} options={ITEM_FIELD_OPTIONS[key]}
+                            onChange={v => setModalItems(prev => prev.map((it, i) => i === idx ? { ...it, [key]: v } : it))}
+                            style={{ width: '100%' }} />
                         ) : (
-                        <input type={type} step={type === 'number' ? (key === 'floors' ? '1' : '0.01') : undefined}
-                          value={item[key] == null ? '' : String(item[key])}
-                          onChange={e => {
-                            const val = itemInputValue(key, e.target.value)
+                        <SuggestInput type={type} step={type === 'number' ? (key === 'floors' ? '1' : '0.01') : undefined}
+                          value={item[key] == null ? '' : String(item[key])} suggestions={itemSuggest[key as string]}
+                          onChange={v => {
+                            const val = itemInputValue(key, v)
                             setModalItems(prev => prev.map((it, i) => i === idx ? { ...it, [key]: val } : it))
                           }}
-                          style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 5, padding: '5px 8px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+                          style={{ width: '100%' }} />
                         )}
                       </div>
                     ))}
@@ -5350,22 +5414,19 @@ ${body}
                       {cols.map(([, key, type, w]) => (
                         <td key={key} style={{ padding: '4px 6px' }}>
                           {railNoField(item, key) ? <span style={{ display: 'inline-block', width: w, color: 'var(--ink-4)', fontSize: 12, textAlign: 'center' }}>—</span> : ITEM_FIELD_OPTIONS[key] ? (
-                            <select
-                              value={String(item[key] ?? ITEM_FIELD_OPTIONS[key][0])}
-                              onChange={e => setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: e.target.value } : it) } : null)}
-                              style={{ width: w, fontSize: 12, outline: 'none', boxSizing: 'border-box', cursor: 'pointer' }}>
-                              {ITEM_FIELD_OPTIONS[key].map(o => <option key={o} value={o}>{o}</option>)}
-                            </select>
+                            <ThemedSelect value={String(item[key] ?? ITEM_FIELD_OPTIONS[key][0])} options={ITEM_FIELD_OPTIONS[key]}
+                              onChange={v => setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: v } : it) } : null)}
+                              style={{ width: w, borderRadius: 4, padding: '4px 6px' }} />
                           ) : (
-                          <input
+                          <SuggestInput
                             type={type}
                             step={type === 'number' ? '0.01' : undefined}
-                            value={item[key] == null ? '' : String(item[key])}
-                            onChange={e => {
-                              const val = itemInputValue(key, e.target.value)
+                            value={item[key] == null ? '' : String(item[key])} suggestions={itemSuggest[key as string]}
+                            onChange={v => {
+                              const val = itemInputValue(key, v)
                               setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: val } : it) } : null)
                             }}
-                            style={{ width: w, fontSize: 12, outline: 'none', boxSizing: 'border-box' }}
+                            style={{ width: w, borderRadius: 4, padding: '4px 6px' }}
                           />
                           )}
                         </td>
@@ -5407,17 +5468,28 @@ ${body}
                 const now = new Date().toISOString()
                 // สั่งนอกในรายการ → ลงคอลัมน์สั่งนอกของออเดอร์ + ประทับเวลาเมื่อข้อความเปลี่ยน
                 const itemsOut = itemsOutsourceText(itemsModal.items)
-                const prevOut = rows.find(r => r.id === itemsModal.id)?.outsource ?? ''
+                const row = rows.find(r => r.id === itemsModal.id)
+                const prevOut = row?.outsource ?? ''
+                // ‼️ แถวงานเคลมที่โชว์ในหมวดออเดอร์ id อยู่ตาราง claims ไม่ใช่ order_entries
+                //    เดิมยิง update เข้า order_entries เสมอ → ไม่โดนแถวไหนเลย รายการสินค้าเลยไม่ถูกบันทึก
+                //    (ไม่ error ด้วย เลยดูเหมือนบันทึกได้ แต่พอรีเฟรชรายการหาย)
+                const isClaim = !!row && isClaimEntry(row)
+                const outPatch = itemsOut && itemsOut !== prevOut ? { outsource: itemsOut, outsource_at: now } : {}
                 const updates = {
                   items: newItems,
                   updated_at: now,
-                  ...(itemsOut && itemsOut !== prevOut ? { outsource: itemsOut, outsource_at: now } : {}),
+                  // ตาราง claims ไม่มีช่องสั่งนอก — ใส่ไปจะ error ทั้งคำสั่ง
+                  ...(isClaim ? {} : outPatch),
                 }
-                const { error: err } = await oeUpdate(updates).eq('id', itemsModal.id)
-                if (!err) {
-                  // สั่งนอกเปลี่ยน → sync ไปหมวดสั่งซื้อด้วย
-                  if (itemsOut && itemsOut !== prevOut) {
-                    const row = rows.find(r => r.id === itemsModal.id)
+                const res = isClaim
+                  ? await claimUpdate(updates).eq('id', itemsModal.id).select('id').maybeSingle()
+                  : await oeUpdate(updates).eq('id', itemsModal.id).select('id').maybeSingle()
+                // ‼️ เดิมถ้าบันทึกไม่สำเร็จจะเงียบสนิท (ปุ่มเหมือนกดไม่ติด) — ตอนนี้ขึ้นข้อความบอกเสมอ
+                if (res.error) { setItemsModalError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
+                if (!res.data) { setItemsModalError('บันทึกไม่สำเร็จ: ไม่พบใบนี้ในระบบแล้ว — รีเฟรชหน้าแล้วลองใหม่'); return }
+                {
+                  // สั่งนอกเปลี่ยน → sync ไปหมวดสั่งซื้อด้วย (งานเคลมไม่มีสั่งนอก)
+                  if (!isClaim && itemsOut && itemsOut !== prevOut) {
                     await syncOutsourcePO(itemsModal.id, row?.customer_name, row?.order_number, itemsOut, itemsModal.items)
                   }
                   // รูปหน้างานเก็บที่แถวงานติดตั้ง (installations.photos) ไม่ใช่ที่ออเดอร์

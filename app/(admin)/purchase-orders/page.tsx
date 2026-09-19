@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { recordAction } from '@/lib/history'
+import { opUpdate, opInsert, opDelete } from '@/lib/historyOps'
 import { tUpdate, prevOf } from '@/lib/trackedDb'
 import { useStableView } from '@/lib/useStableView'
 import { oeUpdate } from '@/lib/adminActor'
@@ -106,6 +107,8 @@ export default function PurchaseOrdersPage() {
           label: `เพิ่มรายการสั่งซื้อ ${name}`,
           undo: async () => { await supabase.from('purchase_orders').delete().eq('id', saved.id); await load() },
           redo: async () => { await supabase.from('purchase_orders').insert(saved); await load() },
+          undoOps: [opDelete('purchase_orders', saved.id)],
+          redoOps: [opInsert('purchase_orders', saved)],
         })
       }
     } else {
@@ -156,6 +159,14 @@ export default function PurchaseOrdersPage() {
         await supabase.from('purchase_orders').delete().eq('id', id)
         await load()
       },
+      undoOps: [
+        opInsert('purchase_orders', po),
+        ...(src && srcPrev ? [opUpdate('order_entries', src, { outsource: srcPrev.outsource, outsource_at: srcPrev.outsource_at, items: srcPrev.items })] : []),
+      ],
+      redoOps: [
+        ...(src ? [opUpdate('order_entries', src, { outsource: null, outsource_at: null })] : []),
+        opDelete('purchase_orders', id),
+      ],
     })
     load()
   }

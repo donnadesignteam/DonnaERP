@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from 'react'
 // สีวันผลิตที่เหลือชุดเดียวกับหมวดออเดอร์: เกิน/วันนี้ = แดงอิฐ · 1-10 วัน = เหลือง · เกิน 10 วัน = เขียว
 import { daysColor } from '@/lib/orderTabs'
 import { createPortal } from 'react-dom'
+import { matchSerial } from '@/lib/serialNo'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { syncRows, byCreatedAsc } from '@/lib/rowCache'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
@@ -21,6 +23,7 @@ import BoardAnnouncements from '@/components/BoardAnnouncements'
 
 type Order = {
   id: string
+  serial_no?: string | null   // เลขที่ใบงานนอก DR0001 — ไว้ค้นหา
   order_number: string
   customer_name: string
   order_status: string
@@ -356,7 +359,7 @@ export default function DashboardPage() {
   const load = async () => {
     setError('')
     // จำไว้ในเครื่อง ขอเฉพาะใบที่เปลี่ยน (lib/rowCache.ts)
-    const cols = 'id,order_number,customer_name,order_status,deadline,created_at,platform,courier,is_installation,is_urgent,is_dropoff,shipping_datetime,notes,updated_at'
+    const cols = 'id,serial_no,order_number,customer_name,order_status,deadline,created_at,platform,courier,is_installation,is_urgent,is_dropoff,shipping_datetime,notes,updated_at'
     const { data: rows, error: err } = await syncRows<Order>({
       key: 'dashboard', table: 'order_entries', select: cols, sort: byCreatedAsc,
       full: () => supabase.from('order_entries').select(cols).order('created_at', { ascending: true }).order('id', { ascending: true }),
@@ -467,7 +470,7 @@ export default function DashboardPage() {
   if (statusFilters.length) ordersList = ordersList.filter(o => statusFilters.includes(o.order_status))
   if (orderSearch) {
     const q = orderSearch.toLowerCase()
-    ordersList = ordersList.filter(o => o.order_number?.toLowerCase().includes(q) || o.customer_name?.toLowerCase().includes(q))
+    ordersList = ordersList.filter(o => o.order_number?.toLowerCase().includes(q) || o.customer_name?.toLowerCase().includes(q) || matchSerial(o.serial_no, q))
   }
   if (daysSort) {
     // ‼️ ต้องคิดเลข "วันผลิตที่เหลือ" ด้วยสูตรเดียวกับที่วาดในแถว (rowDays) ไม่งั้นลำดับกับเลขที่เห็นไม่ตรงกัน
@@ -680,7 +683,7 @@ export default function DashboardPage() {
                 className="dn-field"
                 value={orderSearch}
                 onChange={e => setOrderSearch(e.target.value)}
-                placeholder="ค้นหาเลขที่ / ลูกค้า…"
+                placeholder="ค้นหาเลขที่ / Serial / ลูกค้า…"
                 style={{ width: '100%', paddingLeft: 46 }}
               />
             </div>

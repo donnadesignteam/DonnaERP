@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { claimUpdate, claimInsert } from '@/lib/adminActor'
-import { nextSerial } from '@/lib/serialNo'
+import { nextSerial, matchSerial } from '@/lib/serialNo'
 import { buildCustomerBook, type CustomerEntry } from '@/lib/customerBook'
 import CustomerPickStep from '@/components/CustomerPickStep'
 import { useConfirm } from '@/components/ConfirmDialog'
@@ -15,9 +15,10 @@ import { usePrintColumns, PrintColumnPicker, printTableHtml, type PrintCol } fro
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { recordAction } from '@/lib/history'
+import { opUpdate, opInsert, opDelete } from '@/lib/historyOps'
 import { tUpdate, prevOf } from '@/lib/trackedDb'
 import { itemBlockLines, railSplit, railLayers, railKind, railIssues, normalizeRailColor } from '@/lib/itemFormat'
-import { NO_FAULT, FAULT_BY_TECHS } from '@/lib/claimFault'
+import { NO_FAULT, FAULT_BY_TECHS, splitFaultBy, joinFaultBy } from '@/lib/claimFault'
 import QRCode from 'qrcode'
 import { railLink } from '@/lib/rail'
 import { TECH_OPTIONS } from '@/lib/techs'
@@ -166,32 +167,53 @@ function itemLine(it: Item): string {
 
 // ── ช่องเลือกที่พิมพ์ค้นหาได้ (คอลัมน์ "ผิดโดย" มีทั้งพนักงานร้าน ช่าง และบริษัทขนส่ง รายชื่อยาวเกินกว่าจะเลื่อนหา) ──
 // กล่องรายการวางแบบ fixed อิงตำแหน่งปุ่ม เพราะตารางเลื่อนแนวนอน (overflow) จะตัดกล่องที่วางแบบ absolute
-function SearchSelect({ value, groups, onPick, placeholder = '—' }: {
+// multi = เลือกได้หลายค่า (ช่อง "ผิดโดย") — ติ๊กทีละชื่อ กล่องไม่ปิด บันทึกครั้งเดียวตอนปิดกล่อง ค่าเก็บเป็น "ชื่อ1, ชื่อ2"
+function SearchSelect({ value, groups, onPick, placeholder = '—', multi = false, exclusive = [], boxStyle }: {
   value: string
   groups: { label: string; items: string[] }[]
   onPick: (v: string) => void
   placeholder?: string
+  multi?: boolean
+  exclusive?: string[]          // ค่าที่เลือกแล้วต้องอยู่เดี่ยว (เช่น "ไม่ถือว่าเป็นความผิด")
+  boxStyle?: React.CSSProperties
 }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const [rect, setRect] = useState<DOMRect | null>(null)
+  const [draft, setDraft] = useState<string[]>([])
   const kw = q.trim().toLowerCase()
   const filtered = groups
     .map(g => ({ ...g, items: g.items.filter(i => i.toLowerCase().includes(kw)) }))
     .filter(g => g.items.length > 0)
-  const close = () => { setOpen(false); setQ('') }
-  const pick = (v: string) => { close(); onPick(v) }
+  const chosen = multi ? draft : [value]
+  const close = () => {
+    setOpen(false); setQ('')
+    if (multi) { const next = joinFaultBy(draft); if (next !== joinFaultBy(splitFaultBy(value))) onPick(next) }
+  }
+  const pick = (v: string) => {
+    if (!multi) { setOpen(false); setQ(''); onPick(v); return }
+    if (!v) { setDraft([]); return }
+    setDraft(prev => prev.includes(v) ? prev.filter(x => x !== v)
+      : exclusive.includes(v) ? [v] : [...prev.filter(x => !exclusive.includes(x)), v])
+    setQ('')
+  }
   return (
     <>
-      <div onClick={e => { setRect((e.currentTarget as HTMLElement).getBoundingClientRect()); setOpen(true); setQ('') }}
+      <div onClick={e => { setRect((e.currentTarget as HTMLElement).getBoundingClientRect()); setOpen(true); setQ(''); setDraft(splitFaultBy(value)) }}
         title={value || 'เลือก'}
-        style={{ cursor: 'pointer', fontSize: 12, color: value ? 'var(--ink)' : 'var(--ink-4)', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        style={boxStyle ?? { cursor: 'pointer', fontSize: 12, color: value ? 'var(--ink)' : 'var(--ink-4)', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis' }}>
         {value || placeholder}
       </div>
       {open && rect && (
         <>
           <div onClick={close} style={{ position: 'fixed', inset: 0, zIndex: 9998 }} />
           <div style={{ position: 'fixed', top: Math.max(8, Math.min(rect.bottom + 2, window.innerHeight - 320)), left: Math.max(8, Math.min(rect.left, window.innerWidth - 250)), width: 230, maxHeight: 300, overflowY: 'auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', zIndex: 9999, padding: 6 }}>
+            {multi && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, padding: '2px 4px 6px', fontSize: 11, color: 'var(--ink-3)' }}>
+                <span>{draft.length > 1 ? `เลือก ${draft.length} คน · ค่าเคลมหาร ${draft.length}` : 'เลือกได้หลายคน'}</span>
+                <button onClick={close} style={{ border: 'none', borderRadius: 6, background: 'var(--ink)', color: 'var(--surface)', fontSize: 11, fontWeight: 700, padding: '4px 10px', cursor: 'pointer' }}>เสร็จ</button>
+              </div>
+            )}
             <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="พิมพ์ค้นหา…"
               onKeyDown={e => {
                 if (e.key === 'Escape') close()
@@ -206,7 +228,9 @@ function SearchSelect({ value, groups, onPick, placeholder = '—' }: {
                 <div style={{ padding: '6px 8px 2px', fontSize: 10, color: 'var(--ink-4)', fontWeight: 700 }}>{g.label}</div>
                 {g.items.map(o => (
                   <button key={o} onClick={() => pick(o)}
-                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', border: 'none', borderRadius: 5, background: o === value ? 'var(--blue-bg)' : 'transparent', cursor: 'pointer', fontSize: 12, color: 'var(--ink)', fontWeight: o === value ? 600 : 400 }}>{o}</button>
+                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', border: 'none', borderRadius: 5, background: chosen.includes(o) ? 'var(--blue-bg)' : 'transparent', cursor: 'pointer', fontSize: 12, color: 'var(--ink)', fontWeight: chosen.includes(o) ? 600 : 400 }}>
+                    {multi && <span style={{ display: 'inline-block', width: 16 }}>{chosen.includes(o) ? '✓' : ''}</span>}{o}
+                  </button>
                 ))}
               </div>
             ))}
@@ -291,6 +315,28 @@ export default function ClaimsWorkspace() {
     else setError('ไม่พบงานเคลมใบนี้ (อาจถูกลบไปแล้ว)')
   }, [fetched, rows, modal])   // eslint-disable-line react-hooks/exhaustive-deps
 
+  // มาจากหน้าพัสดุส่งกลับด้วยลิงก์ /claims?focus=<id> → ล้างตัวกรองให้แถวโผล่ เลื่อนไปหาแล้วกระพริบแถวนั้น (ไม่เปิดฟอร์ม)
+  const [flashId, setFlashId] = useState<string | null>(null)
+  useEffect(() => {
+    const want = new URLSearchParams(window.location.search).get('focus')
+    if (!want) return
+    if (!rows.some(r => r.id === want)) {
+      if (!fetched) return
+      window.history.replaceState(null, '', window.location.pathname)
+      setError('ไม่พบงานเคลมใบนี้ (อาจถูกลบไปแล้ว)')
+      return
+    }
+    window.history.replaceState(null, '', window.location.pathname)
+    setTab('all'); setMonth('all'); setSearch('')
+    setFlashId(want)
+  }, [fetched, rows])   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!flashId) return
+    const t0 = setTimeout(() => document.querySelector(`[data-claim-row="${flashId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
+    const t1 = setTimeout(() => setFlashId(null), 3200)
+    return () => { clearTimeout(t0); clearTimeout(t1) }
+  }, [flashId])
+
   // ช่องแอดมิน: ดึงชื่อพนักงานที่ยังทำงานอยู่ทุกคนจากตาราง staff — มีคนเข้า/ออกก็อัปเดตเองไม่ต้องแก้โค้ด
   useEffect(() => {
     fetchEmployeeOptions()
@@ -315,7 +361,7 @@ export default function ClaimsWorkspace() {
     const staff = Array.from(new Set(staffNames))
     const carriers = CARRIER_OPTIONS.filter(c => c !== 'อื่นๆ')
     const known = new Set([...staff, ...FAULT_BY_TECHS, ...carriers, NO_FAULT])
-    const used = Array.from(new Set(rows.map(r => r.fault_by).filter((n): n is string => !!n && !known.has(n))))
+    const used = Array.from(new Set(rows.flatMap(r => splitFaultBy(r.fault_by)).filter(n => !known.has(n))))
     return [
       // เคสที่ตรวจแล้วไม่ใช่ความผิดของใคร — เลือกค่านี้จะไม่ถูกนับเป็นงานเคลมของพนักงานคนไหน
       { label: 'ไม่มีผู้รับผิด', items: [NO_FAULT] },
@@ -325,7 +371,6 @@ export default function ClaimsWorkspace() {
       ...(used.length ? [{ label: 'อื่นๆ', items: used }] : []),
     ]
   }, [staffNames, rows])
-  const faultByFlat = useMemo(() => faultByGroups.flatMap(g => g.items), [faultByGroups])
 
   const set = (k: keyof Claim, v: string | boolean | number | null) =>
     setModal(m => m ? { ...m, data: { ...m.data, [k]: v } } : null)
@@ -463,6 +508,8 @@ export default function ClaimsWorkspace() {
         label: `เพิ่มเคลม ${name}`,
         undo: async () => { await supabase.from('claims').delete().eq('id', saved.id); await load() },
         redo: async () => { await claimInsert(saved); await load() },
+        undoOps: [opDelete('claims', saved.id)],
+        redoOps: [opInsert('claims', saved)],
       })
     } else {
       const old = rows.find(r => r.id === d.id)
@@ -475,6 +522,8 @@ export default function ClaimsWorkspace() {
         label: `แก้เคลม ${name}`,
         undo: async () => { await claimUpdate(prev).eq('id', d.id); await load() },
         redo: async () => { await claimUpdate(payload).eq('id', d.id); await load() },
+        undoOps: [opUpdate('claims', d.id, prev)],
+        redoOps: [opUpdate('claims', d.id, payload)],
       })
     }
     ph.commit()   // บันทึกผ่านแล้วค่อยลบไฟล์ของรูปที่กดเอาออก (กดยกเลิกกลางทางรูปเดิมจะไม่หาย)
@@ -492,14 +541,18 @@ export default function ClaimsWorkspace() {
     const row = rows.find(r => r.id === id)
     setError('')
     try {
+      // แปะชื่อคนลบก่อน (trigger ประวัติอ่านชื่อจากแถวที่กำลังถูกลบ)
+      await claimUpdate({ updated_at: new Date().toISOString() }).eq('id', id)
       const { error: err } = await supabase.from('claims').delete().eq('id', id)
       // ‼️ ลบไม่สำเร็จต้องฟ้องเสมอ ห้ามเงียบ (เดิมไม่มี else เลยดูเหมือนกดปุ่มไม่ติด)
       if (err) { setError(`ลบไม่สำเร็จ: ${err.message}`); return }
       setRows(prev => prev.filter(r => r.id !== id))
       if (row) recordAction({
         label: `ลบเคลม ${row.customer_username || row.original_order_number || ''}`,
-        undo: async () => { await claimInsert(row); await load() },
-        redo: async () => { await supabase.from('claims').delete().eq('id', id); await load() },
+        undo: async () => { const { error: e } = await claimInsert(row); if (e) throw e; await load() },
+        redo: async () => { const { error: e } = await supabase.from('claims').delete().eq('id', id); if (e) throw e; await load() },
+        undoOps: [opInsert('claims', row)],
+        redoOps: [opDelete('claims', id)],
       })
     } catch (e) {
       setError(`ลบไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`)
@@ -766,7 +819,8 @@ ${body}
     const q = search.toLowerCase()
     const matchSearch = !q || (r.customer_username ?? '').toLowerCase().includes(q) ||
       (r.original_order_number ?? '').toLowerCase().includes(q) || (r.cause ?? '').toLowerCase().includes(q) ||
-      (r.fault_by ?? '').toLowerCase().includes(q) || (r.fix_method ?? '').toLowerCase().includes(q)
+      (r.fault_by ?? '').toLowerCase().includes(q) || (r.fix_method ?? '').toLowerCase().includes(q) ||
+      matchSerial(r.serial_no, q)
     // พิมพ์ค้นหา = ข้ามตัวกรองแท็บ ค้นเจอทุกแถบ (เหมือนหมวดออเดอร์)
     const matchTab = !!q || (tab === 'shipped' ? isShipped(r) : !isShipped(r))
     // ตัวกรองหัวคอลัมน์
@@ -880,7 +934,9 @@ ${body}
     const now = new Date().toISOString()
     setRows(prev => prev.map(r => r.id === itemsModal.id ? ({ ...r, items, updated_at: now } as Claim) : r))
     setItemsModal(null)
-    await claimUpdate({ items, updated_at: now }).eq('id', itemsModal.id)
+    // ‼️ ต้องเช็กผลด้วย — เดิมยิงแล้วไม่ดูผล ถ้าบันทึกไม่ผ่านจะเงียบ (หน้าจอโชว์เหมือนบันทึกแล้ว แต่รีเฟรชแล้วหาย)
+    const { error: err } = await claimUpdate({ items, updated_at: now }).eq('id', itemsModal.id)
+    if (err) { setError(`บันทึกรายการสินค้าไม่สำเร็จ: ${err.message} — ลองใหม่อีกครั้ง`); load() }
   }
 
   // แปลงข้อความรายการ → items (เรียก AI เหมือนหมวดออเดอร์)
@@ -1123,7 +1179,7 @@ ${body}
               </thead>
               <tbody>
                 {displayed.map(r => (
-                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', verticalAlign: 'top', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : undefined }}>
+                  <tr key={r.id} data-claim-row={r.id} className={flashId === r.id ? 'claim-flash' : undefined} style={{ borderBottom: '1px solid var(--border)', verticalAlign: 'top', background: selectedIds.has(r.id) ? 'var(--blue-bg)' : undefined }}>
                     <td style={{ padding: '8px 8px 8px 14px' }}>
                       <input type="checkbox" checked={selectedIds.has(r.id)}
                         onChange={e => setSelectedIds(prev => { const s = new Set(prev); if (e.target.checked) s.add(r.id); else s.delete(r.id); return s })}
@@ -1180,7 +1236,7 @@ ${body}
                     )}
                     {showCol('ผิดโดย') && (
                     <td style={{ padding: '8px 14px', whiteSpace: 'nowrap', minWidth: 90 }}>
-                      <SearchSelect value={r.fault_by ?? ''} groups={faultByGroups} onPick={v => saveCell(r.id, 'fault_by', v)} />
+                      <SearchSelect multi exclusive={[NO_FAULT]} value={r.fault_by ?? ''} groups={faultByGroups} onPick={v => saveCell(r.id, 'fault_by', v)} />
                     </td>
                     )}
                     {showCol('วิธีแก้ไข') && (
@@ -1633,7 +1689,12 @@ ${body}
               {field('สถานะเคลม', 'status', { options: WORKFLOW.map(w => w.key) })}
               {field('แอดมินที่รับผิดชอบ', 'admin_name', { options: adminOptions })}
               {field('ช่างที่รับผิดชอบ', 'technician', { options: TECH_OPTIONS })}
-              {field('ผิดโดย', 'fault_by', { options: faultByFlat })}
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>ผิดโดย <span style={{ fontWeight: 400, color: 'var(--ink-4)' }}>(เลือกได้หลายคน · ค่าเคลมหารเท่ากัน)</span></label>
+                <SearchSelect multi exclusive={[NO_FAULT]} value={String(modal.data.fault_by ?? '')} groups={faultByGroups} placeholder="— เลือก —"
+                  onPick={v => set('fault_by', v)}
+                  boxStyle={{ ...inputStyle, cursor: 'pointer', background: 'var(--surface)', color: modal.data.fault_by ? 'var(--ink)' : 'var(--ink-4)', minHeight: 35 }} />
+              </div>
               {field('วิธีแก้ไข', 'fix_method', { full: true })}
               {field('หมายเหตุ', 'notes', { full: true })}
             </div>

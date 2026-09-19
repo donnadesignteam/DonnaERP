@@ -16,7 +16,7 @@ import { CARRIER_OPTIONS, detectCarrier } from '@/lib/carriers'
 import { compressImage } from '@/lib/packingPhotos'
 import { compressVideo } from '@/lib/videoCompress'
 import { useConfirm } from '@/components/ConfirmDialog'
-import { nextSerial } from '@/lib/serialNo'
+import { nextSerial, matchSerial } from '@/lib/serialNo'
 import { buildCustomerBook, type CustomerEntry } from '@/lib/customerBook'
 import CustomerPickStep from '@/components/CustomerPickStep'
 import CreamSelect from '@/components/CreamSelect'
@@ -48,7 +48,7 @@ const CLAIM_COLS = 'id, original_order_number, customer_username, channel, claim
 
 type TextKey = 'sender_name' | 'items' | 'carrier' | 'tracking_no' | 'orig_carrier' | 'orig_tracking_no' | 'orig_order_number' | 'address' | 'phone'
 const COLS: { key: TextKey; label: string; w: number; multiline?: boolean; carrier?: boolean }[] = [
-  { key: 'sender_name', label: 'ชื่อผู้ส่ง', w: 140 },
+  { key: 'sender_name', label: 'ชื่อ', w: 140 },
   { key: 'items', label: 'รายการ', w: 200, multiline: true },
   { key: 'carrier', label: 'บริษัทขนส่ง', w: 120, carrier: true },
   { key: 'tracking_no', label: 'เลขพัสดุ', w: 150 },
@@ -116,7 +116,7 @@ const mediaKey = (id: string, ext: string) => `returns/${id}/${Date.now()}-${Mat
 
 // ตัดอักขระที่ทำให้ตัวกรอง or() ของ Supabase พัง
 const clean = (s: string) => s.replace(/[,()%*\\]/g, ' ').trim()
-const claimLabel = (c: ClaimLite) => c.original_order_number || c.customer_username || '(เคลมไม่มีเลขออเดอร์)'
+const claimLabel = (c: ClaimLite) => c.customer_username || c.original_order_number || '(เคลมไม่มีชื่อลูกค้า)'
 
 export default function ReturnParcelsPage() {
   // ‼️ ไม่อ่านแคชตอนสร้าง state — แคชอยู่ข้ามการรีเฟรช ฝั่งเซิร์ฟเวอร์ไม่มี → เลขไม่ตรงกัน (hydration error)
@@ -275,6 +275,33 @@ export default function ReturnParcelsPage() {
     await saveField(cur, patch, 'จากออเดอร์')
   }
 
+  // พิมพ์ช่องไหนแล้วตรงกับงานเคลมใบเดียว → ผูก "จากออเดอร์" ให้เอง (แล้ว pickClaim เติมช่องที่ยังว่าง)
+  //   เลขพัสดุ = เลขพัสดุที่ลูกค้าส่งคืนในเคลม · เลขออเดอร์เดิม = เลขออเดอร์ในเคลม · เบอร์/ชื่อ = ผู้รับในเคลม
+  //   เลขพัสดุเดิม = พัสดุที่ร้านส่งออกไปของออเดอร์ → หาเคลมจากเลขออเดอร์นั้น
+  //   ‼️ ตรงหลายใบ (เช่นลูกค้าคนเดียวเคลมหลายครั้ง) = ไม่เดา ให้แอดมินกดเลือกเองในช่อง "จากออเดอร์"
+  const autoLinkClaim = async (r: Parcel, key: TextKey, value: string) => {
+    const cur = rowsRef.current.find(x => x.id === r.id) ?? r
+    if (cur.claim_id) return
+    const v = clean(value)
+    let q
+    if (key === 'tracking_no' && v.length >= 6) q = supabase.from('claims').select(CLAIM_COLS).ilike('return_tracking', v)
+    else if (key === 'orig_order_number' && v.length >= 4) q = supabase.from('claims').select(CLAIM_COLS).ilike('original_order_number', v)
+    else if (key === 'phone' && v.length >= 9) q = supabase.from('claims').select(CLAIM_COLS).ilike('ship_phone', `%${v}%`)
+    else if (key === 'sender_name' && v.length >= 2) q = supabase.from('claims').select(CLAIM_COLS).or(`customer_username.ilike."${v}",ship_name.ilike."${v}"`)
+    else if (key === 'orig_tracking_no' && v.length >= 6) {
+      const { data: oe } = await supabase.from('order_entries').select('order_number').filter('shipments', 'cs', JSON.stringify([{ no: v }])).not('order_number', 'is', null).limit(5)
+      const nos = [...new Set((oe ?? []).map(o => (o as { order_number: string }).order_number))]
+      if (nos.length !== 1) return
+      q = supabase.from('claims').select(CLAIM_COLS).eq('original_order_number', nos[0])
+    }
+    if (!q) return
+    const { data } = await q.order('created_at', { ascending: false }).limit(2)
+    const hits = (data ?? []) as ClaimLite[]
+    if (hits.length !== 1) return
+    const latest = rowsRef.current.find(x => x.id === r.id) ?? cur
+    if (!latest.claim_id) await pickClaim(latest, hits[0])
+  }
+
   // เพิ่มวิดีโอ/รูป — อัพทีละไฟล์ เสร็จแล้วต่อท้ายรายการเดิมแล้วบันทึกลงแถว
   const addMedia = async (r: Parcel, kind: 'videos' | 'photos', files: FileList | null) => {
     if (!files?.length) return
@@ -319,7 +346,7 @@ export default function ReturnParcelsPage() {
   const stableRows = monthRows
   const filtered = stableRows.filter(r => {
     const c = r.claim_id ? claims[r.claim_id] : null
-    const matchSearch = !q || [r.sender_name, r.items, r.carrier, r.tracking_no, r.orig_carrier, r.orig_tracking_no, r.orig_order_number, r.address, r.phone, c?.original_order_number, c?.customer_username]
+    const matchSearch = !q || matchSerial(r.serial_no, q) || [r.sender_name, r.items, r.carrier, r.tracking_no, r.orig_carrier, r.orig_tracking_no, r.orig_order_number, r.address, r.phone, c?.original_order_number, c?.customer_username]
       .some(v => (v ?? '').toLowerCase().includes(q))
     // ตัวกรองหัวคอลัมน์
     const matchCols = FILTER_DEFS.every(d => {
@@ -450,7 +477,7 @@ export default function ReturnParcelsPage() {
       <div style={{ display: 'flex', gap: 14, marginBottom: 18, flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: '1 1 260px', minWidth: 0 }}>
           <svg width="18" height="18" fill="none" stroke="#8B7460" strokeWidth="1.8" viewBox="0 0 24 24" style={{ position: 'absolute', left: 18, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}><circle cx="11" cy="11" r="7" /><path strokeLinecap="round" d="M20 20l-3.5-3.5" /></svg>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ชื่อผู้ส่ง / เลขพัสดุ / เลขออเดอร์ / เบอร์…" className="ow-field"
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา ชื่อ / เลขพัสดุ / เลขออเดอร์ / เบอร์…" className="ow-field"
             style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 999, height: 46, padding: '0 16px 0 46px', paddingRight: search ? 40 : 16, fontSize: 13.5, outline: 'none', boxSizing: 'border-box', background: 'var(--surface)', color: 'var(--ink)', boxShadow: 'var(--shadow)' }} />
           {search && (
             <button onClick={() => setSearch('')}
@@ -474,7 +501,7 @@ export default function ReturnParcelsPage() {
             { value: '', label: 'เรียงตามค่าเริ่มต้น' },
             { value: 'created:desc', label: 'วันที่ลง: ใหม่สุด → เก่าสุด' },
             { value: 'created:asc', label: 'วันที่ลง: เก่าสุด → ใหม่สุด' },
-            { value: 'sender_name:asc', label: 'ชื่อผู้ส่ง: ก → ฮ' },
+            { value: 'sender_name:asc', label: 'ชื่อ: ก → ฮ' },
             { value: 'serial:desc', label: 'Serial: มากไปน้อย' },
             ...(colSort && !['created:desc', 'created:asc', 'sender_name:asc', 'serial:desc'].includes(`${colSort.key}:${colSort.dir}`)
               ? [{ value: `${colSort.key}:${colSort.dir}`, label: `${colLabel(colSort.key)}: ${SORT_LABELS[FILTER_DEFS.find(d => d.id === colSort.key)!.kind][colSort.dir === 'asc' ? 0 : 1]}` }]
@@ -570,6 +597,7 @@ export default function ReturnParcelsPage() {
                             setEditing(null)
                             const next = c.key === 'phone' ? v.replace(/[^\d+]/g, '') : v.trim()
                             if (next !== (r[c.key] ?? '')) void saveField(r, { [c.key]: next || null }, c.label)
+                              .then(() => { if (next) void autoLinkClaim(r, c.key, next) })
                           }} />
                       </td>
                     ))}
@@ -867,9 +895,11 @@ function ClaimCell({ claim, linked, editing, onStart, onCancel, onPick }: {
       {!linked ? <span style={{ color: 'var(--ink-4)' }}>—</span>
         : !claim ? <span style={{ color: 'var(--ink-4)' }}>กำลังโหลด…</span>
         : <>
-            <span style={{ color: 'var(--ink)', fontWeight: 600, flexShrink: 0 }}>{claimLabel(claim)}</span>
+            {/* กดชื่อ → ไปหน้างานเคลมแล้วกระพริบแถวใบนั้น (/claims?focus=<id>) · กดส่วนอื่นของช่อง = ค้นเปลี่ยนใบ */}
+            <Link href={`/claims?focus=${claim.id}`} onClick={e => e.stopPropagation()} title="เปิดงานเคลมใบนี้"
+              style={{ color: 'var(--brand)', fontWeight: 600, flexShrink: 0, textDecoration: 'underline', textUnderlineOffset: 2 }}>{claimLabel(claim)}</Link>
             <span style={{ fontSize: 11.5, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
-              {[claim.original_order_number ? claim.customer_username : null, claim.channel, claim.status].filter(Boolean).join(' · ') || 'งานเคลม'}
+              {[claim.customer_username ? claim.original_order_number : null, claim.channel, claim.status].filter(Boolean).join(' · ') || 'งานเคลม'}
             </span>
           </>}
     </div>
@@ -932,7 +962,7 @@ function ClaimSearch({ linked, onCancel, onPick }: { linked: boolean; onCancel: 
               style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', border: 'none', borderBottom: '1px solid var(--border)', background: '#fff', cursor: 'pointer' }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{claimLabel(c)}</div>
               <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 2 }}>
-                {[c.original_order_number ? c.customer_username : null, c.channel,
+                {[c.customer_username ? c.original_order_number : null, c.channel,
                   c.claim_date ? new Date(c.claim_date).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' }) : null, c.status].filter(Boolean).join(' · ')}
               </div>
             </button>
