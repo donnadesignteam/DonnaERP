@@ -2,6 +2,7 @@
 
 import NotifyBell from '@/components/NotifyBell'
 import { fillFabricOnEdit } from '@/lib/fabrics'
+import { pillBg, pillInk } from '@/components/OrderDetailModal'
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -1290,13 +1291,11 @@ ${body}
                     )}
                     {showCol('สถานะ') && (
                     <td style={{ padding: '8px 14px' }}>
-                      <CreamSelect value={r.status} onChange={v => updateStatus(r.id, v)} className="cs-inline" menuMinWidth={160}
-                        style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 600, cursor: 'pointer', outline: 'none', padding: 0, color: STATUS_COLOR(r.status), display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'inherit' }}
+                      {/* ป้ายสถานะชุดเดียวกับหมวดออเดอร์ (.dn-pill: กว้าง 100 · ตัวน้ำตาลเข้ม · พื้นสีตามขั้น) — กดแล้วเลือกสถานะได้ */}
+                      <CreamSelect value={r.status} onChange={v => updateStatus(r.id, v)} menuMinWidth={170}
+                        className="dn-pill ow-pill" style={{ color: pillInk(r.status), background: pillBg(r.status) }}
                         options={WORKFLOW.map(w => ({ value: w.key, label: w.key, color: STATUS_COLOR(w.key) }))}
-                        renderValue={o => (<>
-                          <span className="cs-value" style={{ color: 'inherit' }}>{o?.label ?? r.status}</span>
-                          <svg className="cs-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
-                        </>)} />
+                        renderValue={o => <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{o?.label ?? (r.status || '—')}</span>} />
                     </td>
                     )}
                     {showCol('แอดมิน') && (

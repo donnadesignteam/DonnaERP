@@ -477,6 +477,8 @@ const PILL_BG: Record<string, string> = {
   'กำลังรีด': '#F6D5DE', 'รีดแล้ว': '#F6D5DE', 'กำลังแพ็ค': '#CFE6DE', 'แพ็คแล้ว': '#CFE6DE',
   'รอจัดส่ง': '#DBBEA7', 'งานเสร็จ': '#E3F3E0', 'จัดส่งแล้ว': '#E3F3E0',
   'รอติดตั้ง': '#F0C0B7', 'ยกเลิก': '#E6D9D5',
+  // สถานะของงานเคลม (components/ClaimsWorkspace.tsx) — ใช้ป้ายชุดเดียวกับออเดอร์
+  'รอของคืน': '#F9E0C3', 'ส่งแล้ว': '#E3F3E0',
 }
 // ป้าย "จัดส่งสำเร็จ" — เขียวอ่อน + วงกลมเขียวติ๊กถูก (ตามภาพที่ user ส่ง 14ก.ย.69) · ใช้ร่วมกับสถานะพัสดุในโฟลเดอร์ลูกค้า
 export function DeliveredPill({ label = 'จัดส่งสำเร็จ' }: { label?: string }) {
@@ -492,7 +494,7 @@ export function pillBg(st: string) { return PILL_BG[st] ?? '#EFE3D4' }
 // ‼️ ป้ายที่แปลว่า 'จบแล้ว' (งานเสร็จ / จัดส่งแล้ว / ติดตั้งแล้ว) ใช้เขียวชุดเดียวกันหมด — พื้น #E3F3E0 ตัวอักษร #1F8A3B
 export const DONE_GREEN_BG = '#E3F3E0'
 export const DONE_GREEN_INK = '#1F8A3B'
-export function pillInk(st: string) { return (st === 'จัดส่งแล้ว' || st === 'งานเสร็จ') ? DONE_GREEN_INK : '#6B4326' }
+export function pillInk(st: string) { return (st === 'จัดส่งแล้ว' || st === 'งานเสร็จ' || st === 'ส่งแล้ว') ? DONE_GREEN_INK : '#6B4326' }
 // วงกลมเขียวติ๊กถูก หน้าคำว่าจัดส่งแล้ว
 export function ShippedCheck() {
   return <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="11" fill="#22A447" /><path d="M7 12.5l3.2 3.2L17 9" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
