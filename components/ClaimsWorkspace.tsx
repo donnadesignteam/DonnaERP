@@ -288,6 +288,9 @@ export default function ClaimsWorkspace() {
   const [printAsk, setPrintAsk] = useState<Claim[] | null>(null)   // ปริ้นหลายใบ → ถามก่อนว่าตาราง/ฟอร์ม
   const [shipModal, setShipModal] = useState<{ id: string; parcels: { no: string; carrier: string; manual: boolean }[] } | null>(null)
   const [staffNames, setStaffNames] = useState<string[]>(ADMINS_FALLBACK)
+  // วันเวลาที่สแกนเข้าแต่ละสถานะ (ใบเคลมไม่มีคอลัมน์ประวัติสถานะ — อ่านจากตารางสแกน production_scans
+  // ที่ claim_scan_advance เขียนไว้ โดยใช้ order_number = 'claim:<id>') → { [claim id]: { [สถานะ]: เวลาแรกที่เข้าสถานะนั้น } }
+  const [scanAt, setScanAt] = useState<Record<string, Record<string, string>>>({})
 
   const load = async () => {
     const { data, error: err } = await fetchAllRows<Claim>(() =>
@@ -300,9 +303,37 @@ export default function ClaimsWorkspace() {
     setPageCache('claims', claims)
     setRows(claims)
     snapshot(claims)   // ตั้งจุดอ้างอิงใหม่ → เคลมที่เปลี่ยนสถานะค้างไว้ ย้ายเข้าแท็บใหม่ตอนนี้
+    loadScanTimes()   // เวลาสแกนใต้ป้ายสถานะ — โหลดแยก ล้มก็ไม่กระทบตารางหลัก
     setLoading(false)
     setFetched(true)
   }
+  // เวลาสแกนของใบเคลมทั้งหมด (เรียงเก่า→ใหม่ เก็บเวลา "ครั้งแรก" ที่เข้าแต่ละสถานะ เหมือนไทม์ไลน์ของออเดอร์)
+  const loadScanTimes = async () => {
+    const { data, error: err } = await fetchAllRows<{ order_number: string; status: string | null; scanned_at: string | null }>(() =>
+      supabase.from('production_scans').select('order_number, status, scanned_at')
+        .like('order_number', 'claim:%')
+        .order('scanned_at', { ascending: true }).order('id', { ascending: true }))
+    if (err) return
+    const map: Record<string, Record<string, string>> = {}
+    for (const sc of data) {
+      if (!sc.status || !sc.scanned_at) continue
+      const id = sc.order_number.slice('claim:'.length)
+      if (!id) continue
+      const byStatus = map[id] ?? (map[id] = {})
+      if (!byStatus[sc.status]) byStatus[sc.status] = sc.scanned_at
+    }
+    setScanAt(map)
+  }
+
+  // ข้อความใต้ป้ายสถานะ = วันเวลาที่สแกนเข้าสถานะปัจจุบัน (ยังไม่เคยสแกนสถานะนี้ = เว้นว่าง)
+  const statusScanAt = (r: Claim) => {
+    const at = scanAt[r.id]?.[r.status]
+    if (!at) return ''
+    const d = new Date(at)
+    if (isNaN(d.getTime())) return ''
+    return `${d.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} ${d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`
+  }
+
   useEffect(() => { load() }, [])
 
   // มาจากหมวดออเดอร์ด้วยลิงก์ /claims?claim=<id> → เปิดฟอร์มแก้ใบนั้นให้เลย แล้วล้าง query ทิ้ง
@@ -1291,11 +1322,18 @@ ${body}
                     )}
                     {showCol('สถานะ') && (
                     <td style={{ padding: '8px 14px' }}>
+                      {/* กล่องนี้หดตามความกว้างป้าย — วันเวลาข้างล่างเลยอยู่กึ่งกลางป้ายพอดี (เหมือนหมวดออเดอร์) */}
+                      <div style={{ display: 'inline-block' }}>
                       {/* ป้ายสถานะชุดเดียวกับหมวดออเดอร์ (.dn-pill: กว้าง 100 · ตัวน้ำตาลเข้ม · พื้นสีตามขั้น) — กดแล้วเลือกสถานะได้ */}
                       <CreamSelect value={r.status} onChange={v => updateStatus(r.id, v)} menuMinWidth={170}
                         className="dn-pill ow-pill" style={{ color: pillInk(r.status), background: pillBg(r.status) }}
                         options={WORKFLOW.map(w => ({ value: w.key, label: w.key, color: STATUS_COLOR(w.key) }))}
                         renderValue={o => <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{o?.label ?? (r.status || '—')}</span>} />
+                      {/* วันเวลาที่สแกนเข้าสถานะนี้ — บรรทัดนี้ต้องมีเสมอ (ใบที่ยังไม่เคยสแกนใช้บรรทัดเปล่า) ไม่งั้นแต่ละแถวสูงไม่เท่ากัน */}
+                      <div aria-hidden={!statusScanAt(r)} style={{ fontSize: 10, color: '#A8744F', fontWeight: 600, marginTop: 2, whiteSpace: 'nowrap', textAlign: 'center', visibility: statusScanAt(r) ? 'visible' : 'hidden' }}>
+                        {statusScanAt(r) || ' '}
+                      </div>
+                      </div>
                     </td>
                     )}
                     {showCol('แอดมิน') && (
