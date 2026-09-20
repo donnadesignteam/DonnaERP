@@ -22,6 +22,7 @@ import { thaiTrackStatus } from '@/lib/trackExtract'
 import { syncOutsourcePO, markPOReceivedForOrders } from '@/lib/outsourceSync'
 import { useInstallPhotos, photoSaveError } from '@/components/InstallPhotos'
 import { ThemedSelect, SuggestInput } from '@/components/ItemInputs'
+import { fillFabricOnEdit } from '@/lib/fabrics'
 import ProvinceSelect from '@/components/ProvinceSelect'
 import { syncWorkStatus as syncWorkStatusExact } from '@/lib/workStatusSync'
 import { recordAction } from '@/lib/history'
@@ -5157,14 +5158,15 @@ ${body}
                         <label style={{ fontSize: 11, color: 'var(--ink-4)', display: 'block', marginBottom: 2 }}>{lbl}</label>
                         {ITEM_FIELD_OPTIONS[key] ? (
                           <ThemedSelect value={String(item[key] ?? ITEM_FIELD_OPTIONS[key][0])} options={ITEM_FIELD_OPTIONS[key]}
-                            onChange={v => setModalItems(prev => prev.map((it, i) => i === idx ? { ...it, [key]: v } : it))}
+                            onChange={v => setModalItems(prev => prev.map((it, i) => i === idx ? fillFabricOnEdit(it, key as string, v) : it))}
                             style={{ width: '100%' }} />
                         ) : (
                         <SuggestInput type={type} step={type === 'number' ? (key === 'floors' ? '1' : '0.01') : undefined}
                           value={item[key] == null ? '' : String(item[key])} suggestions={itemSuggest[key as string]}
                           onChange={v => {
                             const val = itemInputValue(key, v)
-                            setModalItems(prev => prev.map((it, i) => i === idx ? { ...it, [key]: val } : it))
+                            // แก้รหัสสี/ชื่อสี → เติมอีกช่อง + ชนิดผ้าให้เอง (lib/fabrics.ts)
+                            setModalItems(prev => prev.map((it, i) => i === idx ? fillFabricOnEdit(it, key as string, val) : it))
                           }}
                           style={{ width: '100%' }} />
                         )}
@@ -5442,7 +5444,7 @@ ${body}
                         <td key={key} style={{ padding: '4px 6px' }}>
                           {railNoField(item, key) ? <span style={{ display: 'inline-block', width: w, color: 'var(--ink-4)', fontSize: 12, textAlign: 'center' }}>—</span> : ITEM_FIELD_OPTIONS[key] ? (
                             <ThemedSelect value={String(item[key] ?? ITEM_FIELD_OPTIONS[key][0])} options={ITEM_FIELD_OPTIONS[key]}
-                              onChange={v => setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: v } : it) } : null)}
+                              onChange={v => setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? fillFabricOnEdit(it, key as string, v) : it) } : null)}
                               style={{ width: w, borderRadius: 4, padding: '4px 6px' }} />
                           ) : (
                           <SuggestInput
@@ -5451,7 +5453,8 @@ ${body}
                             value={item[key] == null ? '' : String(item[key])} suggestions={itemSuggest[key as string]}
                             onChange={v => {
                               const val = itemInputValue(key, v)
-                              setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: val } : it) } : null)
+                              // แก้รหัสสี/ชื่อสี → เติมอีกช่อง + ชนิดผ้าให้เอง (lib/fabrics.ts)
+                              setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? fillFabricOnEdit(it, key as string, val) : it) } : null)
                             }}
                             style={{ width: w, borderRadius: 4, padding: '4px 6px' }}
                           />

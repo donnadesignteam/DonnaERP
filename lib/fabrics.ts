@@ -122,31 +122,39 @@ export function fabricMeta(code: string | undefined | null): FabricMeta | null {
   return FABRIC_LOOKUP[up] ?? FABRIC_LOOKUP[c] ?? Object.entries(FABRIC_LOOKUP).find(([k]) => k.toUpperCase() === up)?.[1] ?? null
 }
 
-// ── หารหัสผ้าโปร่งจากชื่อ ──
+// ── หารหัสผ้าจากชื่อสี (ผ้าทุกชนิด ไม่ใช่แค่โปร่ง) ──
 // ชื่อเดียวกันมีทั้งสูงปกติ/สูงพิเศษ (เช่น โปร่งลายฝนขาวสว่าง = DS01 / DS06)
 // กติกาแอดมิน: สูงปกติไม่เขียนบอก · สูงพิเศษเขียน "สูงพิเศษ" → มีคำนี้ในรายการ = เลือกตัวสูงพิเศษ
 // เทียบชื่อแบบตัดคำกลางๆ ออก (โปร่ง/ผ้า/ลาย/สูงปกติ/สูงพิเศษ/ช่องว่าง/เครื่องหมายคำพูด)
-// หาไม่เจอ หรือเจอหลายตัวที่ชื่อต่างกัน → ไม่ใส่รหัส (ไม่เดา)
-const sheerNorm = (s: string) => s.toLowerCase().replace(/สูงปกติ|สูงพิเศษ|โปร่ง|ผ้า|ลาย|["'“”\s\-–]/g, '')
+// หาไม่เจอ หรือเจอหลายตัวที่ชื่อ/ชนิดผ้าต่างกัน → ไม่ใส่รหัส (ไม่เดา)
+// เช่น "เทาเข้ม" มีทั้ง Dimout และ Blackout — ถ้ารายการไม่ได้บอกชนิดผ้าไว้ ปล่อยว่างให้แอดมินเติมเอง
+const fabricNorm = (s: string) => s.toLowerCase().replace(/สูงปกติ|สูงพิเศษ|โปร่ง|ผ้า|ลาย|["'“”\s\-–]/g, '')
 const isSpecialHeight = (m: FabricMeta) => m.color_name.includes('สูงพิเศษ') || m.fabric_width >= 3.2
-const SHEER_CODES = Object.entries(FABRIC_LOOKUP).filter(([, m]) => m.fabric_type.toUpperCase().includes('SHEER'))
+const ALL_CODES = Object.entries(FABRIC_LOOKUP)
 
-export function sheerCodeFromName(it: Record<string, unknown>): string | null {
+export function codeFromName(it: Record<string, unknown>): string | null {
   const name = typeof it.color_name === 'string' ? it.color_name : ''
-  const n = sheerNorm(name)
+  const n = fabricNorm(name)
   if (n.length < 2) return null
   const allText = Object.values(it).filter(v => typeof v === 'string').join(' ')
   const wantSpecial = allText.includes('สูงพิเศษ')
 
-  const exact = SHEER_CODES.filter(([, m]) => sheerNorm(m.color_name) === n)
-  const loose = SHEER_CODES.filter(([, m]) => { const c = sheerNorm(m.color_name); return c.length >= 2 && (n.includes(c) || (n.length >= 4 && c.includes(n))) })
-  const found = exact.length ? exact : loose
+  const exact = ALL_CODES.filter(([, m]) => fabricNorm(m.color_name) === n)
+  const loose = ALL_CODES.filter(([, m]) => { const c = fabricNorm(m.color_name); return c.length >= 2 && (n.includes(c) || (n.length >= 4 && c.includes(n))) })
+  let found = exact.length ? exact : loose
   if (!found.length) return null
+  // รายการบอกชนิดผ้ามาด้วย (Dimout/Blackout/ผ้าโปร่ง) → ตัดชนิดที่ไม่ตรงทิ้งก่อน
+  const wantType = shortFabricType(typeof it.fabric_type === 'string' ? it.fabric_type : '')
+  if (wantType) {
+    const byType = found.filter(([, m]) => shortFabricType(m.fabric_type) === wantType)
+    if (byType.length) found = byType
+  }
   // เลือกตามความสูง — ถ้าไม่มีตัวที่ตรงความสูงเลย (เช่น Richy มีแต่สูงพิเศษ) ใช้ที่เจอทั้งหมด
   const byHeight = found.filter(([, m]) => isSpecialHeight(m) === wantSpecial)
   const pool = byHeight.length ? byHeight : found
-  // เหลือหลายตัวแต่ชื่อต่างกัน → ไม่เดา
-  if (new Set(pool.map(([, m]) => sheerNorm(m.color_name))).size !== 1) return null
+  // เหลือหลายตัวแต่ชื่อต่างกัน หรือคนละชนิดผ้า → ไม่เดา
+  if (new Set(pool.map(([, m]) => fabricNorm(m.color_name))).size !== 1) return null
+  if (new Set(pool.map(([, m]) => shortFabricType(m.fabric_type))).size !== 1) return null
   // ชื่อเดียวกันหลายหน้าผ้า (โปร่งเรียบขาวสว่าง = DS03 2.80 / DS14 3.00 · ขาวนวล = DS04 / DS13)
   // ม่านสูงเกิน 2.63 (ม่านลอนเทปเกิน 2.70) แต่ไม่ได้เขียนสูงพิเศษ → ใช้ตัวหน้าผ้ากว้างกว่า · นอกนั้นตัวแรกตามลำดับชีท
   const h = Number(it.height) || 0
@@ -163,8 +171,8 @@ export function sheerCodeFromName(it: Record<string, unknown>): string | null {
 export function applyFabricCatalog<T extends { color_code?: unknown; color_name?: unknown; fabric_type?: unknown }>(it: T): T {
   let meta = fabricMeta(typeof it.color_code === 'string' ? it.color_code : null)
   if (!meta && !(typeof it.color_code === 'string' && it.color_code.trim())) {
-    // ไม่มีรหัสสี แต่เขียนชื่อผ้าโปร่งมา → หารหัสจากชื่อ (แอดมินมักไม่ลงรหัสผ้าโปร่ง)
-    const code = sheerCodeFromName(it)
+    // ไม่มีรหัสสี แต่เขียนชื่อสีมา → หารหัสจากชื่อ (ผ้าทุกชนิด · ชื่อกำกวมจะไม่เดาให้)
+    const code = codeFromName(it)
     if (code) { it = { ...it, color_code: code }; meta = FABRIC_LOOKUP[code] }
   }
   if (!meta) return it
@@ -178,4 +186,24 @@ export function applyFabricCatalog<T extends { color_code?: unknown; color_name?
 export function fabricTypeFromCode(code: string | undefined | null): string {
   const meta = fabricMeta(code)
   return meta ? shortFabricType(meta.fabric_type) : ''
+}
+
+// ตอนแอดมินพิมพ์แก้ในตารางรายการ: แก้รหัสสี → เติมชื่อสี+ชนิดผ้าให้เอง · แก้ชื่อสี → เติมรหัสสี+ชนิดผ้าให้เอง
+// (เติมเฉพาะที่แคตตาล็อกรู้จัก — ชื่อกำกวมหรือรหัสที่ไม่มีในสต็อก ปล่อยตามที่พิมพ์)
+export function fillFabricOnEdit<T extends object>(it: T, key: string, val: unknown): T {
+  const next = { ...it, [key]: val } as T & Record<string, unknown>
+  if (key === 'color_code') {
+    const meta = fabricMeta(typeof val === 'string' ? val : '')
+    if (!meta) return next
+    const ft = shortFabricType(meta.fabric_type)
+    const name = meta.color_name && meta.color_name !== '-' ? meta.color_name : ''
+    return { ...next, ...(name ? { color_name: name } : {}), ...(ft ? { fabric_type: ft } : {}) }
+  }
+  if (key === 'color_name') {
+    const code = codeFromName(next as Record<string, unknown>)
+    if (!code) return next
+    const ft = shortFabricType(FABRIC_LOOKUP[code].fabric_type)
+    return { ...next, color_code: code, ...(ft ? { fabric_type: ft } : {}) }
+  }
+  return next
 }

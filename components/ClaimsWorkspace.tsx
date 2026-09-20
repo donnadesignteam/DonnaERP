@@ -1,6 +1,7 @@
 'use client'
 
 import NotifyBell from '@/components/NotifyBell'
+import { fillFabricOnEdit } from '@/lib/fabrics'
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -1611,7 +1612,7 @@ ${body}
                       {([['type', 'text', 100], ['floors', 'number', 44], ['rail_head', 'text', 64], ['hook_type', 'text', 70], ['color_code', 'text', 60], ['color_name', 'text', 90], ['width', 'number', 56], ['height', 'number', 56], ['quantity', 'number', 50], ['unit', 'text', 46], ['hooks', 'text', 60], ['note', 'text', 90]] as [keyof Item, string, number][]).map(([key, type, w]) => (
                         <td key={key} style={{ padding: '4px 6px' }}>
                           <input type={type} step={type === 'number' ? '0.01' : undefined} value={item[key] === null ? '' : String(item[key])}
-                            onChange={e => { const val = key === 'floors' ? (e.target.value === '' ? null : Number(e.target.value)) : e.target.value; updItemsModal(cur => cur.map((it, i) => i === idx ? { ...it, [key]: val } : it)) }}
+                            onChange={e => { const val = key === 'floors' ? (e.target.value === '' ? null : Number(e.target.value)) : e.target.value; updItemsModal(cur => cur.map((it, i) => i === idx ? fillFabricOnEdit(it, key as string, val) : it)) }}
                             style={{ width: w, fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
                         </td>
                       ))}

@@ -64,6 +64,9 @@ const FIXED_TYPES: [RegExp, string][] = [
   [/มู่ลี่/, 'มู่ลี่ไม้'],
   [/มุ้ง.*(รังผึ้ง|รังผึ่ง|รังฝึ้ง)/, 'มุ้งรังผึ้ง'],
   [/มุ้ง.*นิรภัย|มุ้งกันขโมย/, 'มุ้งนิรภัย'],
+  [/มุ้ง.*แม่เหล็ก/, 'มุ้งแม่เหล็ก'],
+  [/มุ้ง.*บาน\s*เลื่อน/, 'มุ้งบานเลื่อน'],
+  [/มุ้ง.*บาน\s*สวิง/, 'มุ้งบานสวิง'],
   [/มุ้ง/, 'มุ้งจีบ'],
   [/ม่านพับ/, 'ม่านพับ'],
   [/ม่านม้วน/, 'ม่านม้วน'],
@@ -262,7 +265,8 @@ export const ITEM_FIELDS: [string, keyof RawItem, string, number][] = [
 // ค่าที่พิมพ์ในช่องกรอกรายการ → ค่าที่เก็บจริง
 // ชั้น: ว่าง = null · ราคา: ว่าง = ไม่มีราคา (undefined → key หายตอนบันทึก JSON) · นอกนั้นเก็บตามที่พิมพ์
 export function itemInputValue(key: keyof RawItem, raw: string): unknown {
-  if (key === 'floors') return raw === '' ? null : Number(raw)
+  // ชั้น: มีแค่ 1-3 ชั้น (ราง 3 ชั้นเป็นสูงสุดที่ร้านทำ) — พิมพ์เกินนั้นตัดให้อยู่ในช่วง
+  if (key === 'floors') return raw === '' ? null : Math.min(3, Math.max(1, Math.round(Number(raw)) || 1))
   if (key === 'price') return itemPrice(raw) ?? undefined
   return raw
 }
@@ -285,6 +289,36 @@ export const shownFields = (it: RawItem): Set<string> => {
 // ช่องที่พิมพ์แล้วขึ้นคำที่เคยลงไว้ (ช่องตัวเลข/กระดูม/หมายเหตุ/ราคา ไม่ต้อง — ค่าไม่ซ้ำกัน)
 const SUGGEST_KEYS = ['type', 'eyelet_color', 'rail_head', 'pleat', 'hook_type', 'rail_color', 'opacity', 'model', 'slat_size',
   'fabric_type', 'color_code', 'color_name', 'color_desc', 'unit', 'orientation', 'fabric_split', 'chemical', 'weight_chain', 'pull_side', 'outsource'] as const
+// ===== คำมาตรฐานที่ใช้เป็น "คำแนะนำตอนพิมพ์" ของแต่ละช่อง =====
+// ช่องที่มีคำตายตัว ใช้รายการนี้อย่างเดียว ไม่เอาคำที่เคยลงในออเดอร์เก่ามาปน
+// (ออเดอร์เก่าลงปนกันมั่ว เช่น ประเภท = "ม่านตาไก่ สีขาว" / "รางตาไก่หัวกลมเรียบ" · สีตาไก่ = "สุ่มสีสัก")
+// ที่มาของรายการ: ชนิดสินค้า+ราง = เว็บคำนวณราคา (curtaincalculator) · หัวราง/ชั้น/สีราง = เว็บคำนวณอุปกรณ์ราง (donna-rail)
+export const FIELD_CHOICES: Record<string, string[]> = {
+  type: [
+    'ม่านจีบ', 'ม่านตาไก่', 'ม่านลอนเทป', 'ม่านลอนโซ่', 'ม่านลอนตะขอ', 'ม่านซ่อนหู', 'ม่านคอกระเช้า', 'ม่านสอด',
+    'ม่านพับ', 'ม่านม้วน',
+    'รางจีบ', 'รางตาไก่', 'รางลอนเทป', 'รางลอนโซ่', 'รางยึดไม่เจาะ', 'รางโรงพยาบาล',
+    'มู่ลี่ไม้', 'มู่ลี่อลูมิเนียม',
+    'มุ้งจีบ', 'มุ้งรังผึ้ง', 'มุ้งนิรภัย', 'มุ้งแม่เหล็ก', 'มุ้งบานเลื่อน', 'มุ้งบานสวิง',
+    'กล่องบังราง',
+    // อุปกรณ์ที่ลงเป็นรายการแยก (ชื่อตรงกับที่ normalizeItemType กวาดให้)
+    'พุก สกรู', 'ลูกล้อ', 'ตัวสไลด์', 'หัวปิดราง', 'ลวดสลิง',
+  ],
+  eyelet_color: ['สีขาว', 'สีดำ', 'สีสัก', 'สีโอ๊ค', 'สีเงิน'],
+  rail_head: ['หัวกระดุม', 'หัวกลมจุก', 'หัวกลมเรียบ'],
+  pleat: ['1จีบ', '2จีบ', '3จีบ'],
+  hook_type: ['ตะขอสั้น', 'ตะขอยาว', 'ตะขอเพดาน'],
+  rail_color: ['ลายไม้', 'สัก', 'โอ๊ค', 'ขาว', 'ดำ'],
+  opacity: ['1%', '3%', '5%', 'Blackout'],
+  model: ['Luxury', 'P-net', 'ปกติ', 'RG', 'STE', 'KACEE'],
+  slat_size: ['16mm', '25mm', '35mm', '50mm'],
+  fabric_type: ['Dimout', 'Blackout', 'ลินิน', 'ผ้าโปร่ง'],
+  fabric_split: ['แยกกลาง', 'สไลด์เดี่ยว'],
+  chemical: ['ใส่เคมี', 'ไม่ใส่เคมี'],
+  weight_chain: ['ใส่โซ่ถ่วง', 'ไม่ใส่โซ่ถ่วง'],
+  pull_side: ['ดึงซ้าย', 'ดึงขวา'],
+}
+
 // คำแนะนำต่อช่อง = คำที่เคยลงในรายการที่โหลดอยู่ในหน้าแล้ว (ไม่ดึงฐานเพิ่ม) เรียงจากใช้บ่อยสุด
 export function buildItemSuggestions(lists: Iterable<unknown>): Record<string, string[]> {
   const count: Record<string, Map<string, number>> = {}
@@ -294,13 +328,14 @@ export function buildItemSuggestions(lists: Iterable<unknown>): Record<string, s
     for (const it of list as Record<string, unknown>[]) {
       if (!it || typeof it !== 'object') continue
       for (const k of SUGGEST_KEYS) {
+        if (FIELD_CHOICES[k]) continue      // ช่องคำตายตัว — ไม่เอาคำจากออเดอร์เก่ามาปน
         const v = typeof it[k] === 'string' ? (it[k] as string).replace(/\s+/g, ' ').trim() : ''
         if (v && v.length <= 60) count[k].set(v, (count[k].get(v) ?? 0) + 1)
       }
     }
   }
   const out: Record<string, string[]> = {}
-  for (const k of SUGGEST_KEYS) out[k] = [...count[k].entries()].sort((a, b) => b[1] - a[1]).slice(0, 200).map(([v]) => v)
+  for (const k of SUGGEST_KEYS) out[k] = FIELD_CHOICES[k] ?? [...count[k].entries()].sort((a, b) => b[1] - a[1]).slice(0, 200).map(([v]) => v)
   return out
 }
 
