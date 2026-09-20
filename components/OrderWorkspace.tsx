@@ -442,6 +442,22 @@ const statusSince = (r: Entry) => {
   const h = Array.isArray(r.status_history) ? r.status_history : []
   return h.length ? h[h.length - 1]?.at : (r.updated_at || r.created_at)
 }
+// วันเวลาที่สแกนเข้าสถานะปัจจุบัน (โชว์ใต้ป้ายสถานะ) — อ่านจาก status_history ที่ RPC scan_advance เขียนไว้
+// หาครั้งแรกสุดที่เข้าสถานะนี้ (ไล่จากท้ายย้อนขึ้นไปจนสถานะเปลี่ยน)
+const statusScanAt = (r: Entry) => {
+  const cur = r.order_status || ''
+  const h = Array.isArray(r.status_history) ? r.status_history : []
+  let at: string | null = null
+  for (let i = h.length - 1; i >= 0; i--) {
+    if (h[i]?.status !== cur) break
+    if (h[i]?.at) at = h[i].at
+  }
+  if (!at) return ''
+  const d = new Date(at)
+  if (isNaN(d.getTime())) return ''
+  return `${d.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} ${d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`
+}
+
 const isStatusStale = (r: Entry) => {
   if (r.is_installation || isClaimEntry(r)) return false
   if (!PLATFORM_NAMES.includes(r.platform ?? '')) return false
@@ -1139,13 +1155,21 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const statusCell = (r: Entry) => {
     const flow = r.is_installation ? INSTALL_STATUSES : PROD_STATUSES
     // 13ก.ย.69 เอาวันเวลาที่เปลี่ยนสถานะใต้ป้ายออก (user ขอ) — ดูย้อนหลังได้ในป๊อปอัปรายละเอียดออเดอร์ (ไทม์ไลน์)
+    // 20ก.ย.69 เอาวันเวลาที่สแกนกลับมาไว้ใต้ป้าย (user ขอ — ไม่ต้องเอาเมาส์จ่อ)
     return (
       <td style={{ padding: '8px 14px' }}>
+        {/* กล่องนี้หดตามความกว้างป้าย — วันเวลาข้างล่างเลยอยู่กึ่งกลางป้ายพอดี */}
+        <div style={{ display: 'inline-block' }}>
         {/* ป้ายหน้าตาเดียวกับหน้าภาพรวม (.dn-pill: กว้าง 100 · ตัวน้ำตาลเข้ม · พื้นสีตามขั้นจาก pillBg) — กดแล้วเลือกสถานะได้ */}
         <CreamSelect value={r.order_status || ''} onChange={v => updateField(r.id, 'order_status', v)}
           className="dn-pill ow-pill" style={{ color: pillInk(r.order_status || ''), background: pillBg(r.order_status || '') }} menuMinWidth={170}
           options={flow.map(s => ({ value: s, label: r.is_installation && s === 'จัดส่งแล้ว' ? 'ติดตั้งแล้ว' : s, color: PROD_STATUS_COLOR[s] }))}
           renderValue={o => <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{o?.label ?? ((r.is_installation && r.order_status === 'จัดส่งแล้ว' ? 'ติดตั้งแล้ว' : r.order_status) || '—')}</span>} />
+        {/* วันเวลาที่สแกนเข้าสถานะนี้ — บรรทัดนี้ต้องมีเสมอ (แถวที่ยังไม่มีประวัติใช้บรรทัดเปล่า) ไม่งั้นแต่ละแถวสูงไม่เท่ากัน */}
+        <div aria-hidden={!statusScanAt(r)} style={{ fontSize: 10, color: '#A8744F', fontWeight: 600, marginTop: 2, whiteSpace: 'nowrap', textAlign: 'center', visibility: statusScanAt(r) ? 'visible' : 'hidden' }}>
+          {statusScanAt(r) || ' '}
+        </div>
+        </div>
       </td>
     )
   }
