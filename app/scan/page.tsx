@@ -870,6 +870,10 @@ function PhotoUpload({ slots, uploading, counts, err, onPick, photos, delBusy, o
   delBusy: string | null
   onDelete: (url: string) => void
 }) {
+  // Android หลายรุ่นเปิดแค่อัลบั้มถ้าไม่ใส่ capture → แยกปุ่มเฉพาะ Android (ตรวจหลังโหลดหน้า กัน hydration ไม่ตรง)
+  const [android, setAndroid] = useState(false)
+  const [menu, setMenu] = useState<string | null>(null)   // ช่องที่เปิดตัวเลือก ถ่ายรูป/อัลบั้ม อยู่ (Android)
+  useEffect(() => { setAndroid(/android/i.test(navigator.userAgent)) }, [])
   return (
     <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #eee', textAlign: 'left' }}>
       <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: '#1a1a1a' }}>📷 อัพโหลดรูป</div>
@@ -878,15 +882,40 @@ function PhotoUpload({ slots, uploading, counts, err, onPick, photos, delBusy, o
           const done = counts[s.tag] || 0
           const busy = uploading === s.tag
           return (
-            <label key={s.tag} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: done ? '1.5px solid #5F7F5A' : '1.5px dashed #94a3b8', background: done ? '#f0fdf4' : '#f8fafc', borderRadius: 12, padding: '12px 14px', cursor: busy ? 'wait' : 'pointer', fontSize: 14, fontWeight: 600, color: '#1a1a1a' }}>
-              {/* ไม่ใส่ capture → มือถือให้เลือกได้ทั้งถ่ายใหม่และรูปในเครื่อง */}
-              <input type="file" accept="image/*" disabled={busy} style={{ display: 'none' }}
-                onChange={e => { const f = e.target.files?.[0]; if (f) onPick(f, s.tag); e.target.value = '' }} />
-              <span>{busy ? '⏳ กำลังอัพโหลด…' : s.label}</span>
-              <span style={{ fontSize: 12, color: done ? '#5F7F5A' : '#94a3b8', fontWeight: 700 }}>
-                {done > 0 ? `✓ ${done} รูป · เพิ่มอีก` : 'ถ่าย/เลือกรูป'}
-              </span>
-            </label>
+            // ไอโฟน = ปุ่มเดียว (ระบบให้เลือกถ่ายรูป/อัลบั้มเองอยู่แล้ว) · แอนดรอยด์ = แยกปุ่มถ่ายรูป/อัลบั้ม
+            !android ? (
+              <label key={s.tag} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: done ? '1.5px solid #5F7F5A' : '1.5px dashed #94a3b8', background: done ? '#f0fdf4' : '#f8fafc', borderRadius: 12, padding: '12px 14px', cursor: busy ? 'wait' : 'pointer', fontSize: 14, fontWeight: 600, color: '#1a1a1a' }}>
+                {/* ไม่ใส่ capture → มือถือให้เลือกได้ทั้งถ่ายใหม่และรูปในเครื่อง */}
+                <input type="file" accept="image/*" disabled={busy} style={{ display: 'none' }}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) onPick(f, s.tag); e.target.value = '' }} />
+                <span>{busy ? '⏳ กำลังอัพโหลด…' : s.label}</span>
+                <span style={{ fontSize: 12, color: done ? '#5F7F5A' : '#94a3b8', fontWeight: 700 }}>
+                  {done > 0 ? `✓ ${done} รูป · เพิ่มอีก` : 'ถ่าย/เลือกรูป'}
+                </span>
+              </label>
+            ) : (
+              // หน้าตาเหมือนไอโฟน — กดแล้วเด้งตัวเลือก คลังรูปภาพ / ถ่ายรูป ใต้ช่อง (คำเดียวกับเมนูไอโฟน)
+              <div key={s.tag}>
+                <div onClick={() => !busy && setMenu(m => m === s.tag ? null : s.tag)}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: done ? '1.5px solid #5F7F5A' : '1.5px dashed #94a3b8', background: done ? '#f0fdf4' : '#f8fafc', borderRadius: 12, padding: '12px 14px', cursor: busy ? 'wait' : 'pointer', fontSize: 14, fontWeight: 600, color: '#1a1a1a' }}>
+                  <span>{busy ? '⏳ กำลังอัพโหลด…' : s.label}</span>
+                  <span style={{ fontSize: 12, color: done ? '#5F7F5A' : '#94a3b8', fontWeight: 700 }}>
+                    {done > 0 ? `✓ ${done} รูป · เพิ่มอีก` : 'ถ่าย/เลือกรูป'}
+                  </span>
+                </div>
+                {menu === s.tag && !busy && (
+                  <div style={{ marginTop: 6, border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden', background: '#fff', boxShadow: '0 6px 18px rgba(0,0,0,0.10)' }}>
+                    {([['คลังรูปภาพ', false], ['ถ่ายรูป', true]] as const).map(([txt, cam], i) => (
+                      <label key={txt} style={{ display: 'block', padding: '12px 14px', fontSize: 14, fontWeight: 600, color: '#1a1a1a', cursor: 'pointer', borderTop: i ? '1px solid #eef2f7' : 'none' }}>
+                        <input type="file" accept="image/*" {...(cam ? { capture: 'environment' as const } : {})} style={{ display: 'none' }}
+                          onChange={e => { const f = e.target.files?.[0]; setMenu(null); if (f) onPick(f, s.tag); e.target.value = '' }} />
+                        {txt}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
           )
         })}
       </div>
