@@ -480,3 +480,8 @@ tr.row-flash, tr.row-flash > td { animation: row-flash 1s ease-in-out 3; }
 /* โฟลเดอร์ลูกค้า: รายละเอียดออเดอร์แบ่ง 2 คอลัมน์ให้เต็มจอ · จอแคบกลับเป็นคอลัมน์เดียว */
 .odb-cols { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 0 14px; align-items: start; }
 @media (max-width: 1100px) { .odb-cols { grid-template-columns: minmax(0, 1fr); } }
+
+/* ตัวเลื่อนแนวนอนลอยขอบล่างจอ (components/StickyHScroll.tsx) */
+.dn-sticky-hscroll { background: color-mix(in srgb, var(--surface) 85%, transparent); backdrop-filter: blur(6px); border-top: 1px solid var(--hairline); scrollbar-width: auto; scrollbar-color: var(--border-2) transparent; }
+.dn-sticky-hscroll::-webkit-scrollbar { height: 12px; }
+.dn-sticky-hscroll::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 999px; border: 3px solid transparent; background-clip: padding-box; }

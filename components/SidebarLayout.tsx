@@ -6,6 +6,7 @@ import HubButton from './HubButton'
 import StaffNameSync from './StaffNameSync'
 import { NotifyProvider } from './NotifyBell'
 import BoardToast from './BoardToast'
+import StickyHScroll from './StickyHScroll'
 
 export default function SidebarLayout({ children }: { children: React.ReactNode }) {
   // NotifyProvider = ข้อมูลกระดิ่งแจ้งเตือนชุดเดียวของทั้งเว็บ · ปุ่มกระดิ่งวางในหัวหน้าของแต่ละหน้า (ซ้ายของปุ่มปริ้น/เพิ่มรายการ)
@@ -25,6 +26,7 @@ export default function SidebarLayout({ children }: { children: React.ReactNode 
           </div>
         </main>
         <BoardToast />
+        <StickyHScroll />
         <HistoryBar />
         <HubButton />
       </div>
