@@ -15,6 +15,7 @@ import { useStableView } from '@/lib/useStableView'
 import { oeUpdate } from '@/lib/adminActor'
 import { todayYmd } from '@/lib/thaiDate'
 import { PlatformIcon, CourierIcon } from '@/components/BrandMark'
+import { statusScanAt } from '@/lib/statusScanAt'
 import NotifyBell from '@/components/NotifyBell'
 import OrderDetailModal from '@/components/OrderDetailModal'
 import ScanToast from '@/components/ScanToast'
@@ -23,6 +24,7 @@ import BoardAnnouncements from '@/components/BoardAnnouncements'
 
 type Order = {
   id: string
+  status_history?: { status?: string; at?: string }[] | null
   serial_no?: string | null   // เลขที่ใบงานนอก DR0001 — ไว้ค้นหา
   order_number: string
   customer_name: string
@@ -359,7 +361,7 @@ export default function DashboardPage() {
   const load = async () => {
     setError('')
     // จำไว้ในเครื่อง ขอเฉพาะใบที่เปลี่ยน (lib/rowCache.ts)
-    const cols = 'id,serial_no,order_number,customer_name,order_status,deadline,created_at,platform,courier,is_installation,is_urgent,is_dropoff,shipping_datetime,notes,updated_at'
+    const cols = 'id,serial_no,order_number,customer_name,order_status,deadline,created_at,platform,courier,is_installation,is_urgent,is_dropoff,shipping_datetime,notes,updated_at,status_history'
     const { data: rows, error: err } = await syncRows<Order>({
       key: 'dashboard', table: 'order_entries', select: cols, sort: byCreatedAsc,
       full: () => supabase.from('order_entries').select(cols).order('created_at', { ascending: true }).order('id', { ascending: true }),
@@ -929,10 +931,16 @@ export default function DashboardPage() {
                         </span>
                       </td>
                       <td style={{ padding: isFs ? '14px 16px' : '8px 14px' }}>
-                        <span className="dn-pill" style={{ color: o.order_status === 'จัดส่งแล้ว' ? '#1F8A3B' : '#6B4326', fontSize: isFs ? 16 : undefined, minWidth: isFs ? 132 : undefined,
-                                     background: pillBg(o.order_status) }}>
-                          {(o.is_installation && o.order_status === 'จัดส่งแล้ว' ? 'ติดตั้งแล้ว' : o.order_status) || '—'}
-                        </span>
+                        <div style={{ display: 'inline-block' }}>
+                          <span className="dn-pill" style={{ color: o.order_status === 'จัดส่งแล้ว' ? '#1F8A3B' : '#6B4326', fontSize: isFs ? 16 : undefined, minWidth: isFs ? 132 : undefined,
+                                       background: pillBg(o.order_status) }}>
+                            {(o.is_installation && o.order_status === 'จัดส่งแล้ว' ? 'ติดตั้งแล้ว' : o.order_status) || '—'}
+                          </span>
+                          {/* วันเวลาที่สแกนเข้าสถานะนี้ — เหมือนหมวดออเดอร์ (บรรทัดมีเสมอ แถวจะได้สูงเท่ากัน) */}
+                          <div style={{ color: '#A8744F', fontWeight: 600, marginTop: 2, whiteSpace: 'nowrap', textAlign: 'center', fontSize: isFs ? 13 : 10, visibility: statusScanAt(o.order_status, o.status_history) ? 'visible' : 'hidden' }}>
+                            {statusScanAt(o.order_status, o.status_history) || ' '}
+                          </div>
+                        </div>
                       </td>
                       <td style={{ padding: isFs ? '18px 16px' : '12px 14px', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: o.notes ? 'var(--ink-soft)' : 'var(--ink-4)' }}>
                         {o.notes || '—'}

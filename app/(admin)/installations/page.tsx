@@ -1,5 +1,6 @@
 'use client'
 
+import { statusScanAt } from '@/lib/statusScanAt'
 import NotifyBell from '@/components/NotifyBell'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import AnchoredMenu from '@/components/AnchoredMenu'
@@ -1595,10 +1596,16 @@ export default function InstallationsPage() {
                   ) : <span style={{ color: 'var(--ink-3)' }}>{ins.entered_by || '-'}</span>,
                   status: oid ? (
                     /* สถานะงาน — ป้าย .dn-pill ชุดเดียวกับหมวดออเดอร์ (statusCell) · จัดส่งแล้ว = ติดตั้งแล้ว */
+                    <div style={{ display: 'inline-block' }}>
                     <CreamSelect value={oe?.order_status || ''} onChange={v => saveOrder(oid, { order_status: v }, 'แก้สถานะงาน ' + (oe?.customer_name || ''))}
                       className="dn-pill ow-pill" style={{ color: pillInk(oe?.order_status || ''), background: pillBg(oe?.order_status || '') }} menuMinWidth={170}
                       options={INSTALL_STATUSES.map(st => ({ value: st, label: st === 'จัดส่งแล้ว' ? 'ติดตั้งแล้ว' : st, color: PROD_STATUS_COLOR[st] }))}
                       renderValue={o => <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{o?.label ?? ((oe?.order_status === 'จัดส่งแล้ว' ? 'ติดตั้งแล้ว' : oe?.order_status) || '—')}</span>} />
+                      {/* วันเวลาที่สแกนเข้าสถานะนี้ — เหมือนหมวดออเดอร์ */}
+                      <div style={{ fontSize: 10, color: '#A8744F', fontWeight: 600, marginTop: 2, whiteSpace: 'nowrap', textAlign: 'center', visibility: statusScanAt(oe?.order_status, oe?.status_history) ? 'visible' : 'hidden' }}>
+                        {statusScanAt(oe?.order_status, oe?.status_history) || ' '}
+                      </div>
+                    </div>
                   ) : noOrder,
                   done: oid ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
