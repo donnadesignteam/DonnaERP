@@ -11,6 +11,8 @@ type Box = { left: number; width: number; inner: number }
 export default function StickyHScroll() {
   const barRef = useRef<HTMLDivElement>(null)
   const targetRef = useRef<HTMLElement | null>(null)
+  // เวลาที่ลากแถบล่าสุด — ช่วงที่กำลังลากห้ามซิงค์กลับจากตาราง ไม่งั้นสองฝั่งแย่งกันตั้งค่า = ลากติดๆขัดๆ
+  const barAt = useRef(0)
   const [box, setBox] = useState<Box | null>(null)
 
   useEffect(() => {
@@ -18,7 +20,8 @@ export default function StickyHScroll() {
 
     const onTargetScroll = () => {
       const bar = barRef.current, t = targetRef.current
-      if (bar && t && Math.abs(bar.scrollLeft - t.scrollLeft) > 0.5) bar.scrollLeft = t.scrollLeft
+      if (performance.now() - barAt.current < 200) return
+      if (bar && t && Math.abs(bar.scrollLeft - t.scrollLeft) > 1) bar.scrollLeft = t.scrollLeft
     }
 
     const setTarget = (el: HTMLElement | null) => {
@@ -49,7 +52,7 @@ export default function StickyHScroll() {
       const next = { left: r.left, width: el.clientWidth, inner: el.scrollWidth }
       setBox(prev => prev && prev.left === next.left && prev.width === next.width && prev.inner === next.inner ? prev : next)
       const bar = barRef.current
-      if (bar && Math.abs(bar.scrollLeft - el.scrollLeft) > 0.5) bar.scrollLeft = el.scrollLeft
+      if (bar && performance.now() - barAt.current > 200 && Math.abs(bar.scrollLeft - el.scrollLeft) > 1) bar.scrollLeft = el.scrollLeft
     }
 
     const schedule = () => { if (!raf) raf = requestAnimationFrame(measure) }
@@ -68,7 +71,10 @@ export default function StickyHScroll() {
 
   const onBarScroll = () => {
     const bar = barRef.current, t = targetRef.current
-    if (bar && t && Math.abs(t.scrollLeft - bar.scrollLeft) > 0.5) t.scrollLeft = bar.scrollLeft
+    if (!bar || !t) return
+    if (Math.abs(t.scrollLeft - bar.scrollLeft) <= 1) return
+    barAt.current = performance.now()
+    t.scrollLeft = bar.scrollLeft
   }
 
   return (

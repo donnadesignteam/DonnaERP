@@ -2,6 +2,8 @@
 // เส้นโลโก้ของ Shopee/TikTok/Facebook/LINE/Grab/DHL มาจากชุด simple-icons (CC0)
 // ส่วนขนส่งไทยที่ไม่มีในชุดนั้น ใช้เครื่องหมายประจำแบรนด์ (สายฟ้าของ Flash / ตัวย่อบนสีประจำแบรนด์)
 
+import { CenteredPath, CenteredText } from './CenteredGlyph'
+
 type Glyph = {
   bg: string          // สีพื้นวงกลม
   fg: string          // สีของตัวโลโก้
@@ -28,15 +30,23 @@ export const INSTALL_ICON_PATH = 'M15 12l-8.4 8.4a1.5 1.5 0 01-2.1-2.1L12 9.9 M1
 
 function ToolsMark({ size = 20 }: { size?: number }) {
   const inner = Math.round(size * 0.68)
+  return <Disc size={size} bg="#B5715A" title="งานติดตั้ง">
+    <CenteredPath d={INSTALL_ICON_PATH} size={inner} x={(size - inner) / 2} y={(size - inner) / 2} fill="none" stroke="#FFFFFF" strokeWidth={2} />
+  </Disc>
+}
+
+// วงกลม+โลโก้วาดใน SVG ก้อนเดียว — เดิมวงเป็นพื้นหลัง CSS แยกจากโลโก้ จอสเกล 125% ปัดพิกเซลคนละทาง โลโก้เลยเยื้องจากกลางวง
+function Disc({ size, bg, title, children }: { size: number; bg: string; title?: string; children: React.ReactNode }) {
   return (
-    <span title="งานติดตั้ง" style={{
-      width: size, height: size, borderRadius: '50%', background: '#B5715A', flexShrink: 0,
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    <span title={title} style={{
+      width: size, height: size, flexShrink: 0, display: 'inline-block',
       // ‼️ ไอคอนเป็น inline element ถ้าไม่ตรึง vertical-align มันจะนั่งบนเส้นฐานตัวอักษร = ลอยสูงกว่ากลางช่อง
-      verticalAlign: 'middle',
+      verticalAlign: 'middle', lineHeight: 0,
     }}>
-      <svg width={inner} height={inner} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-        <path d={INSTALL_ICON_PATH} />
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ display: 'block' }}>
+        <circle cx={size / 2} cy={size / 2} r={size / 2 - (bg === '#FFFFFF' ? 0.5 : 0)} fill={bg}
+                stroke={bg === '#FFFFFF' ? 'rgba(0,0,0,0.08)' : undefined} strokeWidth={1} />
+        {children}
       </svg>
     </span>
   )
@@ -76,26 +86,16 @@ const TRUCK: Glyph = {
 
 function Dot({ g, size = 20, title }: { g: Glyph; size?: number; title?: string }) {
   const inner = Math.round(size * 0.62)
-  return (
-    <span title={title} style={{
-      width: size, height: size, borderRadius: '50%', background: g.bg, flexShrink: 0,
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      // ‼️ เหตุผลเดียวกับ ToolsMark — ไม่งั้นวงไอคอนลอยสูงกว่าข้อความในช่องตาราง
-      verticalAlign: 'middle',
-      boxShadow: g.bg === '#FFFFFF' ? 'inset 0 0 0 1px rgba(0,0,0,0.08)' : 'none',
-    }}>
-      {g.path
-        ? <svg width={inner} height={inner} viewBox={g.box ?? '0 0 24 24'}
-               fill={g.path === MAIL ? 'none' : g.fg}
-               stroke={g.path === MAIL ? g.fg : undefined}
-               strokeWidth={g.path === MAIL ? 2 : undefined}
-               strokeLinecap="round" strokeLinejoin="round">
-            <path d={g.path} />
-          </svg>
-        : <span style={{ color: g.fg, fontWeight: 700, letterSpacing: 0,
-                         fontSize: (g.text ?? '').length > 2 ? size * 0.36 : size * 0.46, lineHeight: 1 }}>{g.text}</span>}
-    </span>
-  )
+  return <Disc size={size} bg={g.bg} title={title}>
+    {/* จัดกลางตามรูปร่างจริงของโลโก้/ตัวอักษร (components/CenteredGlyph.tsx) */}
+    {g.path
+      ? <CenteredPath d={g.path} box={g.box} size={inner} x={(size - inner) / 2} y={(size - inner) / 2}
+                      fill={g.path === MAIL ? 'none' : g.fg}
+                      stroke={g.path === MAIL ? g.fg : undefined}
+                      strokeWidth={g.path === MAIL ? 2 : undefined} />
+      : <CenteredText text={g.text ?? ''} size={size} color={g.fg}
+                      fontSize={(g.text ?? '').length > 2 ? size * 0.36 : size * 0.46} />}
+  </Disc>
 }
 
 export function PlatformIcon({ name, size = 20 }: { name: string | null; size?: number }) {

@@ -1504,7 +1504,7 @@ export default function InstallationsPage() {
                   print: oid ? (
                     <>
                       <input type="checkbox" checked={!!oe?.printed_at} onChange={e => togglePrinted(oid, e.target.checked)}
-                        style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--blue)' }} />
+                        style={{ cursor: 'pointer' }} />
                       {/* ‼️ บรรทัดวันที่มีเสมอ (ยังไม่ปริ้น = บรรทัดเปล่า) ช่องติ๊กทุกแถวจะได้อยู่ระดับเดียวกัน */}
                       <div aria-hidden={!oe?.printed_at} style={{ fontSize: 10, color: '#A8744F', fontWeight: 600, marginTop: 3, whiteSpace: 'nowrap', visibility: oe?.printed_at ? 'visible' : 'hidden' }}>
                         {oe?.printed_at
