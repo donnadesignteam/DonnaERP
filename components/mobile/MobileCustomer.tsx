@@ -404,7 +404,7 @@ export default function MobileCustomer() {
                   <div key={p.id} style={cardBox}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
                       <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{p.supplier || 'ไม่ระบุร้าน'}</span>
-                      <span style={{ fontSize: 11.5, fontWeight: 700, color: p.status === 'ของเข้าแล้ว' ? 'var(--green)' : '#C79A4B', flexShrink: 0 }}>{p.status}</span>
+                      <span style={{ fontSize: 11.5, fontWeight: 700, color: p.status !== 'รอของ' ? 'var(--green)' : '#C79A4B', flexShrink: 0 }}>{p.status}</span>
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 2 }}>
                       {[p.order_number, fmtDate(p.created_at)].filter(Boolean).join(' · ')}

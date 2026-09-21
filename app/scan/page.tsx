@@ -8,6 +8,7 @@ import { readStaffSession, type StaffSession } from '@/lib/staffSession'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { uploadPackingFile, deletePackingFile, compressImage } from '@/lib/packingPhotos'
 import { cutMeters, round2 } from '@/lib/fabricUsage'
+import { syncStockCut } from '@/lib/stockCut'
 import HubButton from '@/components/HubButton'
 import { useConfirm } from '@/components/ConfirmDialog'
 
@@ -355,8 +356,10 @@ function ScanContent() {
   // เขียนเมตรของ "ทุกคน" ใหม่ทั้งชุดทุกครั้ง (RPC set_cut_meters) → ไม่มีทางนับซ้ำ/นับขาด
   // ทำเงียบๆ เบื้องหลัง ไม่ขึ้นอะไรบนหน้าสแกน (user สั่ง: ดูยอดที่เว็บ พนักงาน → ยอดตัดผ้า)
   async function splitCut(scanNo: string, items: unknown, isClaim: boolean) {
+    const c = cutMeters(items, { isClaim })
+    // ตัดสต็อกผ้าตามสีที่ใช้ / คืนสต็อกถ้ายกเลิกสแกนตัดจนไม่เหลือใคร (lib/stockCut.ts) — แยกจาก try ไม่ให้กระทบการบันทึกยอดตัด
+    syncStockCut(scanNo, items, c.lines).catch(() => {})
     try {
-      const c = cutMeters(items, { isClaim })
       const { data } = await supabase.from('production_scans')
         .select('tech_code').eq('order_number', scanNo).eq('stage', 'ตัด')
       const codes = [...new Set((data ?? []).map((r: any) => r.tech_code).filter(Boolean))] as string[]

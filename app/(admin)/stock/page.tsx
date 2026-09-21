@@ -10,6 +10,7 @@ import { tInsert, tUpdate, tDelete, prevOf } from '@/lib/trackedDb'
 import { FABRIC_LOOKUP } from '@/lib/fabrics'
 import { useStableView } from '@/lib/useStableView'
 import { useConfirm } from '@/components/ConfirmDialog'
+import { StockTabBar, StockOverview, StockItemsTab, STOCK_TABS, type StockTab } from '@/components/StockSections'
 
 
 const SHOP_LOOKUP: Record<string, { fabric_code: string; color_name: string; fabric_width: number; fabric_type: string; shop_name: string }> =
@@ -57,6 +58,8 @@ const empty = (): Omit<StockItem, 'id' | 'updated_at'> => ({
   shop_code: '', shop_name: '', roll_count: 0, unused_rolls: 0, in_use_rolls: 0, remaining_meters: null, status: 'ปกติ', ordered_at: null, notes: '',
 })
 
+const MENU_BTN: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }
+
 const cardStyle: React.CSSProperties = {
   background: 'var(--surface)',
   border: '1px solid var(--border)',
@@ -84,7 +87,32 @@ const autoInputStyle: React.CSSProperties = {
   color: 'var(--ink)',
 }
 
+// หมวดสต็อกแบ่งแท็บ — จำแท็บไว้ใน URL (#rail ฯลฯ) รีเฟรช/กดย้อนกลับแล้วอยู่แท็บเดิม
 export default function StockPage() {
+  const [tab, setTab] = useState<StockTab>('overview')
+  useEffect(() => {
+    const read = () => { const h = window.location.hash.slice(1); setTab(STOCK_TABS.some(t => t.id === h) ? h as StockTab : 'overview') }
+    read(); window.addEventListener('hashchange', read)
+    return () => window.removeEventListener('hashchange', read)
+  }, [])
+  const go = (t: StockTab) => { window.location.hash = t; setTab(t) }
+  return (
+    <div>
+      {tab !== 'fabric' && (
+        <div style={{ marginBottom: 20 }}>
+          <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px' }}>สต็อก</h1>
+        </div>
+      )}
+      {/* สต็อกผ้า: แถบแท็บอยู่ใต้หัวหน้าของตัวเอง (หัวข้อ+ปุ่มเพิ่มรายการ) */}
+      {tab !== 'fabric' && <StockTabBar tab={tab} onChange={go} />}
+      {tab === 'overview' && <StockOverview onOpen={go} />}
+      {tab === 'fabric' && <FabricStock tabBar={<StockTabBar tab={tab} onChange={go} />} />}
+      {(tab === 'rail' || tab === 'office' || tab === 'outsource' || tab === 'returned') && <StockItemsTab key={tab} category={tab} />}
+    </div>
+  )
+}
+
+function FabricStock({ tabBar }: { tabBar: React.ReactNode }) {
   // เปิดหน้าซ้ำ → โชว์ข้อมูลรอบก่อนทันที แล้ว load() ดึงของใหม่เบื้องหลัง (stale-while-revalidate)
   const cached = getPageCache<StockItem[]>('stock')
   const [items, setItems] = useState<StockItem[]>(cached ?? [])
@@ -106,6 +134,7 @@ export default function StockPage() {
   const [statusFilters, setStatusFilters] = useState<string[]>([])
   const [updatedSort, setUpdatedSort] = useState<'asc' | 'desc' | null>(null)
   const [quickFilter, setQuickFilter] = useState<'all' | 'waiting'>('all')
+  const [adjustModal, setAdjustModal] = useState<{ item: StockItem; val: string; unit: 'm' | 'yd' } | null>(null)
   const [arrivalModal, setArrivalModal] = useState<{ item: StockItem; rolls: string; meters: string } | null>(null)
   const [openFilter, setOpenFilter] = useState<'width' | 'type' | 'status' | 'updated' | null>(null)
   const [filterPos, setFilterPos] = useState<{ top: number; left: number } | null>(null)
@@ -239,6 +268,21 @@ export default function StockPage() {
     setArrivalModal(null)
   }
 
+  // ปรับสต็อก: ใส่ความยาวคงเหลือใหม่เป็นเมตรหรือหลา (หลา → เมตร × 0.9144) · ตารางโชว์เป็นเมตรเสมอ
+  const saveAdjust = async () => {
+    if (!adjustModal || adjustModal.val.trim() === '') return
+    const v = Number(adjustModal.val)
+    if (!isFinite(v) || v < 0) return
+    const meters = Math.round((adjustModal.unit === 'yd' ? v * 0.9144 : v) * 100) / 100
+    const item = adjustModal.item
+    const payload = { remaining_meters: meters, updated_at: new Date().toISOString() }
+    try {
+      await tUpdate('stock', item.id, payload, prevOf({ ...item }, payload), `ปรับสต็อก ${item.color_name || item.fabric_code || ''} → ${meters} ม.`, load)
+      setItems(prev => prev.map(i => i.id === item.id ? { ...i, ...payload } : i))
+      setAdjustModal(null)
+    } catch (err: any) { setError(`บันทึกไม่สำเร็จ: ${err?.message || err}`) }
+  }
+
   const toggleArr = (arr: string[], val: string): string[] =>
     arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val]
 
@@ -298,6 +342,7 @@ export default function StockPage() {
           </button>
         </div>
       </div>
+      {tabBar}
 
       {error && (
         <div style={{ background: 'rgba(220,38,38,0.06)', border: '1px solid rgba(255,59,48,0.25)', borderRadius: 12, padding: '12px 16px', marginBottom: 16, color: 'var(--red)', fontSize: 13, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -437,7 +482,7 @@ export default function StockPage() {
                 ))}
                 {(quickFilter === 'waiting'
                   ? (['รหัสร้าน', 'ร้าน'] as const)
-                  : (['รหัสร้าน', 'ร้าน', 'จำนวนทั้งหมด', 'ยังไม่ได้เปิดใช้', 'เปิดใช้', 'จำนวนที่เหลือ (ม.)'] as const)
+                  : (['รหัสร้าน', 'ร้าน', 'จำนวนทั้งหมด', 'จำนวนที่เหลือ (ม.)'] as const)
                 ).map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '13px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
@@ -473,7 +518,7 @@ export default function StockPage() {
                       <span style={{ fontWeight: 700, color: item.roll_count <= 2 ? 'var(--red)' : 'var(--ink)' }}>{item.roll_count}</span>
                     </td>
                   )}
-                  {quickFilter !== 'waiting' && (['unused_rolls', 'in_use_rolls', 'remaining_meters'] as const).map(field => (
+                  {quickFilter !== 'waiting' && (['remaining_meters'] as const).map(field => (
                     <td key={field} style={{ padding: '8px 14px', textAlign: 'center' }}>
                       {inlineEdit?.id === item.id && inlineEdit.field === field ? (
                         <input
@@ -591,33 +636,43 @@ export default function StockPage() {
         })()}
       </div>
 
-      {/* Global 3-dot dropdown */}
+      {/* Global 3-dot dropdown — หน้าตาเดียวกับเมนู ··· หมวดออเดอร์ (.ow-drop: ครีม มุมมน · ชี้แล้วพื้นเทาอ่อน) */}
       {menuOpen && menuRect && (() => {
         const item = filtered.find(i => i.id === menuOpen)
         if (!item) return null
         return (
-          <AnchoredMenu rect={menuRect} style={{ borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', padding: 0 }}>
-            <button onClick={() => { if (quickFilter === 'waiting') setArrivalModal({ item, rolls: '', meters: '' }); else toggleOrdered(item); closeMenu() }}
-              style={{ width: '100%', padding: '10px 16px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', color: 'var(--ink)' }}>
-              {quickFilter === 'waiting' ? 'ของเข้า' : item.ordered_at ? 'ยกเลิกรอของเข้า' : 'รอของเข้า'}
-            </button>
+          <AnchoredMenu rect={menuRect} className="ow-drop">
             {quickFilter === 'waiting' ? (
-              <button onClick={() => { toggleOrdered(item); closeMenu() }}
-                style={{ width: '100%', padding: '10px 16px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', color: 'var(--red)' }}>
-                ยกเลิกรอของเข้า
-              </button>
+              <>
+                <button onClick={() => { setArrivalModal({ item, rolls: '', meters: '' }); closeMenu() }} style={{ ...MENU_BTN, color: 'var(--ink)' }}>
+                  <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v11m0 0l-4-4m4 4l4-4M4 20h16"/></svg>
+                  ของเข้า
+                </button>
+                <button onClick={() => { toggleOrdered(item); closeMenu() }} style={{ ...MENU_BTN, color: 'var(--red)' }}>
+                  <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
+                  ยกเลิกรอของเข้า
+                </button>
+              </>
             ) : (
               <>
-                <button onClick={() => { openEdit(item); closeMenu() }}
-                  style={{ width: '100%', padding: '10px 16px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', color: 'var(--ink)' }}>
+                <button onClick={() => { setAdjustModal({ item, val: item.remaining_meters != null ? String(Math.round(item.remaining_meters / 0.9144 * 100) / 100) : '', unit: 'yd' }); closeMenu() }} style={{ ...MENU_BTN, color: 'var(--ink)' }}>
+                  <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+                  ปรับสต็อก
+                </button>
+                <button onClick={() => { toggleOrdered(item); closeMenu() }} style={{ ...MENU_BTN, color: 'var(--ink)' }}>
+                  <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path strokeLinecap="round" d="M12 7v5l3 2"/></svg>
+                  {item.ordered_at ? 'ยกเลิกรอของเข้า' : 'รอของเข้า'}
+                </button>
+                <button onClick={() => { openEdit(item); closeMenu() }} style={{ ...MENU_BTN, color: 'var(--ink)' }}>
+                  <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.9 4.6l2.5 2.5L8 18.5 4.5 19.5l1-3.5L16.9 4.6z"/></svg>
                   แก้ไข
                 </button>
-                <button onClick={() => { duplicate(item); closeMenu() }}
-                  style={{ width: '100%', padding: '10px 16px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', color: 'var(--ink)' }}>
+                <button onClick={() => { duplicate(item); closeMenu() }} style={{ ...MENU_BTN, color: 'var(--ink)' }}>
+                  <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
                   ทำซ้ำ
                 </button>
-                <button onClick={() => { del(item.id); closeMenu() }}
-                  style={{ width: '100%', padding: '10px 16px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', color: 'var(--red)' }}>
+                <button onClick={() => { del(item.id); closeMenu() }} style={{ ...MENU_BTN, color: 'var(--red)' }}>
+                  <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M9 7V4h6v3m-8 0l1 13h8l1-13"/></svg>
                   ลบ
                 </button>
               </>
@@ -785,6 +840,46 @@ export default function StockPage() {
               </button>
               <button onClick={saveArrival} disabled={!(Number(arrivalModal.rolls) > 0 || Number(arrivalModal.meters) > 0)}
                 style={{ flex: 2, padding: '10px', borderRadius: 12, border: 'none', background: 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600, boxShadow: '0 1px 3px rgba(0,122,255,0.3)', fontFamily: 'inherit', opacity: (Number(arrivalModal.rolls) > 0 || Number(arrivalModal.meters) > 0) ? 1 : 0.5 }}>
+                บันทึก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {adjustModal && (
+        <div onMouseDown={e => { if (e.target === e.currentTarget) setAdjustModal(null) }} style={{ position: 'fixed', inset: 0, background: 'rgba(40,28,20,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 16 }}>
+          {/* ธีมครีม-น้ำตาลชุดเดียวกับหน้าต่างอื่น (.sc-modal) */}
+          <div className="sc-modal" style={{ width: '100%', maxWidth: 400 }}>
+            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 6, fontFamily: 'inherit', color: 'var(--ink)' }}>ปรับสต็อก</h2>
+            <p style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 20 }}>
+              {adjustModal.item.fabric_code} {adjustModal.item.color_name || ''} (ตอนนี้เหลือ {adjustModal.item.remaining_meters ?? 0} ม.)
+            </p>
+            <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 6 }}>ความยาวคงเหลือ</label>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+              <input type="number" autoFocus min={0} step="0.01" value={adjustModal.val}
+                onChange={e => setAdjustModal(m => m ? { ...m, val: e.target.value } : null)}
+                onKeyDown={e => { if (e.key === 'Enter') saveAdjust() }}
+                style={{ ...inputStyle, flex: 1, borderRadius: 10, background: 'var(--cream-2)', border: '1px solid var(--border)' }} />
+              {(['m', 'yd'] as const).map(u => (
+                <button key={u} onClick={() => setAdjustModal(m => m ? { ...m, unit: u } : null)}
+                  style={{ padding: '0 14px', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                           border: adjustModal.unit === u ? 'none' : '1px solid var(--border)', background: adjustModal.unit === u ? 'var(--brand)' : 'var(--surface)', color: adjustModal.unit === u ? '#FFF8F0' : 'var(--ink-2)' }}>
+                  {u === 'm' ? 'เมตร' : 'หลา'}
+                </button>
+              ))}
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--ink-3)', minHeight: 18, marginBottom: 20 }}>
+              {adjustModal.unit === 'yd' && adjustModal.val.trim() !== '' && isFinite(Number(adjustModal.val))
+                ? `= ${Math.round(Number(adjustModal.val) * 0.9144 * 100) / 100} เมตร` : ''}
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setAdjustModal(null)}
+                style={{ flex: 1, padding: '10px', borderRadius: 12, border: '1px solid var(--border)', background: '#FFFFFF', color: '#6B4326', cursor: 'pointer', fontSize: 14, fontWeight: 600, fontFamily: 'inherit' }}>
+                ยกเลิก
+              </button>
+              <button onClick={saveAdjust} disabled={adjustModal.val.trim() === '' || !(Number(adjustModal.val) >= 0)}
+                style={{ flex: 2, padding: '10px', borderRadius: 12, border: 'none', background: 'var(--brand)', color: '#FFF8F0', cursor: 'pointer', fontSize: 14, fontWeight: 600, fontFamily: 'inherit' }}>
                 บันทึก
               </button>
             </div>

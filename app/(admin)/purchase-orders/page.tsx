@@ -30,10 +30,11 @@ type PO = {
 }
 
 // พื้นป้ายสถานะ — โทนพาสเทลชุดเดียวกับหน้าออเดอร์ (ตัวอักษรใช้ #6B4326 เหมือนกันหมด)
-const PILL_BG: Record<string, string> = { 'รอของ': '#F9E0C3', 'ของเข้าแล้ว': '#E3F3E0' }
+const PILL_BG: Record<string, string> = { 'รอของ': '#F9E0C3', 'ของเข้าแล้ว': '#FBEEDC', 'จัดส่งแล้ว': '#E3F3E0' }
 const STATUS_COLOR: Record<string, string> = {
   'รอของ': '#C79A4B',
-  'ของเข้าแล้ว': '#6F8F6A',
+  'ของเข้าแล้ว': '#B08A5A',
+  'จัดส่งแล้ว': '#6F8F6A',
 }
 
 const empty = (): Omit<PO, 'id' | 'created_at' | 'updated_at'> => ({
@@ -49,7 +50,7 @@ export default function PurchaseOrdersPage() {
   const [loading, setLoading] = useState(!cached)
   const [modal, setModal] = useState<{ mode: 'add' | 'edit'; data: Partial<PO> } | null>(null)
   const [saving, setSaving] = useState(false)
-  const [filter, setFilter] = useState<'all' | 'รอของ' | 'ของเข้าแล้ว'>('all')
+  const [filter, setFilter] = useState<'all' | 'รอของ' | 'ของเข้าแล้ว' | 'จัดส่งแล้ว'>('all')
   const [error, setError] = useState('')
   // กล่องยืนยันของเว็บเอง (ไม่ใช้ window.confirm — ดูเหตุผลใน components/ConfirmDialog.tsx)
   const { ask, confirmDialog } = useConfirm()
@@ -64,9 +65,9 @@ export default function PurchaseOrdersPage() {
       supabase.from('purchase_orders').select('*').order('created_at', { ascending: false }).order('id', { ascending: true }))
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
     let pos = data
-    // ออเดอร์ที่จัดส่งแล้ว = ของเข้าครบแล้ว → ปิดรายการสั่งซื้อที่ผูกกันไว้ให้เป็น "ของเข้าแล้ว" อัตโนมัติ
+    // ออเดอร์ที่จัดส่งแล้ว → รายการสั่งซื้อที่ผูกกันเป็น "จัดส่งแล้ว" (ของเข้าแล้ว = ของมาถึงร้านแต่ยังไม่ส่ง ลงจากหน้าสต็อก > งานนอก)
     // (ตอนกดจัดส่งในหมวดออเดอร์เปลี่ยนให้ทันทีอยู่แล้ว — ตรงนี้ไล่เก็บใบเก่า/ใบที่เปลี่ยนสถานะจากที่อื่น)
-    const waiting = pos.filter(p => p.source_order_id && p.status === 'รอของ')
+    const waiting = pos.filter(p => p.source_order_id && p.status !== 'จัดส่งแล้ว')
     if (waiting.length) {
       const ids = waiting.map(p => p.source_order_id as string)
       const shipped: string[] = []
@@ -79,7 +80,7 @@ export default function PurchaseOrdersPage() {
         const changed = await markPOReceivedForOrders(shipped)
         if (changed.length) {
           const done = new Set(changed)
-          pos = pos.map(p => done.has(p.id) ? { ...p, status: 'ของเข้าแล้ว' } : p)
+          pos = pos.map(p => done.has(p.id) ? { ...p, status: 'จัดส่งแล้ว' } : p)
         }
       }
     }
@@ -206,13 +207,13 @@ export default function PurchaseOrdersPage() {
 
   // กรองบนค่า "ตอนโหลดหน้า" (stable) แล้วคืนค่าสด (live) ก่อนวาด
   const stableRows = rows.map(stable)
-  // ‼️ แท็บ "ทั้งหมด" = งานที่ยังไม่จบ — ของที่เข้าแล้วย้ายไปอยู่แท็บ "ของเข้าแล้ว" อย่างเดียว
+  // ‼️ แท็บ "ทั้งหมด" = งานที่ยังไม่จบ — ใบที่จัดส่งแล้วย้ายไปอยู่แท็บ "จัดส่งแล้ว"
   //    (กติกาเดียวกับหมวดออเดอร์ที่ใบจัดส่งแล้วไม่ขึ้นในแท็บทั้งหมด)
   const byStatus = filter === 'all'
-    ? stableRows.filter(r => r.status !== 'ของเข้าแล้ว')
+    ? stableRows.filter(r => r.status !== 'จัดส่งแล้ว')
     : stableRows.filter(r => r.status === filter)
-  const tabCount = (f: 'all' | 'รอของ' | 'ของเข้าแล้ว') =>
-    f === 'all' ? stableRows.filter(r => r.status !== 'ของเข้าแล้ว').length : stableRows.filter(r => r.status === f).length
+  const tabCount = (f: 'all' | 'รอของ' | 'ของเข้าแล้ว' | 'จัดส่งแล้ว') =>
+    f === 'all' ? stableRows.filter(r => r.status !== 'จัดส่งแล้ว').length : stableRows.filter(r => r.status === f).length
   const q = search.trim().toLowerCase()
   const displayed = (!q ? byStatus : byStatus.filter(r =>
     [r.customer_name, r.order_number, r.items, r.supplier, r.notes, r.status]
@@ -255,7 +256,7 @@ export default function PurchaseOrdersPage() {
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
-        {(['all', 'รอของ', 'ของเข้าแล้ว'] as const).map(f => (
+        {(['all', 'รอของ', 'ของเข้าแล้ว', 'จัดส่งแล้ว'] as const).map(f => (
           <button key={f} onClick={() => setFilter(f)}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 16px', borderRadius: 999, fontSize: 13, fontWeight: 600, border: filter === f ? 'none' : '1px solid var(--border-2)', cursor: 'pointer', fontFamily: 'inherit', background: filter === f ? 'var(--brand)' : 'var(--cream-2)', color: filter === f ? '#FFF8F0' : 'var(--ink-2)', boxShadow: filter === f ? '0 3px 10px rgba(158,106,73,0.25)' : 'none' }}>
             {f === 'all' ? 'ทั้งหมด' : f}
@@ -296,7 +297,7 @@ export default function PurchaseOrdersPage() {
                   <td style={{ padding: '13px 16px' }}>
                     <CreamSelect value={r.status} onChange={v => updateStatus(r.id, v)} className="cs-inline" menuMinWidth={150}
                       style={{ border: 'none', background: PILL_BG[r.status] ?? '#EFE3D4', color: '#6B4326', borderRadius: 999, padding: '4px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', outline: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, fontFamily: 'inherit', minWidth: 118, boxSizing: 'border-box' }}
-                      options={[{ value: 'รอของ', label: 'รอของ', color: STATUS_COLOR['รอของ'] }, { value: 'ของเข้าแล้ว', label: 'ของเข้าแล้ว', color: STATUS_COLOR['ของเข้าแล้ว'] }]}
+                      options={[{ value: 'รอของ', label: 'รอของ', color: STATUS_COLOR['รอของ'] }, { value: 'ของเข้าแล้ว', label: 'ของเข้าแล้ว', color: STATUS_COLOR['ของเข้าแล้ว'] }, { value: 'จัดส่งแล้ว', label: 'จัดส่งแล้ว', color: STATUS_COLOR['จัดส่งแล้ว'] }]}
                       renderValue={o => (<>
                         <span className="cs-value" style={{ color: 'inherit', flex: 1, textAlign: 'center' }}>{o?.label ?? r.status}</span>
                         <svg className="cs-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
@@ -381,6 +382,7 @@ export default function PurchaseOrdersPage() {
                 style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 13px', fontSize: 14, outline: 'none', background: 'var(--surface)' }}>
                 <option>รอของ</option>
                 <option>ของเข้าแล้ว</option>
+                <option>จัดส่งแล้ว</option>
               </select>
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>

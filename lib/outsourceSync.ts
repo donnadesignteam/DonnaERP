@@ -54,8 +54,8 @@ export async function markPOReceivedForOrders(orderIds: string[]) {
     for (let i = 0; i < ids.length; i += 100) {
       const chunk = ids.slice(i, i + 100)
       const { data } = await supabase.from('purchase_orders')
-        .update({ status: 'ของเข้าแล้ว', updated_at: new Date().toISOString() })
-        .in('source_order_id', chunk).eq('status', 'รอของ').select('id')
+        .update({ status: 'จัดส่งแล้ว', updated_at: new Date().toISOString() })
+        .in('source_order_id', chunk).in('status', ['รอของ', 'ของเข้าแล้ว']).select('id')
       for (const r of data ?? []) done.push((r as { id: string }).id)
     }
   } catch { /* คอลัมน์ source_order_id ยังไม่มี / เน็ตหลุด → ข้ามเงียบๆ ไม่ให้กระทบงานหลัก */ }

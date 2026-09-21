@@ -122,7 +122,7 @@ type CustomerPO = {
   created_at: string
 }
 
-const PO_STATUS_COLOR: Record<string, string> = { 'รอของ': '#C79A4B', 'ของเข้าแล้ว': '#6F8F6A' }
+const PO_STATUS_COLOR: Record<string, string> = { 'รอของ': '#C79A4B', 'ของเข้าแล้ว': '#B08A5A', 'จัดส่งแล้ว': '#6F8F6A' }
 
 // ออเดอร์เยอะ (ลูกค้าประจำ) → แบ่งหน้า หน้าละ ORDERS_PER_PAGE ใบ ไม่ต้องเลื่อนยาว (user ขอ 15ก.ย.69)
 const ORDERS_PER_PAGE = 5
