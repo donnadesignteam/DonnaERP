@@ -1662,14 +1662,9 @@ export default function InstallationsPage() {
                     )
                   ) : <span style={{ color: 'var(--ink-4)', fontSize: 11, whiteSpace: 'nowrap' }}>{shortDate(ins.created_at)}</span>,
                   outsource: oid ? (
-                    isOe('outsource') ? (
-                      <input type="text" autoFocus value={oeEdit!.val}
-                        onChange={e => setOeEdit(ec => ec ? { ...ec, val: e.target.value } : null)}
-                        onBlur={() => saveOrderOutsource(oid, oeEdit!.val)}
-                        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setOeEdit(null) }}
-                        style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: '100%', outline: 'none', padding: '2px 0' }} />
-                    ) : (
-                      <div onClick={() => setOeEdit({ id: oid, field: 'outsource', val: oe?.outsource ?? '' })} style={{ cursor: 'text', minWidth: 60 }}>
+                    // สั่งนอก: แสดงอย่างเดียว — แก้ได้ที่รายการสินค้าของใบออเดอร์เท่านั้น (เหมือนหมวดออเดอร์)
+                    (
+                      <div style={{ minWidth: 60 }}>
                         <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, color: oe?.outsource ? 'var(--ink)' : 'var(--ink-4)' }}>{oe?.outsource || '—'}</div>
                         {oe?.outsource && oe.outsource_at && (
                           <div style={{ color: 'var(--ink-4)', fontSize: 10, lineHeight: 1.3 }}>

@@ -3350,18 +3350,12 @@ ${body}
                       style={{ cursor: 'text', color: 'var(--ink-4)', minWidth: 60 }}>—</div>
                   )
                 }
-                // สั่งนอก: แก้เหมือนหมายเหตุ + โชว์วันเวลาที่พิมพ์ใต้ข้อความ
+                // สั่งนอก: แสดงอย่างเดียว — แก้ได้ที่ช่อง "สั่งนอก" ของรายการสินค้าเท่านั้น (user สั่ง 22ก.ย.69)
                 const outsourceCell = () => {
                   const val = r.outsource ?? ''
-                  return isEditing('outsource') ? (
-                    <input type="text" autoFocus value={editCell!.val}
-                      onChange={e => setEditCell(ec => ec ? { ...ec, val: e.target.value } : null)}
-                      onBlur={() => saveOutsourceCell(r.id, editCell!.val)}
-                      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-                      style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: '100%', minWidth: 100, outline: 'none', padding: '2px 0' }} />
-                  ) : (
+                  return (
                     // แถวสูง 1 บรรทัด — วันเวลาที่ลงสั่งนอก ชี้เมาส์ดูในทูลทิป
-                    <div onClick={() => setEditCell({ id: r.id, field: 'outsource', val })} style={{ cursor: 'text', minWidth: 60 }}
+                    <div style={{ minWidth: 60 }}
                       title={val ? `${val}${r.outsource_at ? ` · ลงเมื่อ ${new Date(r.outsource_at).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}` : ''}` : undefined}>
                       <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160, color: val ? 'var(--ink)' : 'var(--ink-4)' }}>{val || '—'}</div>
                     </div>
@@ -4394,19 +4388,11 @@ ${body}
                     )}
                     {showCol('outsource') && (
                     <td style={{ padding: '8px 14px', maxWidth: 160 }}>
-                      {editCell?.id === r.id && editCell.field === 'outsource' ? (
-                        <input type="text" autoFocus value={editCell.val}
-                          onChange={e => setEditCell(ec => ec ? { ...ec, val: e.target.value } : null)}
-                          onBlur={() => saveOutsourceCell(r.id, editCell.val)}
-                          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-                          style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: '100%', outline: 'none', padding: '2px 0' }} />
-                      ) : (
-                        // แถวสูง 1 บรรทัด — วันเวลาที่ลงสั่งนอก ชี้เมาส์ดูในทูลทิป
-                        <div onClick={() => setEditCell({ id: r.id, field: 'outsource', val: r.outsource ?? '' })} style={{ cursor: 'text', minWidth: 60 }}
-                          title={r.outsource ? `${r.outsource}${r.outsource_at ? ` · ลงเมื่อ ${new Date(r.outsource_at).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}` : ''}` : undefined}>
-                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: r.outsource ? 'var(--ink)' : 'var(--ink-4)' }}>{r.outsource || '—'}</div>
-                        </div>
-                      )}
+                      {/* สั่งนอก: แสดงอย่างเดียว — แก้ได้ที่รายการสินค้าเท่านั้น */}
+                      <div style={{ minWidth: 60 }}
+                        title={r.outsource ? `${r.outsource}${r.outsource_at ? ` · ลงเมื่อ ${new Date(r.outsource_at).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}` : ''}` : undefined}>
+                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: r.outsource ? 'var(--ink)' : 'var(--ink-4)' }}>{r.outsource || '—'}</div>
+                      </div>
                     </td>
                     )}
                     {showCol('ship_address') && (
@@ -5094,7 +5080,13 @@ ${body}
               {sel('แอดมิน', 'admin_name', ADMINS)}
               {sel('ช่างที่รับผิดชอบ', 'technician', TECHS)}
               {!isInstall && sel('บริษัทจัดส่ง', 'courier', COURIERS)}
-              {inp('สั่งนอก', 'outsource')}
+              {/* สั่งนอก: แก้ที่ช่อง "สั่งนอก" ของรายการสินค้าเท่านั้น — ตรงนี้แสดงอย่างเดียว */}
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>สั่งนอก <span style={{ fontWeight: 400, color: 'var(--ink-4)' }}>(แก้ที่รายการสินค้า)</span></label>
+                <div style={{ fontSize: 13, color: (itemsOutsourceText(modalItems) || modal.data.outsource) ? 'var(--ink)' : 'var(--ink-4)', padding: '9px 0' }}>
+                  {itemsOutsourceText(modalItems) || modal.data.outsource || '—'}
+                </div>
+              </div>
             </div>
               )
             })()}
