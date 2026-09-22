@@ -15,7 +15,7 @@ import { installSerial, nextSerial, matchSerial } from '@/lib/serialNo'
 import { buildCustomerBook } from '@/lib/customerBook'
 import CustomerPickStep from '@/components/CustomerPickStep'
 import { TECH_OPTIONS } from '@/lib/techs'
-import { OUTSIDE_PLATFORMS, PLATFORM_NAMES, PROD_STATUSES, INSTALL_STATUSES, PROD_STATUS_COLOR, matchQuickTab, effectiveDueDate, cmpDaysSort, cmpDeadlineSort, type QuickTab } from '@/lib/orderTabs'
+import { OUTSIDE_PLATFORMS, PLATFORM_NAMES, PROD_STATUSES, INSTALL_STATUSES, PROD_STATUS_COLOR, matchQuickTab, inferPlatform, effectiveDueDate, cmpDaysSort, cmpDeadlineSort, type QuickTab } from '@/lib/orderTabs'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { effShipping } from '@/lib/shipping'
 import { thaiTrackStatus } from '@/lib/trackExtract'
@@ -150,6 +150,7 @@ type Entry = {
   // แถวที่ดึงมาจากหน้าเคลม (ตาราง claims) — ไม่ใช่ใบออเดอร์จริง แก้ได้เฉพาะสถานะ/งานเสร็จ/จัดส่ง/ปริ้น/หมายเหตุ
   claim_id?: string | null
   serial_no?: string | null      // เลขที่ใบ: งานนอก DR0001 · งานเคลม DM0001 (งานติดตั้งใช้ของ installations) — ดู lib/serialNo.ts
+  entry_kind?: string | null     // ประเภทที่กดเลือกตอนเพิ่มรายการ — ใช้จัดแท็บเมื่อช่องแพลตฟอร์มว่าง (lib/orderTabs.ts)
   // ปักหมุดออเดอร์สำคัญ (sql/add_pinned_column.sql) — ลอยขึ้นบนสุดของทุกแท็บ เห็นร่วมกันทั้งทีม
   pinned?: boolean | null
   pinned_at?: string | null
@@ -851,7 +852,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const isClaimAdd = modal.mode === 'add' && addType === 'claim'
     const platformVal = d.platform
       ? (isClaimAdd && !d.platform.startsWith('เคลม:') ? `เคลม:${d.platform}` : d.platform)
-      : null
+      : (!isClaimAdd && inferPlatform(d.order_number)) || null
     // สั่งนอกจากรายการสินค้า: มีข้อความ → ทับช่องสั่งนอกของออเดอร์ + ประทับเวลาเมื่อข้อความเปลี่ยน
     const itemsOut = itemsOutsourceText(modalItems)
     const prevOutsource = modal.mode === 'edit' ? (rows.find(r => r.id === d.id)?.outsource ?? '') : ''
@@ -910,9 +911,15 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
         if (!serErr) (payload as Record<string, unknown>).serial_no = nextSerial('outside', (used ?? []).map(x => (x as { serial_no: string | null }).serial_no))
       }
       // abortSignal = ยกเลิกคำขอที่ค้างจริงๆ (ไม่ใช่แค่เลิกรอ) — กดใหม่แล้วได้การเชื่อมต่อใหม่ ไม่ไปต่อคิวเดิมที่ตายแล้ว
-      const qIns = oeInsert(payload).select().single()
-      const sigIns = abortAfter(20000)
-      const res = await withTimeout(sigIns ? qIns.abortSignal(sigIns) : qIns, 'บันทึกออเดอร์')
+      // จำประเภทที่กดเลือกตอนเพิ่มรายการ — ใบที่ไม่มีแพลตฟอร์มจะได้ไปอยู่แท็บที่ถูก (lib/orderTabs.ts)
+      const insertOnce = async (row: Record<string, unknown>) => {
+        const qIns = oeInsert(row).select().single()
+        const sigIns = abortAfter(20000)
+        return withTimeout(sigIns ? qIns.abortSignal(sigIns) : qIns, 'บันทึกออเดอร์')
+      }
+      let res = await insertOnce(addType ? { ...payload, entry_kind: addType } : payload)
+      // ยังไม่ได้รัน sql/add_entry_kind.sql (ไม่มีคอลัมน์) → บันทึกแบบเดิมไปก่อน ไม่พัง
+      if (res.error && /entry_kind/.test(res.error.message)) res = await insertOnce(payload)
       if (res.error) { setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
       const saved = res.data as Entry
       // ‼️ ใบออเดอร์บันทึกลงฐานแล้ว — งานต่อเนื่อง (ปฏิทินติดตั้ง/รูป/ใบสั่งซื้อ) ถ้าพลาดต้องไม่ทำให้
@@ -2857,18 +2864,7 @@ ${body}
         <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px' }} />
         {(() => {
           const incompleteCount = scopedRows.filter(r => {
-            const p = r.platform ?? ''
-            const isClaim = p.startsWith('เคลม:')
-            const isShipped = r.order_status === 'จัดส่งแล้ว'
-            const isCancelled = r.order_status === 'ยกเลิก'
-            const matchQ = quickFilter === 'shipped' ? isShipped
-              : quickFilter === 'cancelled' ? isCancelled
-              : quickFilter === 'claim' ? (isClaim && !isShipped && !isCancelled)
-              : (isShipped || isCancelled) ? false
-              : quickFilter === 'all' ? true
-              : quickFilter === 'platform' ? (!isClaim && (p === 'Shopee' || p === 'Tiktok' || p === 'Lazada'))
-              : quickFilter === 'outside' ? (!isClaim && OUTSIDE_PLATFORMS.includes(p) && !r.is_installation)
-              : r.is_installation === true
+            const matchQ = matchQuickTab(r, quickFilter as QuickTab)
             return matchQ && (!r.items || r.items.length === 0 || !r.deadline || r.price == null || !r.customer_name || (OUTSIDE_PLATFORMS.includes(r.platform ?? '') && (!r.order_assigned || r.order_assigned === 'รออัพเดท')) || ((OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation) && (!r.payment_status || r.payment_status === 'ยังไม่ชำระ')))
           }).length
           if (incompleteCount === 0) return null

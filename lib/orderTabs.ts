@@ -62,6 +62,7 @@ export const ORDER_TABS: { id: QuickTab; label: string }[] = [
 type TabRow = {
   platform?: string | null
   order_number?: string | null
+  entry_kind?: string | null      // ประเภทที่กดเลือกตอน "เพิ่มรายการ" (platform/outside/install/claim) — sql/add_entry_kind.sql
   order_status?: string | null
   is_installation?: boolean | null
 }
@@ -160,7 +161,8 @@ export function matchQuickTab(r: TabRow, tab: QuickTab): boolean {
     : tab === 'claim' ? (isClaim && !isShipped && !isCancelled)   // งานเคลมที่ส่งแล้ว/ยกเลิก ย้ายไปแท็บของตัวเองเหมือนออเดอร์ปกติ (user ขอ 15ก.ย.69)
     : (isShipped || isCancelled) ? false
     : tab === 'all' ? true
-    : tab === 'platform' ? (!isClaim && PLATFORM_NAMES.includes(p))
-    : tab === 'outside' ? (!isClaim && OUTSIDE_PLATFORMS.includes(p) && !r.is_installation)
+    // ช่องแพลตฟอร์มว่าง (เดาจากเลขคำสั่งซื้อไม่ได้) → ยึดประเภทที่กดเลือกตอนเพิ่มรายการ
+    : tab === 'platform' ? (!isClaim && (p ? PLATFORM_NAMES.includes(p) : r.entry_kind === 'platform'))
+    : tab === 'outside' ? (!isClaim && (p ? OUTSIDE_PLATFORMS.includes(p) : r.entry_kind === 'outside') && !r.is_installation)
     : r.is_installation === true
 }
