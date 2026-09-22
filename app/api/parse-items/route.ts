@@ -3,6 +3,7 @@ import { applyFabricCatalog } from '@/lib/fabrics'
 import { fillItemDefaults, autoTapeHooks, type RawItem } from '@/lib/itemFormat'
 import { askClaude } from '@/lib/askClaude'
 import { ITEM_SCHEMA, ITEM_RULES } from '@/lib/itemPrompt'
+import { parseFabricSample } from '@/lib/fabricSample'
 
 // เผื่อเวลาให้สะพาน Claude ที่เครื่องร้าน (ช้ากว่ายิง API ตรง)
 export const maxDuration = 60
@@ -12,6 +13,10 @@ export async function POST(req: NextRequest) {
   if (!text?.trim()) {
     return NextResponse.json({ error: 'ไม่มีข้อความ' }, { status: 400 })
   }
+
+  // ขอตัวอย่างผ้า → แยกรหัสเอง ไม่ส่ง AI (lib/fabricSample.ts)
+  const sample = parseFabricSample(text)
+  if (sample) return NextResponse.json({ items: sample.items })
 
   // ‼️ กติกาแปลงรายการใช้ชุดเดียวกับตอนวางข้อความไลน์ทั้งก้อน (parse-order) — แก้ที่ lib/itemPrompt.ts ที่เดียว
   // ‼️ rules = ส่วนตายตัวทั้งหมด (Anthropic จำไว้ ลดค่า API) — รายการที่วางมาส่งแยกเป็นก้อนท้าย

@@ -4,6 +4,7 @@ import { fillItemDefaults, autoTapeHooks, type RawItem } from '@/lib/itemFormat'
 import { askClaude } from '@/lib/askClaude'
 import { normalizeThaiDate } from '@/lib/thaiDate'
 import { inferPlatform } from '@/lib/orderTabs'
+import { parseFabricSample } from '@/lib/fabricSample'
 import { ITEM_SCHEMA, ITEM_RULES } from '@/lib/itemPrompt'
 
 // เผื่อเวลาให้สะพาน Claude ที่เครื่องร้าน (ช้ากว่ายิง API ตรง)
@@ -14,6 +15,10 @@ export async function POST(req: NextRequest) {
   if (!text?.trim()) {
     return NextResponse.json({ error: 'ไม่มีข้อความ' }, { status: 400 })
   }
+
+  // ขอตัวอย่างผ้า → แยกรหัสเอง (AI แปลงไม่ออก) · มีแค่รหัสล้วน = ไม่ต้องเรียก AI เลย
+  const sample = parseFabricSample(text)
+  if (sample && !sample.rest) return NextResponse.json({ order: { items: sample.items } })
 
   // ‼️ rules = ส่วนตายตัวทั้งหมด (Anthropic จำไว้ ลดค่า API) ห้ามใส่ค่าที่เปลี่ยนทุกครั้งในนี้ — ข้อความออเดอร์ส่งแยกเป็นก้อนท้าย
   const rules = `แปลงข้อความออเดอร์ที่แอดมิน copy มาจากแชทไลน์เป็น JSON object เดียวเท่านั้น ห้ามมี markdown ห้ามมีข้อความอื่น
@@ -67,6 +72,7 @@ ${ITEM_RULES}
     raw = r.text
     stopReason = r.stopReason
   } catch (e) {
+    if (sample) return NextResponse.json({ order: { items: sample.items } })   // AI ล่ม แต่รายการตัวอย่างผ้าแยกได้แล้ว
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 })
   }
 
@@ -76,6 +82,7 @@ ${ITEM_RULES}
 
   const jsonMatch = raw.match(/\{[\s\S]*\}/)
   if (!jsonMatch) {
+    if (sample) return NextResponse.json({ order: { items: sample.items } })
     return NextResponse.json({ error: 'แปลงข้อมูลไม่สำเร็จ', raw }, { status: 500 })
   }
 
@@ -96,6 +103,7 @@ ${ITEM_RULES}
         return applyFabricCatalog(it)
       })
     }
+    if (sample) order.items = sample.items
     return NextResponse.json({ order })
   } catch {
     return NextResponse.json({ error: 'JSON ไม่ถูกต้อง', raw }, { status: 500 })
