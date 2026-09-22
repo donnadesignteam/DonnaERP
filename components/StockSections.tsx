@@ -3,7 +3,7 @@
 // หมวดสต็อก — แท็บ ภาพรวม / สต็อกผ้า / อุปกรณ์ราง / อุปกรณ์สำนักงาน / งานนอก / งานยกเลิก-ตีกลับ
 // สต็อกผ้าใช้ตาราง stock เดิม · หมวดอื่นเก็บในตาราง stock_items แยกด้วย category (sql/create_stock_items.sql)
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useConfirm } from '@/components/ConfirmDialog'
 import { CANCELLED_COLS, returnedFromOrder, type CancelledOrder, type ReturnedFromOrder } from '@/lib/cancelledReturns'
@@ -170,7 +170,7 @@ function useStockItems() {
   return { items, setItems, loading, error, load, setError }
 }
 
-export function StockItemsTab({ category }: { category: Cat }) {
+export function StockItemsTab({ category, addReq = 0 }: { category: Cat; addReq?: number }) {
   const { items: all, setItems, loading, error, load, setError } = useStockItems()
   const cancelled = useCancelledReturns()
   const { ask, confirmDialog } = useConfirm()
@@ -215,6 +215,13 @@ export function StockItemsTab({ category }: { category: Cat }) {
     .filter(it => category !== 'outsource' || (shipped.has(it.id) ? 'จัดส่งแล้ว' : 'ของเข้าแล้ว') === view)
     .filter(it => !q || [it.code, it.name, it.vendor, it.ref, it.notes].some(v => (v ?? '').toLowerCase().includes(q.toLowerCase()))),
   [all, cancelled, category, q, shipped, view])
+
+  // ปุ่ม "＋ เพิ่มรายการ" อยู่ที่หัวหน้าสต็อก (ตำแหน่งเดียวกันทุกแท็บ) — กดแล้ว addReq เพิ่ม → เปิดฟอร์มเพิ่มของแท็บนี้
+  const firstReq = useRef(addReq)
+  useEffect(() => {
+    if (addReq === firstReq.current) return
+    setEdit({ qty: 0, ...(category === 'outsource' ? { received_at: today() } : {}), ...(category === 'returned' ? { source: 'ยกเลิก' } : {}) })
+  }, [addReq, category])
 
   const save = async () => {
     if (!edit) return
@@ -290,8 +297,6 @@ export function StockItemsTab({ category }: { category: Cat }) {
         })}
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>{rows.length} รายการ</span>
-        <button onClick={() => setEdit({ qty: 0, ...(category === 'outsource' ? { received_at: today() } : {}), ...(category === 'returned' ? { source: 'ยกเลิก' } : {}) })}
-          style={{ ...btn, background: 'var(--blue)', color: '#fff' }}>+ เพิ่ม{ADD_LABEL[category]}</button>
       </div>
       {error && <div style={{ background: '#FDECEA', color: '#B3261E', borderRadius: 10, padding: '10px 14px', fontSize: 13, marginBottom: 12 }}>{error}</div>}
 
@@ -300,7 +305,7 @@ export function StockItemsTab({ category }: { category: Cat }) {
           <thead><tr>{COLS[category].map(c => <th key={c.label} style={{ textAlign: 'left' }}>{c.label}</th>)}<th /></tr></thead>
           <tbody>
             {loading ? <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--ink-3)' }}>กำลังโหลด…</td></tr>
-              : rows.length === 0 ? <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: 28 }}>ยังไม่มีรายการ — กด &quot;+ เพิ่ม{ADD_LABEL[category]}&quot;</td></tr>
+              : rows.length === 0 ? <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: 28 }}>ยังไม่มีรายการ — กด &quot;＋ เพิ่มรายการ&quot; มุมขวาบน</td></tr>
               : rows.map(it => (
                 <tr key={it.id}>
                   {COLS[category].map(c => <td key={c.label}>{c.label.startsWith('หมายเหตุ') ? <NoteCell value={it.notes ?? ''} onSave={v => saveNote(it, v)} /> : c.get(it)}</td>)}
@@ -367,7 +372,8 @@ export function StockOverview({ onOpen }: { onOpen: (t: StockTab) => void }) {
   const cancelled = useCancelledReturns()
   const [fabric, setFabric] = useState<{ status: string }[]>([])
   // สถานะผ้าคิดสดจากเมตรคงเหลือ (lib/fabricStatus.ts) — ไม่อ่านช่อง status ในฐานที่อาจค้างค่าเก่า
-  useEffect(() => { supabase.from('stock').select('remaining_meters').then(({ data }) => setFabric(((data ?? []) as { remaining_meters: number | null }[]).map(r => ({ status: fabricStatus(r.remaining_meters) })))) }, [])
+  const loadFabric = () => supabase.from('stock').select('remaining_meters').then(({ data }) => setFabric(((data ?? []) as { remaining_meters: number | null }[]).map(r => ({ status: fabricStatus(r.remaining_meters) }))))
+  useEffect(() => { loadFabric() }, [])
 
   const count = (rows: { status: string }[], s: string) => rows.filter(r => r.status === s).length
   const withStatus = (c: Cat) => items.filter(i => i.category === c).map(i => ({ status: itemStatus(i) }))

@@ -2,6 +2,7 @@
 
 import { fabricStatus } from '@/lib/fabricStatus'
 import NotifyBell from '@/components/NotifyBell'
+import StockReceive from '@/components/StockReceive'
 import { useState, useEffect, useRef } from 'react'
 import AnchoredMenu from '@/components/AnchoredMenu'
 import { supabase } from '@/lib/supabase'
@@ -106,18 +107,38 @@ export default function StockPage() {
     return () => window.removeEventListener('hashchange', read)
   }, [])
   const go = (t: StockTab) => { window.location.hash = t; setTab(t) }
+  // รับของเข้า (+ เพิ่มรายการแบบหลายหมวด) เฉพาะหน้าภาพรวม · แท็บอื่นใช้ปุ่มเพิ่มของแท็บตัวเองเหมือนเดิม · บันทึกแล้ว rev+1 → โหลดใหม่
+  const [receive, setReceive] = useState(false)
+  const [rev, setRev] = useState(0)
+  // แท็บอุปกรณ์ราง/สำนักงาน/งานนอก/ยกเลิก-ตีกลับ: ปุ่มอยู่หัวหน้าตำแหน่งเดียวกับทุกแท็บ → ส่งสัญญาณให้แท็บเปิดฟอร์มเพิ่มของตัวเอง
+  const [addReq, setAddReq] = useState(0)
+  const receiveBtn = (
+    <button onClick={() => (tab === 'overview' ? setReceive(true) : setAddReq(n => n + 1))}
+      style={{ background: 'var(--brand)', color: '#FFF8F0', border: 'none', borderRadius: 999, height: 46, padding: '0 26px', fontSize: 14.5, fontWeight: 600, cursor: 'pointer', boxShadow: '0 3px 10px rgba(158,106,73,0.35)', fontFamily: 'inherit' }}>
+      ＋ เพิ่มรายการ
+    </button>
+  )
   return (
     <div>
       {tab !== 'fabric' && (
-        <div style={{ marginBottom: 20 }}>
-          <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px' }}>สต็อก</h1>
+        // หัวหน้า — ชุดเดียวกับหน้าออเดอร์/งานเคลม/พัสดุส่งกลับ: ชื่อหมวด + แท็บที่เปิด · กระดิ่ง / เพิ่มรายการ มุมขวา
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 28 }}>
+          <div>
+            <h1 style={{ fontSize: 32, fontWeight: 700, color: '#4A3122', letterSpacing: '-0.5px' }}>สต็อก</h1>
+            <p style={{ fontSize: 15, color: 'var(--ink-2)', marginTop: 2 }}>{STOCK_TABS.find(t => t.id === tab)?.label}</p>
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <NotifyBell />
+            {receiveBtn}
+          </div>
         </div>
       )}
-      {/* สต็อกผ้า: แถบแท็บอยู่ใต้หัวหน้าของตัวเอง (หัวข้อ+ปุ่มเพิ่มรายการ) */}
+      {/* สต็อกผ้า: แถบแท็บอยู่ใต้หัวหน้าของตัวเอง (หัวข้อ+ปุ่ม) */}
       {tab !== 'fabric' && <StockTabBar tab={tab} onChange={go} />}
-      {tab === 'overview' && <StockOverview onOpen={go} />}
-      {tab === 'fabric' && <FabricStock tabBar={<StockTabBar tab={tab} onChange={go} />} />}
-      {(tab === 'rail' || tab === 'office' || tab === 'outsource' || tab === 'returned') && <StockItemsTab key={tab} category={tab} />}
+      {tab === 'overview' && <StockOverview key={rev} onOpen={go} />}
+      {tab === 'fabric' && <FabricStock key={rev} tabBar={<StockTabBar tab={tab} onChange={go} />} />}
+      {(tab === 'rail' || tab === 'office' || tab === 'outsource' || tab === 'returned') && <StockItemsTab key={`${tab}:${rev}`} category={tab} addReq={addReq} />}
+      {receive && <StockReceive onClose={() => setReceive(false)} onSaved={() => setRev(r => r + 1)} />}
     </div>
   )
 }
@@ -355,16 +376,16 @@ function FabricStock({ tabBar }: { tabBar: React.ReactNode }) {
     <div>
       {(menuOpen || openFilter) && <div onClick={() => { closeMenu(); closeFilter() }} style={{ position: 'fixed', inset: 0, zIndex: 150 }} />}
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 28 }}>
         <div>
-          <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.5px', fontFamily: 'inherit' }}>สต็อก</h1>
-          <p style={{ fontSize: 14, color: 'var(--ink-3)', marginTop: 4 }}>{items.length} รายการ</p>
+          <h1 style={{ fontSize: 32, fontWeight: 700, color: '#4A3122', letterSpacing: '-0.5px', fontFamily: 'inherit' }}>สต็อก</h1>
+          <p style={{ fontSize: 15, color: 'var(--ink-2)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>สต็อกผ้า · {items.length} รายการ</p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <NotifyBell />
           <button onClick={openAdd}
-            style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,122,255,0.3), 0 4px 14px rgba(0,122,255,0.2)', fontFamily: 'inherit' }}>
-            + เพิ่มรายการ
+            style={{ background: 'var(--brand)', color: '#FFF8F0', border: 'none', borderRadius: 999, height: 46, padding: '0 26px', fontSize: 14.5, fontWeight: 600, cursor: 'pointer', boxShadow: '0 3px 10px rgba(158,106,73,0.35)', fontFamily: 'inherit' }}>
+            ＋ เพิ่มรายการ
           </button>
         </div>
       </div>
