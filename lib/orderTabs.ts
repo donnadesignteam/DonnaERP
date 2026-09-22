@@ -14,6 +14,17 @@ export const OUTSIDE_PLATFORMS = [
 // แพลตฟอร์มมาร์เก็ตเพลส (แท็บ "งานแพลตฟอร์ม") — คนละชุดกับ OUTSIDE_PLATFORMS
 export const PLATFORM_NAMES = ['Shopee', 'Tiktok', 'Lazada']
 
+// เดาแพลตฟอร์มจากรูปแบบเลขคำสั่งซื้อ — ใช้ตอน AI แปลงแล้วช่อง platform ว่าง
+// (เคยเกิด 14ก.ย.69: ใบ Shopee platform=null เลยไม่เข้าแท็บไหนนอกจาก "ทั้งหมด")
+// Shopee = YYMMDD + ตัวอักษร/ตัวเลข 8 ตัว (2609141W702MNB) · Tiktok = ตัวเลข 18 หลัก · Lazada = ตัวเลข 12-17 หลัก
+export function inferPlatform(orderNumber: string | null | undefined): string | null {
+  const n = (orderNumber ?? '').trim().toUpperCase()
+  if (/^\d{6}[A-Z0-9]{8}$/.test(n) && /[A-Z]/.test(n)) return 'Shopee'
+  if (/^\d{18}$/.test(n)) return 'Tiktok'
+  if (/^\d{12,17}$/.test(n)) return 'Lazada'
+  return null
+}
+
 export const PROD_STATUSES = ['รอดำเนินการ', 'ตัดผ้าแล้ว', 'เย็บแล้ว', 'ตรวจสอบแล้ว', 'รีดแล้ว', 'แพ็คแล้ว', 'รอจัดส่ง', 'จัดส่งแล้ว']
 export const INSTALL_STATUSES = ['รอดำเนินการ', 'ตัดผ้าแล้ว', 'เย็บแล้ว', 'ตรวจสอบแล้ว', 'รีดแล้ว', 'แพ็คแล้ว', 'รอติดตั้ง']
 
@@ -50,6 +61,7 @@ export const ORDER_TABS: { id: QuickTab; label: string }[] = [
 
 type TabRow = {
   platform?: string | null
+  order_number?: string | null
   order_status?: string | null
   is_installation?: boolean | null
 }
@@ -139,7 +151,7 @@ export const daysColor = (d: number) => d <= 0 ? 'var(--red)' : d <= 10 ? '#C79A
 // แถวนี้อยู่ในแท็บที่เลือกไหม
 // ‼️ จัดส่งแล้ว/ยกเลิก → ไปอยู่แท็บของตัวเองแท็บเดียว หายจากแท็บอื่นทั้งหมด (รวมถึง "ทั้งหมด")
 export function matchQuickTab(r: TabRow, tab: QuickTab): boolean {
-  const p = r.platform ?? ''
+  const p = r.platform || inferPlatform(r.order_number) || ''
   const isClaim = p.startsWith('เคลม:')
   const isShipped = r.order_status === 'จัดส่งแล้ว'
   const isCancelled = r.order_status === 'ยกเลิก'

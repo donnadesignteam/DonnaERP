@@ -3,6 +3,7 @@ import { applyFabricCatalog } from '@/lib/fabrics'
 import { fillItemDefaults, autoTapeHooks, type RawItem } from '@/lib/itemFormat'
 import { askClaude } from '@/lib/askClaude'
 import { normalizeThaiDate } from '@/lib/thaiDate'
+import { inferPlatform } from '@/lib/orderTabs'
 import { ITEM_SCHEMA, ITEM_RULES } from '@/lib/itemPrompt'
 
 // เผื่อเวลาให้สะพาน Claude ที่เครื่องร้าน (ช้ากว่ายิง API ตรง)
@@ -82,6 +83,8 @@ ${ITEM_RULES}
     const order = JSON.parse(jsonMatch[0])
     // ปีที่แปลงมาอาจเป็น พ.ศ. หรือโดนบวก 543 ซ้ำจนไปปี 3000 กว่า — แก้ให้เป็น ค.ศ. ปีที่เป็นไปได้ ถ้าเพี้ยนเกินไปทิ้งเป็นค่าว่าง
     if (order.deadline != null) order.deadline = normalizeThaiDate(order.deadline)
+    // AI ไม่ตอบช่องทาง → เดาจากรูปแบบเลขคำสั่งซื้อ (ไม่งั้นใบไม่เข้าแท็บงานแพลตฟอร์ม)
+    if (!order.platform) order.platform = inferPlatform(order.order_number)
     // เติม/แก้ fabric_type ให้ถูกต้องจากแคตตาล็อกรหัสผ้า (แม่นกว่าให้ AI เดา)
     // เฉพาะรายการผ้า (ไม่ใช่ราง) ที่มีรหัสสีตรงกับแคตตาล็อก
     if (Array.isArray(order.items)) {
