@@ -48,10 +48,11 @@ const Pill = ({ s }: { s: string }) => (
 // ช่องในฟอร์มของแต่ละหมวด
 type Field = { k: keyof Item; label: string; type?: 'number' | 'date' | 'select'; options?: string[]; wide?: boolean }
 const FIELDS: Record<Cat, Field[]> = {
+  // อุปกรณ์ราง: ไม่ใช้รหัส/จุดสั่งซื้อ (user สั่ง 22ก.ย.69)
   rail: [
-    { k: 'code', label: 'รหัส' }, { k: 'name', label: 'ชื่ออุปกรณ์', wide: true },
+    { k: 'name', label: 'ชื่ออุปกรณ์', wide: true },
     { k: 'qty', label: 'คงเหลือ', type: 'number' }, { k: 'unit', label: 'หน่วย' },
-    { k: 'min_qty', label: 'จุดสั่งซื้อ (เหลือเท่านี้ = ควรสั่ง)', type: 'number' }, { k: 'notes', label: 'หมายเหตุ', wide: true },
+    { k: 'notes', label: 'หมายเหตุ', wide: true },
   ],
   office: [
     { k: 'code', label: 'รหัส' }, { k: 'name', label: 'ชื่ออุปกรณ์', wide: true },
@@ -74,11 +75,15 @@ const FIELDS: Record<Cat, Field[]> = {
 // คอลัมน์ในตาราง
 const COLS: Record<Cat, { label: string; get: (it: Item) => React.ReactNode }[]> = {
   rail: [
+    { label: 'ชื่ออุปกรณ์', get: it => <b>{it.name}</b> },
+    { label: 'คงเหลือ', get: it => `${it.qty} ${it.unit ?? ''}` },
+    { label: 'สถานะ', get: it => <Pill s={itemStatus(it)} /> }, { label: 'หมายเหตุ', get: it => it.notes || '—' },
+  ],
+  office: [
     { label: 'รหัส', get: it => it.code || '—' }, { label: 'ชื่ออุปกรณ์', get: it => <b>{it.name}</b> },
     { label: 'คงเหลือ', get: it => `${it.qty} ${it.unit ?? ''}` }, { label: 'จุดสั่งซื้อ', get: it => it.min_qty ?? '—' },
     { label: 'สถานะ', get: it => <Pill s={itemStatus(it)} /> }, { label: 'หมายเหตุ', get: it => it.notes || '—' },
   ],
-  office: [],
   outsource: [
     { label: 'ของเข้า', get: it => fmtDate(it.received_at) }, { label: 'รายการ', get: it => <b>{it.name}</b> },
     { label: 'จำนวน', get: it => `${it.qty} ${it.unit ?? ''}` }, { label: 'สั่งจาก', get: it => it.vendor || '—' },
@@ -90,7 +95,6 @@ const COLS: Record<Cat, { label: string; get: (it: Item) => React.ReactNode }[]>
     { label: 'จำนวน', get: it => `${it.qty} ${it.unit ?? ''}` }, { label: 'หมายเหตุ', get: it => it.notes || '—' },
   ],
 }
-COLS.office = COLS.rail
 
 const ADD_LABEL: Record<Cat, string> = { rail: 'อุปกรณ์ราง', office: 'อุปกรณ์สำนักงาน', outsource: 'งานนอก', returned: 'งานยกเลิก/ตีกลับ' }
 
@@ -122,11 +126,11 @@ function useStockItems() {
     setLoading(false)
   }
   useEffect(() => { load() }, [])
-  return { items, loading, error, load, setError }
+  return { items, setItems, loading, error, load, setError }
 }
 
 export function StockItemsTab({ category }: { category: Cat }) {
-  const { items: all, loading, error, load, setError } = useStockItems()
+  const { items: all, setItems, loading, error, load, setError } = useStockItems()
   const { ask, confirmDialog } = useConfirm()
   const [q, setQ] = useState('')
   const [edit, setEdit] = useState<Partial<Item> | null>(null)
@@ -199,6 +203,16 @@ export function StockItemsTab({ category }: { category: Cat }) {
     setEdit(null); load()
   }
 
+  // หมายเหตุ: กดที่ช่องแล้วพิมพ์แก้ในตารางได้เลย (แบบหมวดออเดอร์) — บันทึกตอนกดออก/Enter
+  const saveNote = async (it: Item, v: string) => {
+    const notes = v.trim() || null
+    if (notes === (it.notes ?? null)) return
+    const now = new Date().toISOString()
+    setItems(prev => prev.map(x => x.id === it.id ? { ...x, notes, updated_at: now } : x))
+    const { error: err } = await supabase.from('stock_items').update({ notes, updated_at: now }).eq('id', it.id)
+    if (err) { setError(`บันทึกหมายเหตุไม่สำเร็จ: ${err.message}`); load() }
+  }
+
   const remove = async (it: Item) => {
     if (!(await ask(`ลบ "${it.name}" ?`, { danger: true, okText: 'ลบ' }))) return
     const { error: err } = await supabase.from('stock_items').delete().eq('id', it.id)
@@ -241,7 +255,7 @@ export function StockItemsTab({ category }: { category: Cat }) {
               : rows.length === 0 ? <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: 28 }}>ยังไม่มีรายการ — กด &quot;+ เพิ่ม{ADD_LABEL[category]}&quot;</td></tr>
               : rows.map(it => (
                 <tr key={it.id}>
-                  {COLS[category].map(c => <td key={c.label}>{c.get(it)}</td>)}
+                  {COLS[category].map(c => <td key={c.label}>{c.label.startsWith('หมายเหตุ') ? <NoteCell value={it.notes ?? ''} onSave={v => saveNote(it, v)} /> : c.get(it)}</td>)}
                   <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
                     <button onClick={() => setEdit(it)} style={{ ...btn, padding: '6px 12px', fontSize: 12.5, background: 'var(--cream)', color: PILL_INK, marginRight: 6 }}>แก้ไข</button>
                     <button onClick={() => remove(it)} style={{ ...btn, padding: '6px 12px', fontSize: 12.5, background: 'transparent', color: '#B3261E' }}>ลบ</button>
@@ -330,6 +344,24 @@ export function StockOverview({ onOpen }: { onOpen: (t: StockTab) => void }) {
           </button>
         ))}
       </div>
+    </div>
+  )
+}
+
+// ช่องหมายเหตุในตาราง — แบบเดียวกับหมวดออเดอร์ (textCell): กดแล้วเป็นช่องพิมพ์บรรทัดเดียวขีดเส้นใต้ · Enter/กดออก = บันทึก
+function NoteCell({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [v, setV] = useState(value)
+  return editing ? (
+    <input type="text" autoFocus value={v}
+      onChange={e => setV(e.target.value)}
+      onBlur={() => { setEditing(false); onSave(v) }}
+      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+      style={{ border: 'none', borderBottom: '1px solid var(--blue)', background: 'transparent', fontSize: 12, width: '100%', minWidth: 100, outline: 'none', padding: '2px 0' }} />
+  ) : (
+    <div onClick={() => { setV(value); setEditing(true) }} title={value || undefined}
+      style={{ cursor: 'text', color: value ? 'var(--ink)' : 'var(--ink-4)', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      {value || '—'}
     </div>
   )
 }

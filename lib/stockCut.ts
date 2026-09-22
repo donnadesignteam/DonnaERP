@@ -6,7 +6,7 @@
 import { supabase } from '@/lib/supabase'
 import { round2, type CutLine } from '@/lib/fabricUsage'
 
-type StockRow = { id: string | number; fabric_code: string | null; shop_code: string | null; color_name: string | null }
+type StockRow = { id: string | number; fabric_code: string | null; shop_code: string | null; color_name: string | null; suppliers?: { shop_code?: string }[] | null }
 const norm = (v: unknown) => String(v ?? '').trim().toUpperCase().replace(/\s+/g, '')
 
 // หาแถวสต็อกที่ตรงแบบไม่กำกวม (ตรงแถวเดียวเท่านั้น)
@@ -25,11 +25,14 @@ export async function syncStockCut(scanNo: string, items: unknown, lines: CutLin
   const need = lines.filter(l => !l.skip && !l.warn && l.meters > 0)
   const sum = new Map<string, number>()
   if (need.length) {
-    const { data, error } = await supabase.from('stock').select('id, fabric_code, shop_code, color_name')
+    // suppliers = รหัสร้านทุกเจ้าของรหัสผ้านี้ (ยังไม่ได้รัน sql/stock_merge_suppliers.sql = ไม่มีคอลัมน์ → ดึงแบบเดิม)
+    let { data, error } = await supabase.from('stock').select('id, fabric_code, shop_code, color_name, suppliers')
+    if (error && /suppliers/.test(error.message)) ({ data, error } = await supabase.from('stock').select('id, fabric_code, shop_code, color_name'))
     if (error) throw new Error(error.message)
     const stock = (data ?? []) as StockRow[]
     const byFabric = uniqueBy(stock, s => norm(s.fabric_code))
-    const byShop = uniqueBy(stock, s => norm(s.shop_code))
+    // รหัสร้านของทุกซัพพลายเออร์ชี้มาที่แถวเดียวกัน
+    const byShop = uniqueBy(stock.flatMap(s => [...new Set([s.shop_code, ...(s.suppliers ?? []).map(x => x?.shop_code)].map(norm).filter(Boolean))].map(code => ({ ...s, shop_code: code }))), s => norm(s.shop_code))
     const byName = uniqueBy(stock, s => norm(s.color_name))
     for (const l of need) {
       const it = list[l.i] ?? {}

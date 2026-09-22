@@ -6,7 +6,7 @@
 // ช่อง "จากออเดอร์" = ผูกกับงานเคลม (claims) — กดแล้วพิมพ์ค้นเหมือนช่องอื่น (เลขออเดอร์เดิม/ชื่อลูกค้า/เลขพัสดุส่งคืน/เบอร์)
 // ตาราง: sql/create_return_parcels.sql + sql/add_return_parcels_claim.sql (คอลัมน์ claim_id)
 import NotifyBell from '@/components/NotifyBell'
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { Fragment, useState, useEffect, useRef, useMemo } from 'react'
 import AnchoredMenu from '@/components/AnchoredMenu'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -20,6 +20,9 @@ import { useConfirm } from '@/components/ConfirmDialog'
 import { nextSerial, matchSerial } from '@/lib/serialNo'
 import { buildCustomerBook, type CustomerEntry } from '@/lib/customerBook'
 import CustomerPickStep from '@/components/CustomerPickStep'
+import OrderFinder, { type FoundOrder } from '@/components/OrderFinder'
+import { formatItemLines, type RawItem } from '@/lib/itemFormat'
+import ItemsModal from '@/components/ItemsModal'
 import CreamSelect from '@/components/CreamSelect'
 import { CourierIcon } from '@/components/BrandMark'
 import { useStableView } from '@/lib/useStableView'
@@ -30,7 +33,7 @@ type Parcel = {
   id: string
   serial_no?: string | null    // เลขที่ใบพัสดุตีกลับ BP0001 — ออกตอนสร้าง ไม่เปลี่ยนอีก (ดู lib/serialNo.ts)
   sender_name: string | null
-  items: string | null
+  items: RawItem[] | string | null   // JSON array แบบเดียวกับออเดอร์ (ใบเก่าเป็นข้อความ — อ่านผ่าน parcelItems)
   carrier: string | null
   tracking_no: string | null
   orig_carrier: string | null
@@ -47,10 +50,9 @@ type Parcel = {
 type ClaimLite = { id: string; original_order_number: string | null; customer_username: string | null; channel: string | null; claim_date: string | null; return_tracking: string | null; status: string | null }
 const CLAIM_COLS = 'id, original_order_number, customer_username, channel, claim_date, return_tracking, status'
 
-type TextKey = 'sender_name' | 'items' | 'carrier' | 'tracking_no' | 'orig_carrier' | 'orig_tracking_no' | 'orig_order_number' | 'address' | 'phone'
+type TextKey = 'sender_name' | 'carrier' | 'tracking_no' | 'orig_carrier' | 'orig_tracking_no' | 'orig_order_number' | 'address' | 'phone'
 const COLS: { key: TextKey; label: string; w: number; multiline?: boolean; carrier?: boolean }[] = [
   { key: 'sender_name', label: 'ชื่อ', w: 140 },
-  { key: 'items', label: 'รายการ', w: 200, multiline: true },
   { key: 'carrier', label: 'บริษัทขนส่ง', w: 120, carrier: true },
   { key: 'tracking_no', label: 'เลขพัสดุ', w: 150 },
   { key: 'orig_carrier', label: 'บ.ขนส่งเดิม', w: 120, carrier: true },
@@ -63,7 +65,7 @@ const COLS: { key: TextKey; label: string; w: number; multiline?: boolean; carri
 // ── ตัวกรอง/เรียงที่หัวคอลัมน์ + ซ่อน/โชว์คอลัมน์ (แบบเดียวกับหน้างานเคลม/ออเดอร์) ──
 // date = เรียง + ช่วงวันที่ · pick = เรียง + ติ๊กเลือกค่า · text = เรียง · bool = มี/ไม่มี
 type ColKind = 'date' | 'pick' | 'text' | 'bool'
-type ColId = 'created' | 'serial' | TextKey | 'videos' | 'photos' | 'claim'
+type ColId = 'created' | 'serial' | TextKey | 'items' | 'videos' | 'photos' | 'claim'
 const NONE = '(ไม่ระบุ)'
 const FILTER_DEFS: { id: ColId; kind: ColKind; get: (r: Parcel) => string | number | null | undefined; yes?: string; no?: string }[] = [
   { id: 'created', kind: 'date', get: r => r.created_at },
@@ -83,12 +85,25 @@ const SORT_LABELS: Record<ColKind, [string, string]> = {
 }
 const ALL_COLS: { id: ColId; label: string }[] = [
   { id: 'created', label: 'วันที่ลง' }, { id: 'serial', label: 'Serial' },
-  ...COLS.map(c => ({ id: c.key as ColId, label: c.label })),
+  ...COLS.slice(0, 1).map(c => ({ id: c.key as ColId, label: c.label })),
+  { id: 'items', label: 'รายการ' },
+  ...COLS.slice(1).map(c => ({ id: c.key as ColId, label: c.label })),
   { id: 'videos', label: 'วิดีโอตอนแกะ' }, { id: 'photos', label: 'รูป' }, { id: 'claim', label: 'จากออเดอร์' },
 ]
 const colLabel = (id: ColId) => ALL_COLS.find(c => c.id === id)!.label
 
 const TABLE = 'return_parcels'
+
+// รายการของพัสดุ → array เสมอ · ใบเก่าที่เก็บเป็นข้อความ = บรรทัดละ 1 รายการ (ข้อความเดิมอยู่ในช่องประเภท)
+// ‼️ ก่อนรัน sql/return_parcels_items_json.sql คอลัมน์ยังเป็น text → array ที่บันทึกจะกลับมาเป็นข้อความ JSON ก็อ่านได้
+function parcelItems(v: Parcel['items']): RawItem[] {
+  if (Array.isArray(v)) return v
+  const t = String(v ?? '').trim()
+  if (!t) return []
+  if (t.startsWith('[')) { try { const a = JSON.parse(t); if (Array.isArray(a)) return a } catch { /* ข้อความธรรมดา */ } }
+  return t.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => ({ type: l, quantity: '', unit: '' }))
+}
+const itemsText = (v: Parcel['items']) => formatItemLines(parcelItems(v)).join('\n')
 const SQL_FILE = 'sql/create_return_parcels.sql'
 const noTableMsg = (m: string) => /return_parcels/.test(m) && /(does not exist|schema cache|not find)/i.test(m)
   ? `ยังไม่มีตาราง return_parcels ในฐานข้อมูล — รันไฟล์ ${SQL_FILE} ใน Supabase ก่อน`
@@ -190,6 +205,8 @@ export default function ReturnParcelsPage() {
   // ‼️ กันลงชื่อลูกค้าคนเดียวกันคนละแบบจนโฟลเดอร์ลูกค้าแตก — ค้นจากชื่อที่เคยลงไว้ในใบออเดอร์
   //    ดึงรายชื่อตอนกดเพิ่มครั้งแรกครั้งเดียว และดึงแค่ 4 ช่อง (ประหยัด Egress ของ Supabase)
   const [custStep, setCustStep] = useState(false)
+  const [itemsEdit, setItemsEdit] = useState<string | null>(null)   // id แถวที่เปิดกล่องแก้รายการ
+  const [finder, setFinder] = useState(false)   // ค้นหาออเดอร์จากชื่อจริง/เบอร์/ที่อยู่/รายการในกล่อง
   // กล่องแก้ไขทั้งใบ (เมนู ··· → แก้ไข) — แก้หลายช่องแล้วกดบันทึกทีเดียว
   const [editModal, setEditModal] = useState<{ id: string; data: Record<TextKey, string> } | null>(null)
   const [orderNames, setOrderNames] = useState<{ name: string | null; phone: string | null; order_number: string | null; date: string | null }[] | null>(null)
@@ -210,8 +227,9 @@ export default function ReturnParcelsPage() {
     }
   }
 
-  const addRow = async (senderName = '', senderPhone = '') => {
+  const addRow = async (senderName = '', senderPhone = '', extra: Partial<Parcel> = {}) => {
     setCustStep(false)
+    setFinder(false)
     setError('')
     try {
       // เลขที่ใบ BP0001 — ถามเลขล่าสุดจากฐานตอนกดเพิ่ม (แอดมินหลายคนเปิดค้างพร้อมกัน)
@@ -222,13 +240,28 @@ export default function ReturnParcelsPage() {
         videos: [], photos: [], ...serialPatch,
         ...(senderName ? { sender_name: senderName } : {}),
         ...(senderPhone ? { phone: senderPhone } : {}),
+        ...extra,
       }, 'เพิ่มพัสดุส่งกลับ', load) as Parcel
       setRows(prev => [saved, ...prev])
       setSearch('')
-      setEditing(`${saved.id}:${senderName ? 'items' : 'sender_name'}`)   // ได้ชื่อแล้วเปิดช่องถัดไปให้พิมพ์ต่อ
+      // ได้ชื่อแล้วเปิดกล่องรายการต่อ (ถ้ายังไม่มีรายการจากออเดอร์) · ยังไม่มีชื่อ = เปิดช่องชื่อให้พิมพ์
+      if (!senderName) setEditing(`${saved.id}:sender_name`)
+      else if (!extra.items) setItemsEdit(saved.id)
     } catch (e) {
       setError(`เพิ่มแถวไม่สำเร็จ: ${errMsg(e)}`)
     }
+  }
+
+  // เลือกออเดอร์จากกล่องค้นหา → เพิ่มแถวพร้อมเติม ชื่อ/เบอร์/ที่อยู่/เลขออเดอร์เดิม/เลขพัสดุเดิม/รายการ จากใบนั้น
+  const addFromOrder = (o: FoundOrder) => {
+    const ship = (o.shipments ?? []).find(x => x?.no)
+    const extra: Partial<Parcel> = {
+      ...(o.address ? { address: o.address } : {}),
+      ...(o.order_number ? { orig_order_number: o.order_number } : {}),
+      ...(ship?.no ? { orig_tracking_no: ship.no, orig_carrier: (ship.carrier || detectCarrier(ship.no, o.courier)) || null } : {}),
+      ...(o.items?.length ? { items: o.items } : {}),
+    }
+    addRow(o.customer_name ?? '', (o.phone ?? '').replace(/[^\d+]/g, ''), extra)
   }
 
   const delRow = async (r: Parcel) => {
@@ -347,7 +380,7 @@ export default function ReturnParcelsPage() {
   const stableRows = monthRows
   const filtered = stableRows.filter(r => {
     const c = r.claim_id ? claims[r.claim_id] : null
-    const matchSearch = !q || matchSerial(r.serial_no, q) || [r.sender_name, r.items, r.carrier, r.tracking_no, r.orig_carrier, r.orig_tracking_no, r.orig_order_number, r.address, r.phone, c?.original_order_number, c?.customer_username]
+    const matchSearch = !q || matchSerial(r.serial_no, q) || [r.sender_name, itemsText(r.items), r.carrier, r.tracking_no, r.orig_carrier, r.orig_tracking_no, r.orig_order_number, r.address, r.phone, c?.original_order_number, c?.customer_username]
       .some(v => (v ?? '').toLowerCase().includes(q))
     // ตัวกรองหัวคอลัมน์
     const matchCols = FILTER_DEFS.every(d => {
@@ -466,7 +499,22 @@ export default function ReturnParcelsPage() {
       {custStep && (
         <CustomerPickStep book={customerBook}
           onPick={(name, phone) => addRow(name, phone)}
+          altLabel="ค้นหาออเดอร์ (ชื่อจริง / เบอร์ / ที่อยู่ / รายการในกล่อง)"
+          onAlt={() => { setCustStep(false); setFinder(true) }}
           onClose={() => setCustStep(false)} />
+      )}
+      {itemsEdit && (() => {
+        const row = rows.find(x => x.id === itemsEdit)
+        if (!row) return null
+        return (
+          <ItemsModal items={parcelItems(row.items)} onClose={() => setItemsEdit(null)}
+            onSave={items => { setItemsEdit(null); void saveField(row, { items: items.length ? items : null }, 'รายการ') }} />
+        )
+      })()}
+      {finder && (
+        <OrderFinder onPick={addFromOrder}
+          onBack={() => { setFinder(false); setCustStep(true) }}
+          onClose={() => setFinder(false)} />
       )}
 
       {error && (
@@ -589,8 +637,8 @@ export default function ReturnParcelsPage() {
                       {r.serial_no || <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>—</span>}
                     </td>
                     )}
-                    {COLS.filter(c => showCol(c.key)).map(c => (
-                      <td key={c.key} style={{ ...td, minWidth: c.w, maxWidth: c.w + 80 }}>
+                    {COLS.filter(c => showCol(c.key)).map(c => (<Fragment key={c.key}>
+                      <td style={{ ...td, minWidth: c.w, maxWidth: c.w + 80 }}>
                         <EditCell value={r[c.key] ?? ''} multiline={c.multiline} carrier={c.carrier} label={c.label}
                           customerLink={c.key === 'sender_name'}
                           editing={editing === `${r.id}:${c.key}`}
@@ -602,7 +650,25 @@ export default function ReturnParcelsPage() {
                               .then(() => { if (next) void autoLinkClaim(r, c.key, next) })
                           }} />
                       </td>
-                    ))}
+                      {/* รายการ (JSON แบบออเดอร์) ต่อจากคอลัมน์ชื่อ — กดเปิดกล่องแก้รายการ */}
+                      {c.key === 'sender_name' && showCol('items') && (() => {
+                        const its = parcelItems(r.items)
+                        const lines = formatItemLines(its)
+                        return (
+                          <td style={{ ...td, minWidth: 200, maxWidth: 280 }}>
+                            <button onClick={() => setItemsEdit(r.id)} title={lines.map(l => '• ' + l).join('\n') || 'เพิ่มรายการ'}
+                              style={{ border: 'none', background: 'transparent', padding: '6px 4px', cursor: 'pointer', textAlign: 'left', width: '100%', display: 'block', fontFamily: 'inherit' }}>
+                              {lines.length ? (
+                                <div style={{ fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.45 }}>
+                                  {lines.slice(0, 2).map((l, i) => <div key={i} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>• {l}</div>)}
+                                  {lines.length > 2 && <div style={{ color: 'var(--ink-4)' }}>+ อีก {lines.length - 2} รายการ</div>}
+                                </div>
+                              ) : <span style={{ fontSize: 12, color: 'var(--ink-4)' }}>+ เพิ่มรายการ</span>}
+                            </button>
+                          </td>
+                        )
+                      })()}
+                    </Fragment>))}
                     {/* วิดีโอตอนแกะ */}
                     {showCol('videos') && (
                     <td style={{ ...td, minWidth: 130 }}>
@@ -757,7 +823,7 @@ export default function ReturnParcelsPage() {
               {/* ‼️ วางช่องเป็น 2 คอลัมน์จับคู่กันให้สมดุลแบบฟอร์มออเดอร์/งานเคลม
                   (เดิมปล่อยไหลอัตโนมัติ ช่องเดี่ยวเลยเหลือที่ว่างครึ่งแถว) */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px 14px', marginBottom: 18 }}>
-                {(['sender_name', 'phone', 'carrier', 'tracking_no', 'orig_carrier', 'orig_tracking_no', 'orig_order_number', 'items', 'address'] as TextKey[]).map(k => {
+                {(['sender_name', 'phone', 'carrier', 'tracking_no', 'orig_carrier', 'orig_tracking_no', 'orig_order_number', 'address'] as TextKey[]).map(k => {
                   const c = COLS.find(x => x.key === k)!
                   const full = c.multiline || k === 'orig_order_number'
                   return (

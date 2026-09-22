@@ -31,6 +31,7 @@ type StockItem = {
   fabric_type: string
   shop_code: string
   shop_name: string
+  suppliers?: Supplier[] | null   // ซัพพลายเออร์ทั้งหมดของรหัสนี้ (ตัวแรก = shop_code/shop_name) — sql/stock_merge_suppliers.sql
   roll_count: number
   unused_rolls: number
   in_use_rolls: number
@@ -40,6 +41,14 @@ type StockItem = {
   notes: string | null
   updated_at: string
 }
+
+type Supplier = { shop_code: string; shop_name: string }
+
+// ผ้ารหัสเดียวกันซื้อได้หลายร้าน → 1 แถวต่อรหัส เก็บร้านทั้งหมดใน suppliers
+// แถวที่ยังไม่มี suppliers (ก่อนรัน SQL) ใช้ shop_code/shop_name เดิมเป็นร้านเดียว
+const suppliersOf = (i: Pick<StockItem, 'shop_code' | 'shop_name' | 'suppliers'>): Supplier[] =>
+  i.suppliers?.length ? i.suppliers
+    : (i.shop_code || i.shop_name) ? [{ shop_code: i.shop_code ?? '', shop_name: i.shop_name ?? '' }] : []
 
 const getStatus = (n: number) =>
   n === 0 ? 'ของหมด' : n <= 3 ? 'ควรสั่ง' : n <= 6 ? 'ของเหลือน้อย' : 'ปกติ'
@@ -126,6 +135,7 @@ function FabricStock({ tabBar }: { tabBar: React.ReactNode }) {
   // กล่องยืนยันของเว็บเอง (ไม่ใช้ window.confirm — ดูเหตุผลใน components/ConfirmDialog.tsx)
   const { ask, confirmDialog } = useConfirm()
   const [autoFilled, setAutoFilled] = useState(false)
+  const [extraSup, setExtraSup] = useState<Supplier[]>([])   // ซัพพลายเออร์ตัวที่ 2 เป็นต้นไป (ตัวแรกอยู่ในช่องรหัสร้าน/ร้านเดิม)
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
   const [menuRect, setMenuRect] = useState<DOMRect | null>(null)
   const [inlineEdit, setInlineEdit] = useState<{ id: string; field: 'unused_rolls' | 'in_use_rolls' | 'remaining_meters' | 'notes'; val: string } | null>(null)
@@ -134,7 +144,7 @@ function FabricStock({ tabBar }: { tabBar: React.ReactNode }) {
   const [statusFilters, setStatusFilters] = useState<string[]>([])
   const [updatedSort, setUpdatedSort] = useState<'asc' | 'desc' | null>(null)
   const [quickFilter, setQuickFilter] = useState<'all' | 'waiting'>('all')
-  const [adjustModal, setAdjustModal] = useState<{ item: StockItem; val: string; unit: 'm' | 'yd' } | null>(null)
+  const [adjustModal, setAdjustModal] = useState<{ item: StockItem; val: string; unit: 'm' | 'yd'; sup: string | null } | null>(null)   // sup = ร้านที่ของมา (หลายร้าน = ต้องเลือกก่อน)
   const [arrivalModal, setArrivalModal] = useState<{ item: StockItem; rolls: string; meters: string } | null>(null)
   const [openFilter, setOpenFilter] = useState<'width' | 'type' | 'status' | 'updated' | null>(null)
   const [filterPos, setFilterPos] = useState<{ top: number; left: number } | null>(null)
@@ -155,17 +165,21 @@ function FabricStock({ tabBar }: { tabBar: React.ReactNode }) {
 
   const openAdd = () => {
     setAutoFilled(false)
+    setExtraSup([])
     setModal({ mode: 'add', data: empty() })
   }
 
   const openEdit = (item: StockItem) => {
     setAutoFilled(false)
-    setModal({ mode: 'edit', data: { ...item } })
+    const sup = suppliersOf(item)
+    setExtraSup(sup.slice(1))
+    setModal({ mode: 'edit', data: { ...item, shop_code: sup[0]?.shop_code ?? '', shop_name: sup[0]?.shop_name ?? '' } })
   }
 
   // ทำซ้ำ — เปิดกล่องเพิ่มรายการที่กรอกค่าจากรายการเดิมไว้ให้ ตรวจ/แก้ก่อนกดบันทึกเป็นรายการใหม่
   const duplicate = (item: StockItem) => {
     setAutoFilled(false)
+    setExtraSup(suppliersOf(item).slice(1))
     setModal({ mode: 'add', data: { ...item, id: undefined } })
   }
 
@@ -188,6 +202,8 @@ function FabricStock({ tabBar }: { tabBar: React.ReactNode }) {
     const payload = {
       fabric_code, color_name, fabric_width: fabric_width ?? null,
       fabric_type, shop_code, shop_name,
+      suppliers: [{ shop_code: String(shop_code ?? '').trim(), shop_name: String(shop_name ?? '').trim() }, ...extraSup.map(x => ({ shop_code: x.shop_code.trim(), shop_name: x.shop_name.trim() }))]
+        .filter(x => x.shop_code || x.shop_name),
       notes: (notes ?? '').trim() || null,
       roll_count: Number(roll_count),
       unused_rolls: Number(unused_rolls ?? 0),
@@ -197,13 +213,21 @@ function FabricStock({ tabBar }: { tabBar: React.ReactNode }) {
     }
     const name = (payload.color_name || payload.fabric_code || '').toString().trim()
     let err: { message: string } | null = null
-    try {
+    const write = async (p: Partial<typeof payload>) => {
       if (modal.mode === 'add') {
-        const saved = await tInsert('stock', payload, `เพิ่มสต็อก ${name}`, load)
+        const saved = await tInsert('stock', p, `เพิ่มสต็อก ${name}`, load)
         setItems(prev => [...prev, saved as StockItem])
       } else {
-        await tUpdate('stock', modal.data.id as string, payload, prevOf(modal.data, payload), `แก้สต็อก ${name}`, load)
-        setItems(prev => prev.map(i => i.id === modal.data.id ? { ...i, ...payload } as StockItem : i))
+        await tUpdate('stock', modal.data.id as string, p, prevOf(modal.data, p), `แก้สต็อก ${name}`, load)
+        setItems(prev => prev.map(i => i.id === modal.data.id ? { ...i, ...p } as StockItem : i))
+      }
+    }
+    try {
+      try { await write(payload) } catch (e: any) {
+        // ยังไม่ได้รัน sql/stock_merge_suppliers.sql (ไม่มีคอลัมน์ suppliers) → บันทึกแบบเดิมไปก่อน
+        if (!/suppliers/.test(e?.message || '')) throw e
+        const { suppliers: _s, ...rest } = payload
+        await write(rest)
       }
     } catch (e: any) { err = { message: e?.message || String(e) } }
     setSaving(false)
@@ -275,9 +299,11 @@ function FabricStock({ tabBar }: { tabBar: React.ReactNode }) {
     if (!isFinite(v) || v < 0) return
     const meters = Math.round((adjustModal.unit === 'yd' ? v * 0.9144 : v) * 100) / 100
     const item = adjustModal.item
+    if (suppliersOf(item).length > 1 && !adjustModal.sup) return
     const payload = { remaining_meters: meters, updated_at: new Date().toISOString() }
     try {
-      await tUpdate('stock', item.id, payload, prevOf({ ...item }, payload), `ปรับสต็อก ${item.color_name || item.fabric_code || ''} → ${meters} ม.`, load)
+      // ร้านที่ของมาจดไว้ในประวัติการแก้ (สต็อกยังเป็นยอดรวมของทุกร้าน)
+      await tUpdate('stock', item.id, payload, prevOf({ ...item }, payload), `ปรับสต็อก ${item.color_name || item.fabric_code || ''}${adjustModal.sup ? ` (จาก ${adjustModal.sup})` : ''} → ${meters} ม.`, load)
       setItems(prev => prev.map(i => i.id === item.id ? { ...i, ...payload } : i))
       setAdjustModal(null)
     } catch (err: any) { setError(`บันทึกไม่สำเร็จ: ${err?.message || err}`) }
@@ -305,8 +331,7 @@ function FabricStock({ tabBar }: { tabBar: React.ReactNode }) {
   let filtered = items.map(stable).filter(i =>
     i.fabric_code?.toLowerCase().includes(search.toLowerCase()) ||
     i.color_name?.toLowerCase().includes(search.toLowerCase()) ||
-    i.shop_code?.toLowerCase().includes(search.toLowerCase()) ||
-    i.shop_name?.toLowerCase().includes(search.toLowerCase()) ||
+    suppliersOf(i).some(x => `${x.shop_code} ${x.shop_name}`.toLowerCase().includes(search.toLowerCase())) ||
     i.fabric_type?.toLowerCase().includes(search.toLowerCase())
   )
   if (quickFilter === 'waiting') filtered = filtered.filter(i => i.ordered_at)
@@ -511,8 +536,13 @@ function FabricStock({ tabBar }: { tabBar: React.ReactNode }) {
                     {item.fabric_width != null ? `${item.fabric_width} ม.` : '-'}
                   </td>
                   <td title={item.fabric_type || undefined} style={{ padding: '12px 14px', color: 'var(--ink-3)', maxWidth: 180, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.fabric_type || '-'}</td>
-                  <td style={{ padding: '12px 14px', color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{item.shop_code || '-'}</td>
-                  <td style={{ padding: '12px 14px', color: 'var(--ink)' }}>{item.shop_name || '-'}</td>
+                  {/* หลายร้าน = บรรทัดละร้าน (รหัสร้านกับชื่อร้านอยู่บรรทัดเดียวกัน) */}
+                  <td style={{ padding: '12px 14px', color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
+                    {suppliersOf(item).length ? suppliersOf(item).map((x, k) => <div key={k}>{x.shop_code || '-'}</div>) : '-'}
+                  </td>
+                  <td style={{ padding: '12px 14px', color: 'var(--ink)' }}>
+                    {suppliersOf(item).length ? suppliersOf(item).map((x, k) => <div key={k} style={{ whiteSpace: 'nowrap' }}>{x.shop_name || '-'}</div>) : '-'}
+                  </td>
                   {quickFilter !== 'waiting' && (
                     <td style={{ padding: '12px 14px', textAlign: 'center' }}>
                       <span style={{ fontWeight: 700, color: item.roll_count <= 2 ? 'var(--red)' : 'var(--ink)' }}>{item.roll_count}</span>
@@ -655,7 +685,7 @@ function FabricStock({ tabBar }: { tabBar: React.ReactNode }) {
               </>
             ) : (
               <>
-                <button onClick={() => { setAdjustModal({ item, val: item.remaining_meters != null ? String(Math.round(item.remaining_meters / 0.9144 * 100) / 100) : '', unit: 'yd' }); closeMenu() }} style={{ ...MENU_BTN, color: 'var(--ink)' }}>
+                <button onClick={() => { setAdjustModal({ item, val: item.remaining_meters != null ? String(Math.round(item.remaining_meters / 0.9144 * 100) / 100) : '', unit: 'yd', sup: suppliersOf(item).length > 1 ? null : (suppliersOf(item)[0]?.shop_name || null) }); closeMenu() }} style={{ ...MENU_BTN, color: 'var(--ink)' }}>
                   <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
                   ปรับสต็อก
                 </button>
@@ -689,43 +719,14 @@ function FabricStock({ tabBar }: { tabBar: React.ReactNode }) {
               {modal.mode === 'add' ? '+ เพิ่มรายการสต็อก' : 'แก้ไขสต็อก'}
             </h2>
 
-            {/* บรรทัดแรก: รหัสผ้าของบริษัท + auto-fill badge */}
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                <label style={{ fontSize: 12, color: 'var(--ink-3)' }}>รหัสผ้าของบริษัท</label>
-                {autoFilled && (
-                  <span style={{ fontSize: 11, background: 'rgba(52,199,89,0.12)', color: '#1a7f37', border: '1px solid rgba(52,199,89,0.35)', borderRadius: 20, padding: '2px 8px', fontWeight: 500 }}>
-                    เติมอัตโนมัติ ✓
-                  </span>
-                )}
-              </div>
-              <input
-                type="text"
-                value={String(modal.data.shop_code ?? '')}
-                onChange={e => handleShopCode(e.target.value)}
-                placeholder=""
-                style={inputStyle}
-                autoFocus
-              />
-            </div>
-
-            {/* ร้าน/บริษัท */}
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 6 }}>ร้าน/บริษัท</label>
-              <input type="text" value={String(modal.data.shop_name ?? '')}
-                onChange={e => { setAutoFilled(false); set('shop_name', e.target.value) }}
-                style={autoFilled ? autoInputStyle : inputStyle} />
-            </div>
-
-            {/* รหัสผ้า */}
+            {/* ข้อมูลผ้าอยู่บนสุด: รหัสผ้า → ชื่อสี + หน้าผ้า → ลักษณะผ้า */}
             <div style={{ marginBottom: 16 }}>
               <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 6 }}>รหัสผ้า</label>
-              <input type="text" value={String(modal.data.fabric_code ?? '')}
+              <input type="text" value={String(modal.data.fabric_code ?? '')} autoFocus
                 onChange={e => { setAutoFilled(false); set('fabric_code', e.target.value) }}
                 style={autoFilled ? autoInputStyle : inputStyle} />
             </div>
 
-            {/* 2 cols: ชื่อสี + หน้าผ้า */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 6 }}>ชื่อสี</label>
@@ -746,12 +747,45 @@ function FabricStock({ tabBar }: { tabBar: React.ReactNode }) {
               </div>
             </div>
 
-            {/* ลักษณะผ้า */}
             <div style={{ marginBottom: 16 }}>
               <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 6 }}>ลักษณะผ้า</label>
               <input type="text" value={String(modal.data.fabric_type ?? '')}
                 onChange={e => { setAutoFilled(false); set('fabric_type', e.target.value) }}
                 style={autoFilled ? autoInputStyle : inputStyle} />
+            </div>
+
+            {/* ซัพพลายเออร์: ร้านละ 1 แถว (ร้าน/บริษัทที่ N | รหัสผ้าร้านที่ N) — ร้านที่ 1 เก็บใน shop_name/shop_code เดิม
+                ใส่รหัสผ้าร้านที่ 1 ที่รู้จัก → เติมข้อมูลผ้าด้านบนให้เอง (SHOP_LOOKUP) */}
+            <div style={{ marginBottom: 16 }}>
+              {[{ shop_name: String(modal.data.shop_name ?? ''), shop_code: String(modal.data.shop_code ?? '') }, ...extraSup].map((x, k) => (
+                <div key={k} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 36px', gap: 8, marginBottom: 10, alignItems: 'end' }}>
+                  <div>
+                    <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 6 }}>ร้าน/บริษัทที่ {k + 1}</label>
+                    <input type="text" value={x.shop_name}
+                      onChange={e => k === 0 ? (setAutoFilled(false), set('shop_name', e.target.value)) : setExtraSup(l => l.map((y, j) => j === k - 1 ? { ...y, shop_name: e.target.value } : y))}
+                      style={k === 0 && autoFilled ? autoInputStyle : inputStyle} />
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                      <label style={{ fontSize: 12, color: 'var(--ink-3)' }}>รหัสผ้าร้านที่ {k + 1}</label>
+                      {k === 0 && autoFilled && (
+                        <span style={{ fontSize: 11, background: 'rgba(52,199,89,0.12)', color: '#1a7f37', border: '1px solid rgba(52,199,89,0.35)', borderRadius: 20, padding: '1px 7px', fontWeight: 500 }}>เติมอัตโนมัติ ✓</span>
+                      )}
+                    </div>
+                    <input type="text" value={x.shop_code}
+                      onChange={e => k === 0 ? handleShopCode(e.target.value) : setExtraSup(l => l.map((y, j) => j === k - 1 ? { ...y, shop_code: e.target.value } : y))}
+                      style={inputStyle} />
+                  </div>
+                  {k > 0 ? (
+                    <button type="button" onClick={() => setExtraSup(l => l.filter((_, j) => j !== k - 1))}
+                      style={{ border: 'none', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontSize: 13, padding: '10px 0', fontFamily: 'inherit' }}>ลบ</button>
+                  ) : <span />}
+                </div>
+              ))}
+              <button type="button" onClick={() => setExtraSup(l => [...l, { shop_code: '', shop_name: '' }])}
+                style={{ fontSize: 12, padding: '6px 14px', border: '1px solid var(--border-2)', borderRadius: 999, color: 'var(--brand)', background: 'var(--cream-2)', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit' }}>
+                + เพิ่มซัพพลายเออร์
+              </button>
             </div>
 
             {/* 3 cols: จำนวนทั้งหมด + ยังไม่ได้เปิดใช้ + เปิดใช้ */}
@@ -855,6 +889,30 @@ function FabricStock({ tabBar }: { tabBar: React.ReactNode }) {
             <p style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 20 }}>
               {adjustModal.item.fabric_code} {adjustModal.item.color_name || ''} (ตอนนี้เหลือ {adjustModal.item.remaining_meters ?? 0} ม.)
             </p>
+            {/* ผ้ารหัสนี้มีหลายร้าน → ถามก่อนว่าของมาจากร้านไหน แล้วค่อยกรอกเมตร */}
+            {suppliersOf(adjustModal.item).length > 1 && !adjustModal.sup ? (<>
+              <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 8 }}>ของมาจากร้านไหน</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
+                {suppliersOf(adjustModal.item).map((x, k) => (
+                  <button key={k} onClick={() => setAdjustModal(m => m ? { ...m, sup: x.shop_name || x.shop_code } : null)}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', borderRadius: 14, border: '1px solid var(--border-2)', background: 'var(--cream-2)', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{x.shop_name || '-'}</span>
+                    <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{x.shop_code}</span>
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => setAdjustModal(null)}
+                style={{ width: '100%', padding: '10px', borderRadius: 12, border: '1px solid var(--border)', background: '#FFFFFF', color: '#6B4326', cursor: 'pointer', fontSize: 14, fontWeight: 600, fontFamily: 'inherit' }}>
+                ยกเลิก
+              </button>
+            </>) : (<>
+            {suppliersOf(adjustModal.item).length > 1 && (
+              <p style={{ fontSize: 13, color: 'var(--ink-2)', margin: '-12px 0 16px' }}>
+                จากร้าน <b>{adjustModal.sup}</b>{' '}
+                <button onClick={() => setAdjustModal(m => m ? { ...m, sup: null } : null)}
+                  style={{ border: 'none', background: 'none', color: 'var(--brand)', cursor: 'pointer', fontSize: 12, padding: 0, fontFamily: 'inherit', textDecoration: 'underline' }}>เปลี่ยน</button>
+              </p>
+            )}
             <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 6 }}>ความยาวคงเหลือ</label>
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
               <input type="number" autoFocus min={0} step="0.01" value={adjustModal.val}
@@ -883,6 +941,7 @@ function FabricStock({ tabBar }: { tabBar: React.ReactNode }) {
                 บันทึก
               </button>
             </div>
+            </>)}
           </div>
         </div>
       )}
