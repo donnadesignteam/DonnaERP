@@ -6,6 +6,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useConfirm } from '@/components/ConfirmDialog'
+import { CANCELLED_COLS, returnedFromOrder, type CancelledOrder, type ReturnedFromOrder } from '@/lib/cancelledReturns'
+import { formatItemLines } from '@/lib/itemFormat'
+import { fabricStatus } from '@/lib/fabricStatus'
 
 export type StockTab = 'overview' | 'fabric' | 'rail' | 'office' | 'outsource' | 'returned'
 type Cat = Exclude<StockTab, 'overview' | 'fabric'>
@@ -24,6 +27,7 @@ type Item = {
   min_qty: number | null; vendor: string | null; sent_at: string | null; due_at: string | null
   received_at: string | null; ref: string | null; source: string | null; notes: string | null
   po_id?: string | null; order_id?: string | null
+  auto?: ReturnedFromOrder   // แถวที่ระบบสร้างจากออเดอร์ที่ถูกยกเลิก (ไม่ได้อยู่ในตาราง stock_items)
   created_at: string; updated_at: string
 }
 
@@ -31,7 +35,7 @@ const PILL_INK = '#6B4326'
 const PILL_BG: Record<string, string> = {
   'ของหมด': '#F0C0B7', 'ควรสั่ง': '#F9E0C3', 'ปกติ': '#E3F3E0',
   'เลยนัด': '#F0C0B7', 'กำลังทำ': '#F9E0C3', 'รับกลับแล้ว': '#E3F3E0', 'รอของ': '#F9E0C3', 'ของเข้าแล้ว': '#E3F3E0',
-  'ยกเลิก': '#F0C0B7', 'ตีกลับ': '#F9E0C3', 'พัสดุส่งกลับ': '#FBEEDC',
+  'ยกเลิก': '#F0C0B7', 'ยกเลิกหลังส่ง': '#E8B4A8', 'ตีกลับ': '#F9E0C3', 'พัสดุส่งกลับ': '#FBEEDC',
 }
 const today = () => new Date().toLocaleDateString('sv-SE')
 const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'
@@ -91,9 +95,46 @@ const COLS: Record<Cat, { label: string; get: (it: Item) => React.ReactNode }[]>
   ],
   returned: [
     { label: 'วันที่ลง', get: it => fmtDate(it.created_at) }, { label: 'ประเภท', get: it => <Pill s={itemStatus(it)} /> },
-    { label: 'ออเดอร์', get: it => it.ref || '—' }, { label: 'รายการ', get: it => <b>{it.name}</b> },
+    { label: 'ออเดอร์', get: it => it.ref || '—' },
+    { label: 'รายการ', get: it => it.auto
+      ? <div style={{ fontSize: 12, lineHeight: 1.45 }}>
+          <div style={{ fontSize: 11, color: 'var(--ink-4)', marginBottom: 2 }}>จากออเดอร์ · {it.auto.what}</div>
+          {formatItemLines(it.auto.items).map((l, i) => <div key={i} style={{ whiteSpace: 'nowrap' }}>• {l}</div>)}
+        </div>
+      : <b>{it.name}</b> },
     { label: 'จำนวน', get: it => `${it.qty} ${it.unit ?? ''}` }, { label: 'หมายเหตุ', get: it => it.notes || '—' },
   ],
+}
+
+// ออเดอร์ที่ถูกยกเลิก → แถวในแท็บงานยกเลิก-ตีกลับ (ตรรกะคัดของอยู่ที่ lib/cancelledReturns.ts)
+// หมายเหตุของแถวนี้เก็บเป็นแถว stock_items (category returned) ที่ผูก order_id — แถวนั้นไม่โชว์ซ้ำ
+function useCancelledReturns() {
+  const [orders, setOrders] = useState<CancelledOrder[]>([])
+  useEffect(() => {
+    supabase.from('order_entries').select(CANCELLED_COLS).eq('order_status', 'ยกเลิก').order('updated_at', { ascending: false })
+      .then(({ data }) => setOrders((data ?? []) as CancelledOrder[]))
+  }, [])
+  return useMemo(() => orders.map(returnedFromOrder).filter((x): x is ReturnedFromOrder => !!x), [orders])
+}
+
+const autoRow = (r: ReturnedFromOrder, linked?: Item): Item => ({
+  id: linked?.id ?? `order:${r.order.id}`, category: 'returned', code: null,
+  name: formatItemLines(r.items).join(' · '),
+  qty: r.items.reduce((n, it) => n + (Number(it.quantity) || 1), 0), unit: 'ชิ้น',
+  min_qty: null, vendor: null, sent_at: null, due_at: null, received_at: null,
+  ref: [r.order.order_number, r.order.customer_name].filter(Boolean).join(' · ') || null,
+  source: r.kind, notes: linked?.notes ?? null, order_id: r.order.id,
+  created_at: r.cancelledAt, updated_at: linked?.updated_at ?? r.cancelledAt, auto: r,
+})
+
+// รวมแถวจากออเดอร์ยกเลิก + แถวที่ลงเอง (แถวลงเองที่ผูกออเดอร์ยกเลิก = ที่เก็บหมายเหตุ ไม่โชว์แยก)
+function mergeReturned(manual: Item[], auto: ReturnedFromOrder[]): Item[] {
+  const byOrder = new Map(manual.filter(m => m.order_id).map(m => [m.order_id as string, m]))
+  const autoIds = new Set(auto.map(a => a.order.id))
+  return [
+    ...auto.map(a => autoRow(a, byOrder.get(a.order.id))),
+    ...manual.filter(m => !(m.order_id && autoIds.has(m.order_id))),
+  ].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
 }
 
 const ADD_LABEL: Record<Cat, string> = { rail: 'อุปกรณ์ราง', office: 'อุปกรณ์สำนักงาน', outsource: 'งานนอก', returned: 'งานยกเลิก/ตีกลับ' }
@@ -131,6 +172,7 @@ function useStockItems() {
 
 export function StockItemsTab({ category }: { category: Cat }) {
   const { items: all, setItems, loading, error, load, setError } = useStockItems()
+  const cancelled = useCancelledReturns()
   const { ask, confirmDialog } = useConfirm()
   const [q, setQ] = useState('')
   const [edit, setEdit] = useState<Partial<Item> | null>(null)
@@ -169,10 +211,10 @@ export function StockItemsTab({ category }: { category: Cat }) {
     })()
   }, [all, category])
 
-  const rows = useMemo(() => all.filter(it => it.category === category)
+  const rows = useMemo(() => (category === 'returned' ? mergeReturned(all.filter(it => it.category === 'returned'), cancelled) : all.filter(it => it.category === category))
     .filter(it => category !== 'outsource' || (shipped.has(it.id) ? 'จัดส่งแล้ว' : 'ของเข้าแล้ว') === view)
     .filter(it => !q || [it.code, it.name, it.vendor, it.ref, it.notes].some(v => (v ?? '').toLowerCase().includes(q.toLowerCase()))),
-  [all, category, q, shipped, view])
+  [all, cancelled, category, q, shipped, view])
 
   const save = async () => {
     if (!edit) return
@@ -208,6 +250,12 @@ export function StockItemsTab({ category }: { category: Cat }) {
     const notes = v.trim() || null
     if (notes === (it.notes ?? null)) return
     const now = new Date().toISOString()
+    // แถวจากออเดอร์ยกเลิกที่ยังไม่เคยมีหมายเหตุ → สร้างแถว stock_items ผูก order_id ไว้เก็บหมายเหตุ
+    if (it.auto && it.id.startsWith('order:')) {
+      const { error: err } = await supabase.from('stock_items').insert({ category: 'returned', source: it.source, name: it.name, qty: it.qty, unit: it.unit, ref: it.ref, order_id: it.order_id, notes, updated_at: now })
+      if (err) setError(`บันทึกหมายเหตุไม่สำเร็จ: ${err.message}`)
+      load(); return
+    }
     setItems(prev => prev.map(x => x.id === it.id ? { ...x, notes, updated_at: now } : x))
     const { error: err } = await supabase.from('stock_items').update({ notes, updated_at: now }).eq('id', it.id)
     if (err) { setError(`บันทึกหมายเหตุไม่สำเร็จ: ${err.message}`); load() }
@@ -257,8 +305,10 @@ export function StockItemsTab({ category }: { category: Cat }) {
                 <tr key={it.id}>
                   {COLS[category].map(c => <td key={c.label}>{c.label.startsWith('หมายเหตุ') ? <NoteCell value={it.notes ?? ''} onSave={v => saveNote(it, v)} /> : c.get(it)}</td>)}
                   <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                    {!it.auto && <>
                     <button onClick={() => setEdit(it)} style={{ ...btn, padding: '6px 12px', fontSize: 12.5, background: 'var(--cream)', color: PILL_INK, marginRight: 6 }}>แก้ไข</button>
                     <button onClick={() => remove(it)} style={{ ...btn, padding: '6px 12px', fontSize: 12.5, background: 'transparent', color: '#B3261E' }}>ลบ</button>
+                    </>}
                   </td>
                 </tr>
               ))}
@@ -314,8 +364,10 @@ export function StockItemsTab({ category }: { category: Cat }) {
 
 export function StockOverview({ onOpen }: { onOpen: (t: StockTab) => void }) {
   const { items, loading, error } = useStockItems()
+  const cancelled = useCancelledReturns()
   const [fabric, setFabric] = useState<{ status: string }[]>([])
-  useEffect(() => { supabase.from('stock').select('status').then(({ data }) => setFabric((data ?? []) as { status: string }[])) }, [])
+  // สถานะผ้าคิดสดจากเมตรคงเหลือ (lib/fabricStatus.ts) — ไม่อ่านช่อง status ในฐานที่อาจค้างค่าเก่า
+  useEffect(() => { supabase.from('stock').select('remaining_meters').then(({ data }) => setFabric(((data ?? []) as { remaining_meters: number | null }[]).map(r => ({ status: fabricStatus(r.remaining_meters) })))) }, [])
 
   const count = (rows: { status: string }[], s: string) => rows.filter(r => r.status === s).length
   const withStatus = (c: Cat) => items.filter(i => i.category === c).map(i => ({ status: itemStatus(i) }))
@@ -323,7 +375,7 @@ export function StockOverview({ onOpen }: { onOpen: (t: StockTab) => void }) {
     { tab: 'fabric', title: 'สต็อกผ้า', total: fabric.length, stats: [['ของหมด', count(fabric, 'ของหมด')], ['ควรสั่ง', count(fabric, 'ควรสั่ง')], ['ของเหลือน้อย', count(fabric, 'ของเหลือน้อย')]] },
     ...(['rail', 'office'] as const).map(c => { const r = withStatus(c); return { tab: c, title: ADD_LABEL[c], total: r.length, stats: [['ของหมด', count(r, 'ของหมด')], ['ควรสั่ง', count(r, 'ควรสั่ง')]] as [string, number][] } }),
     { tab: 'outsource', title: 'งานนอก', total: withStatus('outsource').length, stats: [] },
-    (() => { const r = withStatus('returned'); return { tab: 'returned' as const, title: 'งานยกเลิก-ตีกลับ', total: r.length, stats: [['ยกเลิก', count(r, 'ยกเลิก')], ['ตีกลับ', count(r, 'ตีกลับ')], ['พัสดุส่งกลับ', count(r, 'พัสดุส่งกลับ')]] as [string, number][] } })(),
+    (() => { const r = mergeReturned(items.filter(i => i.category === 'returned'), cancelled).map(i => ({ status: itemStatus(i) })); return { tab: 'returned' as const, title: 'งานยกเลิก-ตีกลับ', total: r.length, stats: [['ยกเลิก', count(r, 'ยกเลิก')], ['ยกเลิกหลังส่ง', count(r, 'ยกเลิกหลังส่ง')], ['ตีกลับ', count(r, 'ตีกลับ')], ['พัสดุส่งกลับ', count(r, 'พัสดุส่งกลับ')]] as [string, number][] } })(),
   ]
 
   return (

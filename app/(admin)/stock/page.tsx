@@ -1,5 +1,6 @@
 'use client'
 
+import { fabricStatus } from '@/lib/fabricStatus'
 import NotifyBell from '@/components/NotifyBell'
 import { useState, useEffect, useRef } from 'react'
 import AnchoredMenu from '@/components/AnchoredMenu'
@@ -50,8 +51,8 @@ const suppliersOf = (i: Pick<StockItem, 'shop_code' | 'shop_name' | 'suppliers'>
   i.suppliers?.length ? i.suppliers
     : (i.shop_code || i.shop_name) ? [{ shop_code: i.shop_code ?? '', shop_name: i.shop_name ?? '' }] : []
 
-const getStatus = (n: number) =>
-  n === 0 ? 'ของหมด' : n <= 3 ? 'ควรสั่ง' : n <= 6 ? 'ของเหลือน้อย' : 'ปกติ'
+// สถานะคิดจากความยาวคงเหลือ (หลา) — กติกาอยู่ที่ lib/fabricStatus.ts
+const getStatus = (meters: number | null | undefined) => fabricStatus(meters)
 
 // ป้ายสถานะ — พื้นพาสเทลชุดเดียวกับหน้าออเดอร์ (PILL_BG) · ตัวอักษรน้ำตาลเข้ม #6B4326 เหมือนกันทุกป้าย
 const PILL_INK = '#6B4326'
@@ -208,7 +209,7 @@ function FabricStock({ tabBar }: { tabBar: React.ReactNode }) {
       roll_count: Number(roll_count),
       unused_rolls: Number(unused_rolls ?? 0),
       in_use_rolls: Number(in_use_rolls ?? 0),
-      status: getStatus(Number(roll_count ?? 0)),
+      status: getStatus(modal.data.remaining_meters),
       updated_at: new Date().toISOString(),
     }
     const name = (payload.color_name || payload.fabric_code || '').toString().trim()
@@ -282,7 +283,7 @@ function FabricStock({ tabBar }: { tabBar: React.ReactNode }) {
       roll_count: newRollCount,
       unused_rolls: (item.unused_rolls ?? 0) + n,
       remaining_meters: (item.remaining_meters ?? 0) + m,
-      status: getStatus(newRollCount),
+      status: getStatus((item.remaining_meters ?? 0) + m),
       ordered_at: null,
       updated_at: new Date().toISOString(),
     }
@@ -300,7 +301,7 @@ function FabricStock({ tabBar }: { tabBar: React.ReactNode }) {
     const meters = Math.round((adjustModal.unit === 'yd' ? v * 0.9144 : v) * 100) / 100
     const item = adjustModal.item
     if (suppliersOf(item).length > 1 && !adjustModal.sup) return
-    const payload = { remaining_meters: meters, updated_at: new Date().toISOString() }
+    const payload = { remaining_meters: meters, status: getStatus(meters), updated_at: new Date().toISOString() }
     try {
       // ร้านที่ของมาจดไว้ในประวัติการแก้ (สต็อกยังเป็นยอดรวมของทุกร้าน)
       await tUpdate('stock', item.id, payload, prevOf({ ...item }, payload), `ปรับสต็อก ${item.color_name || item.fabric_code || ''}${adjustModal.sup ? ` (จาก ${adjustModal.sup})` : ''} → ${meters} ม.`, load)
@@ -337,7 +338,7 @@ function FabricStock({ tabBar }: { tabBar: React.ReactNode }) {
   if (quickFilter === 'waiting') filtered = filtered.filter(i => i.ordered_at)
   if (widthFilters.length) filtered = filtered.filter(i => widthFilters.includes(String(i.fabric_width ?? '-')))
   if (typeFilters.length) filtered = filtered.filter(i => typeFilters.includes(i.fabric_type ?? ''))
-  if (statusFilters.length) filtered = filtered.filter(i => statusFilters.includes(getStatus(i.roll_count)))
+  if (statusFilters.length) filtered = filtered.filter(i => statusFilters.includes(getStatus(i.remaining_meters)))
   if (updatedSort) filtered = [...filtered].sort((a, b) => {
     const ta = a.updated_at ? new Date(a.updated_at).getTime() : 0
     const tb = b.updated_at ? new Date(b.updated_at).getTime() : 0
@@ -385,7 +386,7 @@ function FabricStock({ tabBar }: { tabBar: React.ReactNode }) {
             { status: 'ของหมด', color: '#C0563F', bg: 'rgba(239,68,68,0.06)', border: 'rgba(239,68,68,0.18)',
               icon: <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0l-3-3m3 3l3-3M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg> },
           ]).map(({ status, color, bg, border, icon }) => {
-            const list = items.filter(i => getStatus(i.roll_count) === status)
+            const list = items.filter(i => getStatus(i.remaining_meters) === status)
             const active = statusFilters.length === 1 && statusFilters[0] === status
             return (
               <div key={status}
@@ -571,8 +572,8 @@ function FabricStock({ tabBar }: { tabBar: React.ReactNode }) {
                     </td>
                   ))}
                   <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', textAlign: 'center' }}>
-                    <span style={{ fontSize: 12, borderRadius: 999, padding: '4px 12px', fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 96, boxSizing: 'border-box', ...statusStyle(getStatus(item.roll_count)) }}>
-                      {getStatus(item.roll_count)}
+                    <span style={{ fontSize: 12, borderRadius: 999, padding: '4px 12px', fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 96, boxSizing: 'border-box', ...statusStyle(getStatus(item.remaining_meters)) }}>
+                      {getStatus(item.remaining_meters)}
                     </span>
                     {item.ordered_at && (
                       <div style={{ fontSize: 10, fontWeight: 600, color: '#1a7f37', marginTop: 4 }}>
@@ -822,10 +823,10 @@ function FabricStock({ tabBar }: { tabBar: React.ReactNode }) {
             <div style={{ marginBottom: 24 }}>
               <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 6 }}>สถานะ</label>
               <div style={{ padding: '10px 13px', borderRadius: 8, border: '1px solid var(--border)', background: 'rgba(142,142,147,0.06)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 13, borderRadius: 20, padding: '3px 10px', fontWeight: 500, ...statusStyle(getStatus(Number(modal.data.roll_count ?? 0))) }}>
-                  {getStatus(Number(modal.data.roll_count ?? 0))}
+                <span style={{ fontSize: 13, borderRadius: 20, padding: '3px 10px', fontWeight: 500, ...statusStyle(getStatus(modal.data.remaining_meters)) }}>
+                  {getStatus(modal.data.remaining_meters)}
                 </span>
-                <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>คำนวณจากจำนวนทั้งหมด</span>
+                <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>คำนวณจากความยาวคงเหลือ (≤210 หลา ควรสั่ง · ≤400 หลา ของเหลือน้อย)</span>
               </div>
             </div>
 
