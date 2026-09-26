@@ -168,7 +168,11 @@ export function codeFromName(it: Record<string, unknown>): string | null {
 
 // ตอนแปลงรายการ: รายการผ้าที่มีรหัสสีในแคตตาล็อก → แก้ fabric_type ให้ถูก + ชื่อสีว่างอยู่ เติมชื่อสีจากสต็อก
 // (แอดมินลงแค่ "AB21" → color_name = "โปร่งเรียบหนา Mid-modern") · ถ้าแอดมินเขียนชื่อสีมาเอง ใช้ของแอดมิน
+// วอลเปเปอร์ใช้รหัสสีอะไรก็ได้ (ไม่ใช่รหัสผ้า) → ห้ามเอาแคตตาล็อกผ้ามาเติม/แก้ให้
+const notFabric = (it: object) => /วอลเปเปอร์/.test(String((it as { type?: unknown }).type ?? ''))
+
 export function applyFabricCatalog<T extends { color_code?: unknown; color_name?: unknown; fabric_type?: unknown }>(it: T): T {
+  if (notFabric(it)) return it
   let meta = fabricMeta(typeof it.color_code === 'string' ? it.color_code : null)
   if (!meta && !(typeof it.color_code === 'string' && it.color_code.trim())) {
     // ไม่มีรหัสสี แต่เขียนชื่อสีมา → หารหัสจากชื่อ (ผ้าทุกชนิด · ชื่อกำกวมจะไม่เดาให้)
@@ -192,6 +196,7 @@ export function fabricTypeFromCode(code: string | undefined | null): string {
 // (เติมเฉพาะที่แคตตาล็อกรู้จัก — ชื่อกำกวมหรือรหัสที่ไม่มีในสต็อก ปล่อยตามที่พิมพ์)
 export function fillFabricOnEdit<T extends object>(it: T, key: string, val: unknown): T {
   const next = { ...it, [key]: val } as T & Record<string, unknown>
+  if (notFabric(next)) return next
   if (key === 'color_code') {
     const meta = fabricMeta(typeof val === 'string' ? val : '')
     if (!meta) return next
