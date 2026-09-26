@@ -174,7 +174,9 @@ const notFabric = (it: object) => /วอลเปเปอร์/.test(String((
 export function applyFabricCatalog<T extends { color_code?: unknown; color_name?: unknown; fabric_type?: unknown }>(it: T): T {
   if (notFabric(it)) return it
   let meta = fabricMeta(typeof it.color_code === 'string' ? it.color_code : null)
-  if (!meta && !(typeof it.color_code === 'string' && it.color_code.trim())) {
+  // เบาะ/หมอน: ชื่อสีหน้าร้าน ("ขาวเทา มีtexture") ไม่ใช่ชื่อผ้าในสต็อก → ไม่เดารหัสจากชื่อ (ใส่รหัสมาเองถึงเติมให้)
+  const isDecor = /^(เบาะ|หมอน)/.test(String((it as { type?: unknown }).type ?? ''))
+  if (!meta && !isDecor && !(typeof it.color_code === 'string' && it.color_code.trim())) {
     // ไม่มีรหัสสี แต่เขียนชื่อสีมา → หารหัสจากชื่อ (ผ้าทุกชนิด · ชื่อกำกวมจะไม่เดาให้)
     const code = codeFromName(it)
     if (code) { it = { ...it, color_code: code }; meta = FABRIC_LOOKUP[code] }
@@ -205,6 +207,7 @@ export function fillFabricOnEdit<T extends object>(it: T, key: string, val: unkn
     return { ...next, ...(name ? { color_name: name } : {}), ...(ft ? { fabric_type: ft } : {}) }
   }
   if (key === 'color_name') {
+    if (/^(เบาะ|หมอน)/.test(String(next.type ?? ''))) return next
     const code = codeFromName(next as Record<string, unknown>)
     if (!code) return next
     const ft = shortFabricType(FABRIC_LOOKUP[code].fabric_type)
