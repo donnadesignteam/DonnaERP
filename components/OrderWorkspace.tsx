@@ -9,7 +9,7 @@ import { supabase } from '@/lib/supabase'
 import { syncRows, byEntryDateDesc } from '@/lib/rowCache'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
-import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, ITEM_FIELDS, ITEM_FIELD_OPTIONS, shownFields, visibleItemCols, railNoField, itemInputValue, buildItemSuggestions, emptyItem as emptyRawItem } from '@/lib/itemFormat'
+import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, ITEM_FIELDS, ITEM_FIELD_OPTIONS, shownFields, visibleItemCols, railNoField, itemFieldMissing, itemInputValue, buildItemSuggestions, emptyItem as emptyRawItem } from '@/lib/itemFormat'
 import { railLink } from '@/lib/rail'
 import { installSerial, nextSerial, matchSerial } from '@/lib/serialNo'
 import { buildCustomerBook } from '@/lib/customerBook'
@@ -22,6 +22,7 @@ import { thaiTrackStatus } from '@/lib/trackExtract'
 import { syncOutsourcePO, markPOReceivedForOrders } from '@/lib/outsourceSync'
 import { useInstallPhotos, photoSaveError } from '@/components/InstallPhotos'
 import { ThemedSelect, SuggestInput } from '@/components/ItemInputs'
+import ReadingNotice from '@/components/ReadingNotice'
 import { fillFabricOnEdit } from '@/lib/fabrics'
 import ProvinceSelect from '@/components/ProvinceSelect'
 import { syncWorkStatus as syncWorkStatusExact } from '@/lib/workStatusSync'
@@ -210,6 +211,8 @@ const claimToEntry = (c: ClaimSource): Entry => ({
 
 // รายการสินค้าใช้ชุดช่อง/ลำดับคอลัมน์กลางจาก lib/itemFormat.ts (ITEM_FIELDS) ร่วมกับหน้าปฏิทินงานติดตั้ง
 const emptyItem = (): Item => emptyRawItem() as Item
+// ช่องในกล่องเพิ่ม/แก้ออเดอร์ที่ยังไม่ได้กรอก → พื้นน้ำตาลอ่อน ขอบน้ำตาลแบรนด์ (สีตั้งใน globals.css ทั้งโหมดสว่าง/มืด)
+const MISSING_STYLE: React.CSSProperties = { background: 'var(--missing-bg)', borderColor: 'var(--missing-border)' }
 
 // รวมข้อความสั่งนอกจากทุกรายการ → ไว้ลงคอลัมน์สั่งนอกของออเดอร์
 const itemsOutsourceText = (items: Item[]): string =>
@@ -632,6 +635,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   //    เลยบังคับให้ค้นชื่อเดิมก่อนเสมอ เจอแล้วกดเลือก (ได้ชื่อสะกดเดิมเป๊ะ) ไม่เจอค่อยกดเพิ่มลูกค้าใหม่
   const [custStep, setCustStep] = useState<{ type: 'platform' | 'outside' | 'install' | 'claim'; extra: object; keepModal?: boolean } | null>(null)
   const [orderParsing, setOrderParsing] = useState(false)
+  const [fileReading, setFileReading] = useState(false)   // ดรอปไฟล์ Excel/CSV แล้วกำลังอ่าน (ไฟล์ใหญ่ใช้เวลาหลายวิ)
   const [orderParseError, setOrderParseError] = useState('')
   const [formParseLoading, setFormParseLoading] = useState(false)
   const [formShowAll, setFormShowAll] = useState<number[]>([])   // การ์ดรายการที่กดขอดูทุกช่อง (เก็บเป็น index)
@@ -1660,13 +1664,16 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
 
   function handleFile(file: File) {
     const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.xlsm')
+    setFileReading(true)
+    // แยกไฟล์หนักจนหน้าเว็บนิ่ง → รอให้ข้อความ "กำลังอ่านไฟล์" ขึ้นจอก่อน (setTimeout) แล้วค่อยเริ่มแยก
+    const done = (fn: () => void) => setTimeout(() => { try { fn() } finally { setFileReading(false) } }, 30)
+    const reader = new FileReader()
+    reader.onerror = () => setFileReading(false)
     if (isExcel) {
-      const reader = new FileReader()
-      reader.onload = ev => processFileBuffer(ev.target?.result as ArrayBuffer, file.name)
+      reader.onload = ev => done(() => processFileBuffer(ev.target?.result as ArrayBuffer, file.name))
       reader.readAsArrayBuffer(file)
     } else {
-      const reader = new FileReader()
-      reader.onload = ev => processFileText(ev.target?.result as string, file.name)
+      reader.onload = ev => done(() => processFileText(ev.target?.result as string, file.name))
       reader.readAsText(file, 'utf-8')
     }
   }
@@ -2731,6 +2738,7 @@ ${body}
 
   const inp = (label: string, key: string, type = 'text') => {
     const rawVal = String(modal?.data[key as keyof typeof modal.data] ?? '')
+    const miss = !rawVal.trim()   // ยังไม่ได้กรอก → ไฮไลต์น้ำตาล ([data-missing] / MISSING_STYLE)
     return (
       <div style={{ marginBottom: 14 }}>
         <label style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 700, display: 'block', marginBottom: 5 }}>{label}</label>
@@ -2739,9 +2747,9 @@ ${body}
           <CreamDate value={rawVal} onChange={v => set(key, v)}
             style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--cream-2)',
               border: '1px solid var(--border-2)', borderRadius: 12, padding: '9px 12px', fontSize: 13,
-              cursor: 'pointer', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+              cursor: 'pointer', fontFamily: 'inherit', boxSizing: 'border-box', ...(miss ? MISSING_STYLE : {}) }} />
         ) : (
-          <input type="text" value={rawVal} onChange={e => set(key, e.target.value)}
+          <input type="text" value={rawVal} onChange={e => set(key, e.target.value)} data-missing={miss ? '' : undefined}
             style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
         )}
       </div>
@@ -2756,7 +2764,8 @@ ${body}
         options={[{ value: '', label: '— เลือก —' }, ...options.map(o => ({ value: o, label: o }))]}
         style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--cream-2)',
           border: '1px solid var(--border-2)', borderRadius: 12, padding: '9px 12px', fontSize: 13,
-          cursor: 'pointer', fontFamily: 'inherit', boxSizing: 'border-box', textAlign: 'left' }}
+          cursor: 'pointer', fontFamily: 'inherit', boxSizing: 'border-box', textAlign: 'left',
+          ...(String(modal?.data[key as keyof typeof modal.data] ?? '').trim() ? {} : MISSING_STYLE) }}
         renderValue={o => (<>
           <span className="cs-value" style={{ flex: 1, color: o?.value ? 'var(--ink)' : 'var(--ink-4)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {o?.label ?? '— เลือก —'}
@@ -4869,7 +4878,7 @@ ${body}
                       <path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z" /><path d="M14 3v5h5" /><path d="M9 13h6M9 17h4" />
                     </svg>
                   </span>
-                  <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>{orderParsing ? 'กำลังอ่านใบเสนอราคา…' : 'วางไฟล์ใบเสนอราคาที่นี่'}</div>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>{orderParsing ? 'กำลังอ่านใบเสนอราคา… รอสักครู่' : 'วางไฟล์ใบเสนอราคาที่นี่'}</div>
                   <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 20 }}>รองรับ .pdf</div>
                   <label data-btn style={{ display: 'inline-block', padding: '10px 26px', borderRadius: 999, border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--brand)', color: '#FFF8F0', boxShadow: '0 6px 16px rgba(158,106,73,0.25)' }}>
                     เลือกไฟล์
@@ -4903,8 +4912,9 @@ ${body}
                       <path d="M12 16V7m0 0l-3.2 3.2M12 7l3.2 3.2" /><path d="M4 15v2.5A2.5 2.5 0 006.5 20h11a2.5 2.5 0 002.5-2.5V15" />
                     </svg>
                   </span>
-                  <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>วางไฟล์ที่นี่</div>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>{fileReading ? 'กำลังอ่านไฟล์… รอสักครู่' : 'วางไฟล์ที่นี่'}</div>
                   <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 20 }}>รองรับ .xlsx, .csv, .txt</div>
+                  {fileReading && <div style={{ maxWidth: 360, margin: '0 auto 16px', textAlign: 'left' }}><ReadingNotice text="กำลังอ่านไฟล์…" sub="ไฟล์ใหญ่อาจใช้เวลาสักครู่ อย่าเพิ่งปิดหน้าต่าง" /></div>}
                   <label data-btn style={{ display: 'inline-block', padding: '10px 26px', borderRadius: 999, border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', background: 'var(--brand)', color: '#FFF8F0', boxShadow: '0 6px 16px rgba(158,106,73,0.25)' }}>
                     เลือกไฟล์
                     <input type="file" accept=".xlsx,.xls,.xlsm,.csv,.txt,.tsv" style={{ display: 'none' }} onChange={e => {
@@ -5045,6 +5055,8 @@ ${body}
             {/* ---- Form tab ---- */}
             {(modal.mode === 'edit' || modalTab === 'form') && (
             <div>
+            {/* ดรอป PDF ใบเสนอราคาแล้วสลับมาแท็บฟอร์มทันที — บอกว่ากำลังอ่าน ไม่งั้นฟอร์มว่างเหมือนไม่มีอะไรเกิดขึ้น */}
+            {orderParsing && <ReadingNotice text="กำลังอ่านข้อมูล…" sub="ใช้เวลาประมาณ 10-40 วินาที" />}
             {(() => {
               const ft = modal.mode === 'add' ? addType
                 : modal.data.is_installation ? 'install'
@@ -5117,6 +5129,7 @@ ${body}
                 style={{ marginBottom: 8, padding: '7px 18px', borderRadius: 999, border: 'none', background: formParseLoading || !itemsPasteText.trim() ? 'var(--border)' : 'var(--brand)', color: formParseLoading || !itemsPasteText.trim() ? 'var(--ink-3)' : '#FFF8F0', fontSize: 12, fontWeight: 600, cursor: formParseLoading || !itemsPasteText.trim() ? 'default' : 'pointer', fontFamily: 'inherit', boxShadow: formParseLoading || !itemsPasteText.trim() ? 'none' : '0 5px 14px rgba(158,106,73,0.25)' }}>
                 {formParseLoading ? 'กำลังแปลง…' : '✦ แปลงรายการ'}
               </button>
+              {formParseLoading && <ReadingNotice text="กำลังแปลงรายการ…" sub="ใช้เวลาประมาณ 10-40 วินาที" />}
               {modalItems.length === 0 && !itemsPasteText && (
                 <div style={{ border: '1px dashed var(--border-2)', borderRadius: 14, padding: '14px', textAlign: 'center', color: 'var(--ink-4)', fontSize: 12 }}>
                   ยังไม่มีรายการ
@@ -5149,7 +5162,7 @@ ${body}
                             onChange={v => setModalItems(prev => prev.map((it, i) => i === idx ? fillFabricOnEdit(it, key as string, v) : it))}
                             style={{ width: '100%' }} />
                         ) : (
-                        <SuggestInput type={type} step={type === 'number' ? (key === 'floors' ? '1' : '0.01') : undefined}
+                        <SuggestInput type={type} missing={itemFieldMissing(item, key as string)} step={type === 'number' ? (key === 'floors' ? '1' : '0.01') : undefined}
                           value={item[key] == null ? '' : String(item[key])} suggestions={itemSuggest[key as string]}
                           onChange={v => {
                             const val = itemInputValue(key, v)
@@ -5401,6 +5414,7 @@ ${body}
                 style={{ marginTop: 10, padding: '8px 20px', borderRadius: 999, border: 'none', background: itemsModalLoading || !itemsModalPasteText.trim() ? 'var(--border)' : 'var(--brand)', color: itemsModalLoading || !itemsModalPasteText.trim() ? 'var(--ink-3)' : '#FFF8F0', fontSize: 13, fontWeight: 600, cursor: itemsModalLoading || !itemsModalPasteText.trim() ? 'default' : 'pointer', fontFamily: 'inherit', boxShadow: itemsModalLoading || !itemsModalPasteText.trim() ? 'none' : '0 5px 14px rgba(158,106,73,0.25)' }}>
                 {itemsModalLoading ? 'กำลังแปลง…' : '✦ แปลงรายการ'}
               </button>
+              {itemsModalLoading && <div style={{ marginTop: 10 }}><ReadingNotice text="กำลังแปลงรายการ…" sub="ใช้เวลาประมาณ 10-40 วินาที" /></div>}
             </div>
 
             {/* Editable table — โชว์เฉพาะช่องที่เกี่ยวกับสินค้าในใบนี้ (กด "ทุกช่อง" ถ้าอยากกรอกช่องอื่น) */}
@@ -5436,7 +5450,7 @@ ${body}
                               style={{ width: w, borderRadius: 4, padding: '4px 6px' }} />
                           ) : (
                           <SuggestInput
-                            type={type}
+                            type={type} missing={itemFieldMissing(item, key as string)}
                             step={type === 'number' ? '0.01' : undefined}
                             value={item[key] == null ? '' : String(item[key])} suggestions={itemSuggest[key as string]}
                             onChange={v => {

@@ -350,6 +350,21 @@ export function buildItemSuggestions(lists: Iterable<unknown>): Record<string, s
 // รางมีแค่ความยาว + พร้อมส่งเสมอ → ช่อง สูง/แบบ ของรางไม่ต้องมีให้กรอก (ตารางโชว์ช่องว่างแทน)
 export const railNoField = (it: RawItem, key: string) => String(it.type ?? '').startsWith('ราง') && (key === 'height' || key === 'supply')
 
+// ช่องที่ "ต้องกรอก" แต่ยังว่าง → ไฮไลต์น้ำตาลตอนเพิ่ม/แก้รายการ (ไม่บล็อกการบันทึก แค่เตือนตา)
+// ต้องกรอกทุกชิ้น: ประเภท จำนวน หน่วย · กว้าง/สูง เฉพาะสินค้าที่ตัดตามขนาด (ราง = กว้างอย่างเดียว)
+// เบาะสำเร็จ/หมอน/วอลเปเปอร์/อุปกรณ์ ไม่มีขนาดก็ได้ ไม่ต้องเตือน
+const SIZED_TYPE = /^(ม่าน|มู่ลี่|มุ้ง|กล่องบังราง|เบาะนั่งฟองน้ำ)/
+export function itemFieldMissing(it: RawItem, key: string): boolean {
+  const v = it[key as keyof RawItem]
+  const empty = v == null || String(v).trim() === '' || ((key === 'quantity' || key === 'width' || key === 'height') && Number(v) === 0)
+  if (!empty) return false
+  if (key === 'type' || key === 'quantity' || key === 'unit') return true
+  const t = String(it.type ?? '')
+  if (key === 'width') return t.startsWith('ราง') || SIZED_TYPE.test(t)
+  if (key === 'height') return SIZED_TYPE.test(t)
+  return false
+}
+
 // คอลัมน์ที่จะโชว์ในตารางแก้รายการ — เรียงตาม ITEM_FIELDS เสมอ (ตำแหน่งเดียวกันทุกหน้า)
 export const visibleItemCols = (items: RawItem[], showAll: boolean) => {
   const shown = items.map(shownFields)

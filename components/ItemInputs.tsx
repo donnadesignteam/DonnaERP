@@ -68,8 +68,8 @@ function useKeys(count: number, open: boolean, setOpen: (v: boolean) => void, pi
   return { active, setActive, onKeyDown }
 }
 
-export function ThemedSelect({ value, options, onChange, style }: {
-  value: string; options: string[]; onChange: (v: string) => void; style?: React.CSSProperties
+export function ThemedSelect({ value, options, onChange, style, missing }: {
+  value: string; options: string[]; onChange: (v: string) => void; style?: React.CSSProperties; missing?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const close = useCallback(() => setOpen(false), [])
@@ -78,7 +78,7 @@ export function ThemedSelect({ value, options, onChange, style }: {
   const { active, setActive, onKeyDown } = useKeys(options.length, open, setOpen, pick, Math.max(0, options.indexOf(value)))
   return (
     <>
-      <button type="button" data-themed-select="" ref={setAnchor} onClick={() => setOpen(o => !o)} onBlur={() => setOpen(false)} onKeyDown={onKeyDown}
+      <button type="button" data-themed-select="" data-missing={missing ? '' : undefined} ref={setAnchor} onClick={() => setOpen(o => !o)} onBlur={() => setOpen(false)} onKeyDown={onKeyDown}
         style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, textAlign: 'left', cursor: 'pointer',
           border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, boxSizing: 'border-box', outline: 'none',
           background: 'var(--surface)', color: 'var(--ink)', fontFamily: 'inherit', ...style }}>
@@ -95,9 +95,10 @@ export function ThemedSelect({ value, options, onChange, style }: {
 }
 
 // คำแนะนำ = คำที่มีส่วนที่พิมพ์ (ไม่สนตัวพิมพ์เล็กใหญ่) เรียงจากที่ใช้บ่อยสุด · ช่องว่าง = โชว์คำที่ใช้บ่อยสุด
-export function SuggestInput({ value, onChange, suggestions, type = 'text', step, style }: {
+export function SuggestInput({ value, onChange, suggestions, type = 'text', step, style, missing }: {
   value: string; onChange: (v: string) => void; suggestions?: string[]
   type?: string; step?: string; style?: React.CSSProperties
+  missing?: boolean   // ช่องต้องกรอกที่ยังว่าง → ไฮไลต์น้ำตาล (สไตล์ [data-missing] ใน globals.css)
 }) {
   const [open, setOpen] = useState(false)
   const close = useCallback(() => setOpen(false), [])
@@ -108,7 +109,7 @@ export function SuggestInput({ value, onChange, suggestions, type = 'text', step
   const { active, setActive, onKeyDown } = useKeys(list.length, open, setOpen, pick)
   return (
     <>
-      <input ref={setAnchor} type={type} step={step} value={value}
+      <input ref={setAnchor} type={type} step={step} value={value} data-missing={missing ? '' : undefined}
         onChange={e => { onChange(e.target.value); setOpen(true) }}
         onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} onKeyDown={onKeyDown}
         style={{ border: '1px solid var(--border)', borderRadius: 5, padding: '5px 8px', fontSize: 12, outline: 'none', boxSizing: 'border-box', background: 'var(--surface)', color: 'var(--ink)', ...style }} />

@@ -39,6 +39,9 @@
   /* ช่วงห้ามลา (Red Zone) */
   --cal-redzone: #F8E3DC;
   --cal-redzone-border: #E2B9A8;
+  /* ช่องที่ต้องกรอกแต่ยังว่าง (น้ำตาลอ่อนของแบรนด์) */
+  --missing-bg:     #F7EDE3;
+  --missing-border: #D9B89A;
 }
 
 html.dark {
@@ -67,6 +70,8 @@ html.dark {
   --cal-sunday:  rgba(255,255,255,0.04);
   --cal-redzone: #3A1B18;
   --cal-redzone-border: #6B342A;
+  --missing-bg:     #2E2016;
+  --missing-border: #8A6142;
 }
 
 body {
@@ -485,3 +490,9 @@ tr.row-flash, tr.row-flash > td { animation: row-flash 1s ease-in-out 3; }
 .dn-sticky-hscroll { background: color-mix(in srgb, var(--surface) 85%, transparent); backdrop-filter: blur(6px); border-top: 1px solid var(--hairline); scrollbar-width: auto; scrollbar-color: var(--border-2) transparent; }
 .dn-sticky-hscroll::-webkit-scrollbar { height: 12px; }
 .dn-sticky-hscroll::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 999px; border: 3px solid transparent; background-clip: padding-box; }
+
+/* ช่องรายการสินค้าที่ต้องกรอกแต่ยังว่าง (SuggestInput/ThemedSelect missing) — selector ยาวกว่า .sc-fields/.sc-modal input เพื่อชนะ !important ของธีม */
+html input[data-missing]:not([type=checkbox]):not([type=radio]):not([type=file]):not(:focus),
+html button[data-themed-select][data-missing][data-missing] {
+  background: var(--missing-bg) !important; border-color: var(--missing-border) !important; }
+html input[data-missing]::placeholder { color: var(--cal-holiday-ink); }

@@ -12,7 +12,8 @@ import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { HOLIDAYS } from '@/lib/holidays'
 import OrderDetailModal from '@/components/OrderDetailModal'
 import { ThemedSelect, SuggestInput } from '@/components/ItemInputs'
-import { formatItemLines, autoTapeHooks, ITEM_FIELDS, ITEM_FIELD_OPTIONS, visibleItemCols, railNoField, itemInputValue, buildItemSuggestions, emptyItem, type RawItem } from '@/lib/itemFormat'
+import ReadingNotice from '@/components/ReadingNotice'
+import { formatItemLines, autoTapeHooks, ITEM_FIELDS, ITEM_FIELD_OPTIONS, visibleItemCols, railNoField, itemFieldMissing, itemInputValue, buildItemSuggestions, emptyItem, type RawItem } from '@/lib/itemFormat'
 import { syncOutsourcePO } from '@/lib/outsourceSync'
 import { recordAction } from '@/lib/history'
 import { opUpdate, opInsert, opDelete } from '@/lib/historyOps'
@@ -1896,6 +1897,7 @@ export default function InstallationsPage() {
                 style={{ marginTop: 8, padding: '7px 18px', borderRadius: 7, border: 'none', background: itemsParsing || !itemsPasteText.trim() ? 'var(--border)' : 'var(--blue)', color: itemsParsing || !itemsPasteText.trim() ? 'var(--ink-3)' : '#fff', fontSize: 13, fontWeight: 600, cursor: itemsParsing || !itemsPasteText.trim() ? 'default' : 'pointer' }}>
                 {itemsParsing ? 'กำลังแปลง…' : '✦ แปลงรายการ'}
               </button>
+              {itemsParsing && <div style={{ marginTop: 10 }}><ReadingNotice text="กำลังแปลงรายการ…" sub="ใช้เวลาประมาณ 10-40 วินาที" /></div>}
             </div>
 
             {/* ตารางแก้รายการ — ชุดคอลัมน์/ลำดับเดียวกับหมวดออเดอร์ (ITEM_FIELDS ใน lib/itemFormat.ts) */}
@@ -1931,7 +1933,7 @@ export default function InstallationsPage() {
                               style={{ width: w, borderRadius: 4, padding: '4px 6px' }} />
                           ) : (
                           <SuggestInput
-                            type={type}
+                            type={type} missing={itemFieldMissing(item, key as string)}
                             step={type === 'number' ? '0.01' : undefined}
                             value={key === 'hooks' && !(item.hooks ?? '').toString().trim()
                               ? autoTapeHooks(item)                                  /* ว่าง → โชว์กระดูมที่คำนวณจากม่านลอนเทป (พิมพ์ทับได้) */
@@ -2267,6 +2269,7 @@ export default function InstallationsPage() {
                     }} />
                   </label>
                 </div>
+                {parsing && <div style={{ marginTop: 10 }}><ReadingNotice text="กำลังอ่านข้อมูล…" sub="ใช้เวลาประมาณ 10-40 วินาที" /></div>}
                 {parseError && <div style={{ marginTop: 6, fontSize: 12, color: 'var(--red)' }}>{parseError}</div>}
               </div>
             )}
