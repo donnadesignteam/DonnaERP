@@ -248,7 +248,7 @@ function Calendar({ year, month, selDay, view, installs, onDayClick, onOpen }: {
       return dt.getDate() === d && dt.getMonth() === m && dt.getFullYear() === y
     }).sort((a, b) => a.appointment_datetime.localeCompare(b.appointment_datetime))
     const out: React.ReactNode[] = []
-    if (holiday) out.push(<Chip key="h" bg="#F6E9DB" dot="#D9AE86" title={holiday} sub="วันหยุดร้าน" big={big} />)
+    if (holiday) out.push(<Chip key="h" bg="#F9E4E1" dot="#C0564A" title={holiday} sub="วันหยุดร้าน" big={big} />)
     if (isSunday) out.push(<Chip key="s" bg="#ECE9E7" dot="#9A9AA6" title="ร้านปิด" sub="วันอาทิตย์" big={big} />)
     list.forEach(ins => {
       const c = rowColor(ins)
@@ -1325,7 +1325,7 @@ export default function InstallationsPage() {
             <button className="sc-pill no-print" onClick={() => goToDate(new Date())}>วันนี้</button>
           </div>
           <div className="sc-legend">
-            {[['#5ac8fa', 'วัดหน้างาน'], ['#C79A4B', 'ติดตั้ง'], ['#C0564A', 'รอแก้'], ['#D9AE86', 'วันหยุด'], ['#9A9AA6', 'ร้านปิด (อา.)']].map(([c, l]) => (
+            {[['#5ac8fa', 'วัดหน้างาน'], ['#C79A4B', 'ติดตั้ง'], ['#C0564A', 'รอแก้'], ['#C0564A', 'วันหยุด'], ['#9A9AA6', 'ร้านปิด (อา.)']].map(([c, l]) => (
               <span key={l}><i style={{ background: c }} />{l}</span>
             ))}
           </div>
@@ -2015,7 +2015,7 @@ export default function InstallationsPage() {
               return (h || sun) ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {sun && <div className="sc-chip" style={{ background: '#ECE9E7', padding: '10px 14px' }}><i className="sc-dot" style={{ background: '#9A9AA6' }} /><div className="sc-chip-title" style={{ fontSize: 13, flex: 1 }}>ร้านปิด</div><div className="sc-chip-sub" style={{ marginTop: 0, fontSize: 12 }}>วันอาทิตย์</div></div>}
-                  {h && <div className="sc-chip" style={{ background: '#F6E9DB', padding: '10px 14px' }}><i className="sc-dot" style={{ background: '#D9AE86' }} /><div className="sc-chip-title" style={{ fontSize: 13, flex: 1 }}>{h}</div><div className="sc-chip-sub" style={{ marginTop: 0, fontSize: 12 }}>วันหยุดร้าน</div></div>}
+                  {h && <div className="sc-chip" style={{ background: '#F9E4E1', padding: '10px 14px' }}><i className="sc-dot" style={{ background: '#C0564A' }} /><div className="sc-chip-title" style={{ fontSize: 13, flex: 1 }}>{h}</div><div className="sc-chip-sub" style={{ marginTop: 0, fontSize: 12 }}>วันหยุดร้าน</div></div>}
                 </div>
               ) : null
             })()}
