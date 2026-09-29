@@ -9,6 +9,7 @@ import { useConfirm } from '@/components/ConfirmDialog'
 import { CANCELLED_COLS, returnedFromOrder, type CancelledOrder, type ReturnedFromOrder } from '@/lib/cancelledReturns'
 import { formatItemLines } from '@/lib/itemFormat'
 import { fabricStatus } from '@/lib/fabricStatus'
+import { backdropClose } from '@/lib/backdrop'
 
 export type StockTab = 'overview' | 'fabric' | 'rail' | 'office' | 'outsource' | 'returned'
 type Cat = Exclude<StockTab, 'overview' | 'fabric'>
@@ -322,7 +323,7 @@ export function StockItemsTab({ category, addReq = 0 }: { category: Cat; addReq?
       </div>
 
       {edit && (
-        <div onClick={() => !saving && setEdit(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(40,28,20,0.35)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div {...backdropClose(() => !saving && setEdit(null))} style={{ position: 'fixed', inset: 0, background: 'rgba(40,28,20,0.35)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div className="sc-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 560 }}>
             <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16, color: 'var(--ink)' }}>{edit.id ? 'แก้ไข' : 'เพิ่ม'}{ADD_LABEL[category]}</h3>
             {category === 'outsource' && !edit.id && (

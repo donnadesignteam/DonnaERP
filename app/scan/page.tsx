@@ -10,6 +10,7 @@ import { uploadPackingFile, deletePackingFile, compressImage } from '@/lib/packi
 import { cutMeters, round2 } from '@/lib/fabricUsage'
 import { syncStockCut } from '@/lib/stockCut'
 import HubButton from '@/components/HubButton'
+import PhotoViewer from '@/components/PhotoViewer'
 import { useConfirm } from '@/components/ConfirmDialog'
 
 const LS_KEY = 'donna-scan-tech'
@@ -876,6 +877,10 @@ function PhotoUpload({ slots, uploading, counts, err, onPick, photos, delBusy, o
   // Android หลายรุ่นเปิดแค่อัลบั้มถ้าไม่ใส่ capture → แยกปุ่มเฉพาะ Android (ตรวจหลังโหลดหน้า กัน hydration ไม่ตรง)
   const [android, setAndroid] = useState(false)
   const [menu, setMenu] = useState<string | null>(null)   // ช่องที่เปิดตัวเลือก ถ่ายรูป/อัลบั้ม อยู่ (Android)
+  // รูปที่เปิดดูเต็มจอ — ลบได้จากในนั้นเท่านั้น (ปุ่ม ✕ มุมรูปจิ๋วกดโดนง่าย user ขอเอาออก 29ก.ย.69)
+  // ลบสำเร็จ = url หายจาก photos → ตัวดูรูปปิดเอง
+  const [view, setView] = useState<string | null>(null)
+  const shown = view && photos.includes(view) ? view : null
   useEffect(() => { setAndroid(/android/i.test(navigator.userAgent)) }, [])
   return (
     <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #eee', textAlign: 'left' }}>
@@ -924,21 +929,23 @@ function PhotoUpload({ slots, uploading, counts, err, onPick, photos, delBusy, o
       </div>
       {photos.length > 0 && (
         <div style={{ marginTop: 12 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#475569', marginBottom: 6 }}>รูปในออเดอร์นี้ ({photos.length}) — กด ✕ เพื่อลบ</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#475569', marginBottom: 6 }}>รูปในออเดอร์นี้ ({photos.length}) — แตะรูปเพื่อดู/ลบ</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
             {photos.map(u => (
-              <div key={u} style={{ position: 'relative' }}>
+              <button key={u} onClick={() => setView(u)} aria-label="ดูรูปเต็ม"
+                style={{ padding: 0, border: 'none', background: 'transparent', cursor: 'pointer', lineHeight: 0, WebkitTapHighlightColor: 'transparent' }}>
                 <img src={u} alt="" style={{ width: '100%', height: 90, objectFit: 'cover', borderRadius: 10, display: 'block', opacity: delBusy === u ? 0.4 : 1 }} />
-                <button onClick={() => onDelete(u)} disabled={delBusy !== null}
-                  style={{ position: 'absolute', top: 4, right: 4, width: 24, height: 24, borderRadius: '50%', border: 'none', background: 'rgba(220,38,38,0.92)', color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {delBusy === u ? '…' : '✕'}
-                </button>
-              </div>
+              </button>
             ))}
           </div>
         </div>
       )}
       {err && <p style={{ color: '#C0563F', fontSize: 12, marginTop: 8 }}>ไม่สำเร็จ: {err}</p>}
+      {shown && (
+        <PhotoViewer url={shown} onClose={() => setView(null)} onDelete={() => onDelete(shown)}
+          title="รูปในออเดอร์นี้" subtitle={`รูปที่ ${photos.indexOf(shown) + 1} / ${photos.length}`}
+          deleting={delBusy === shown} error={err ? `ไม่สำเร็จ: ${err}` : ''} />
+      )}
     </div>
   )
 }

@@ -7,6 +7,7 @@ import { fetchStaffList, hasVacationRight, createStaff, setStaffActive, type Sta
 import StaffTabs from '@/components/StaffTabs'
 import { isManagerLogin } from '@/lib/adminActor'
 import { useConfirm } from '@/components/ConfirmDialog'
+import { backdropClose } from '@/lib/backdrop'
 
 const n = (v: number | null | undefined) => (v == null ? '—' : String(v))
 
@@ -235,7 +236,7 @@ export default function StaffPage() {
 
       {/* ป๊อปอัปเพิ่มพนักงาน — เห็นเฉพาะบัญชีร้าน */}
       {addOpen && owner && (
-        <div onClick={() => setAddOpen(false)}
+        <div {...backdropClose(() => setAddOpen(false))}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 16 }}>
           <div onClick={(e) => e.stopPropagation()}
             style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 22, width: 420, maxWidth: '100%', boxShadow: 'var(--shadow-md)' }}>

@@ -14,6 +14,7 @@ import { itemBlockLines, itemPrice, type RawItem } from '@/lib/itemFormat'
 import OrderHistory from './OrderHistory'
 import Pager from './Pager'
 import { OUTSIDE_PLATFORMS, PLATFORM_NAMES } from '@/lib/orderTabs'
+import { backdropClose } from '@/lib/backdrop'
 
 type Row = Record<string, unknown>
 type Item = Record<string, unknown>
@@ -114,7 +115,8 @@ export const BOX_ICON = 'M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7
 const TRUCK_ICON = 'M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.9 17.9 0 00-3.213-9.193 2.056 2.056 0 00-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 00-10.026 0 1.106 1.106 0 00-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12'
 export const CAMERA_ICON = 'M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316zM16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z'
 
-export default function OrderDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
+// mobile = เปิดจากหน้ามือถือ (/m/*) → ลิงก์โฟลเดอร์ลูกค้าไปหน้ามือถือ · จอแคบป๊อปอัปเต็มจอเลื่อนขึ้นจากล่าง (CSS .odm-* ใน globals.css)
+export default function OrderDetailModal({ id, onClose, mobile }: { id: string; onClose: () => void; mobile?: boolean }) {
   const [row, setRow] = useState<Row | null>(null)
   const [err, setErr] = useState('')
 
@@ -135,17 +137,11 @@ export default function OrderDetailModal({ id, onClose }: { id: string; onClose:
   }, [onClose])
 
   return (
-    <div onClick={onClose}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.40)', display: 'flex',
-               alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
-      <div onClick={e => e.stopPropagation()}
-        style={{ width: '100%', maxWidth: 880, maxHeight: '88vh', display: 'flex', flexDirection: 'column',
-                 background: 'var(--cream-2)', border: '1px solid var(--border)', borderRadius: 22,
-                 boxShadow: '0 24px 60px rgba(90,60,38,0.30)' }}>
+    <div {...backdropClose(onClose)} className="odm-back">
+      <div onClick={e => e.stopPropagation()} className="odm-panel">
 
         {/* ── หัวป๊อปอัป ── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '18px 22px 14px',
-                      borderBottom: '1px solid var(--hairline)' }}>
+        <div className="odm-head">
           <svg width="26" height="26" fill="none" stroke="#8A5C3A" strokeWidth="1.5" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
             <path strokeLinecap="round" strokeLinejoin="round" d={BOX_ICON} />
           </svg>
@@ -157,8 +153,8 @@ export default function OrderDetailModal({ id, onClose }: { id: string; onClose:
             </div>
           </div>
           {row?.customer_name ? (
-            <Link href={`/customers?name=${encodeURIComponent(String(row.customer_name))}`} className="dn-ctrl"
-              style={{ height: 36, fontSize: 12.5, textDecoration: 'none' }}>เปิดโฟลเดอร์ลูกค้า</Link>
+            <Link href={`${mobile ? '/m' : ''}/customers?name=${encodeURIComponent(String(row.customer_name))}`} className="dn-ctrl odm-folder"
+              style={{ height: 36, fontSize: 12.5, textDecoration: 'none' }}>{mobile ? 'โฟลเดอร์' : 'เปิดโฟลเดอร์ลูกค้า'}</Link>
           ) : null}
           <button onClick={onClose} title="ปิด"
             style={{ width: 34, height: 34, borderRadius: '50%', border: '1px solid var(--border)',
@@ -171,7 +167,7 @@ export default function OrderDetailModal({ id, onClose }: { id: string; onClose:
         </div>
 
         {/* ── เนื้อหา ── */}
-        <div style={{ overflowY: 'auto', padding: '16px 22px 22px' }}>
+        <div className="odm-body">
           {err ? (
             <div style={{ color: 'var(--red)', fontSize: 13.5 }}>{err}</div>
           ) : !row ? (
@@ -242,7 +238,7 @@ export function OrderDetailBody({ row, afterShipping, wide }: { row: Row; afterS
   return (
     <>
       {/* ══ สรุปออเดอร์ ══ */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.2fr) minmax(0,1fr) minmax(0,1.2fr)',
+      <div className="odb-summary" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.2fr) minmax(0,1fr) minmax(0,1.2fr)',
                     background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16,
                     padding: '16px 18px', marginBottom: 14 }}>
         <div>
@@ -332,7 +328,7 @@ export function OrderDetailBody({ row, afterShipping, wide }: { row: Row; afterS
               // ‼️ ใช้สูตรบรรทัดเดียวกับตอนปริ้น/คัดลอกในหมวดออเดอร์ จะได้อ่านแล้วตรงกับใบสั่งงาน
               const lines = itemBlockLines(it as RawItem)
               return (
-                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 14,
+                <div key={i} className="odb-item" style={{ display: 'flex', alignItems: 'flex-start', gap: 14,
                                       background: 'var(--cream-2)', borderRadius: 12, padding: '8px 14px' }}>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     {lines.map((ln, li) => (
@@ -351,7 +347,7 @@ export function OrderDetailBody({ row, afterShipping, wide }: { row: Row; afterS
 
                   {/* จำนวน / ราคา — มีราคาแยกของรายการ (แปลงมาจากข้อความที่เขียนราคาไว้) ใช้อันนั้น
                       ไม่มี → ใบรายการเดียวใช้ราคาทั้งใบแทนได้ · ใบหลายรายการไม่โชว์ช่องราคา */}
-                  <div style={{ display: 'flex', flexShrink: 0, alignItems: 'stretch' }}>
+                  <div className="odb-item-nums" style={{ display: 'flex', flexShrink: 0, alignItems: 'stretch' }}>
                     {[
                       { k: 'จำนวน', v: qty ? String(qty) : '—', sub: String(it.unit ?? '') },
                       ...(itemPrice(it.price) != null ? [{ k: 'ราคา', v: baht(itemPrice(it.price)!), sub: '' }]
@@ -396,7 +392,7 @@ export function OrderDetailBody({ row, afterShipping, wide }: { row: Row; afterS
             )}
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderLeft: '1px solid var(--hairline)', paddingLeft: 16 }}>
+          <div className="odb-ship-side" style={{ display: 'flex', flexDirection: 'column', gap: 8, borderLeft: '1px solid var(--hairline)', paddingLeft: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <svg width="15" height="15" fill="none" stroke="var(--ink-4)" strokeWidth="1.6" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d={ICON.cal} />
@@ -440,7 +436,7 @@ export function OrderDetailBody({ row, afterShipping, wide }: { row: Row; afterS
 
       {/* ══ ข้อมูลใบออเดอร์ ══ */}
       <Card title="ข้อมูลออเดอร์" icon={ICON.doc}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '0 24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 250px), 1fr))', gap: '0 24px' }}>
           {fields.map(([k, v]) => {
             const line = (key: string, val: unknown, last = true) => (
               <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 0', borderBottom: last ? '1px solid var(--hairline)' : 'none' }}>

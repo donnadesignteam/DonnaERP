@@ -20,6 +20,7 @@ import NotifyBell from '@/components/NotifyBell'
 import OrderDetailModal from '@/components/OrderDetailModal'
 import ScanToast from '@/components/ScanToast'
 import BoardAnnouncements from '@/components/BoardAnnouncements'
+import { backdropClose } from '@/lib/backdrop'
 
 
 type Order = {
@@ -1122,7 +1123,7 @@ export default function DashboardPage() {
       {/* Modal */}
       {modal && (
         <div
-          onClick={() => setModal(null)}
+          {...backdropClose(() => setModal(null))}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}
         >
           <div

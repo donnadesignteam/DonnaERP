@@ -129,11 +129,14 @@ export function useInstallPhotos(opts?: { prefix?: string; title?: string }) {
                 <img src={p.url} alt={p.caption || 'รูปหน้างาน'}
                   style={{ width: '100%', maxHeight: 320, objectFit: 'cover', borderRadius: 8, display: 'block' }} />
               </a>
-              <button type="button" onClick={() => remove(i)} title="เอารูปนี้ออก"
-                style={{ position: 'absolute', top: 6, right: 6, width: 26, height: 26, borderRadius: '50%', border: 'none', background: 'rgba(15,23,42,0.7)', color: '#fff', fontSize: 13, lineHeight: 1, cursor: 'pointer' }}>✕</button>
             </div>
-            <input value={p.caption} onChange={e => setCaption(i, e.target.value)} placeholder="คำอธิบายรูป เช่น หน้าต่างห้องนอน ฝั่งซ้าย"
-              style={{ width: '100%', marginTop: 8, border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+            {/* ปุ่มเอาออกอยู่ข้างช่องคำอธิบาย ห่างจากตัวรูป — เดิมเป็น ✕ มุมรูปกดโดนง่าย (user ขอย้าย 29ก.ย.69) */}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+              <input value={p.caption} onChange={e => setCaption(i, e.target.value)} placeholder="คำอธิบายรูป เช่น หน้าต่างห้องนอน ฝั่งซ้าย"
+                style={{ flex: 1, minWidth: 0, border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+              <button type="button" onClick={() => remove(i)}
+                style={{ flexShrink: 0, border: '1px solid var(--border)', background: 'transparent', color: 'var(--red)', borderRadius: 7, padding: '7px 10px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>เอารูปออก</button>
+            </div>
           </div>
         ))}
         {photos.length === 0 && !busy && (

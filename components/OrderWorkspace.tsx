@@ -48,6 +48,7 @@ import CreamSelect from '@/components/CreamSelect'
 import CreamDate from '@/components/CreamDate'
 import { pillBg, pillInk } from '@/components/OrderDetailModal'
 import { READ_ONLY } from '@/lib/readOnly'
+import { backdropClose } from '@/lib/backdrop'
 
 type Item = {
   type: string
@@ -4586,7 +4587,7 @@ ${body}
 
       {/* Popup ชวนติดตั้ง extension "Donna Track" (เด้งตอนกดจัดส่งแล้ว ถ้ายังไม่ติดตั้ง) */}
       {extPrompt && (
-        <div onClick={() => setExtPrompt(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 24 }}>
+        <div {...backdropClose(() => setExtPrompt(null))} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 24 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 24, width: '100%', maxWidth: 420 }}>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>🧩 ยังไม่ได้ติดตั้ง extension &quot;Donna Track&quot;</h3>
             <p style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 14, lineHeight: 1.6 }}>
@@ -4617,7 +4618,7 @@ ${body}
 
       {/* Popup จัดส่งแล้ว — กรอกเลขพัสดุ (เพิ่มได้หลายเลข) */}
       {shipModal && (
-        <div onClick={() => setShipModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 24 }}>
+        <div {...backdropClose(() => setShipModal(null))} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 24 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 24, width: '100%', maxWidth: 400 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
               <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>จัดส่งแล้ว — กรอกเลขพัสดุ</h3>
@@ -4669,7 +4670,7 @@ ${body}
         const hasAuto = shipments.some(s => isAutoCarrier(s.carrier))
         const hasExtCarrier = shipments.some(s => EXT_CARRIERS.includes(s.carrier))
         return (
-          <div onClick={() => setTrackModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 24 }}>
+          <div {...backdropClose(() => setTrackModal(null))} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 24 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 24, width: '100%', maxWidth: 440, maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                 <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>📦 สถานะพัสดุ</h3>
@@ -4732,7 +4733,7 @@ ${body}
 
       {/* ถามรูปแบบการปริ้น เมื่อเลือกหลายรายการ */}
       {printAsk && (
-        <div onClick={() => { setPrintAsk(null); setPrintColStep(false) }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 24 }}>
+        <div {...backdropClose(() => { setPrintAsk(null); setPrintColStep(false) })} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 24 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 24, width: '100%', maxWidth: printColStep ? 460 : 380 }}>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>ปริ้น {printAsk.length} รายการ</h3>
             {printColStep ? (
@@ -5277,7 +5278,7 @@ ${body}
       )}
 
       {addTypeModal && (
-        <div onClick={() => setAddTypeModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+        <div {...backdropClose(() => setAddTypeModal(false))} style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
           <div onClick={e => e.stopPropagation()} className="sc-modal" style={{ maxWidth: 400, padding: '28px 32px' }}>
             <h3 className="sc-mtitle" style={{ marginBottom: 6 }}>เพิ่มรายการ</h3>
             <p style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 20 }}>เลือกประเภทงาน</p>
@@ -5389,7 +5390,7 @@ ${body}
 
       {/* Items modal */}
       {itemsModal && (
-        <div onClick={closeItemsModal} style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 1000, padding: 24 }}>
+        <div {...backdropClose(closeItemsModal)} style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 1000, padding: 24 }}>
           {/* ธีมแบรนด์: การ์ดมุมมน 24 · ช่องกรอกทั้งตารางได้หน้าตาครีมจาก .sc-fields */}
           <div onClick={e => e.stopPropagation()} className="sc-fields" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 24, boxShadow: '0 24px 60px rgba(61,43,31,0.22)', width: '100%', maxWidth: 900, maxHeight: '90vh', overflowY: 'auto', padding: '26px 30px' }}>
 

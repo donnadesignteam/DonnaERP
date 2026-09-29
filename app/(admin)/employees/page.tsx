@@ -20,6 +20,7 @@ import { useStableView } from '@/lib/useStableView'
 import CreamSelect from '@/components/CreamSelect'
 import AnchoredMenu from '@/components/AnchoredMenu'
 import { useColumnFilters, useHiddenColumns, SearchPill, MonthSelect, SortSelect, ColumnPicker, Tab, type FilterDef } from '@/components/ListFilters'
+import { backdropClose } from '@/lib/backdrop'
 
 // คอลัมน์ของรายการลา (ซ่อน/โชว์ได้ + ตัวกรองหัวคอลัมน์ แบบเดียวกับหมวดออเดอร์)
 const LEAVE_COLS = [
@@ -679,7 +680,7 @@ export default function EmployeesPage() {
 
       {/* Day detail modal (คลิกวันในปฏิทิน) */}
       {dayModal && (
-        <div className="sc-mback" onClick={() => setDayModal(null)}>
+        <div className="sc-mback" {...backdropClose(() => setDayModal(null))}>
           <div className="sc-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
             <div className="sc-mhead">
               <div className="sc-mdate">
@@ -734,7 +735,7 @@ export default function EmployeesPage() {
 
       {/* Add leave modal */}
       {modal && (
-        <div className="sc-mback" onClick={closeLeaveModal} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+        <div className="sc-mback" {...backdropClose(closeLeaveModal)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
           <div className="sc-modal" onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto' }}>
             <h2 className="sc-mtitle">{editId ? 'แก้ไขรายการลา' : '+ เพิ่มรายการลา'}</h2>
 

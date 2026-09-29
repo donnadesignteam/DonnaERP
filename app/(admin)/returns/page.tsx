@@ -17,6 +17,7 @@ import { CARRIER_OPTIONS, detectCarrier } from '@/lib/carriers'
 import { compressImage } from '@/lib/packingPhotos'
 import { compressVideo } from '@/lib/videoCompress'
 import { useConfirm } from '@/components/ConfirmDialog'
+import PhotoViewer from '@/components/PhotoViewer'
 import { nextSerial, matchSerial } from '@/lib/serialNo'
 import { buildCustomerBook, type CustomerEntry } from '@/lib/customerBook'
 import CustomerPickStep from '@/components/CustomerPickStep'
@@ -921,6 +922,9 @@ function MediaCell({ kind, list, busy, onAdd, onRemove }: {
 }) {
   const input = useRef<HTMLInputElement>(null)
   const isVideo = kind === 'videos'
+  // รูป/คลิปที่เปิดดูเต็มจอ — เอาออกได้จากในนั้นเท่านั้น (ปุ่ม ✕ มุมรูปจิ๋วกดโดนง่าย user ขอเอาออก 29ก.ย.69) · Ctrl+Z ย้อนได้เหมือนเดิม
+  const [view, setView] = useState<number | null>(null)
+  const shown = view !== null ? list[view] : undefined
   return (
     // ‼️ แถวตารางสูงคงที่ (.dn-rows) — เรียงแถวเดียว มีหลายรูป/คลิปเลื่อนซ้ายขวาดู ไม่ขึ้นบรรทัดใหม่
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -928,14 +932,12 @@ function MediaCell({ kind, list, busy, onAdd, onRemove }: {
         <div className="dn-hscroll" style={{ display: 'flex', flexWrap: 'nowrap', gap: 8, overflowX: 'auto', maxWidth: 190, padding: '2px 6px 0 0' }}>
           {list.map((m, i) => (
             <div key={m.url} style={{ position: 'relative', flexShrink: 0 }}>
-              <a href={m.url} target="_blank" rel="noreferrer" title={isVideo ? `เปิดวิดีโอ ${m.name ?? ''}` : 'เปิดรูปขนาดเต็ม'}
+              <button type="button" onClick={e => { e.stopPropagation(); setView(i) }} title={isVideo ? `เปิดวิดีโอ ${m.name ?? ''}` : 'ดูรูปเต็ม / ลบ'}
                 style={isVideo
-                  ? { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--blue)', textDecoration: 'none', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 20px 2px 8px' }
-                  : { display: 'block' }}>
+                  ? { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--blue)', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 8px', cursor: 'pointer', fontFamily: 'inherit' }
+                  : { display: 'block', padding: 0, border: 'none', background: 'transparent', cursor: 'pointer', lineHeight: 0 }}>
                 {isVideo ? <>▶ คลิป {i + 1}</> : <img src={m.url} alt="รูปพัสดุ" style={{ width: 28, height: 28, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)', display: 'block' }} />}
-              </a>
-              <button onClick={() => onRemove(i)} title="เอาออก"
-                style={{ position: 'absolute', top: isVideo ? 2 : -4, right: isVideo ? 2 : -4, width: 15, height: 15, borderRadius: '50%', border: 'none', background: 'rgba(15,23,42,0.65)', color: '#fff', fontSize: 10, lineHeight: 1, cursor: 'pointer', padding: 0 }}>✕</button>
+              </button>
             </div>
           ))}
         </div>
@@ -946,6 +948,11 @@ function MediaCell({ kind, list, busy, onAdd, onRemove }: {
       </button>
       <input ref={input} type="file" accept={isVideo ? 'video/*' : 'image/*'} multiple style={{ display: 'none' }}
         onChange={e => { onAdd(e.target.files); e.target.value = '' }} />
+      {shown && view !== null && (
+        <PhotoViewer url={shown.url} video={isVideo} onClose={() => setView(null)}
+          title={isVideo ? (shown.name || 'คลิปพัสดุ') : 'รูปพัสดุ'} subtitle={`${isVideo ? 'คลิป' : 'รูป'}ที่ ${view + 1} / ${list.length}`}
+          onDelete={() => { onRemove(view); setView(null) }} />
+      )}
     </div>
   )
 }

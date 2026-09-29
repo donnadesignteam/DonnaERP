@@ -11,6 +11,7 @@
 //   ...แล้ววาง {confirmDialog} ไว้ท้าย JSX ของคอมโพเนนต์
 
 import { useCallback, useEffect, useState } from 'react'
+import { backdropClose } from '@/lib/backdrop'
 
 type AskOptions = {
   okText?: string      // ข้อความปุ่มยืนยัน (ค่าตั้งต้น "ตกลง")
@@ -44,7 +45,7 @@ export function useConfirm() {
 
   const confirmDialog = pending && (
     <div
-      onClick={() => close(false)}
+      {...backdropClose(() => close(false))}
       style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 20000, padding: 24 }}
     >
       <div

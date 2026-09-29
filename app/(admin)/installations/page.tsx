@@ -37,6 +37,7 @@ import { useColumnFilters, SearchPill, MonthSelect, SortSelect, Tab, type Filter
 import { parseMoney } from '@/lib/money'
 import { WORK_PILL_BG, INST_PILL_BG, WORK_TYPES, WORK_TYPE_OPTIONS, ZONES, TECHS, TECH_BY_ZONE,
   normStatus, statusLabel, statusOptions, rowColor, INSTALL_COLUMNS } from '@/lib/installMeta'
+import { backdropClose } from '@/lib/backdrop'
 
 
 type Installation = {
@@ -1806,7 +1807,7 @@ export default function InstallationsPage() {
 
       {/* ปริ้น — เลือกก่อนว่าจะเอาตารางรายการหรือปฏิทิน */}
       {printAsk && (
-        <div onClick={() => { setPrintAsk(false); setPrintColStep(false) }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 24 }}>
+        <div {...backdropClose(() => { setPrintAsk(false); setPrintColStep(false) })} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 24 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 26, width: '100%', maxWidth: printColStep ? 460 : 380 }}>
             {printColStep ? (
               /* ขั้นที่ 2 (เลือกตารางรายการแล้ว) — เลือกคอลัมน์ที่จะเอาลงตาราง */
@@ -1873,7 +1874,7 @@ export default function InstallationsPage() {
 
       {/* Items modal — แก้รายการสินค้าของออเดอร์ต้นทาง (หน้าตา/พฤติกรรมเดียวกับหมวดออเดอร์) */}
       {itemsModal && (
-        <div onClick={closeItemsModal} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 1000, padding: 24 }}>
+        <div {...backdropClose(closeItemsModal)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 1000, padding: 24 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: 900, maxHeight: '90vh', overflowY: 'auto', padding: '24px 28px' }}>
 
             <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', marginBottom: 14 }}>รายการสินค้า</h3>
@@ -1994,7 +1995,7 @@ export default function InstallationsPage() {
       {orderDetail && <OrderDetailModal id={orderDetail} onClose={() => setOrderDetail(null)} />}
 
       {dayModal && (
-        <div className="sc-mback" onClick={() => setDayModal(null)}>
+        <div className="sc-mback" {...backdropClose(() => setDayModal(null))}>
           <div className="sc-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 560 }}>
             <div className="sc-mhead">
               <div className="sc-mdate">
@@ -2059,7 +2060,7 @@ export default function InstallationsPage() {
 
       {/* สรุปงานติดตั้ง — ข้อความอัพเดตงานล่วงหน้ารายวัน แยกโซนได้ แก้ในกล่องก่อนคัดลอกส่งไลน์ */}
       {summaryModal && (
-        <div onClick={() => setSummaryModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+        <div {...backdropClose(() => setSummaryModal(false))} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 620, maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 10 }}>
               <h2 style={{ fontSize: 17, fontWeight: 700 }}>สรุปงานติดตั้ง</h2>
@@ -2126,7 +2127,7 @@ export default function InstallationsPage() {
           </div>
         )
         return (
-          <div onClick={() => setBonusModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+          <div {...backdropClose(() => setBonusModal(false))} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 860, maxHeight: '88vh', overflowY: 'auto' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 10 }}>
                 <h2 style={{ fontSize: 17, fontWeight: 700 }}>ยอดติดตั้ง{(bonusZones.length || bonusTech) ? <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--ink-3)' }}> — {[bonusZones.length ? `โซน${bonusZones.join(' + ')}` : '', bonusTech || ''].filter(Boolean).join(' · ')}</span> : null}</h2>

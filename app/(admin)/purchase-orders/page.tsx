@@ -14,6 +14,7 @@ import { useStableView } from '@/lib/useStableView'
 import { oeUpdate } from '@/lib/adminActor'
 import { markPOReceivedForOrders } from '@/lib/outsourceSync'
 import { useConfirm } from '@/components/ConfirmDialog'
+import { backdropClose } from '@/lib/backdrop'
 
 
 type PO = {
@@ -339,7 +340,7 @@ export default function PurchaseOrdersPage() {
       })()}
 
       {modal && (
-        <div onClick={() => setModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+        <div {...backdropClose(() => setModal(null))} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 32, width: '100%', maxWidth: 500, maxHeight: '90vh', overflowY: 'auto' }}>
             <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 24 }}>{modal.mode === 'add' ? '+ เพิ่มรายการสั่งซื้อ' : 'แก้ไขรายการ'}</h2>
             {modal.mode === 'add' && (

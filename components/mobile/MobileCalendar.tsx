@@ -6,7 +6,7 @@ import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { HOLIDAYS } from '@/lib/holidays'
 import { RED_ZONES, CAMPAIGNS, LEAVE_STATUS_COLOR, DAYS_TH, TH_MONTHS, ymdOf, monthCells } from '@/lib/shopCalendar'
-import { useStickyState, usePullToRefresh, useSheetBack, PullIndicator, UpdatedRow, monthNavBtn, clamp } from './mobileUi'
+import { useStickyState, usePullToRefresh, useSheetBack, PullIndicator, UpdatedRow, clamp } from './mobileUi'
 
 // ปฏิทินร้านบนมือถือ — ดูอย่างเดียว (เดสก์ท็อป = app/(admin)/employees ที่มีฟอร์มขอลาด้วย)
 type Leave = {
@@ -62,41 +62,91 @@ export default function MobileCalendar() {
   const { pull, refreshing, refresh } = usePullToRefresh(load)
   useSheetBack(!!daySheet, () => setDaySheet(null))
 
+  // มุมมอง เดือน / สัปดาห์ / วัน เหมือนบนคอม · sel = วันที่เลือก (สัปดาห์/วัน เลื่อนจากวันนี้)
+  const [view, setView] = useStickyState<'month' | 'week' | 'day'>('cal:view', 'month')
+  const [sel, setSel] = useState(() => ymdOf(today.getFullYear(), today.getMonth(), today.getDate()))
+  const todayYmd = ymdOf(today.getFullYear(), today.getMonth(), today.getDate())
+
   const cells = useMemo(() => monthCells(year, month), [year, month])
   const leavesOn = (ymd: string) => leaves.filter(l => coversDay(l, ymd))
-  const isThisMonth = year === today.getFullYear() && month === today.getMonth()
-  // จำนวนใบลาทั้งเดือน (หน้าติดตั้งมี "N งาน" อยู่แล้ว หน้านี้เคยไม่มี)
+  // จำนวนใบลาทั้งเดือน
   const monthLeaveCount = useMemo(
     () => cells.reduce<number>((n, d) => n + (d ? leavesOn(ymdOf(year, month, d)).length : 0), 0),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [cells, leaves, year, month])
 
-  const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y - 1) } else setMonth(m => m - 1) }
-  const nextMonth = () => { if (month === 11) { setMonth(0); setYear(y => y + 1) } else setMonth(m => m + 1) }
-  const goToday = () => { setYear(today.getFullYear()); setMonth(today.getMonth()) }
+  // รายการในวัน — ลำดับ/ชนิดเดียวกับ dayItems ของบนคอม (app/(admin)/employees)
+  const dayItems = (ymd: string): CalItem[] => {
+    const d = new Date(ymd + 'T00:00')
+    const out: CalItem[] = []
+    if (HOLIDAYS[ymd]) out.push({ key: 'h', kind: 'holiday', title: HOLIDAYS[ymd], sub: 'วันหยุดร้าน' })
+    if (d.getDay() === 0) out.push({ key: 's', kind: 'closed', title: 'ร้านปิด', sub: 'วันอาทิตย์' })
+    if (CAMPAIGNS[ymd]) out.push({ key: 'c', kind: 'campaign', title: CAMPAIGNS[ymd], sub: 'แคมเปญ' })
+    if (RED_ZONES.has(ymd)) out.push({ key: 'r', kind: 'redzone', title: 'RedZone', sub: 'ช่วงห้ามลา' })
+    leavesOn(ymd).forEach(l => out.push({
+      key: l.id, kind: 'leave', title: l.employee_nickname || l.employee_name,
+      sub: [l.leave_type, l.leave_time].filter(Boolean).join(' · '),
+    }))
+    return out
+  }
+
+  const selDate = new Date(sel + 'T00:00')
+  const setSelDate = (d: Date) => {
+    setSel(ymdOf(d.getFullYear(), d.getMonth(), d.getDate()))
+    setYear(d.getFullYear()); setMonth(d.getMonth())
+  }
+  // สัปดาห์ของวันที่เลือก (เริ่มวันจันทร์ เหมือนตารางเดือน)
+  const weekStart = new Date(selDate); weekStart.setDate(selDate.getDate() - ((selDate.getDay() + 6) % 7))
+  const weekDays = Array.from({ length: 7 }, (_, i) => { const d = new Date(weekStart); d.setDate(weekStart.getDate() + i); return d })
+
+  const shift = (n: number) => {
+    if (view === 'month') {
+      const d = new Date(year, month + n, 1)
+      setYear(d.getFullYear()); setMonth(d.getMonth())
+      return
+    }
+    const d = new Date(selDate); d.setDate(d.getDate() + n * (view === 'week' ? 7 : 1))
+    setSelDate(d)
+  }
+  const goToday = () => setSelDate(new Date())
+  const isNow = view === 'month'
+    ? year === today.getFullYear() && month === today.getMonth()
+    : view === 'week' ? weekDays.some(d => ymdOf(d.getFullYear(), d.getMonth(), d.getDate()) === todayYmd) : sel === todayYmd
+
+  const shortMon = (d: Date) => d.toLocaleDateString('th-TH', { month: 'short' })
+  const navTitle = view === 'month' ? `${TH_MONTHS[month]} ${year + 543}`
+    : view === 'week' ? `${weekDays[0].getDate()} ${shortMon(weekDays[0])} – ${weekDays[6].getDate()} ${shortMon(weekDays[6])} ${weekDays[6].getFullYear() + 543}`
+      : `${DOW_FULL[selDate.getDay()]} ${selDate.getDate()} ${TH_MONTHS[selDate.getMonth()]} ${selDate.getFullYear() + 543}`
 
   const sheetLeaves = daySheet ? leavesOn(daySheet) : []
 
   return (
     <div>
-      {/* ไม่มีชื่อหน้า — ผู้ใช้สั่งเอาออกทุกหน้า (แถบเมนูล่างบอกอยู่แล้ว) */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'var(--bg)', paddingTop: 'calc(env(safe-area-inset-top) + 10px)', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px 8px', gap: 8 }}>
-          <button onClick={prevMonth} aria-label="เดือนก่อน" style={monthNavBtn}>‹</button>
-          <div style={{ flex: 1, textAlign: 'center', minWidth: 0 }}>
-            <div style={{ fontSize: 15.5, fontWeight: 700, color: 'var(--ink)' }}>
-              {TH_MONTHS[month]} {year + 543}
-              <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-4)', marginLeft: 7 }}>ลา {monthLeaveCount} ครั้ง</span>
-            </div>
-            {!isThisMonth && (
-              <button onClick={goToday} style={{ marginTop: 2, border: 'none', background: 'transparent', color: 'var(--blue)', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: '2px 8px' }}>
-                ← กลับไปเดือนนี้
-              </button>
-            )}
-          </div>
-          <button onClick={nextMonth} aria-label="เดือนถัดไป" style={monthNavBtn}>›</button>
+      {/* ไม่มีชื่อหน้า — ผู้ใช้สั่งเอาออกทุกหน้า (แถบเมนูล่างบอกอยู่แล้ว)
+          ‼️ หน้าตาตามปฏิทินร้านบนคอม (.sc-* ใน globals.css) จัดให้พอดีจอมือถือ (.msc-*) — user ขอ 29ก.ย.69
+          แท็บ เดือน/สัปดาห์/วัน · รายการเป็นการ์ดพาสเทลมีจุดสี ชนิดเดียวกับบนคอม */}
+      <div className="msc-top">
+        <div className="sc-seg msc-seg">
+          {([['month', 'เดือน'], ['week', 'สัปดาห์'], ['day', 'วัน']] as const).map(([k, l]) => (
+            <button key={k} className={view === k ? 'on' : ''} onClick={() => setView(k)}>{l}</button>
+          ))}
         </div>
-        <UpdatedRow at={updatedAt} refreshing={refreshing} onRefresh={refresh} />
+        <div className="msc-nav">
+          <button onClick={() => shift(-1)} aria-label="ก่อนหน้า" className="sc-circle msc-circle">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+          </button>
+          <div style={{ flex: 1, textAlign: 'center', minWidth: 0 }}>
+            <div className="msc-month">{navTitle}</div>
+            {view === 'month' && <div className="msc-sub">ลา {monthLeaveCount} ครั้ง</div>}
+          </div>
+          <button onClick={() => shift(1)} aria-label="ถัดไป" className="sc-circle msc-circle">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+          </button>
+        </div>
+        <div className="msc-subrow">
+          {!isNow ? <button onClick={goToday} className="sc-pill msc-today">วันนี้</button> : <span />}
+          <UpdatedRow at={updatedAt} refreshing={refreshing} onRefresh={refresh} />
+        </div>
       </div>
 
       <PullIndicator pull={pull} refreshing={refreshing} />
@@ -108,114 +158,163 @@ export default function MobileCalendar() {
         </div>
       )}
 
-      <div style={{ padding: '10px 8px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 3, marginBottom: 4 }}>
-          {DAYS_TH.map(d => <div key={d} style={{ textAlign: 'center', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)' }}>{d}</div>)}
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 3 }}>
-          {cells.map((day, i) => {
-            if (!day) return <div key={i} />
-            const ymd = ymdOf(year, month, day)
-            const holiday = HOLIDAYS[ymd]
-            const isSunday = new Date(year, month, day).getDay() === 0
-            const isToday = day === today.getDate() && month === today.getMonth() && year === today.getFullYear()
-            const redzone = RED_ZONES.has(ymd)
-            const campaign = CAMPAIGNS[ymd]
-            const dayLeaves = leavesOn(ymd)
-            return (
-              <button key={i} onClick={() => setDaySheet(ymd)}
-                style={{
-                  // ‼️ ทุกช่องเท่ากันเป๊ะ (ดูคอมเมนต์เดียวกันใน MobileInstallations)
-                  height: 76, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 2,
-                  // Red Zone = ช่วงห้ามลา → แดงทั้งช่อง (user สั่งเปลี่ยนจากขีดแดงบนหัวช่อง) มาก่อนวันหยุด/วันอาทิตย์
-                  background: redzone ? 'var(--cal-redzone)' : holiday ? 'var(--cal-holiday)' : isSunday ? 'var(--cal-sunday)' : 'var(--surface)',
-                  border: isToday ? '2px solid var(--blue)' : redzone ? '1px solid var(--cal-redzone-border)' : '1px solid var(--border)',
-                  borderRadius: 8, padding: '4px 4px 3px', cursor: 'pointer', textAlign: 'left', font: 'inherit',
-                  WebkitTapHighlightColor: 'transparent',
-                }}>
-                <span style={{ fontSize: 12.5, fontWeight: isToday ? 800 : 500, color: isToday ? 'var(--blue)' : redzone ? 'var(--red)' : holiday ? 'var(--cal-holiday-ink)' : 'var(--ink-2)' }}>
-                  {day}
-                </span>
-                {/* ‼️ ขั้นต่ำ 10.5px — ของเดิม 8.5px อ่านไม่ออกจริงบนมือถือ */}
-                {campaign && <span style={{ fontSize: 10, color: '#c2510a', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📣{campaign}</span>}
-                {holiday && !campaign && <span style={{ fontSize: 10, color: 'var(--cal-holiday-ink)', fontWeight: 600, lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{holiday}</span>}
-                {dayLeaves.length > 0 && (
-                  <span style={{ display: 'flex', gap: 2, flexWrap: 'wrap', marginTop: 'auto' }}>
-                    {dayLeaves.slice(0, 2).map(l => (
-                      <span key={l.id} style={{ fontSize: 10.5, fontWeight: 700, borderRadius: 3, padding: '1px 3px', lineHeight: 1.3, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        background: (LEAVE_STATUS_COLOR[l.leave_status] ?? '#a1a1aa') + '26', color: LEAVE_STATUS_COLOR[l.leave_status] ?? '#71717a' }}>
-                        {l.employee_nickname}
-                      </span>
-                    ))}
-                    {dayLeaves.length > 2 && <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)' }}>+{dayLeaves.length - 2}</span>}
-                  </span>
-                )}
-              </button>
-            )
-          })}
-        </div>
+      <div className="msc-card">
+        {view === 'month' && (
+          <div className="sc-grid msc-grid">
+            {DAYS_TH.map(d => <div key={d} className="sc-dow msc-dow">{d}</div>)}
+            {cells.map((day, i) => {
+              if (!day) return <div key={i} className="sc-cell sc-out msc-cell" />
+              const ymd = ymdOf(year, month, day)
+              const items = dayItems(ymd)
+              return (
+                <button key={i} onClick={() => setDaySheet(ymd)} className={`sc-cell msc-cell${ymd === todayYmd ? ' sc-today' : ''}`}>
+                  <span className="sc-num msc-num">{day}</span>
+                  {/* การ์ดย่อ: จุดสี + ชื่อ (ช่องแคบ ไม่มีบรรทัดรอง) — ครบทุกบรรทัดดูได้ในแท็บสัปดาห์/วัน หรือกดวัน */}
+                  {items.slice(0, 3).map(it => (
+                    <span key={it.key} className={`sc-chip sc-${it.kind} msc-chip`}>
+                      <i className="sc-dot" />
+                      <span className="msc-chip-t">{it.title}</span>
+                    </span>
+                  ))}
+                  {items.length > 3 && <span className="sc-more msc-more">+{items.length - 3}</span>}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        {view === 'week' && (
+          <div className="msc-week">
+            {weekDays.map(d => {
+              const ymd = ymdOf(d.getFullYear(), d.getMonth(), d.getDate())
+              const items = dayItems(ymd)
+              return (
+                <div key={ymd} className={`msc-wrow${ymd === todayYmd ? ' msc-wtoday' : ''}`} onClick={() => setDaySheet(ymd)}>
+                  <div className="msc-wdate">
+                    <div className="msc-wdow">{DAYS_TH[(d.getDay() + 6) % 7]}</div>
+                    <div className="msc-wnum">{d.getDate()}</div>
+                  </div>
+                  <div className="msc-witems">
+                    {items.length === 0
+                      ? <div className="msc-wempty">ไม่มีรายการ</div>
+                      : items.map(it => <EventChip key={it.key} it={it} />)}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {view === 'day' && (() => {
+          const items = dayItems(sel)
+          return (
+            <div className="sc-dayview msc-dayview">
+              {items.length === 0
+                ? <div className="sc-empty">ไม่มีรายการในวันนี้</div>
+                : items.map(it => <EventChip key={it.key} it={it} big onClick={() => setDaySheet(sel)} />)}
+            </div>
+          )
+        })()}
 
         {loading && <div style={{ padding: 20, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>กำลังโหลดใบลา…</div>}
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, padding: '14px 6px 4px', fontSize: 11.5, color: 'var(--ink-3)' }}>
-          <span><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: 'var(--cal-holiday)', border: '1px solid var(--border-2)', marginRight: 4 }} />วันหยุดร้าน</span>
-          <span><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: 'var(--cal-redzone)', border: '1px solid var(--cal-redzone-border)', marginRight: 4 }} />ช่วงห้ามลา</span>
-          <span>📣 แคมเปญ</span>
-          {/* สีชิปคนลาในช่องวันเคยไม่มีคำอธิบายเลย */}
-          {Object.entries(LEAVE_STATUS_COLOR).map(([label, c]) => (
-            <span key={label}><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: '50%', background: c, marginRight: 4 }} />{label}</span>
+        {/* คำอธิบายสี — ชุดเดียวกับบนคอม */}
+        <div className="sc-legend msc-legend">
+          {[['#C0564A', 'RedZone'], ['#C79A4B', 'Campaign'], ['#D9AE86', 'วันหยุด'], ['#A8714F', 'ใบลา'], ['#9A9AA6', 'ร้านปิด (อา.)']].map(([c, l]) => (
+            <span key={l}><i style={{ background: c }} />{l}</span>
           ))}
         </div>
       </div>
 
-      {/* กดวัน → รายละเอียดวันนั้น */}
-      {daySheet && (
-        <div onClick={() => setDaySheet(null)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', zIndex: 200, display: 'flex', alignItems: 'flex-end' }}>
-          <div onClick={e => e.stopPropagation()}
-            style={{ width: '100%', maxHeight: '78dvh', overflowY: 'auto', background: 'var(--surface)', borderRadius: '18px 18px 0 0', padding: '8px 16px calc(20px + env(safe-area-inset-bottom))' }}>
-            <div style={{ width: 38, height: 4, borderRadius: 2, background: 'var(--border-2)', margin: '4px auto 12px' }} />
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 10 }}>
-              {parseInt(daySheet.slice(8), 10)} {TH_MONTHS[parseInt(daySheet.slice(5, 7), 10) - 1]} {parseInt(daySheet.slice(0, 4), 10) + 543}
-            </h3>
-
-            {HOLIDAYS[daySheet] && <div style={{ ...badge, background: 'var(--cal-holiday)', border: '1px solid var(--border-2)', color: 'var(--cal-holiday-ink)' }}>🏖️ วันหยุดร้าน · {HOLIDAYS[daySheet]}</div>}
-            {CAMPAIGNS[daySheet] && <div style={{ ...badge, background: 'var(--blue-bg)', border: '1px solid var(--border-2)', color: '#c2510a' }}>📣 แคมเปญ · {CAMPAIGNS[daySheet]}</div>}
-            {RED_ZONES.has(daySheet) && <div style={{ ...badge, background: 'var(--red-bg)', border: '1px solid var(--red)', color: 'var(--red)' }}>🔴 ช่วงห้ามลา (Red Zone)</div>}
-
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', margin: '14px 0 8px' }}>
-              คนลา {sheetLeaves.length > 0 ? `(${sheetLeaves.length})` : ''}
-            </div>
-            {sheetLeaves.length === 0 ? (
-              <div style={{ fontSize: 13, color: 'var(--ink-4)', padding: '4px 0 10px' }}>ไม่มีคนลาวันนี้</div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {sheetLeaves.map(l => (
-                  <div key={l.id} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', background: 'var(--bg)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
-                      <span style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>{l.employee_nickname}</span>
-                      <span style={{ fontSize: 11.5, fontWeight: 700, color: LEAVE_STATUS_COLOR[l.leave_status] ?? 'var(--ink-4)' }}>{l.leave_status}</span>
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>
-                      {[l.leave_type, l.department, l.leave_time].filter(Boolean).join(' · ')}
-                    </div>
-                    {l.leave_end_date && l.leave_end_date.slice(0, 10) !== l.leave_date.slice(0, 10) && (
-                      <div style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 2 }}>
-                        {l.leave_date.slice(0, 10)} → {l.leave_end_date.slice(0, 10)}
-                      </div>
-                    )}
-                    {l.reason && <div style={{ fontSize: 12, color: 'var(--ink-2)', marginTop: 5, lineHeight: 1.45, ...clamp(3) }}>{l.reason}</div>}
+      {/* กดวัน → รายละเอียดวันนั้น (แผ่นเลื่อนขึ้นจากล่าง ธีมเดียวกับหน้าต่างรายละเอียดวันบนคอม) */}
+      {daySheet && (() => {
+        const d = new Date(daySheet + 'T00:00')
+        return (
+          <div onClick={() => setDaySheet(null)} className="msc-back">
+            <div onClick={e => e.stopPropagation()} className="msc-sheet">
+              <div className="msc-handle" />
+              <div className="sc-mhead">
+                <div className="sc-mdate">
+                  <div className="sc-mday">{d.getDate()}</div>
+                  <div>
+                    <div className="sc-mdow">{DOW_FULL[d.getDay()]}</div>
+                    <div className="sc-mmon">{TH_MONTHS[d.getMonth()]} {d.getFullYear() + 543}</div>
                   </div>
-                ))}
+                </div>
+                <button className="sc-mclose" onClick={() => setDaySheet(null)} aria-label="ปิด">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                </button>
               </div>
-            )}
-            <button onClick={() => setDaySheet(null)}
-              style={{ width: '100%', marginTop: 16, padding: '11px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', fontSize: 14, cursor: 'pointer', color: 'var(--ink)' }}>ปิด</button>
+
+              {/* แถบสถานะวัน — การ์ดสีเดียวกับบนคอม */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {d.getDay() === 0 && <DayTag kind="closed" title="ร้านปิด" sub="วันอาทิตย์" />}
+                {HOLIDAYS[daySheet] && <DayTag kind="holiday" title={HOLIDAYS[daySheet]} sub="วันหยุดร้าน" />}
+                {CAMPAIGNS[daySheet] && <DayTag kind="campaign" title={CAMPAIGNS[daySheet]} sub="แคมเปญ" />}
+                {RED_ZONES.has(daySheet) && <DayTag kind="redzone" title="RedZone" sub="ช่วงห้ามลา" />}
+              </div>
+
+              <div className="sc-msec">การลา <span>{sheetLeaves.length}</span></div>
+              {sheetLeaves.length === 0 ? (
+                <div className="sc-mempty">ไม่มีการลาในวันนี้</div>
+              ) : sheetLeaves.map(l => (
+                <div key={l.id} className="sc-mitem">
+                  <i className="sc-dot" style={{ background: '#A8714F' }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+                      <span className="sc-mname">{l.employee_nickname || l.employee_name}{l.department && <small>{l.department}</small>}</span>
+                      {l.leave_time && <span className="sc-mtime">{l.leave_time}</span>}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 6 }}>
+                      <span className="sc-mpill">{l.leave_type}</span>
+                      {l.leave_status && (
+                        <span className="sc-mpill" style={{ color: LEAVE_STATUS_COLOR[l.leave_status] || 'var(--ink-3)', background: (LEAVE_STATUS_COLOR[l.leave_status] || '#8B7460') + '1f' }}>{l.leave_status}</span>
+                      )}
+                      {l.leave_end_date && l.leave_end_date.slice(0, 10) !== l.leave_date.slice(0, 10) && (
+                        <span className="sc-mtime">{fmtShort(l.leave_date)} → {fmtShort(l.leave_end_date)}</span>
+                      )}
+                    </div>
+                    {l.reason && <div className="sc-mnote" style={clamp(3)}>{l.reason}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
     </div>
   )
 }
 
-const badge: React.CSSProperties = { borderRadius: 10, padding: '9px 12px', marginBottom: 8, fontSize: 12.5, fontWeight: 600 }
+// วันที่สั้นแบบไทย เช่น "3 ต.ค."
+const fmtShort = (ymd: string) => new Date(ymd.slice(0, 10) + 'T00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })
+
+// แถบสถานะวันในแผ่นรายละเอียด (สีเดียวกับการ์ดในปฏิทินบนคอม — ModalTag ใน app/(admin)/employees)
+function DayTag({ kind, title, sub }: { kind: 'holiday' | 'closed' | 'campaign' | 'redzone'; title: string; sub: string }) {
+  return (
+    <div className={`sc-chip sc-${kind}`} style={{ padding: '10px 14px', cursor: 'default' }}>
+      <i className="sc-dot" />
+      <div style={{ minWidth: 0, flex: 1, display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+        <div className="sc-chip-title" style={{ fontSize: 13 }}>{title}</div>
+        <div className="sc-chip-sub" style={{ marginTop: 0, fontSize: 12 }}>{sub}</div>
+      </div>
+    </div>
+  )
+}
+
+const DOW_FULL = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์']
+
+// การ์ดรายการ — ชุดเดียวกับ EventChip บนคอม (app/(admin)/employees)
+type CalItem = { key: string; kind: 'holiday' | 'closed' | 'campaign' | 'redzone' | 'leave'; title: string; sub?: string }
+function EventChip({ it, big, onClick }: { it: CalItem; big?: boolean; onClick?: () => void }) {
+  return (
+    <div className={`sc-chip sc-${it.kind}${big ? ' sc-big' : ''}`} onClick={onClick}>
+      <i className="sc-dot" />
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div className="sc-chip-title">{it.title}</div>
+        {it.sub && <div className="sc-chip-sub">{it.sub}</div>}
+      </div>
+      <svg className="sc-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+    </div>
+  )
+}

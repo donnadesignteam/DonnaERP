@@ -17,6 +17,7 @@ import {
   listTopics, createTopic, addComment, toggleLike, updateTopic, deleteTopic, deleteComment,
   type BoardTopic, type BoardCategory, type BoardStatus,
 } from '@/lib/boardStore'
+import { backdropClose } from '@/lib/backdrop'
 
 // สีป้ายหมวด (พาสเทลโทนเดียวกับป้ายสถานะทั้งเว็บ)
 const CAT_STYLE: Record<string, { bg: string; ink: string; icon: string }> = {
@@ -418,7 +419,7 @@ function NewTopicModal({ onClose, onCreate, defaultCategory, categories }: {
   const input: React.CSSProperties = { width: '100%', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 14px', fontSize: 14, outline: 'none', boxSizing: 'border-box', background: 'var(--surface)', color: 'var(--ink)', fontFamily: 'inherit' }
   const label: React.CSSProperties = { fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)', display: 'block', marginBottom: 6 }
   return (
-    <div onClick={() => { if (!upStatus) onClose() }} style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+    <div {...backdropClose(() => { if (!upStatus) onClose() })} style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
       <div onClick={e => e.stopPropagation()} style={{ ...card, width: 560, maxWidth: '100%', padding: 26, maxHeight: 'calc(100vh - 48px)', overflowY: 'auto' }}>
         <h3 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)', marginBottom: 18 }}>สร้างหัวข้อใหม่</h3>
         <div style={{ marginBottom: 14 }}>
@@ -664,7 +665,7 @@ function MediaGrid({ media, small }: { media?: BoardMedia[]; small?: boolean }) 
         ))}
       </div>
       {view && (
-        <div onClick={() => setView(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,10,0.85)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, cursor: 'zoom-out' }}>
+        <div {...backdropClose(() => setView(null))} style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,10,0.85)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, cursor: 'zoom-out' }}>
           <img src={view} alt="" style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 8 }} />
         </div>
       )}

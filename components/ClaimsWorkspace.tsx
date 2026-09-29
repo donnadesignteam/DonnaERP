@@ -31,6 +31,7 @@ import { fetchEmployeeOptions } from '@/lib/staffDb'
 import { useStableView } from '@/lib/useStableView'
 import { todayYmd, ymdLocal } from '@/lib/thaiDate'
 import { useInstallPhotos, photoSaveError, type InstallPhoto } from '@/components/InstallPhotos'
+import { backdropClose } from '@/lib/backdrop'
 
 type Item = {
   type: string; floors: number | null; rail_head: string; hook_type?: string; fabric_type: string
@@ -1540,7 +1541,7 @@ ${body}
 
       {/* ปริ้นหลายใบ → ถามก่อนว่าตารางสรุปหรือฟอร์มรายใบ (เหมือนหมวดออเดอร์) */}
       {printAsk && (
-        <div onClick={() => { setPrintAsk(null); setPrintColStep(false) }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 24 }}>
+        <div {...backdropClose(() => { setPrintAsk(null); setPrintColStep(false) })} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 24 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 24, width: '100%', maxWidth: printColStep ? 460 : 380 }}>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>ปริ้น {printAsk.length} รายการ</h3>
             {printColStep ? (
@@ -1576,7 +1577,7 @@ ${body}
 
       {/* Popup จัดส่งแล้ว — กรอกเลขพัสดุ (เพิ่มได้หลายเลข) เหมือนหมวดออเดอร์ */}
       {shipModal && (
-        <div onClick={() => setShipModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 24 }}>
+        <div {...backdropClose(() => setShipModal(null))} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 24 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-md)', padding: 24, width: '100%', maxWidth: 400 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
               <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>จัดส่งแล้ว — กรอกเลขพัสดุ</h3>
@@ -1615,7 +1616,7 @@ ${body}
 
       {/* Items modal (กดที่ช่องรายการในตาราง) — ฟอร์มเดียวกับหมวดออเดอร์ */}
       {itemsModal && (
-        <div onClick={() => { setItemsModal(null); setItemsParseErr('') }} style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: 24 }}>
+        <div {...backdropClose(() => { setItemsModal(null); setItemsParseErr('') })} style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: 24 }}>
           {/* ธีมแบรนด์ — ชุดเดียวกับกล่องแปลงรายการของหมวดออเดอร์ */}
           <div onClick={e => e.stopPropagation()} className="sc-fields" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 24, boxShadow: '0 24px 60px rgba(61,43,31,0.22)', width: '100%', maxWidth: 900, maxHeight: '90vh', overflowY: 'auto', padding: '26px 30px' }}>
             <h3 className="sc-mtitle" style={{ marginBottom: 14 }}>รายการสินค้า</h3>
