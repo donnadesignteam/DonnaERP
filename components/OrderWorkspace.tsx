@@ -1015,9 +1015,13 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   }
 
   // สร้างบรรทัดของใบออเดอร์ พร้อมธง rail (บรรทัดของรายการ "ราง")
+  // เลขที่ใบที่ขึ้นในใบปริ้น/ข้อความคัดลอก (แทนเลขคำสั่งซื้อเมื่อไม่มี) — งานติดตั้งใช้เลข IN ของปฏิทินติดตั้ง
+  const withPrintSerial = (r: Entry): Entry => r.serial_no ? r
+    : r.is_installation && instMeta[r.id]?.serial_no ? { ...r, serial_no: installSerial(instMeta[r.id].serial_no) } : r
+
   const copyOrderText = async (r: Entry) => {
     setOpenAction(null)
-    await navigator.clipboard.writeText(formatOrderText(r))
+    await navigator.clipboard.writeText(formatOrderText(withPrintSerial(r)))
     setCopiedId(r.id)
     setTimeout(() => setCopiedId(null), 2000)
   }
@@ -2623,7 +2627,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     }
 
     const body = asForm
-      ? toPrint.map((r, i) => `<div class="order"><pre class="copy" contenteditable="true" spellcheck="false" data-id="${r.id}">${formatOrderHtml(r)}</pre>${qrs[i] ? `<div class="qr-box"><img class="qr" src="${qrs[i]}"/></div>` : ''}</div>`).join('')
+      ? toPrint.map((r, i) => `<div class="order"><pre class="copy" contenteditable="true" spellcheck="false" data-id="${r.id}">${formatOrderHtml(withPrintSerial(r))}</pre>${qrs[i] ? `<div class="qr-box"><img class="qr" src="${qrs[i]}"/></div>` : ''}</div>`).join('')
       : `<h2>${escHtml(title)} (${toPrint.length} รายการ)</h2>
 ${printTableHtml(toPrint, printCols.pick(printColDefs()))}`
 

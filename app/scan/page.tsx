@@ -529,7 +529,7 @@ function ScanContent() {
         askJoinRef.current = true
         setPhase('already'); setMsg(`สถานะปัจจุบัน: ${data.current_status || 'รอของคืน'}`); return null
       }
-      if (data?.result === 'bad_stage') { setPhase('error'); setMsg('งานเคลมไม่มีขั้นนี้ (เช่น แพ็คราง) — เปลี่ยนแผนกก่อนสแกน'); return null }
+      if (data?.result === 'bad_stage') { setPhase('error'); setMsg('งานเคลมไม่มีขั้นนี้ — เปลี่ยนแผนกก่อนสแกน'); return null }
       if (data?.result === 'not_found') { setPhase('noorder'); return null }
       setPhase('error'); setMsg(String(data?.result || 'อัปเดตไม่สำเร็จ')); return null
     }

@@ -77,6 +77,8 @@ type Claim = {
   shipments: Shipment[] | null      // เลขพัสดุที่ส่งออก (ติ๊กจัดส่งแล้ว → กรอกใน popup)
   shipped_at: string | null
   printed_at: string | null
+  rail_packed?: boolean | null       // แพ็ครางเสร็จ (สแกนแผนกแพ็คราง หรือติ๊กในคอลัมน์สถานะราง) — sql/claim_rail_pack.sql
+  rail_packed_at?: string | null
   status: string
   is_urgent: boolean
   notes: string | null
@@ -140,7 +142,7 @@ const COL_DEFS = [
 ] as const satisfies readonly { key: string; label: string; kind: ColKind; get: (r: Claim) => string | number | null | undefined; yes?: string; no?: string }[]
 type ColKey = typeof COL_DEFS[number]['key']
 // คอลัมน์ที่ซ่อน/โชว์ได้ (ตามลำดับในตาราง)
-const CLAIM_COLS = ['วันที่', 'กำหนดส่ง', 'แพลตฟอร์ม', 'Serial', 'ลูกค้า', 'ประเภท', 'ผิดโดย', 'วิธีแก้ไข', 'รายการ', 'ยอดชำระ', 'สถานะ', 'แอดมิน', 'ช่าง', 'ปิดงาน', 'ชื่อผู้รับ', 'ที่อยู่จัดส่ง', 'จัดส่ง', 'ค่าส่งกลับ', 'ค่าส่งคืน', 'ราคาประเมิน', 'หมายเหตุ', 'แก้ไขล่าสุด']
+const CLAIM_COLS = ['วันที่', 'กำหนดส่ง', 'แพลตฟอร์ม', 'Serial', 'ลูกค้า', 'ประเภท', 'ผิดโดย', 'วิธีแก้ไข', 'รายการ', 'ยอดชำระ', 'สถานะ', 'สถานะราง', 'แอดมิน', 'ช่าง', 'ปิดงาน', 'ชื่อผู้รับ', 'ที่อยู่จัดส่ง', 'จัดส่ง', 'ค่าส่งกลับ', 'ค่าส่งคืน', 'ราคาประเมิน', 'หมายเหตุ', 'แก้ไขล่าสุด']
 const SORT_LABELS: Record<ColKind, [string, string]> = {
   date: ['เก่าสุด → ใหม่สุด', 'ใหม่สุด → เก่าสุด'],
   num: ['น้อยไปมาก', 'มากไปน้อย'],
@@ -610,7 +612,9 @@ export default function ClaimsWorkspace() {
     if (r.claim_date) push(new Date(r.claim_date).toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' }))
     const head = [r.channel, r.customer_username].filter(Boolean).join(': ')
     if (head) push(head)
+    // เลขออเดอร์เดิม · ไม่มี → ขึ้นเลขที่ใบเคลม (DM) ตรงนี้แทน (แบบเดียวกับใบออเดอร์)
     if (r.original_order_number) push(`ออเดอร์เดิม ${r.original_order_number}`)
+    else if (r.serial_no) push(r.serial_no)
 
     push('')
     const claimHead = [r.claim_type, r.fault ? `ผิดที่${r.fault}` : ''].filter(Boolean).join(' · ')
@@ -785,6 +789,14 @@ ${body}
   // ===== เชื่อมกับเว็บคำนวณอุปกรณ์ราง (donna-rail) — เหมือนหมวดออเดอร์ =====
   const railItemsOf = (r: Claim) => (Array.isArray(r.items) ? r.items : []).filter(it => typeof it.type === 'string' && it.type.startsWith('ราง'))
   const hasRail = (r: Claim) => railItemsOf(r).length > 0
+  // ติ๊ก "สถานะราง" (แพ็ครางเสร็จ) — ไม่ยุ่งกับสถานะสายผลิต (เหมือน toggleRailPacked ในหมวดออเดอร์)
+  const toggleRailPacked = async (id: string, checked: boolean) => {
+    const now = new Date().toISOString()
+    const updates = { rail_packed: checked, rail_packed_at: checked ? now : null, updated_at: now }
+    setRows(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r))
+    const { error: err } = await claimUpdate(updates).eq('id', id)
+    if (err) { setError(/rail_packed/.test(err.message) ? 'ยังไม่ได้รัน sql/claim_rail_pack.sql' : `บันทึกสถานะรางไม่สำเร็จ: ${err.message}`); await load() }
+  }
   const openRailCalc = async (r: Claim) => {
     // เว็บรางข้ามรายการที่ไม่มีขนาดเงียบๆ → ต้องเตือนก่อน ไม่งั้นบิลขาดไปทั้งรายการโดยไม่มีใครรู้
     const issues = railIssues(railItemsOf(r))
@@ -1219,7 +1231,7 @@ ${body}
                       onChange={e => setSelectedIds(e.target.checked ? new Set(displayed.map(r => r.id)) : new Set())}
                       style={{ cursor: 'pointer', width: 15, height: 15 }} />
                   </th>
-                  {['วันที่', 'กำหนดส่ง', 'แพลตฟอร์ม', 'Serial', 'ลูกค้า', 'ประเภท', 'ผิดโดย', 'วิธีแก้ไข', 'รายการ', 'ยอดชำระ', 'สถานะ', 'แอดมิน', 'ช่าง', 'ปิดงาน', 'ชื่อผู้รับ', 'ที่อยู่จัดส่ง', 'จัดส่ง', 'ค่าส่งกลับ', 'ค่าส่งคืน', 'ราคาประเมิน', 'หมายเหตุ', 'แก้ไขล่าสุด', ''].filter(h => !h || showCol(h)).map((h, i) => {
+                  {['วันที่', 'กำหนดส่ง', 'แพลตฟอร์ม', 'Serial', 'ลูกค้า', 'ประเภท', 'ผิดโดย', 'วิธีแก้ไข', 'รายการ', 'ยอดชำระ', 'สถานะ', 'สถานะราง', 'แอดมิน', 'ช่าง', 'ปิดงาน', 'ชื่อผู้รับ', 'ที่อยู่จัดส่ง', 'จัดส่ง', 'ค่าส่งกลับ', 'ค่าส่งคืน', 'ราคาประเมิน', 'หมายเหตุ', 'แก้ไขล่าสุด', ''].filter(h => !h || showCol(h)).map((h, i) => {
                     // 3 คอลัมน์เงิน โชว์ยอดรวมของเคสที่กรองอยู่ต่อท้ายชื่อคอลัมน์เลย (เดิมเป็นการ์ดแดชบอร์ดข้างบน)
                     const sum = h === 'ค่าส่งกลับ' ? totals.back : h === 'ค่าส่งคืน' ? totals.ret : h === 'ราคาประเมิน' ? totals.est : null
                     const def = COL_DEFS.find(c => c.label === h)
@@ -1362,6 +1374,20 @@ ${body}
                         {statusScanAt(r) || ' '}
                       </div>
                       </div>
+                    </td>
+                    )}
+                    {showCol('สถานะราง') && (
+                    // แพ็ครางเสร็จ — แบบเดียวกับคอลัมน์สถานะรางในหมวดออเดอร์ (ไม่ยุ่งกับสถานะสายผลิต) · โชว์เฉพาะเคสที่มีราง
+                    <td style={{ padding: '8px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      {hasRail(r) ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                          <input type="checkbox" checked={!!r.rail_packed} onChange={e => toggleRailPacked(r.id, e.target.checked)}
+                            style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#6F8F6A' }} />
+                          <span style={{ color: '#6F8F6A', fontSize: 10, lineHeight: 1.3, visibility: r.rail_packed && r.rail_packed_at ? 'visible' : 'hidden' }}>
+                            {r.rail_packed_at ? `${new Date(r.rail_packed_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} ${new Date(r.rail_packed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}` : ' '}
+                          </span>
+                        </div>
+                      ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
                     )}
                     {showCol('แอดมิน') && (

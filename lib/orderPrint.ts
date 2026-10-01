@@ -13,6 +13,7 @@ export type PrintableOrder = {
   platform?: string | null
   customer_name?: string | null
   order_number?: string | null
+  serial_no?: string | null       // เลขที่ใบ (DR/IN/DM) — ขึ้นแทนเลขคำสั่งซื้อเมื่อใบนั้นไม่มีเลขคำสั่งซื้อ
   items?: RawItem[] | null
   outsource_at?: string | null
   is_installation?: boolean | null
@@ -38,7 +39,9 @@ export function formatOrderLines(r: PrintableOrder): PrintLine[] {
 
   const platformLine = [r.platform, r.customer_name].filter(Boolean).join(': ')
   if (platformLine) push(platformLine)
+  // เลขคำสั่งซื้อ · ไม่มี (งานนอก/งานติดตั้ง/งานเคลมที่ไม่ได้มาจากแพลตฟอร์ม) → ขึ้นเลขที่ใบตรงนี้แทน
   if (r.order_number) push(r.order_number)
+  else if (r.serial_no) push(r.serial_no)
 
   push('')
 
