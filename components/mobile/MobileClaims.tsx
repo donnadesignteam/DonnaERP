@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { formatItemLines, type RawItem } from '@/lib/itemFormat'
+import { PROD_STATUS_COLOR } from '@/lib/orderTabs'
 import { useStickyState, useScrollRestore, usePullToRefresh, PullIndicator, UpdatedRow, CardSkeleton, pillBtn, searchInput, clamp } from './mobileUi'
 import ScanFolderButton from './ScanFolderButton'
 import { usePhotoViewer, type Photo } from './PhotoStrip'
@@ -38,15 +39,9 @@ type Claim = {
 }
 
 // ให้ตรงกับ WORKFLOW ใน ClaimsWorkspace (เดสก์ท็อป)
-const WORKFLOW: { key: string; color: string }[] = [
-  { key: 'รอของคืน', color: '#C79A4B' },
-  { key: 'ตัดผ้าแล้ว', color: '#30d158' },
-  { key: 'เย็บแล้ว', color: '#5e9eff' },
-  { key: 'ตรวจสอบแล้ว', color: '#7B7FA3' },
-  { key: 'รีดแล้ว', color: '#9A7BA0' },
-  { key: 'แพ็คแล้ว', color: '#f43f5e' },
-  { key: 'ส่งแล้ว', color: '#6F8F6A' },
-]
+// ‼️ สีมาจาก PROD_STATUS_COLOR (lib/orderTabs.ts) — ชุดเดียวกับสถานะออเดอร์
+const WORKFLOW: { key: string; color: string }[] = ['รอของคืน', 'ตัดผ้าแล้ว', 'เย็บแล้ว', 'ตรวจสอบแล้ว', 'รีดแล้ว', 'แพ็คแล้ว', 'ส่งแล้ว']
+  .map(key => ({ key, color: PROD_STATUS_COLOR[key] }))
 const STATUS_COLOR = (s: string) => WORKFLOW.find(w => w.key === s)?.color ?? 'var(--ink-4)'
 
 export default function MobileClaims() {

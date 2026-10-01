@@ -5,21 +5,10 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
+import { PROD_STATUS_COLOR } from '@/lib/orderTabs'
 
 // สีแยกตามขั้นผลิต — ให้ตรงกับหน้าออเดอร์ (PROD_STATUS_COLOR ใน OrderWorkspace)
-const statusColor: Record<string, string> = {
-  'รอดำเนินการ': '#C79A4B',
-  'ตัดผ้าแล้ว': '#6E8CA0',
-  'เย็บแล้ว': '#9A7BA0',
-  'ตรวจสอบแล้ว': '#7B7FA3',
-  'รีดแล้ว': '#C2848E',
-  'แพ็คแล้ว': '#6E9A92',
-  'กำลังตัด': '#6E8CA0',
-  'กำลังเย็บ': '#9A7BA0',
-  'กำลังรีด': '#C2848E',
-  'กำลังแพ็ค': '#6E9A92',
-  'สำเร็จ': '#6F8F6A',
-}
+const statusColor: Record<string, string> = PROD_STATUS_COLOR   // ชุดเดียวกับหน้าออเดอร์ (lib/orderTabs.ts)
 
 const stages = ['รอดำเนินการ', 'ตัดผ้าแล้ว', 'เย็บแล้ว', 'ตรวจสอบแล้ว', 'รีดแล้ว', 'แพ็คแล้ว', 'สำเร็จ']
 // สถานะที่ยังอยู่ในสายผลิต (โชว์บนบอร์ด) — ตัดพวกที่ออกจากผลิตแล้ว (รอจัดส่ง/รอติดตั้ง/จัดส่งแล้ว/ยกเลิก)

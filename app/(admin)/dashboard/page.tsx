@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 // สีวันผลิตที่เหลือชุดเดียวกับหมวดออเดอร์: เกิน/วันนี้ = แดงอิฐ · 1-10 วัน = เหลือง · เกิน 10 วัน = เขียว
-import { daysColor } from '@/lib/orderTabs'
+import { daysColor, PROD_STATUS_COLOR } from '@/lib/orderTabs'
 import { createPortal } from 'react-dom'
 import { matchSerial } from '@/lib/serialNo'
 import Link from 'next/link'
@@ -90,22 +90,7 @@ function daysRemaining(dateStr: string): number | null {
 }
 
 // สีแยกตามขั้นผลิต — ให้ตรงกับหน้าออเดอร์ (PROD_STATUS_COLOR ใน OrderWorkspace)
-const STATUS_COLOR: Record<string, string> = {
-  'รอดำเนินการ': '#C79A4B',
-  'ตัดผ้าแล้ว': '#6E8CA0',
-  'เย็บแล้ว': '#9A7BA0',
-  'ตรวจสอบแล้ว': '#7B7FA3',
-  'รีดแล้ว': '#C2848E',
-  'แพ็คแล้ว': '#6E9A92',
-  'กำลังตัด': '#6E8CA0',
-  'กำลังเย็บ': '#9A7BA0',
-  'กำลังรีด': '#C2848E',
-  'กำลังแพ็ค': '#6E9A92',
-  'งานเสร็จ': '#6F8F6A',
-  'รอจัดส่ง': '#7B7FA3',
-  'จัดส่งแล้ว': '#6F8F6A',
-  'รอติดตั้ง': '#B5715A',
-}
+const STATUS_COLOR: Record<string, string> = PROD_STATUS_COLOR   // ชุดเดียวกับหน้าออเดอร์ (lib/orderTabs.ts)
 
 // ลายนาฬิกาพื้นหลังการ์ดเกินกำหนดส่ง — เข็มชั่วโมง/นาทีชี้ตามเวลาจริง (ขยับทีละนาที ไม่มีเข็มวินาที)
 // ก่อน mount ยังไม่มีเวลา → ชี้ 12:00 ไว้ก่อน กัน hydration mismatch

@@ -33,7 +33,7 @@ import { useStableView } from '@/lib/useStableView'
 import { todayYmd, ymdLocal } from '@/lib/thaiDate'
 import { useInstallPhotos, photoSaveError, type InstallPhoto } from '@/components/InstallPhotos'
 import { backdropClose } from '@/lib/backdrop'
-import { daysRemaining } from '@/lib/orderTabs'
+import { daysRemaining, PROD_STATUS_COLOR } from '@/lib/orderTabs'
 import { ymdToDmy } from '@/lib/orderPrint'
 
 type Item = {
@@ -105,15 +105,16 @@ const MONEY_STATUS = ['รอ', 'โอนแล้ว', 'ชำระแล้�
 const COURIERS = ['Flash Express', 'J&T Express', 'Kerry', 'ไปรษณีย์ไทย', 'SPX Express']
 
 // สถานะ workflow + สี
+// ‼️ สีมาจาก PROD_STATUS_COLOR (lib/orderTabs.ts) — ชุดเดียวกับสถานะออเดอร์ ห้ามตั้งสีแยกที่นี่
 const WORKFLOW: { key: string; color: string }[] = [
-  { key: 'รอของคืน', color: '#C79A4B' },
-  { key: 'ตัดผ้าแล้ว', color: '#30d158' },     // สายผลิต — DonnaBot อัปเดตอัตโนมัติจากรูปกลุ่มช่าง
-  { key: 'เย็บแล้ว', color: '#5e9eff' },
-  { key: 'ตรวจสอบแล้ว', color: '#7B7FA3' },   // ผู้ช่วยช่างสแกน (ก่อนรีด)
-  { key: 'รีดแล้ว', color: '#9A7BA0' },
-  { key: 'แพ็คแล้ว', color: '#f43f5e' },
-  { key: 'ส่งแล้ว', color: '#6F8F6A' },
-]
+  'รอของคืน',
+  'ตัดผ้าแล้ว',     // สายผลิต — DonnaBot อัปเดตอัตโนมัติจากรูปกลุ่มช่าง
+  'เย็บแล้ว',
+  'ตรวจสอบแล้ว',   // ผู้ช่วยช่างสแกน (ก่อนรีด)
+  'รีดแล้ว',
+  'แพ็คแล้ว',
+  'ส่งแล้ว',
+].map(key => ({ key, color: PROD_STATUS_COLOR[key] }))
 const STATUS_COLOR = (s: string) => WORKFLOW.find(w => w.key === s)?.color ?? 'var(--ink-3)'
 
 // ── ตัวกรอง/การเรียงที่หัวคอลัมน์ (แบบเดียวกับหน้าออเดอร์) ──

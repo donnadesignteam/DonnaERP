@@ -45,6 +45,10 @@ export const PROD_STATUS_COLOR: Record<string, string> = {
   'รอจัดส่ง': '#7B7FA3',
   'จัดส่งแล้ว': '#6F8F6A',
   'รอติดตั้ง': '#B5715A',
+  // สถานะของงานเคลม (ตาราง claims) — ใช้สีชุดเดียวกับออเดอร์ (user ขอ 1ต.ค.69)
+  'รอของคืน': '#C79A4B',   // = รอดำเนินการ
+  'ส่งแล้ว': '#6F8F6A',    // = จัดส่งแล้ว
+  'สำเร็จ': '#6F8F6A',
 }
 
 export type QuickTab = 'all' | 'platform' | 'outside' | 'install' | 'shipped' | 'cancelled' | 'claim'
