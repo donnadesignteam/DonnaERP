@@ -622,10 +622,13 @@ function ScanContent() {
     if (resumeTimerRef.current) { clearTimeout(resumeTimerRef.current); resumeTimerRef.current = null }  // กันเด้งกลับไปสแกนทับหน้า "ยกเลิกแล้ว"
     setUndoing(true)
     try {
-      const { data, error } = await supabase.rpc('scan_undo', {
-        p_order_id: order.id,
-        p_scanned_term: order.order_number || '',
-      })
+      // ‼️ ใบเคลมต้องใช้ claim_scan_undo (sql/claim_scan_undo.sql) — scan_undo หาในตารางออเดอร์ เคลมจะขึ้น not_found
+      const { data, error } = order.isClaim
+        ? await supabase.rpc('claim_scan_undo', { p_claim_id: order.id })
+        : await supabase.rpc('scan_undo', {
+            p_order_id: order.id,
+            p_scanned_term: order.order_number || '',
+          })
       if (error) { setMsg(error.message); setPhase('error') }
       else if (!data?.ok) { setMsg(data?.result === 'no_scan' ? 'ไม่พบรายการสแกนให้ยกเลิก' : String(data?.result || 'ยกเลิกไม่สำเร็จ')); setPhase('error') }
       else {
