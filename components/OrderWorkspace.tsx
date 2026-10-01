@@ -406,7 +406,7 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
 
 // คอลัมน์รายการโชว์ได้ไม่เกินกี่บรรทัด (เกินนี้ขึ้น "+ อีก N รายการ" แทน แถวจะได้ไม่ยืด)
 // ‼️ แถวทุกแท็บสูงเท่ากัน = 2 บรรทัด 56px (.ow-card tbody tr ใน globals.css) — ช่องไหนซ้อน 2 บรรทัด แถวจะสูงกว่าแถวอื่นทันที
-const PAGE_SIZE = 100   // 19ก.ย.69 user ขอ 100 แถว (เดิม 50)
+const PAGE_SIZE = 150   // 1ต.ค.69 user ขอ 150 แถว (เดิม 100 · ก่อนนั้น 50)
 const DEMO_LOCAL_TICKS = READ_ONLY   // โหมดอ่านอย่างเดียว (โคลน) ติ๊กบนจอได้แต่ไม่บันทึก · เว็บจริง = false
 
 const isClaimRow = (platform: string | null | undefined) => (platform ?? '').startsWith('เคลม:')
