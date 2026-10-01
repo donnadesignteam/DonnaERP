@@ -127,7 +127,7 @@ function ScanContent() {
 
   // โหมดสแกนบาร์โค้ดเลขพัสดุ (ต่อจากสแกนจัดส่งแล้ว) — ใช้ ref คู่ state เพราะ callback ของกล้องเป็น closure เก่า
   const modeRef = useRef<'order' | 'barcode'>('order')
-  const shipRef = useRef<{ id: string; orderNumber: string; courier: string; existing: any[] } | null>(null)
+  const shipRef = useRef<{ id: string; orderNumber: string; courier: string; existing: any[]; isClaim?: boolean } | null>(null)
   const shipNosRef = useRef<{ no: string; carrier: string }[]>([])
   const [shipNos, setShipNos] = useState<{ no: string; carrier: string }[]>([])
   const [shipMsg, setShipMsg] = useState('')
@@ -199,7 +199,9 @@ function ScanContent() {
     // ---- QR ใบเคลม (?c=) → เดินสถานะงานเคลม ----
     const claimId = extractClaimId(decoded)
     if (claimId) {
-      await runClaimScan(tech, claimId)
+      const cres = await runClaimScan(tech, claimId)
+      // แผนกจัดส่งแล้ว: งานเคลมก็ต่อด้วยสแกนเลขพัสดุเหมือนออเดอร์ (บันทึกลง claims.shipments)
+      if (tech.stageKey === 'shipped' && cres?.id) { startBarcode(cres); return }
       // แผนกที่อัพรูปได้ → ค้างหน้าผลให้อัพรูปก่อน (เหมือนออเดอร์ปกติ)
       if ((UPLOAD_SLOTS[tech.stageKey] ?? []).length === 0 && !askJoinRef.current) {
         resumeTimerRef.current = setTimeout(() => { try { html5.resume() } catch {}; busyRef.current = false; setPhase('scanning') }, 4000)
@@ -210,16 +212,8 @@ function ScanContent() {
     // ---- โหมดปกติ: สแกน QR ใบออเดอร์ ----
     const res = await runScan(tech, extractId(decoded), extractOrder(decoded))
     // แผนกจัดส่งแล้ว: ติ๊กเสร็จ → ต่อด้วยสแกนบาร์โค้ดเลขพัสดุทันที
-    if (tech.stageKey === 'shipped' && res?.id && !res.isClaim) {
-      shipRef.current = { id: res.id, orderNumber: res.order_number || '', courier: res.courier || '', existing: Array.isArray(res.shipments) ? res.shipments : [] }
-      shipNosRef.current = []; setShipNos([]); setShipMsg('')
-      modeRef.current = 'barcode'
-      setPhase('barcode')
-      // กรอบเดียวกับ QR ใบออเดอร์ → ไม่ต้องเปิดกล้องใหม่ แค่สแกนต่อได้เลย
-      try { html5.resume() } catch {}
-      busyRef.current = false
-      return
-    }
+    // (QR เก่าของใบเคลมที่ runScan ส่งต่อไปงานเคลม ก็ได้ res.isClaim = true → บันทึกลงงานเคลม)
+    if (tech.stageKey === 'shipped' && res?.id) { startBarcode(res); return }
     // แผนกที่อัพโหลดรูปได้ → ค้างหน้าผลไว้ให้อัพรูปก่อน กด "สแกนต่อ" เอง
     // แผนกที่ไม่มีรูป → ค้างหน้าผล 4 วิ (ให้ทันเช็ก+กดยกเลิกถ้าสแกนผิด) แล้วกลับไปสแกนต่ออัตโนมัติ
     if ((UPLOAD_SLOTS[tech.stageKey] ?? []).length === 0 && !askJoinRef.current) {
@@ -300,6 +294,17 @@ function ScanContent() {
     setShipNos(shipNosRef.current)
   }
 
+  // เข้าโหมดสแกนเลขพัสดุหลังสแกน QR ใบงานในแผนกจัดส่งแล้ว — ใช้ทั้งออเดอร์และงานเคลม
+  function startBarcode(res: any) {
+    shipRef.current = { id: res.id, orderNumber: res.order_number || '', courier: res.courier || '', existing: Array.isArray(res.shipments) ? res.shipments : [], isClaim: !!res.isClaim }
+    shipNosRef.current = []; setShipNos([]); setShipMsg('')
+    modeRef.current = 'barcode'
+    setPhase('barcode')
+    // กรอบเดียวกับ QR ใบออเดอร์ → ไม่ต้องเปิดกล้องใหม่ แค่สแกนต่อได้เลย
+    try { scannerRef.current?.resume() } catch {}
+    busyRef.current = false
+  }
+
   // จบโหมดบาร์โค้ด: บันทึกเลขที่สแกนได้ (ถ้ามี) แล้วกลับไปสแกน QR ออเดอร์ถัดไป
   async function finishBarcode(save: boolean) {
     const info = shipRef.current
@@ -311,7 +316,10 @@ function ScanContent() {
         ...info.existing,
         ...shipNosRef.current.map(x => ({ no: x.no, carrier: x.carrier, status: '', events: null, checked_at: null })),
       ]
-      const { error } = await supabase.from('order_entries').update({ shipments: list, updated_at: now }).eq('id', info.id)
+      // งานเคลม → claims.shipments (+ outbound_tracking ช่องเดิม ให้ตรงกับ popup จัดส่งแล้วในหน้าเคลม)
+      const { error } = info.isClaim
+        ? await supabase.from('claims').update({ shipments: list, outbound_tracking: list.map((x: any) => x.no).join(', ') || null, updated_at: now }).eq('id', info.id)
+        : await supabase.from('order_entries').update({ shipments: list, updated_at: now }).eq('id', info.id)
       setShipSaving(false)
       if (error) { setShipMsg(`บันทึกไม่สำเร็จ: ${error.message}`); return }
       savedCnt = shipNosRef.current.length
@@ -491,14 +499,14 @@ function ScanContent() {
     setPhase('working')
 
     const { data: c } = await supabase.from('claims')
-      .select('id, claim_date, channel, customer_username, original_order_number, status, items')
+      .select('id, claim_date, channel, customer_username, original_order_number, status, items, courier, shipments')
       .eq('id', claimId).limit(1)
     const cl = c && c[0]
     if (!cl) { setOrder({ order_number: 'ใบเคลม (ไม่พบในระบบ)', isClaim: true }); setPhase('noorder'); return null }
 
     // ใช้โครงเดียวกับออเดอร์เพื่อให้หน้าจอผลลัพธ์ใช้ร่วมกันได้ (order_number = ป้ายที่โชว์)
     const base = {
-      id: cl.id, isClaim: true, items: cl.items,
+      id: cl.id, isClaim: true, items: cl.items, courier: cl.courier, shipments: cl.shipments,
       order_number: 'เคลม ' + [cl.channel, cl.customer_username].filter(Boolean).join(': '),
       customer_name: cl.original_order_number ? 'ออเดอร์เดิม ' + cl.original_order_number : '',
       order_status: cl.status,
