@@ -32,7 +32,7 @@ import { prevOf } from '@/lib/trackedDb'
 import { stampInsert, oeUpdate, oeInsert, instUpdate, instInsert, claimUpdate } from '@/lib/adminActor'
 import { useConfirm } from '@/components/ConfirmDialog'
 import AnchoredMenu from '@/components/AnchoredMenu'
-import { usePrintColumns, PrintColumnPicker, printTableHtml, type PrintCol } from '@/components/PrintColumnPicker'
+import { usePrintColumns, PrintColumnPicker, PrintScopePicker, printTableHtml, type PrintCol } from '@/components/PrintColumnPicker'
 import { WORK_TYPE_OPTIONS, ZONES, TECHS as INST_TECHS, TECH_BY_ZONE, statusOptions, statusLabel, normStatus, rowColor as instColor, INSTALL_COLUMNS, WORK_PILL_BG, INST_PILL_BG } from '@/lib/installMeta'
 import { orderPatchFromInstall, installPatchFromOrder } from '@/lib/installOrderSync'
 import { useStableView } from '@/lib/useStableView'
@@ -5345,37 +5345,10 @@ ${body}
               </>
             ) : (
               <>
-              {/* เลือกว่าจะปริ้นอะไร — ตั้งต้นคือตารางของแท็บที่เปิดอยู่ */}
-              <div style={{ display: 'grid', gap: 8, marginBottom: 18 }}>
-                {/* ❗ การ์ดตัวเลือก: ที่เลือกอยู่ = พื้นครีม + ขอบสีแบรนด์ */}
-                <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer',
-                  border: `1.5px solid ${printScope === 'tab' ? 'var(--brand)' : 'var(--border-2)'}`, borderRadius: 16, padding: '12px 14px',
-                  background: printScope === 'tab' ? 'var(--cream)' : 'var(--cream-2)', transition: 'background .15s, border-color .15s' }}>
-                  <input type="radio" checked={printScope === 'tab'} onChange={() => setPrintScope('tab')} style={{ marginTop: 2, accentColor: 'var(--brand)' }} />
-                  <span>
-                    <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>ตารางที่เห็นอยู่ · {tabLabel}</span>
-                    <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>
-                      {activeDisplayed.length} รายการ (ตามแท็บ + ตัวกรอง{month === 'all' ? '' : ` + ${monthLabel(month)}`})
-                    </span>
-                  </span>
-                </label>
-                <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer',
-                  border: `1.5px solid ${printScope === 'days' ? 'var(--brand)' : 'var(--border-2)'}`, borderRadius: 16, padding: '12px 14px',
-                  background: printScope === 'days' ? 'var(--cream)' : 'var(--cream-2)', transition: 'background .15s, border-color .15s' }}>
-                  <input type="radio" checked={printScope === 'days'} onChange={() => setPrintScope('days')} style={{ marginTop: 2, accentColor: 'var(--brand)' }} />
-                  <span style={{ flex: 1 }}>
-                    <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>เฉพาะงานที่ใกล้ถึงกำหนดส่ง</span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-                      <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>เหลือน้อยกว่า</span>
-                      <input type="number" min={0} max={99} value={printMaxDays}
-                        onClick={e => { e.stopPropagation(); setPrintScope('days') }}
-                        onChange={e => setPrintMaxDays(Number(e.target.value))}
-                        style={{ width: 66, fontSize: 15, fontWeight: 700, outline: 'none', textAlign: 'center' }} />
-                      <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>วัน · {getPrintRows(printMaxDays).length} รายการ</span>
-                    </span>
-                  </span>
-                </label>
-              </div>
+              {/* เลือกว่าจะปริ้นอะไร — ตั้งต้นคือตารางของแท็บที่เปิดอยู่ (ตัวเลือกชุดเดียวกับงานเคลม/ปฏิทินงานติดตั้ง) */}
+              <PrintScopePicker scope={printScope} setScope={setPrintScope} maxDays={printMaxDays} setMaxDays={setPrintMaxDays}
+                tabTitle={`ตารางที่เห็นอยู่ · ${tabLabel}`} tabSub={`${activeDisplayed.length} รายการ (ตามแท็บ + ตัวกรอง${month === 'all' ? '' : ` + ${monthLabel(month)}`})`}
+                daysCount={getPrintRows(printMaxDays).length} />
                 <div style={{ display: 'flex', gap: 10 }}>
                   <button onClick={() => { setPrintModal(false); setPrintModalCols(false) }} className="sc-mcancel"
                     style={{ flex: 1, cursor: 'pointer', fontSize: 14, border: 'none' }}>ยกเลิก</button>

@@ -22,7 +22,7 @@ import { useStableView } from '@/lib/useStableView'
 import { oeUpdate, instUpdate, instInsert } from '@/lib/adminActor'
 import { useConfirm } from '@/components/ConfirmDialog'
 import { installSerial, serialNum, matchSerial } from '@/lib/serialNo'
-import { usePrintColumns, PrintColumnPicker, printTableHtml, type PrintCol } from '@/components/PrintColumnPicker'
+import { usePrintColumns, PrintColumnPicker, PrintScopePicker, printTableHtml, type PrintCol } from '@/components/PrintColumnPicker'
 import { createOrderForInstall, orderPatchFromInstall } from '@/lib/installOrderSync'
 import { PROD_STATUS_COLOR, INSTALL_STATUSES, daysRemaining, daysLabel, cmpDaysSort, cmpDeadlineSort } from '@/lib/orderTabs'
 import { TECH_OPTIONS } from '@/lib/techs'
@@ -346,6 +346,9 @@ export default function InstallationsPage() {
   const [printAsk, setPrintAsk] = useState(false)   // ป๊อปอัปถามก่อนปริ้น: ตารางรายการ / ปฏิทิน
   const printCols = usePrintColumns('installations-v2')   // เลือกคอลัมน์ที่จะเอาลงใบปริ้นตารางรายการ
   const [printColStep, setPrintColStep] = useState(false)   // กดตารางรายการแล้ว → ขั้นถัดไปคือเลือกคอลัมน์
+  // ตารางรายการที่เห็นอยู่ / เฉพาะงานที่ใกล้ถึงกำหนด (เหลือน้อยกว่า N วัน) — แบบเดียวกับหมวดออเดอร์
+  const [printScope, setPrintScope] = useState<'tab' | 'days'>('tab')
+  const [printMaxDays, setPrintMaxDays] = useState(3)
   const [quoteDragOver, setQuoteDragOver] = useState(false)   // ลาก PDF ใบเสนอราคามาวางในกล่องเพิ่มรายการติดตั้ง
   const [parseError, setParseError] = useState('')
   const [actionMenu, setActionMenu] = useState<{ id: string; rect: DOMRect } | null>(null)   // rect ของปุ่ม ··· (AnchoredMenu พลิกขึ้นเองถ้าชิดขอบล่าง)
@@ -1073,14 +1076,34 @@ export default function InstallationsPage() {
 
   const printColsOn = printColDefs().filter(c => printCols.isOn(c)).length   // ติ๊กไว้กี่คอลัมน์ (0 = ห้ามปริ้น ใบจะว่าง)
 
+  // งานที่ใกล้ถึงกำหนด — นับวันจากวันนัดของใบออเดอร์ (deadline) เหมือนคอลัมน์ "วันผลิตที่เหลือ"
+  // ไม่นับงานเสร็จ/ยกเลิก/ติดตั้งเสร็จแล้ว · ไม่สนเดือน/คำค้น (เหมือนหมวดออเดอร์) แต่ยึดโซนที่เลือกไว้
+  // ‼️ ดูค่าสด (live) — ติ๊กงานเสร็จแล้วต้องไม่ติดมาในใบปริ้น
+  const dueOf = (r: Installation) => {
+    const oe = r.source_order_id ? orderMeta[r.source_order_id] : undefined
+    return oe?.deadline ?? (r.appointment_datetime ? r.appointment_datetime.slice(0, 10) : null)
+  }
+  const getPrintRows = (maxDays: number) => installs.map(live).filter(r => {
+    if (zoneFilter.length && !zoneFilter.includes(r.install_zone)) return false
+    const oe = r.source_order_id ? orderMeta[r.source_order_id] : undefined
+    if (oe?.order_status === 'ยกเลิก' || oe?.order_status === 'เสร็จสิ้น' || oe?.is_urgent) return false
+    if (normStatus(r.installation_status) === 'ติดตั้งเสร็จ') return false
+    const due = dueOf(r)
+    const d = due ? daysRemaining(due) : null
+    return d !== null && d < maxDays
+  }).sort((a, b) => (dueOf(a) ?? '').localeCompare(dueOf(b) ?? ''))
+
   const printTable = () => {
-    const toPrint = displayed
+    const toPrint = printScope === 'days' ? getPrintRows(printMaxDays) : displayed
     if (toPrint.length === 0) { setError('ไม่มีรายการให้ปริ้น'); return }
     const win = window.open('', '_blank', 'width=1200,height=750')
     if (!win) { setError('เบราว์เซอร์บล็อก popup — โปรดอนุญาต popup เพื่อปริ้น'); return }
     const esc = (v: unknown) => escPrintHtml(String(v ?? ''))
     const monthTitle = listFilter === 'all' ? 'ทุกเดือน' : listFilter
-    const title = `งานติดตั้ง — ${monthTitle}${zoneFilter.length ? ` · โซน${zoneFilter.join(' + ')}` : ''}`
+    const zonePart = zoneFilter.length ? ` · โซน${zoneFilter.join(' + ')}` : ''
+    const title = printScope === 'days'
+      ? `งานติดตั้งที่ต้องทำใน ${printMaxDays} วัน${zonePart} — ${new Date().toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' })}`
+      : `งานติดตั้ง — ${monthTitle}${zonePart}`
     const tableHtml = printTableHtml(toPrint, printCols.pick(printColDefs()))
     win.document.write(`<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><title>ปริ้นงานติดตั้ง</title><style>
       * { box-sizing: border-box; }
@@ -1824,20 +1847,22 @@ export default function InstallationsPage() {
             ) : (
               <>
                 <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 14 }}>ปริ้นอะไร</h3>
-                <div style={{ display: 'grid', gap: 10 }}>
+                {/* ตารางรายการ — ตัวเลือกชุดเดียวกับหมวดออเดอร์/งานเคลม (ที่เห็นอยู่ / ใกล้ถึงกำหนด) */}
+                <PrintScopePicker scope={printScope} setScope={setPrintScope} maxDays={printMaxDays} setMaxDays={setPrintMaxDays}
+                  tabTitle="ตารางรายการที่เห็นอยู่"
+                  tabSub={`${displayed.length} รายการ (ตามเดือน${zoneFilter.length ? ` + โซน${zoneFilter.join(' + ')}` : ''}${search.trim() ? ' + คำค้น' : ''})`}
+                  daysCount={getPrintRows(printMaxDays).length} />
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={() => setPrintAsk(false)}
+                    style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontSize: 14, color: 'var(--ink-3)' }}>ยกเลิก</button>
                   <button onClick={() => setPrintColStep(true)}
-                    style={{ display: 'block', width: '100%', textAlign: 'left', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', background: 'var(--bg)', cursor: 'pointer' }}>
-                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>ตารางรายการ</span>
-                    <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>{displayed.length} รายการ (ตามเดือน{zoneFilter.length ? ` + โซน${zoneFilter.join(' + ')}` : ''}{search.trim() ? ' + คำค้น' : ''})</span>
-                  </button>
-                  <button onClick={() => { setPrintAsk(false); setTimeout(() => window.print(), 50) }}
-                    style={{ display: 'block', width: '100%', textAlign: 'left', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', background: 'var(--bg)', cursor: 'pointer' }}>
-                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>ปฏิทิน</span>
-                    <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>ปฏิทินเดือนที่เปิดอยู่บนหน้าจอ</span>
-                  </button>
+                    style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--brand)', color: '#FFF8F0', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>ถัดไป · เลือกคอลัมน์</button>
                 </div>
-                <button onClick={() => setPrintAsk(false)}
-                  style={{ marginTop: 14, width: '100%', padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontSize: 14, color: 'var(--ink-3)' }}>ยกเลิก</button>
+                <button onClick={() => { setPrintAsk(false); setTimeout(() => window.print(), 50) }}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', background: 'var(--bg)', cursor: 'pointer', marginTop: 14 }}>
+                  <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>ปริ้นปฏิทินแทน</span>
+                  <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>ปฏิทินเดือนที่เปิดอยู่บนหน้าจอ</span>
+                </button>
               </>
             )}
           </div>

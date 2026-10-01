@@ -14,7 +14,7 @@ import { useConfirm } from '@/components/ConfirmDialog'
 import AnchoredMenu from '@/components/AnchoredMenu'
 import CreamSelect from '@/components/CreamSelect'
 import { PlatformIcon, CourierIcon } from '@/components/BrandMark'
-import { usePrintColumns, PrintColumnPicker, printTableHtml, type PrintCol } from '@/components/PrintColumnPicker'
+import { usePrintColumns, PrintColumnPicker, PrintScopePicker, printTableHtml, type PrintCol } from '@/components/PrintColumnPicker'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { recordAction } from '@/lib/history'
@@ -32,6 +32,7 @@ import { useStableView } from '@/lib/useStableView'
 import { todayYmd, ymdLocal } from '@/lib/thaiDate'
 import { useInstallPhotos, photoSaveError, type InstallPhoto } from '@/components/InstallPhotos'
 import { backdropClose } from '@/lib/backdrop'
+import { daysRemaining } from '@/lib/orderTabs'
 
 type Item = {
   type: string; floors: number | null; rail_head: string; hook_type?: string; fabric_type: string
@@ -287,6 +288,10 @@ export default function ClaimsWorkspace() {
   const printCols = usePrintColumns('claims')   // เลือกคอลัมน์ที่จะเอาลงใบปริ้นแบบตาราง
   const [printColStep, setPrintColStep] = useState(false)   // กดตารางสรุปแล้ว → ขั้นถัดไปคือเลือกคอลัมน์
   const [printAsk, setPrintAsk] = useState<Claim[] | null>(null)   // ปริ้นหลายใบ → ถามก่อนว่าตาราง/ฟอร์ม
+  // กดปริ้นโดยไม่ได้ติ๊กเลือก → ถามก่อนว่าปริ้นตารางที่เห็นอยู่ หรือเฉพาะงานที่ใกล้ถึงกำหนดส่ง (เหมือนหมวดออเดอร์)
+  const [printModal, setPrintModal] = useState(false)
+  const [printMaxDays, setPrintMaxDays] = useState(3)
+  const [printScope, setPrintScope] = useState<'tab' | 'days'>('tab')
   const [shipModal, setShipModal] = useState<{ id: string; parcels: { no: string; carrier: string; manual: boolean }[] } | null>(null)
   const [staffNames, setStaffNames] = useState<string[]>(ADMINS_FALLBACK)
   // วันเวลาที่สแกนเข้าแต่ละสถานะ (ใบเคลมไม่มีคอลัมน์ประวัติสถานะ — อ่านจากตารางสแกน production_scans
@@ -748,6 +753,23 @@ ${body}
   const printColsOn = printColDefs().filter(c => printCols.isOn(c)).length   // ติ๊กไว้กี่คอลัมน์ (0 = ห้ามปริ้น ใบจะว่าง)
 
   const printTitle = (list: Claim[]) => `ใบเคลม ${list.length} รายการ — ${new Date().toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' })}`
+  // งานที่ใกล้ถึงกำหนดส่ง — ยังไม่เสร็จ/ยังไม่ส่ง/ยังไม่ปิดงาน และกำหนดส่งเหลือน้อยกว่า maxDays วัน (เกินกำหนดแล้วก็นับ)
+  // ‼️ ดูค่าสด (live) ไม่ใช่ค่าตอนโหลดหน้า — ติ๊กงานเสร็จแล้วต้องไม่ติดมาในใบปริ้น · ไม่สนแท็บ/ตัวกรอง (เหมือนหมวดออเดอร์)
+  function getPrintRows(maxDays: number) {
+    return rows.map(live).filter(r => {
+      if (r.is_urgent || r.shipped_at || r.closed_at || r.status === 'ส่งแล้ว') return false
+      const d = r.deadline ? daysRemaining(r.deadline) : null
+      return d !== null && d < maxDays
+    }).sort((a, b) => (a.deadline ?? '').localeCompare(b.deadline ?? ''))
+  }
+  const doPrint = () => {
+    setPrintModal(false)
+    if (printScope === 'tab') { requestPrint(displayed); return }
+    const list = getPrintRows(printMaxDays)
+    if (list.length === 1) { void openPrintWindow(list, `งานเคลมที่ต้องส่งใน ${printMaxDays} วัน — ${new Date().toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' })}`); return }
+    requestPrint(list)
+  }
+
   const requestPrint = (list: Claim[]) => {
     if (list.length === 0) return
     if (list.length === 1) { void openPrintWindow(list, printTitle(list)); return }
@@ -1070,7 +1092,7 @@ ${body}
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <NotifyBell />
-          <button onClick={() => requestPrint(selectedIds.size > 0 ? displayed.filter(r => selectedIds.has(r.id)) : displayed)}
+          <button onClick={() => selectedIds.size > 0 ? requestPrint(displayed.filter(r => selectedIds.has(r.id))) : setPrintModal(true)}
             style={{ background: 'var(--surface)', color: 'var(--brand)', border: '1px solid var(--border)', borderRadius: 999, height: 46, padding: '0 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: 'var(--shadow)' }}>
             🖨️ ปริ้น{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
           </button>
@@ -1538,6 +1560,22 @@ ${body}
           </>
         )
       })()}
+
+      {/* ปริ้นโดยไม่ได้ติ๊กเลือก — ตารางที่เห็นอยู่ / เฉพาะงานที่ใกล้ถึงกำหนดส่ง (ชุดเดียวกับป๊อปอัปปริ้นในหมวดออเดอร์) */}
+      {printModal && (
+        <div {...backdropClose(() => setPrintModal(false))} style={{ position: 'fixed', inset: 0, background: 'rgba(61,43,31,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+          <div onClick={e => e.stopPropagation()} className="sc-fields" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 24, boxShadow: '0 24px 60px rgba(61,43,31,0.22)', width: '100%', maxWidth: 400, padding: '26px 30px' }}>
+            <h3 className="sc-mtitle" style={{ marginBottom: 16 }}>ปริ้นงานเคลม</h3>
+            <PrintScopePicker scope={printScope} setScope={setPrintScope} maxDays={printMaxDays} setMaxDays={setPrintMaxDays}
+              tabTitle="ตารางที่เห็นอยู่" tabSub={`${displayed.length} รายการ (ตามแท็บ + ตัวกรอง${month === 'all' ? '' : ` + ${monthLabel(month)}`})`}
+              daysCount={getPrintRows(printMaxDays).length} />
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setPrintModal(false)} className="sc-mcancel" style={{ flex: 1, cursor: 'pointer', fontSize: 14, border: 'none' }}>ยกเลิก</button>
+              <button onClick={doPrint} className="sc-msave" style={{ flex: 2, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>ถัดไป</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ปริ้นหลายใบ → ถามก่อนว่าตารางสรุปหรือฟอร์มรายใบ (เหมือนหมวดออเดอร์) */}
       {printAsk && (

@@ -102,3 +102,43 @@ export function PrintColumnPicker({ cols, state }: { cols: { key: string; label:
     </div>
   )
 }
+
+/* ตัวเลือก "ปริ้นอะไร" — ตารางที่เห็นอยู่ / เฉพาะงานที่ใกล้ถึงกำหนดส่ง (เหลือน้อยกว่า N วัน)
+   ‼️ ชุดเดียวใช้ร่วม: หมวดออเดอร์ · งานเคลม · ปฏิทินงานติดตั้ง — แก้หน้าตาที่นี่ที่เดียว */
+export function PrintScopePicker({ scope, setScope, maxDays, setMaxDays, tabTitle, tabSub, daysCount }: {
+  scope: 'tab' | 'days'; setScope: (s: 'tab' | 'days') => void
+  maxDays: number; setMaxDays: (n: number) => void
+  tabTitle: string; tabSub: string; daysCount: number
+}) {
+  // การ์ดตัวเลือก: ที่เลือกอยู่ = พื้นครีม + ขอบสีแบรนด์
+  const card = (on: boolean): React.CSSProperties => ({
+    display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer',
+    border: `1.5px solid ${on ? 'var(--brand)' : 'var(--border-2)'}`, borderRadius: 16, padding: '12px 14px',
+    background: on ? 'var(--cream)' : 'var(--cream-2)', transition: 'background .15s, border-color .15s',
+  })
+  return (
+    <div style={{ display: 'grid', gap: 8, marginBottom: 18 }}>
+      <label style={card(scope === 'tab')}>
+        <input type="radio" checked={scope === 'tab'} onChange={() => setScope('tab')} style={{ marginTop: 2, accentColor: 'var(--brand)' }} />
+        <span>
+          <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>{tabTitle}</span>
+          <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>{tabSub}</span>
+        </span>
+      </label>
+      <label style={card(scope === 'days')}>
+        <input type="radio" checked={scope === 'days'} onChange={() => setScope('days')} style={{ marginTop: 2, accentColor: 'var(--brand)' }} />
+        <span style={{ flex: 1 }}>
+          <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>เฉพาะงานที่ใกล้ถึงกำหนดส่ง</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+            <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>เหลือน้อยกว่า</span>
+            <input type="number" min={0} max={99} value={maxDays}
+              onClick={e => { e.stopPropagation(); setScope('days') }}
+              onChange={e => setMaxDays(Number(e.target.value))}
+              style={{ width: 66, fontSize: 15, fontWeight: 700, outline: 'none', textAlign: 'center' }} />
+            <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>วัน · {daysCount} รายการ</span>
+          </span>
+        </span>
+      </label>
+    </div>
+  )
+}
