@@ -7,7 +7,7 @@ import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { claimUpdate, claimInsert } from '@/lib/adminActor'
-import { nextSerial, matchSerial } from '@/lib/serialNo'
+import { formatSerial, matchSerial } from '@/lib/serialNo'
 import { buildCustomerBook, type CustomerEntry } from '@/lib/customerBook'
 import CustomerPickStep from '@/components/CustomerPickStep'
 import { useConfirm } from '@/components/ConfirmDialog'
@@ -23,6 +23,7 @@ import { tUpdate, prevOf } from '@/lib/trackedDb'
 import { itemBlockLines, railSplit, railLayers, railKind, railIssues, normalizeRailColor } from '@/lib/itemFormat'
 import { NO_FAULT, FAULT_BY_TECHS, splitFaultBy, joinFaultBy } from '@/lib/claimFault'
 import QRCode from 'qrcode'
+import { takeSerialNumber } from '@/lib/serialCounter'
 import { railLink } from '@/lib/rail'
 import { TECH_OPTIONS } from '@/lib/techs'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
@@ -539,7 +540,8 @@ export default function ClaimsWorkspace() {
       // เลขที่ใบเคลม DM0001 — ถามเลขล่าสุดจากฐานตอนกดบันทึก (แอดมินหลายคนเปิดค้างพร้อมกัน)
       const { data: usedSerials, error: serErr } = await supabase.from('claims').select('serial_no').not('serial_no', 'is', null)
       // ยังไม่ได้รัน sql/add_serial_no.sql (ไม่มีคอลัมน์) → ข้ามไป บันทึกได้ตามปกติ ไม่พัง
-      if (!serErr) (payload as Record<string, unknown>).serial_no = nextSerial('claim', (usedSerials ?? []).map(x => (x as { serial_no: string | null }).serial_no))
+      // ตัวนับกลาง (lib/serialCounter.ts) — เคสที่เคยลบไปแล้วเลขไม่ถูกใช้ซ้ำ
+      if (!serErr) (payload as Record<string, unknown>).serial_no = formatSerial('claim', await takeSerialNumber('claim', (usedSerials ?? []).map(x => (x as { serial_no: string | null }).serial_no)))
       const res = await claimInsert(payload).select().single()
       setSaving(false)
       if (res.error) { setError(claimErr(res.error.message)); return }

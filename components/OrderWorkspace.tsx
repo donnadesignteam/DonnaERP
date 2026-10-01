@@ -11,7 +11,7 @@ import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, ITEM_FIELDS, ITEM_FIELD_OPTIONS, shownFields, visibleItemCols, railNoField, itemFieldMissing, itemInputValue, buildItemSuggestions, emptyItem as emptyRawItem } from '@/lib/itemFormat'
 import { railLink } from '@/lib/rail'
-import { installSerial, nextSerial, matchSerial } from '@/lib/serialNo'
+import { installSerial, formatSerial, matchSerial } from '@/lib/serialNo'
 import { buildCustomerBook } from '@/lib/customerBook'
 import CustomerPickStep from '@/components/CustomerPickStep'
 import { TECH_OPTIONS } from '@/lib/techs'
@@ -43,6 +43,7 @@ import { parseMoney } from '@/lib/money'
 import { formatOrderText, formatOrderHtml } from '@/lib/orderPrint'
 import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
+import { takeSerialNumber } from '@/lib/serialCounter'
 import { PlatformIcon, CourierIcon, INSTALL_ICON_PATH } from '@/components/BrandMark'
 import CreamSelect from '@/components/CreamSelect'
 import CreamDate from '@/components/CreamDate'
@@ -791,12 +792,12 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       if (existing) {
         await instUpdate(onsite).eq('source_order_id', orderId)
       } else {
-        // รัน serial เลข 4 หลักต่อจากที่มีอยู่ (เหมือนรายการที่ลงในหน้าปฏิทินเอง)
+        // รัน serial เลข 4 หลักจากตัวนับกลาง (เหมือนรายการที่ลงในหน้าปฏิทินเอง) — ใบที่ลบไปแล้วเลขไม่ถูกใช้ซ้ำ
         const { data: serials } = await supabase.from('installations').select('serial_no')
-        const maxN = (serials ?? []).reduce((mx, r) => Math.max(mx, parseInt(String(r.serial_no), 10) || 0), 0)
+        const nextN = await takeSerialNumber('install', (serials ?? []).map(r => String(r.serial_no ?? '')))
         await instInsert({
           source_order_id: orderId,
-          serial_no: String(maxN + 1).padStart(4, '0'),
+          serial_no: String(nextN).padStart(4, '0'),
           work_type: 'งานติดตั้ง',
           work_details: '',
           payment_status: p.payment_status || 'รอมัดจำ',
@@ -913,7 +914,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       if (!payload.is_installation && OUTSIDE_PLATFORMS.includes(String(payload.platform ?? '')) && !isClaimRow(payload.platform)) {
         const { data: used, error: serErr } = await withTimeout(supabase.from('order_entries').select('serial_no').like('serial_no', 'DR%'), 'ขอเลขที่ใบ')
         // ยังไม่ได้รัน sql/add_serial_no.sql (ไม่มีคอลัมน์) → ข้ามไป บันทึกได้ตามปกติ ไม่พัง
-        if (!serErr) (payload as Record<string, unknown>).serial_no = nextSerial('outside', (used ?? []).map(x => (x as { serial_no: string | null }).serial_no))
+        // ตัวนับกลาง (lib/serialCounter.ts) — ใบที่เคยลบไปแล้วเลขไม่ถูกใช้ซ้ำ
+        if (!serErr) (payload as Record<string, unknown>).serial_no = formatSerial('outside', await takeSerialNumber('outside', (used ?? []).map(x => (x as { serial_no: string | null }).serial_no)))
       }
       // abortSignal = ยกเลิกคำขอที่ค้างจริงๆ (ไม่ใช่แค่เลิกรอ) — กดใหม่แล้วได้การเชื่อมต่อใหม่ ไม่ไปต่อคิวเดิมที่ตายแล้ว
       // จำประเภทที่กดเลือกตอนเพิ่มรายการ — ใบที่ไม่มีแพลตฟอร์มจะได้ไปอยู่แท็บที่ถูก (lib/orderTabs.ts)
@@ -2598,17 +2600,25 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     // จำเวลาปริ้นล่าสุดต่อใบ → โชว์ข้างปุ่มปริ้นในเมนู ··· (ไม่แตะ updated_at เพราะไม่ใช่การแก้ข้อมูล)
     const printedNow = new Date().toISOString()
     const printedIds = toPrint.map(r => r.id)
-    oeUpdate({ printed_at: printedNow }).in('id', printedIds)
-      .then((res: { error: { message: string } | null }) => {
-        if (!res.error) setRows(p => p.map(x => printedIds.includes(x.id) ? { ...x, printed_at: printedNow } : x))
-      })
+    // แถวงานเคลมอยู่ตาราง claims (id ไม่มีใน order_entries) → บันทึกเวลาปริ้นแยกตาราง
+    const claimIds = toPrint.filter(isClaimEntry).map(r => r.id)
+    const orderIds = printedIds.filter(id => !claimIds.includes(id))
+    const markPrinted = (ids: string[]) => (res: { error: { message: string } | null }) => {
+      if (!res.error) setRows(p => p.map(x => ids.includes(x.id) ? { ...x, printed_at: printedNow } : x))
+    }
+    if (orderIds.length) oeUpdate({ printed_at: printedNow }).in('id', orderIds).then(markPrinted(orderIds))
+    if (claimIds.length) claimUpdate({ printed_at: printedNow }).in('id', claimIds).then(markPrinted(claimIds))
 
     // ฟอร์ม → สร้าง QR ต่อออเดอร์ (ชี้ไปหน้า /scan บนโดเมนเดียวกับที่เปิดอยู่)
     let qrs: string[] = []
     if (asForm) {
       const origin = window.location.origin
+      // ‼️ งานเคลม = QR ของงานเคลมเอง (?c=<id งานเคลม> แบบเดียวกับใบที่ปริ้นจากหน้าเคลม)
+      //    เดิมใช้ QR แบบออเดอร์ที่ฝังเลขออเดอร์เดิม → สแกนแล้วไปเดินสถานะ/อัพรูปของออเดอร์แรก
       qrs = await Promise.all(toPrint.map(r =>
-        QRCode.toDataURL(`${origin}/scan?id=${r.id}&o=${encodeURIComponent(r.order_number || '')}`, { margin: 1, width: 240 }).catch(() => '')
+        QRCode.toDataURL(isClaimEntry(r)
+          ? `${origin}/scan?c=${r.claim_id}`
+          : `${origin}/scan?id=${r.id}&o=${encodeURIComponent(r.order_number || '')}`, { margin: 1, width: 240 }).catch(() => '')
       ))
     }
 

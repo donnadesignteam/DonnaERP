@@ -10,6 +10,7 @@ import { Fragment, useState, useEffect, useRef, useMemo } from 'react'
 import AnchoredMenu from '@/components/AnchoredMenu'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { takeSerialNumber } from '@/lib/serialCounter'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { tUpdate, tInsert, tDelete, prevOf } from '@/lib/trackedDb'
@@ -18,7 +19,7 @@ import { compressImage } from '@/lib/packingPhotos'
 import { compressVideo } from '@/lib/videoCompress'
 import { useConfirm } from '@/components/ConfirmDialog'
 import PhotoViewer from '@/components/PhotoViewer'
-import { nextSerial, matchSerial } from '@/lib/serialNo'
+import { formatSerial, matchSerial } from '@/lib/serialNo'
 import { buildCustomerBook, type CustomerEntry } from '@/lib/customerBook'
 import CustomerPickStep from '@/components/CustomerPickStep'
 import OrderFinder, { type FoundOrder } from '@/components/OrderFinder'
@@ -236,7 +237,8 @@ export default function ReturnParcelsPage() {
       // เลขที่ใบ BP0001 — ถามเลขล่าสุดจากฐานตอนกดเพิ่ม (แอดมินหลายคนเปิดค้างพร้อมกัน)
       const { data: usedSerials, error: serErr } = await supabase.from(TABLE).select('serial_no').not('serial_no', 'is', null)
       // ยังไม่ได้รัน sql/add_serial_no.sql (ไม่มีคอลัมน์) → ข้ามไป เพิ่มแถวได้ตามปกติ ไม่พัง
-      const serialPatch = serErr ? {} : { serial_no: nextSerial('return', (usedSerials ?? []).map(x => (x as { serial_no: string | null }).serial_no)) }
+      // ตัวนับกลาง (lib/serialCounter.ts) — รายการที่เคยลบไปแล้วเลขไม่ถูกใช้ซ้ำ
+      const serialPatch = serErr ? {} : { serial_no: formatSerial('return', await takeSerialNumber('return', (usedSerials ?? []).map(x => (x as { serial_no: string | null }).serial_no))) }
       const saved = await tInsert(TABLE, {
         videos: [], photos: [], ...serialPatch,
         ...(senderName ? { sender_name: senderName } : {}),

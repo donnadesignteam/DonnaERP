@@ -341,6 +341,10 @@ function ScanContent() {
     if (id) {
       const { data } = await supabase.from('order_entries').select(cols).eq('id', id).limit(1)
       if (data && data[0]) return data[0]
+      // ‼️ ใบงานเคลมที่ปริ้นจากหมวดออเดอร์ก่อน 1ต.ค.69 ได้ QR แบบออเดอร์ (?id=<id งานเคลม>&o=<เลขออเดอร์เดิม>)
+      //    ถ้าปล่อยไปค้นด้วยเลขออเดอร์ จะไปเจอ "ออเดอร์แรก" แล้วเดินสถานะ/อัพรูปผิดใบ → เช็กตาราง claims ก่อน
+      const { data: cl } = await supabase.from('claims').select('id').eq('id', id).limit(1)
+      if (cl && cl[0]) return { __claimId: cl[0].id as string }
     }
     const term = ord.trim()
     if (term) {
@@ -538,6 +542,7 @@ function ScanContent() {
     setPhase('working')
     const o = await findOrder(id, ord)
     if (!o) { setOrder({ order_number: ord || `id:${id}` }); setPhase('noorder'); return null }
+    if ('__claimId' in o) return runClaimScan(t, o.__claimId)   // QR เก่าของใบเคลม → เดินสถานะงานเคลมแทน
     setOrder(o)
     setPhotos(Array.isArray(o.packing_photos) ? o.packing_photos : [])
 

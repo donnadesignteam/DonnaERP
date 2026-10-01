@@ -21,7 +21,7 @@ import { prevOf } from '@/lib/trackedDb'
 import { useStableView } from '@/lib/useStableView'
 import { oeUpdate, instUpdate, instInsert } from '@/lib/adminActor'
 import { useConfirm } from '@/components/ConfirmDialog'
-import { installSerial, serialNum, matchSerial } from '@/lib/serialNo'
+import { installSerial, matchSerial } from '@/lib/serialNo'
 import { usePrintColumns, PrintColumnPicker, PrintScopePicker, printTableHtml, type PrintCol } from '@/components/PrintColumnPicker'
 import { createOrderForInstall, orderPatchFromInstall } from '@/lib/installOrderSync'
 import { PROD_STATUS_COLOR, INSTALL_STATUSES, daysRemaining, daysLabel, cmpDaysSort, cmpDeadlineSort } from '@/lib/orderTabs'
@@ -30,6 +30,7 @@ import { syncWorkStatus } from '@/lib/workStatusSync'
 import ProvinceSelect from '@/components/ProvinceSelect'
 import { formatOrderLines, linesToHtml, openFormPrintWindow, escPrintHtml, type PrintLine, type PrintableOrder } from '@/lib/orderPrint'
 import QRCode from 'qrcode'
+import { takeSerialNumber } from '@/lib/serialCounter'
 import { PlatformIcon } from '@/components/BrandMark'
 import CreamSelect from '@/components/CreamSelect'
 import { pillBg, pillInk } from '@/components/OrderDetailModal'
@@ -491,8 +492,11 @@ export default function InstallationsPage() {
     return () => { supabase.removeChannel(ch) }
   }, [])
 
-  // รัน serial ต่อจากเลขสูงสุดที่มี (กันชนกับเลขที่ sync มาจากออเดอร์)
-  const nextSerial = () => pad(installs.reduce((mx, r) => Math.max(mx, serialNum(r.serial_no)), 0) + 1)
+  // รัน serial จากตัวนับกลาง (lib/serialCounter.ts) — ใบที่ลบไปแล้วเลขไม่ถูกใช้ซ้ำ · ถามเลขจากฐานตอนกดบันทึก (กันชนกับเลขที่ sync มาจากออเดอร์)
+  const nextSerial = async () => {
+    const { data } = await supabase.from('installations').select('serial_no')
+    return pad(await takeSerialNumber('install', [...installs, ...((data ?? []) as { serial_no: string }[])].map(r => r.serial_no)))
+  }
 
   const openAdd = () => {
     setApptDate('')
@@ -618,7 +622,7 @@ export default function InstallationsPage() {
     const instStatus = (modal.mode === 'add' || INITIAL_STATUSES.includes(d.installation_status ?? ''))
       ? (STATUS_BY_TYPE[d.work_type ?? ''] ?? d.installation_status)
       : d.installation_status
-    const payload: Partial<Installation> = { ...d, appointment_datetime: dt, installation_status: instStatus, serial_no: modal.mode === 'add' ? nextSerial() : d.serial_no, updated_at: new Date().toISOString(), photos: ph.photos }
+    const payload: Partial<Installation> = { ...d, appointment_datetime: dt, installation_status: instStatus, serial_no: modal.mode === 'add' ? await nextSerial() : d.serial_no, updated_at: new Date().toISOString(), photos: ph.photos }
     // ยังไม่เคยใช้รูปกับรายการนี้ → ไม่ต้องส่งคอลัมน์ photos (เว็บทำงานได้ตามปกติแม้ยังไม่ได้รัน SQL เพิ่มคอลัมน์)
     const hadPhotos = !!installs.find(i => i.id === d.id)?.photos?.length
     if (!ph.photos.length && !hadPhotos) delete payload.photos
