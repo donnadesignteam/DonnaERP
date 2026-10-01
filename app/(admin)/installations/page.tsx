@@ -1167,6 +1167,8 @@ export default function InstallationsPage() {
       if (ins.work_details) push(ins.work_details)
       if (ins.location_link) push(ins.location_link)
       if (priceOf(ins)) push(`ราคา ${priceOf(ins).toLocaleString('th-TH')} บาท${payOf(ins) ? ` (${payOf(ins)})` : ''}`)
+      // บรรทัดวันนัด — แบบเดียวกับใบออเดอร์งานติดตั้ง ("ติดตั้ง <วัน> <เวลา> น." แทน "ส่งก่อน")
+      if (dt) push(`ติดตั้ง ${dt.getDate()}/${dt.getMonth() + 1}/${dt.getFullYear()} ${dt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.`)
       if (ins.notes) push(`หมายเหตุ: ${ins.notes}`)
       if (ins.entered_by) { push(''); push(`แอดมิน: ${ins.entered_by}`) }
     }

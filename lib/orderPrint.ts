@@ -18,6 +18,8 @@ export type PrintableOrder = {
   is_installation?: boolean | null
   is_dropoff?: boolean | null
   shipping_datetime?: string | null
+  deadline?: string | null        // วันกำหนดของงานนอก/งานเคลม = วันนัดติดตั้งของงานติดตั้ง (YYYY-MM-DD)
+  install_time?: string | null    // เวลานัดติดตั้ง เช่น "9:00"
   courier?: string | null
   notes?: string | null
   address?: string | null
@@ -79,9 +81,19 @@ export function formatOrderLines(r: PrintableOrder): PrintLine[] {
 
   push('')
 
-  // ‼️ ใช้ effShipping (dropoff +2 + เลี่ยงวันอาทิตย์/วันหยุดร้าน) ให้ตรงกับวันที่ที่โชว์บนหน้าจอ — ห้ามใช้ shipping_datetime ดิบ
-  const effShip = effShipping(r)
-  if (effShip && effShip !== '-') push(`ส่งก่อน ${effShip}`)
+  // บรรทัดวันกำหนด — ใช้วันชุดเดียวกับคอลัมน์ "วันที่เหลือ" บนหน้าจอ (effectiveDueDate ใน lib/orderTabs.ts)
+  // งานติดตั้ง → "ติดตั้ง <วันนัด> <เวลา> น." · งานนอก/งานเคลม → "ส่งก่อน <deadline>"
+  // งานแพลตฟอร์ม → "ส่งก่อน" จาก effShipping (dropoff +2 + เลี่ยงวันอาทิตย์/วันหยุดร้าน) — ห้ามใช้ shipping_datetime ดิบ
+  const dl = ymdToDmy(r.deadline)
+  if (r.is_installation && dl) {
+    const t = (r.install_time ?? '').trim().replace(/^(\d{1,2}:\d{2}):\d{2}$/, '$1')
+    push(`ติดตั้ง ${dl}${t ? ` ${t} น.` : ''}`)
+  } else if (isOutsideOrderRow(r) && dl) {
+    push(`ส่งก่อน ${dl}`)
+  } else {
+    const effShip = effShipping(r)
+    if (effShip && effShip !== '-') push(`ส่งก่อน ${effShip}`)
+  }
   if (r.courier) push(r.courier)
   if (r.notes) push(`หมายเหตุ: ${r.notes}`)
 
@@ -108,6 +120,13 @@ export function formatOrderLines(r: PrintableOrder): PrintLine[] {
 
   return lines
 }
+
+// 'YYYY-MM-DD' → 'D/M/YYYY' (รูปแบบเดียวกับวันส่งของงานแพลตฟอร์มในใบ)
+export function ymdToDmy(v: string | null | undefined): string {
+  const m = (v ?? '').match(/^(\d{4})-(\d{2})-(\d{2})/)
+  return m ? `${parseInt(m[3])}/${parseInt(m[2])}/${m[1]}` : ''
+}
+const isOutsideOrderRow = (r: PrintableOrder) => OUTSIDE_PLATFORMS.includes(r.platform ?? '') || !!r.is_installation
 
 export const escPrintHtml = (v: string) => v.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!))
 

@@ -33,6 +33,7 @@ import { todayYmd, ymdLocal } from '@/lib/thaiDate'
 import { useInstallPhotos, photoSaveError, type InstallPhoto } from '@/components/InstallPhotos'
 import { backdropClose } from '@/lib/backdrop'
 import { daysRemaining } from '@/lib/orderTabs'
+import { ymdToDmy } from '@/lib/orderPrint'
 
 type Item = {
   type: string; floors: number | null; rail_head: string; hook_type?: string; fabric_type: string
@@ -626,6 +627,8 @@ export default function ClaimsWorkspace() {
     const recv = [r.ship_name, r.ship_phone].filter(Boolean).join('  ')
     if (recv) push(`ผู้รับ: ${recv}`)
     if (r.ship_address) push(`ที่อยู่: ${r.ship_address}`)
+    // วันกำหนดส่ง — บรรทัดเดียวกับใบออเดอร์ ("ส่งก่อน …")
+    if (ymdToDmy(r.deadline)) push(`ส่งก่อน ${ymdToDmy(r.deadline)}`)
     if (r.courier) push(r.courier)
     if (r.notes) push(`หมายเหตุ: ${r.notes}`)
 
