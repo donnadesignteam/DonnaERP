@@ -12,6 +12,7 @@ import { syncStockCut } from '@/lib/stockCut'
 import HubButton from '@/components/HubButton'
 import PhotoViewer from '@/components/PhotoViewer'
 import { useConfirm } from '@/components/ConfirmDialog'
+import { useShipConfirm } from '@/components/ShipConfirm'
 
 const LS_KEY = 'donna-scan-tech'
 type Tech = { code: string; name: string; stageKey: string }
@@ -101,6 +102,14 @@ function ScanContent() {
   const [camErr, setCamErr] = useState('')
   // กล่องยืนยันของเว็บเอง (ไม่ใช้ window.confirm — ดูเหตุผลใน components/ConfirmDialog.tsx)
   const { ask, confirmDialog } = useConfirm()
+  const { askShip, shipDialog } = useShipConfirm()   // กล่องยืนยันก่อนบันทึกจัดส่งแล้ว (ธีมแบรนด์)
+  const DEMO_SHIP_CONFIRM = process.env.NODE_ENV === 'development' && sp.get('demoShipConfirm') === '1'
+  useEffect(() => {
+    if (!DEMO_SHIP_CONFIRM) return
+    const loop = async () => { for (let i = 0; i < 50; i++) await askShip({ title: '2609263JB77MP6', sub: 'Shopee · คุณตัวอย่าง' }) }   // กดแล้วเด้งขึ้นใหม่ ให้ดูซ้ำได้
+    void loop()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [DEMO_SHIP_CONFIRM])
 
   // อัพโหลดรูปหลังสแกน (แผนกรีด/แพ็ค/แพ็คราง)
   const [uploading, setUploading] = useState<string | null>(null)
@@ -200,6 +209,7 @@ function ScanContent() {
     const claimId = extractClaimId(decoded)
     if (claimId) {
       const cres = await runClaimScan(tech, claimId)
+      if (cres?.cancelled) { try { html5.resume() } catch {}; busyRef.current = false; return }   // กดยกเลิกในกล่องยืนยันจัดส่ง
       // แผนกจัดส่งแล้ว: งานเคลมก็ต่อด้วยสแกนเลขพัสดุเหมือนออเดอร์ (บันทึกลง claims.shipments)
       if (tech.stageKey === 'shipped' && cres?.id) { startBarcode(cres); return }
       // แผนกที่อัพรูปได้ → ค้างหน้าผลให้อัพรูปก่อน (เหมือนออเดอร์ปกติ)
@@ -211,6 +221,7 @@ function ScanContent() {
 
     // ---- โหมดปกติ: สแกน QR ใบออเดอร์ ----
     const res = await runScan(tech, extractId(decoded), extractOrder(decoded))
+    if (res?.cancelled) { try { html5.resume() } catch {}; busyRef.current = false; return }   // กดยกเลิกในกล่องยืนยันจัดส่ง
     // แผนกจัดส่งแล้ว: ติ๊กเสร็จ → ต่อด้วยสแกนบาร์โค้ดเลขพัสดุทันที
     // (QR เก่าของใบเคลมที่ runScan ส่งต่อไปงานเคลม ก็ได้ res.isClaim = true → บันทึกลงงานเคลม)
     if (tech.stageKey === 'shipped' && res?.id) { startBarcode(res); return }
@@ -512,6 +523,7 @@ function ScanContent() {
       order_status: cl.status,
     }
     setOrder(base)
+    if (t.stageKey === 'shipped' && !(await askShip({ title: base.order_number, sub: base.customer_name, claim: true }))) return cancelShipped()
     // รูปที่อัพไว้แล้วของงานเคลม (claims.photos) — แยก query เผื่อยังไม่ได้รัน migrations/add_claim_photos.sql จะได้ไม่พังการสแกน
     supabase.from('claims').select('photos').eq('id', cl.id).single()
       .then(({ data: pr }) => { if (Array.isArray(pr?.photos)) setPhotos(pr.photos.map((x: any) => x?.url).filter(Boolean)) })
@@ -541,6 +553,14 @@ function ScanContent() {
     return done
   }
 
+  // แผนกจัดส่งแล้ว: ถามยืนยันก่อนบันทึก (สแกนจัดส่งแล้ว = ปิดจ๊อบ + ไปต่อหน้าเลขพัสดุ สแกนผิดใบแล้วแก้ยาก) — user ขอ 2ต.ค.69
+  // กดยกเลิก → ไม่บันทึกอะไร กลับไปหน้าสแกน (เปิดจากลิงก์ = ไม่มีกล้อง → ขึ้นว่ายกเลิกแล้ว)
+  const cancelShipped = () => {
+    if (urlOrder || urlId || urlClaim) { setMsg('ยังไม่ได้บันทึกจัดส่ง'); setPhase('undone') }
+    else { setOrder(null); setPhase('scanning') }
+    return { cancelled: true }
+  }
+
   // แบบ all-or-nothing (sql/scan_advance_rpc.sql) — สำเร็จคือครบทุกตาราง พังคือไม่บันทึกอะไรเลย
   async function runScan(t: Tech, id: string, ord: string): Promise<any> {
     const stage = resolveStage(t.stageKey)
@@ -551,6 +571,7 @@ function ScanContent() {
     const o = await findOrder(id, ord)
     if (!o) { setOrder({ order_number: ord || `id:${id}` }); setPhase('noorder'); return null }
     if ('__claimId' in o) return runClaimScan(t, o.__claimId)   // QR เก่าของใบเคลม → เดินสถานะงานเคลมแทน
+    if (t.stageKey === 'shipped' && !(await askShip({ title: o.order_number || o.customer_name || 'ไม่มีเลขคำสั่งซื้อ', sub: o.order_number ? o.customer_name : '' }))) return cancelShipped()
     setOrder(o)
     setPhotos(Array.isArray(o.packing_photos) ? o.packing_photos : [])
 
@@ -657,6 +678,9 @@ function ScanContent() {
   }
 
   if (!ready) return <div style={centerWrap}><div style={{ opacity: 0.6 }}>กำลังโหลด…</div></div>
+
+  // ตัวอย่างกล่องยืนยันจัดส่ง — เฉพาะตอนรัน localhost (next dev) · /scan?demoShipConfirm=1 · ไม่บันทึกอะไร
+  if (DEMO_SHIP_CONFIRM) return <div style={centerWrap}><div style={{ opacity: 0.6 }}>ตัวอย่างกล่องยืนยัน (ไม่บันทึกอะไร)</div>{shipDialog}</div>
 
   // ---------- ตั้งค่าครั้งแรก: เหลือแค่เลือกแผนก ----------
   if (!tech) {
@@ -850,6 +874,7 @@ function ScanContent() {
 
       {/* กล่องยืนยัน (ลบรูป) — ต้องอยู่ท้ายสุดเพื่อทับหน้าพรีวิวรูปเต็มจอ */}
       {confirmDialog}
+      {shipDialog}
     </div>
   )
 }
