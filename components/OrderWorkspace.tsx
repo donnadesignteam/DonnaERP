@@ -359,6 +359,8 @@ const PAYMENT_STATUS_COLOR: Record<string, string> = {
   'ชำระครบ': '#6F8F6A',
 }
 const ORDER_ASSIGNED = ['รออัพเดท', 'แจ้งลงหน้าร้าน', 'พี่ฟอง', 'ช่างเชียงใหม่']
+// ค่าที่ไม่อยู่ในตัวเลือก (เช่น "สรุปออเดอร์" ที่ติดมาจาก Google Sheet ก.ค.) = รออัพเดท — ไม่ให้โผล่เป็นตัวเลือกแปลกในตาราง (ชุดเดียวกับ OrderDetailModal)
+const assignedOf = (v?: string | null) => ORDER_ASSIGNED.includes(v ?? '') ? (v as string) : 'รออัพเดท'
 
 // คอลัมน์ที่ซ่อน/โชว์ได้ ต่อแต่ละแท็บ (คอลัมน์ checkbox เลือกแถว + ··· ซ่อนไม่ได้)
 const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
@@ -1904,7 +1906,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     //    แล้วค้นเจองานแท็บอื่นโผล่ปนมา) — จะค้นทุกงานให้กดแท็บ "ทั้งหมด"
     //    ค้นในแท็บ "ทั้งหมด" = เจอทุกใบรวมจัดส่งแล้ว/ยกเลิกด้วย (แต่ตอนไม่ได้ค้น แท็บนี้ยังไม่โชว์ 2 กลุ่มนั้นเหมือนเดิม)
     const matchQuick = (searching && quickFilter === 'all') || matchQuickTab(r, quickFilter as QuickTab)
-    const matchIncomplete = !incompleteFilter || (!r.items || r.items.length === 0 || !r.deadline || r.price == null || !r.customer_name || (OUTSIDE_PLATFORMS.includes(r.platform ?? '') && (!r.order_assigned || r.order_assigned === 'รออัพเดท')) || ((OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation) && (!r.payment_status || r.payment_status === 'ยังไม่ชำระ')))
+    const matchIncomplete = !incompleteFilter || (!r.items || r.items.length === 0 || !r.deadline || r.price == null || !r.customer_name || (OUTSIDE_PLATFORMS.includes(r.platform ?? '') && assignedOf(r.order_assigned) === 'รออัพเดท') || ((OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation) && (!r.payment_status || r.payment_status === 'ยังไม่ชำระ')))
     const matchUnprinted = !unprintedFilter || !r.printed_at
     const matchPrintedPending = !printedPendingFilter || isPrintedPending(r)
     const matchDropoffPending = !dropoffPendingFilter || isDropoffPending(r)
@@ -1943,7 +1945,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     let rs = displayedFrozen
     if (outPlatformFilters.length) rs = rs.filter(r => outPlatformFilters.includes(r.platform ?? ''))
     if (outPaymentFilters.length) rs = rs.filter(r => outPaymentFilters.includes(r.payment_status || 'ยังไม่ชำระ'))
-    if (outAssignedFilters.length) rs = rs.filter(r => outAssignedFilters.includes(r.order_assigned || 'รออัพเดท'))
+    if (outAssignedFilters.length) rs = rs.filter(r => outAssignedFilters.includes(assignedOf(r.order_assigned)))
     if (outAdminFilters.length) rs = rs.filter(r => outAdminFilters.includes(r.admin_name ?? ''))
     if (outStatusFilters.length) rs = rs.filter(r => outStatusFilters.includes(r.order_status ?? ''))
     if (outDoneFilter !== null) rs = rs.filter(r => !!r.is_urgent === outDoneFilter)
@@ -2551,7 +2553,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
           : r.payment_status === 'มัดจำ50%' && r.price ? r.price / 2 : null
         return auto != null ? money(auto) : money(r.deposit)
       },
-      assigned: r => esc(r.order_assigned || 'รออัพเดท'),
+      assigned: r => esc(assignedOf(r.order_assigned)),
       admin: r => esc(r.admin_name || '-'),
       tech: r => esc(r.technician || '-'),
       status: r => esc(r.order_status || '-'),
@@ -2889,7 +2891,7 @@ ${body}
         {(() => {
           const incompleteCount = scopedRows.filter(r => {
             const matchQ = matchQuickTab(r, quickFilter as QuickTab)
-            return matchQ && (!r.items || r.items.length === 0 || !r.deadline || r.price == null || !r.customer_name || (OUTSIDE_PLATFORMS.includes(r.platform ?? '') && (!r.order_assigned || r.order_assigned === 'รออัพเดท')) || ((OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation) && (!r.payment_status || r.payment_status === 'ยังไม่ชำระ')))
+            return matchQ && (!r.items || r.items.length === 0 || !r.deadline || r.price == null || !r.customer_name || (OUTSIDE_PLATFORMS.includes(r.platform ?? '') && assignedOf(r.order_assigned) === 'รออัพเดท') || ((OUTSIDE_PLATFORMS.includes(r.platform ?? '') || r.is_installation) && (!r.payment_status || r.payment_status === 'ยังไม่ชำระ')))
           }).length
           if (incompleteCount === 0) return null
           return (
@@ -3546,8 +3548,8 @@ ${body}
                     )}
                     {showCol('assigned') && (
                     <td style={{ padding: '8px 14px' }}>
-                      {rowSelect(r.order_assigned || 'รออัพเดท', ORDER_ASSIGNED, v => updateField(r.id, 'order_assigned', v),
-                        { dim: !r.order_assigned || r.order_assigned === 'รออัพเดท', bold: !!r.order_assigned && r.order_assigned !== 'รออัพเดท' })}
+                      {rowSelect(assignedOf(r.order_assigned), ORDER_ASSIGNED, v => updateField(r.id, 'order_assigned', v),
+                        { dim: assignedOf(r.order_assigned) === 'รออัพเดท', bold: assignedOf(r.order_assigned) !== 'รออัพเดท' })}
                     </td>
                     )}
                     {/* แอดมิน — ช่องเดียวกับงานแพลตฟอร์ม (เลือกเองได้ · ระบบทับให้เมื่อแอดมินหลักแก้เนื้อออเดอร์) */}
