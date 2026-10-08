@@ -158,12 +158,18 @@ export function NotifyProvider({ children }: { children: React.ReactNode }) {
     setRead(readMap())
     const onRead = () => setRead(readMap())
     window.addEventListener('board-read', onRead)
-    const all = () => Promise.all([loadApprovals(), loadBoard()]).then(() => setReady(true))
+    // โพสต์/ตอบใหม่เข้ามาทาง realtime (BoardToast ยิง 'board-activity') อยู่แล้ว → ดึงซ้ำตามรอบแค่สำรองกรณี realtime หลุด
+    // เดิมดึงทุก 2 นาทีทุกแท็บแม้ซ่อนอยู่ = ~60% ของคำขอ API ทั้งเว็บ → Log Ingestion ของ Supabase เกินโควตา (8ต.ค.69)
+    // ตอนนี้: ดึงสำรองทุก 15 นาทีเฉพาะแท็บที่เปิดดูอยู่ + กลับมาที่แท็บหลังห่างไปเกิน 5 นาที (เครื่องหลับ/สลับแท็บ realtime อาจพลาด)
+    let last = 0
+    const all = () => { last = Date.now(); return Promise.all([loadApprovals(), loadBoard()]).then(() => setReady(true)) }
     all()
-    const t = setInterval(all, 120000)   // เช็กใหม่ทุก 2 นาที (ตามงานมี realtime ช่วยอีกทาง)
-    const onBoard = () => { loadBoard() }
+    const t = setInterval(() => { if (document.visibilityState === 'visible') all() }, 15 * 60000)
+    const onVisible = () => { if (document.visibilityState === 'visible' && Date.now() - last > 5 * 60000) all() }
+    document.addEventListener('visibilitychange', onVisible)
+    const onBoard = () => { last = Date.now(); loadBoard() }
     window.addEventListener('board-activity', onBoard)
-    return () => { clearInterval(t); window.removeEventListener('board-activity', onBoard); window.removeEventListener('board-read', onRead) }
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('board-activity', onBoard); window.removeEventListener('board-read', onRead) }
   }, [loadApprovals, loadBoard])
 
   const markSeen = useCallback(() => {

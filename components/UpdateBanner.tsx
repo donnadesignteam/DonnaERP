@@ -36,10 +36,18 @@ const clientId = (): string => {
 
 // บันทึกว่าเครื่องนี้/คนนี้กำลังรันเวอร์ชันอะไร (ตาราง client_versions — ต้องรัน sql/add_client_versions.sql ก่อน)
 // เขียนไม่ได้ก็ไม่เป็นไร ปล่อยเงียบ ไม่ให้กระทบการใช้งาน
+// เดิมเขียนทุกครั้งที่เปิด/รีเฟรชหน้า (~300 ครั้ง/วัน กิน Log Ingestion ของ Supabase) → ข้ามถ้าเครื่องนี้เพิ่งรายงาน
+// เวอร์ชันเดิม+คนเดิมไปภายใน 1 ชม. (หน้าตั้งค่ายังเห็นเวอร์ชันถูก แค่ "เวลาล่าสุด" ขยับทีละชั่วโมง)
+const REPORT_KEY = 'donna_version_reported'
 const reportVersion = async (version: string) => {
   try {
     const s = readStaffSession()
-    await supabase.from('client_versions').upsert({
+    const sig = `${version}|${s?.code ?? ''}`
+    try {
+      const prev = JSON.parse(localStorage.getItem(REPORT_KEY) || 'null') as { sig: string; at: number } | null
+      if (prev && prev.sig === sig && Date.now() - prev.at < 60 * 60 * 1000) return
+    } catch { /* อ่านไม่ได้ = รายงานไปเลย */ }
+    const { error } = await supabase.from('client_versions').upsert({
       client_id: clientId(),
       staff_code: s?.code ?? null,
       staff_name: s?.nickname ?? null,
@@ -47,6 +55,7 @@ const reportVersion = async (version: string) => {
       user_agent: navigator.userAgent.slice(0, 300),
       updated_at: new Date().toISOString(),
     })
+    if (!error) localStorage.setItem(REPORT_KEY, JSON.stringify({ sig, at: Date.now() }))
   } catch { /* ไม่มีตาราง/ออฟไลน์ — ข้ามไป */ }
 }
 
