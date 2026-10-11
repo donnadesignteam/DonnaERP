@@ -44,7 +44,7 @@ const ORDER_ASSIGNED = ['รออัพเดท', 'แจ้งลงหน้
 const assignedLabel = (v: unknown) => { const s = String(v ?? '').trim(); return ORDER_ASSIGNED.includes(s) ? s : 'รออัพเดท' }
 
 // ใบที่รายการสินค้าเยอะ (งานติดตั้งทั้งหลัง) → แบ่งหน้า หน้าละ ITEMS_PER_PAGE รายการ ไม่ต้องเลื่อนยาว (user ขอ 15ก.ย.69)
-const ITEMS_PER_PAGE = 5
+const ITEMS_PER_PAGE = 1_000_000   // 11ต.ค.69 user ขอโชว์ทุกรายการในหน้าเดียว (เดิม 5)
 
 const MONEY_FIELDS = new Set(['price', 'deposit', 'paid_amount', 'refund_amount', 'shipping_cost'])
 const baht = (v: number) => '฿' + v.toLocaleString('th-TH', { maximumFractionDigits: 2 })

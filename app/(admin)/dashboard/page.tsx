@@ -507,7 +507,8 @@ export default function DashboardPage() {
   }
 
   // ── แบ่งหน้าตาราง ──
-  const PER_PAGE = isFs ? 7 : 12   // จอติดผนังโชว์น้อยแถว แลกกับตัวหนังสือใหญ่
+  // 11ต.ค.69 user ขอโชว์ทุกรายการในหน้าเดียว (เดิม 12) · จอติดผนังยังแบ่งหน้า 7 แถว (เลื่อนจอไม่ได้ ตัวหนังสือใหญ่)
+  const PER_PAGE = isFs ? 7 : 1_000_000   // ไม่ใช้ Infinity: (หน้า-1)×Infinity = NaN
   const totalPages = Math.max(1, Math.ceil(ordersList.length / PER_PAGE))
   const curPage = Math.min(page, totalPages)
   const pageStart = (curPage - 1) * PER_PAGE
@@ -947,13 +948,13 @@ export default function DashboardPage() {
               <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>
                 แสดง {pageStart + 1} - {Math.min(pageStart + PER_PAGE, ordersList.length)} จากทั้งหมด {ordersList.length.toLocaleString()} รายการ
               </span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {totalPages > 1 && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <button className="dn-page" disabled={curPage === 1} onClick={() => setPage(curPage - 1)}>‹</button>
                 {pageNumbers.map((n, i) => n === 0
                   ? <span key={`gap${i}`} style={{ color: 'var(--ink-4)', padding: '0 2px' }}>…</span>
                   : <button key={n} className={`dn-page${n === curPage ? ' is-on' : ''}`} onClick={() => setPage(n)}>{n}</button>)}
                 <button className="dn-page" disabled={curPage === totalPages} onClick={() => setPage(curPage + 1)}>›</button>
-              </div>
+              </div>}
             </div>
           )}
         </div>
