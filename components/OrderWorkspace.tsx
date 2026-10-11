@@ -1720,7 +1720,16 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       return existing && existing.order_status !== 'ยกเลิก'
     })
 
-    const insertPayload = newRows.map(r => {
+    // ‼️ 11ต.ค.69 เช็กเลขซ้ำกับฐานข้อมูลจริงก่อนบันทึก — isDuplicate ดูจากรายการบนจอ ถ้าเปิดหน้าค้างข้ามคืน
+    //    จะไม่เห็นใบที่คนอื่นเพิ่งลง → นำเข้าไฟล์แล้วได้ออเดอร์ซ้ำ (เคส 2610109UX8GTEK + อีก 4 ใบ)
+    const inDb = new Set<string>()
+    const newNums = newRows.map(r => r.orderNumber).filter(Boolean)
+    for (let i = 0; i < newNums.length; i += 200) {
+      const { data, error: err } = await supabase.from('order_entries').select('order_number').in('order_number', newNums.slice(i, i + 200))
+      if (err) { setPasteSaving(false); setError(`เช็กเลขออเดอร์ซ้ำไม่สำเร็จ: ${err.message}`); return }
+      for (const d of data ?? []) if (d.order_number) inDb.add(d.order_number)
+    }
+    const insertPayload = newRows.filter(r => !inDb.has(r.orderNumber)).map(r => {
       // สถานะ excel = ส่งถึงลูกค้าแล้ว → บันทึกเป็นจัดส่งแล้วเลย พร้อมวันที่จากช่องเวลาส่งสินค้า
       const delivered = isDeliveredStatus(r.orderStatus)
       return {
