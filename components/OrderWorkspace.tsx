@@ -410,7 +410,8 @@ const COLUMN_DEFS: Record<string, { id: string; label: string }[]> = {
 
 // คอลัมน์รายการโชว์ได้ไม่เกินกี่บรรทัด (เกินนี้ขึ้น "+ อีก N รายการ" แทน แถวจะได้ไม่ยืด)
 // ‼️ แถวทุกแท็บสูงเท่ากัน = 2 บรรทัด 56px (.ow-card tbody tr ใน globals.css) — ช่องไหนซ้อน 2 บรรทัด แถวจะสูงกว่าแถวอื่นทันที
-const PAGE_SIZE = 1_000_000   // 11ต.ค.69 user ขอโชว์ทุกรายการในหน้าเดียว ไม่แบ่งหน้า (เดิม 150 · 100 · 50) — ตัวเลขกลับมาได้ถ้าอยากแบ่งอีก
+// 11ต.ค.69 user ขอโชว์ทุกรายการในหน้าเดียว ไม่แบ่งหน้า — ยกเว้นแท็บจัดส่งแล้ว (4,000+ ใบ) หน้าละ 150
+const SHIPPED_PAGE_SIZE = 150
 const DEMO_LOCAL_TICKS = READ_ONLY   // โหมดอ่านอย่างเดียว (โคลน) ติ๊กบนจอได้แต่ไม่บันทึก · เว็บจริง = false
 
 const isClaimRow = (platform: string | null | undefined) => (platform ?? '').startsWith('เคลม:')
@@ -2046,6 +2047,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     : (quickFilter === 'outside' || quickFilter === 'install') ? displayedOut
     : displayed
 
+  const PAGE_SIZE = quickFilter === 'shipped' ? SHIPPED_PAGE_SIZE : Math.max(1, activeDisplayed.length)
   const pageCount = Math.max(1, Math.ceil(activeDisplayed.length / PAGE_SIZE))
   const curPage = Math.min(page, pageCount)
   const pageSlice = <T,>(rs: T[]) => rs.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE)
