@@ -7,6 +7,7 @@ import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { HOLIDAYS } from '@/lib/holidays'
 import { RED_ZONES, CAMPAIGNS, LEAVE_STATUS_COLOR, DAYS_TH, TH_MONTHS, ymdOf, monthCells } from '@/lib/shopCalendar'
 import { useStickyState, usePullToRefresh, useSheetBack, PullIndicator, UpdatedRow, clamp } from './mobileUi'
+import { useResync } from '@/lib/useResync'
 
 // ปฏิทินร้านบนมือถือ — ดูอย่างเดียว (เดสก์ท็อป = app/(admin)/employees ที่มีฟอร์มขอลาด้วย)
 type Leave = {
@@ -58,6 +59,7 @@ export default function MobileCalendar() {
   }
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load() }, [])
+  useResync(load)   // เปิดแอปกลับมาหลังพักไว้นาน/เน็ตกลับมา → ดึงข้อมูลใหม่ (lib/useResync.ts)
 
   const { pull, refreshing, refresh } = usePullToRefresh(load)
   useSheetBack(!!daySheet, () => setDaySheet(null))

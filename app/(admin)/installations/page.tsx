@@ -39,6 +39,8 @@ import { parseMoney } from '@/lib/money'
 import { WORK_PILL_BG, INST_PILL_BG, WORK_TYPES, WORK_TYPE_OPTIONS, ZONES, TECHS, TECH_BY_ZONE,
   normStatus, statusLabel, statusOptions, rowColor, INSTALL_COLUMNS } from '@/lib/installMeta'
 import { backdropClose } from '@/lib/backdrop'
+import { useResync, resyncOnReconnect } from '@/lib/useResync'
+import { changedOnly } from '@/lib/changedOnly'
 
 
 type Installation = {
@@ -325,7 +327,7 @@ export default function InstallationsPage() {
   const [loading, setLoading] = useState(!cached)
   const [year, setYear] = useState(new Date().getFullYear())
   const [month, setMonth] = useState(new Date().getMonth())
-  const [modal, setModal] = useState<{ mode: 'add' | 'edit'; data: Partial<Installation> } | null>(null)
+  const [modal, setModal] = useState<{ mode: 'add' | 'edit'; data: Partial<Installation>; orig?: Installation } | null>(null)   // orig = ค่าตอนเปิดกล่องแก้ (lib/changedOnly)
   const [dayModal, setDayModal] = useState<{ day: number; items: Installation[] } | null>(null)
   const [calView, setCalView] = useState<'month' | 'week' | 'day'>('month')
   const [orderDetail, setOrderDetail] = useState<string | null>(null)   // กดการ์ดนัดหมาย → รายละเอียดออเดอร์ (ป๊อปอัปชุดเดียวกับหน้าภาพรวม)
@@ -472,6 +474,7 @@ export default function InstallationsPage() {
 
 
   useEffect(() => { load() }, [])
+  const resync = useResync(load)   // เปิดค้าง/คอมพัก/เน็ตหลุด → ดึงส่วนที่พลาดกลับมา (lib/useResync.ts)
 
   // แก้ที่หมวดออเดอร์ → ตารางในหน้านี้ขยับตามทันที (sync สองทางแบบเห็นผลเลย ไม่ต้องรีเฟรช)
   useEffect(() => {
@@ -488,7 +491,16 @@ export default function InstallationsPage() {
         const row = payload.new as Installation
         setInstalls(prev => prev.map(i => i.id === row.id ? { ...i, ...row } : i))
       })
-      .subscribe()
+      // ‼️ 11ต.ค.69 เดิมฟังแค่ UPDATE → งานที่เครื่องอื่น/บอทไลน์เพิ่มหรือลบ ไม่ขึ้น/ไม่หายจนกว่าจะรีเฟรช
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'installations' }, payload => {
+        const row = payload.new as Installation
+        setInstalls(prev => prev.some(i => i.id === row.id) ? prev : [row, ...prev])
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'installations' }, payload => {
+        const gone = (payload.old as { id?: string }).id
+        if (gone) setInstalls(prev => prev.filter(i => i.id !== gone))
+      })
+      .subscribe(resyncOnReconnect(resync))
     return () => { supabase.removeChannel(ch) }
   }, [])
 
@@ -629,6 +641,9 @@ export default function InstallationsPage() {
     const name = (d.customer_real_name || d.customer_id || d.serial_no || '').toString()
     let err
     let savedRow: Installation | null = null
+    // แก้: ส่งเฉพาะช่องที่ต่างจากตอนเปิดกล่อง — ไม่ทับสถานะ/วันนัดที่เครื่องอื่น(หรือบอทไลน์)เพิ่งแก้
+    const origInst = modal.orig ?? installs.find(i => i.id === d.id)
+    const editPatch = modal.mode === 'edit' ? changedOnly(payload, origInst) : payload
     if (modal.mode === 'add') {
       const res = await instInsert(payload).select().single()
       err = res.error
@@ -644,12 +659,12 @@ export default function InstallationsPage() {
         })
       }
     } else {
-      const res = await instUpdate(payload).eq('id', d.id)
+      const res = await instUpdate(editPatch).eq('id', d.id)
       err = res.error
       if (!err) {
         const orig = installs.find(i => i.id === d.id)
-        savedRow = { ...(orig ?? {}), ...payload } as Installation
-        trackInst(d.id as string, payload, prevOf(orig ?? {}, payload), `แก้งานติดตั้ง ${name}`)
+        savedRow = { ...(orig ?? {}), ...editPatch } as Installation
+        trackInst(d.id as string, editPatch, prevOf(origInst ?? {}, editPatch), `แก้งานติดตั้ง ${name}`)
       }
     }
     setSaving(false)
@@ -659,7 +674,7 @@ export default function InstallationsPage() {
       ph.commit()   // บันทึกผ่านแล้วค่อยลบไฟล์ของรูปที่กดเอาออก (กดยกเลิกกลางทางรูปเดิมจะไม่หาย)
       setModal(null)
       if (savedRow) await linkOrder(savedRow)   // งานติดตั้ง → สร้างใบออเดอร์ให้ฝ่ายผลิต
-      if (modal.mode === 'edit' && d.id) await pushToOrder(d.id, payload)   // แก้ในปฏิทิน → sync ไปใบออเดอร์
+      if (modal.mode === 'edit' && d.id) await pushToOrder(d.id, editPatch)   // แก้ในปฏิทิน → sync ไปใบออเดอร์
       load()
     }
   }
@@ -1190,7 +1205,7 @@ export default function InstallationsPage() {
     setDayModal(null)
     if (ins.source_order_id) { setOrderDetail(ins.source_order_id); return }
     ph.begin(ins.photos, ins.id)
-    setModal({ mode: 'edit', data: { ...ins } })
+    setModal({ mode: 'edit', data: { ...ins }, orig: ins })
     setApptDate(ins.appointment_datetime?.split('T')[0] ?? '')
     setApptTime(ins.appointment_datetime ? new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : '9:00')
   }
@@ -1886,7 +1901,7 @@ export default function InstallationsPage() {
             <AnchoredMenu rect={actionMenu.rect} minWidth={120} style={{ width: 120, background: '#fff', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', padding: 0, overflow: 'hidden' }}>
               <button onClick={() => {
                 ph.begin(ins.photos, ins.id)
-                setModal({ mode: 'edit', data: { ...ins } })
+                setModal({ mode: 'edit', data: { ...ins }, orig: ins })
                 setApptDate(ins.appointment_datetime?.split('T')[0] ?? '')
                 setApptTime(ins.appointment_datetime ? new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : '9:00')
                 setActionMenu(null)

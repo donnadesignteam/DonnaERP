@@ -21,6 +21,7 @@ import OrderDetailModal from '@/components/OrderDetailModal'
 import ScanToast from '@/components/ScanToast'
 import BoardAnnouncements from '@/components/BoardAnnouncements'
 import { backdropClose } from '@/lib/backdrop'
+import { useResync, resyncOnReconnect } from '@/lib/useResync'
 
 
 type Order = {
@@ -360,6 +361,7 @@ export default function DashboardPage() {
   }
 
   useEffect(() => { load() }, [])
+  const resync = useResync(load)   // จอติดผนัง/เปิดค้าง: realtime หลุดแล้วดึงส่วนที่พลาดกลับมา
 
   // ── อัปเดตสด: เกาะฟังความเปลี่ยนแปลงของ order_entries ──
   // ‼️ เดิมหน้านี้ load() ครั้งเดียวตอนเปิด เปิดค้างไว้บนจอติดผนังตัวเลขจะค้างทั้งวัน
@@ -399,7 +401,7 @@ export default function DashboardPage() {
           return next
         })
       })
-      .subscribe()
+      .subscribe(resyncOnReconnect(resync))
     return () => { supabase.removeChannel(ch) }
   }, [])
 

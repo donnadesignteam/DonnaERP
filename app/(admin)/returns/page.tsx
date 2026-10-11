@@ -221,7 +221,8 @@ export default function ReturnParcelsPage() {
   const openAdd = async () => {
     setCustStep(true)
     if (orderNames === null) {
-      const { data } = await supabase.from('order_entries').select('customer_name, phone, order_number, entry_date')
+      // ‼️ ต้องดึงทุกหน้า — query เดียวได้แค่ 1,000 แถวจาก 4,700+ ใบ ลูกค้าส่วนใหญ่ค้นไม่เจอ (11ต.ค.69)
+      const { data } = await fetchAllRows<Record<string, unknown>>(() => supabase.from('order_entries').select('customer_name, phone, order_number, entry_date').order('id', { ascending: true }))
       setOrderNames((data ?? []).map(r => {
         const o = r as { customer_name: string | null; phone: string | null; order_number: string | null; entry_date: string | null }
         return { name: o.customer_name, phone: o.phone, order_number: o.order_number, date: o.entry_date }

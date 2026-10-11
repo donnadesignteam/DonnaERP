@@ -35,6 +35,7 @@ import { useInstallPhotos, photoSaveError, type InstallPhoto } from '@/component
 import { backdropClose } from '@/lib/backdrop'
 import { daysRemaining, PROD_STATUS_COLOR } from '@/lib/orderTabs'
 import { ymdToDmy } from '@/lib/orderPrint'
+import { changedOnly } from '@/lib/changedOnly'
 
 type Item = {
   type: string; floors: number | null; rail_head: string; hook_type?: string; fabric_type: string
@@ -277,7 +278,7 @@ export default function ClaimsWorkspace() {
   const saveHidden = (next: string[]) => { setHiddenCols(next); try { localStorage.setItem('claims_hidden_cols', JSON.stringify(next)) } catch {} }
   const showCol = (label: string) => !hiddenCols.includes(label)
   const [openColPicker, setOpenColPicker] = useState(false)
-  const [modal, setModal] = useState<{ mode: 'add' | 'edit'; data: Claim } | null>(null)
+  const [modal, setModal] = useState<{ mode: 'add' | 'edit'; data: Claim; orig?: Claim } | null>(null)   // orig = ค่าตอนเปิดกล่องแก้ (lib/changedOnly)
   const [saving, setSaving] = useState(false)
   const [pasteText, setPasteText] = useState('')
   const [parsing, setParsing] = useState(false)
@@ -437,7 +438,8 @@ export default function ClaimsWorkspace() {
   const openAdd = async () => {
     setCustStep(true)
     if (orderNames === null) {
-      const { data } = await supabase.from('order_entries').select('customer_name, phone, order_number, entry_date')
+      // ‼️ ต้องดึงทุกหน้า — query เดียวได้แค่ 1,000 แถวจาก 4,700+ ใบ ลูกค้าส่วนใหญ่ค้นไม่เจอ (11ต.ค.69)
+      const { data } = await fetchAllRows<Record<string, unknown>>(() => supabase.from('order_entries').select('customer_name, phone, order_number, entry_date').order('id', { ascending: true }))
       setOrderNames((data ?? []).map(r => {
         const o = r as { customer_name: string | null; phone: string | null; order_number: string | null; entry_date: string | null }
         return { name: o.customer_name, phone: o.phone, order_number: o.order_number, date: o.entry_date }
@@ -451,7 +453,7 @@ export default function ClaimsWorkspace() {
     setPasteText(''); setParseError(''); setItemsPaste(''); setItemsParseErr(''); ph.begin([], null)
     setModal({ mode: 'add', data: { ...emptyClaim(), customer_username: name, ...(phone ? { ship_phone: phone } : {}) } })
   }
-  const openEdit = (c: Claim) => { setPasteText(c.raw_text ?? ''); setParseError(''); setItemsPaste(''); setItemsParseErr(''); ph.begin(c.photos, c.id); setModal({ mode: 'edit', data: { ...c } }) }
+  const openEdit = (c: Claim) => { setPasteText(c.raw_text ?? ''); setParseError(''); setItemsPaste(''); setItemsParseErr(''); ph.begin(c.photos, c.id); setModal({ mode: 'edit', data: { ...c }, orig: c }) }
   // ทำซ้ำ — เปิดกล่องเพิ่มเคสที่กรอกค่าจากเคสเดิมไว้ให้ ตรวจ/แก้ก่อนกดบันทึกเป็นเคสใหม่
   // ‼️ ไม่ก๊อป: เลขพัสดุ/วันจัดส่ง · เวลาปริ้น · การปิดงาน · รูป (ของเคสเดิมทั้งนั้น)
   const duplicateClaim = (c: Claim) => {
@@ -558,18 +560,19 @@ export default function ClaimsWorkspace() {
         redoOps: [opInsert('claims', saved)],
       })
     } else {
-      const old = rows.find(r => r.id === d.id)
-      const res = await claimUpdate(payload).eq('id', d.id).select().single()
+      const old = modal.orig ?? rows.find(r => r.id === d.id)
+      const patch = changedOnly(payload, old)   // ส่งเฉพาะช่องที่แก้ — ไม่ทับสถานะที่เครื่องอื่นเพิ่งเปลี่ยน
+      const res = await claimUpdate(patch).eq('id', d.id).select().single()
       setSaving(false)
       if (res.error) { setError(claimErr(res.error.message)); return }
       setRows(prev => prev.map(r => r.id === d.id ? res.data as Claim : r))
-      const prev = prevOf(old ?? {}, payload)
+      const prev = prevOf(old ?? {}, patch)
       recordAction({
         label: `แก้เคลม ${name}`,
         undo: async () => { await claimUpdate(prev).eq('id', d.id); await load() },
-        redo: async () => { await claimUpdate(payload).eq('id', d.id); await load() },
+        redo: async () => { await claimUpdate(patch).eq('id', d.id); await load() },
         undoOps: [opUpdate('claims', d.id, prev)],
-        redoOps: [opUpdate('claims', d.id, payload)],
+        redoOps: [opUpdate('claims', d.id, patch)],
       })
     }
     ph.commit()   // บันทึกผ่านแล้วค่อยลบไฟล์ของรูปที่กดเอาออก (กดยกเลิกกลางทางรูปเดิมจะไม่หาย)

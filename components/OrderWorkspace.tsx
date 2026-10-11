@@ -7,6 +7,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { syncRows, byEntryDateDesc } from '@/lib/rowCache'
+import { useResync, resyncOnReconnect } from '@/lib/useResync'
+import { changedOnly } from '@/lib/changedOnly'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, ITEM_FIELDS, ITEM_FIELD_OPTIONS, shownFields, visibleItemCols, railNoField, itemFieldMissing, itemInputValue, buildItemSuggestions, emptyItem as emptyRawItem } from '@/lib/itemFormat'
@@ -504,6 +506,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const { snapshot, stable, live } = useStableView<Entry>(rows)
   const [loading, setLoading] = useState(!cached)
   const [modal, setModal] = useState<{ mode: 'add' | 'edit'; data: Partial<Entry> } | null>(null)
+  // ค่าของใบตอนกดเปิดแก้ไข — บันทึกแล้วส่งเฉพาะช่องที่ต่างจากนี้ (ดู saveInner)
+  const editOrigRef = useRef<Entry | null>(null)
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
   const [statusFilters, setStatusFilters] = useState<string[]>([])
@@ -706,6 +710,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   }
 
   useEffect(() => { load() }, [])
+  const resync = useResync(load)   // เปิดค้าง/คอมพัก/เน็ตหลุด → ดึงส่วนที่พลาดกลับมา (lib/useResync.ts)
 
   // อัปเดตสด: สแกน/แก้จากเครื่องอื่นแล้วตารางนี้เปลี่ยนเองโดยไม่ต้องรีเฟรช
   // ‼️ 11ก.ย.69 เดิม INSERT/DELETE สั่ง load() = ดึงออเดอร์+งานติดตั้ง+เคลม "ทั้งตาราง" ใหม่ทุกเครื่องที่เปิดหน้านี้
@@ -745,7 +750,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
           if (id) setRows(prev => prev.filter(r => r.id !== id))
         }
       })
-      .subscribe()
+      .subscribe(resyncOnReconnect(resync))
     return () => { supabase.removeChannel(ch) }
   }, [])
 
@@ -863,11 +868,12 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       : (!isClaimAdd && inferPlatform(d.order_number)) || null
     // สั่งนอกจากรายการสินค้า: มีข้อความ → ทับช่องสั่งนอกของออเดอร์ + ประทับเวลาเมื่อข้อความเปลี่ยน
     const itemsOut = itemsOutsourceText(modalItems)
-    const prevOutsource = modal.mode === 'edit' ? (rows.find(r => r.id === d.id)?.outsource ?? '') : ''
+    const origRow = modal.mode === 'edit' ? (editOrigRef.current?.id === d.id ? editOrigRef.current : rows.find(r => r.id === d.id)) : undefined
+    const prevOutsource = origRow?.outsource ?? ''
     const outsourceVal = itemsOut || d.outsource || null
     // ‼️ ส่งช่องแอดมินไปเฉพาะตอนที่คนกรอกเปลี่ยนเอง — ถ้าส่งไปทุกครั้ง ระบบจะถือว่า "เลือกเอง"
     //    แล้วไม่ใส่ชื่อแอดมินหลักที่มาแก้ให้อัตโนมัติ (ดู stampUpdate ใน lib/adminActor.ts)
-    const prevAdmin = modal.mode === 'edit' ? (rows.find(r => r.id === d.id)?.admin_name ?? '') : ''
+    const prevAdmin = origRow?.admin_name ?? ''
     const adminPicked = (d.admin_name ?? '') !== prevAdmin
     const payload = {
       entry_date: d.entry_date || null,
@@ -961,14 +967,17 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
         redoOps: [opInsert('order_entries', saved)],
       })
     } else {
-      const orig = rows.find(r => r.id === d.id)
+      const orig = origRow
       // รายการสินค้าไม่ได้แก้ = ตัด items ออกจากคำสั่ง → ชื่อแอดมิน/โบนัสไม่ขยับ
       // (กติกา 3 ส.ค. 69: แก้เฉพาะรายการสินค้าเท่านั้นที่ย้าย/ล้างเจ้าของโบนัส — ดู lib/adminActor.ts)
       if (orig && JSON.stringify(orig.items ?? null) === JSON.stringify(payload.items ?? null)) delete (payload as Record<string, unknown>).items
+      // ‼️ 11ต.ค.69 ส่งเฉพาะช่องที่ต่างจากตอนเปิดกล่อง — เดิมส่งทุกช่อง ระหว่างเปิดกล่องแก้อยู่ถ้ามีคนสแกนเปลี่ยนสถานะ/ติ๊กจัดส่ง
+      //    กดบันทึกแล้วค่าเก่าในกล่องทับกลับ (สถานะย้อน) · ซิงค์ปฏิทินยังใช้ payload เต็มเหมือนเดิม
+      const patch: Record<string, unknown> = changedOnly(payload, orig)
       // ‼️ maybeSingle ไม่ใช่ single — ถ้า update ไม่โดนแถวไหนเลย single() จะโยน PGRST116
       //    ("Cannot coerce the result to a single JSON object") ซึ่งแอดมินอ่านไม่รู้เรื่อง
       //    เกิดได้เมื่อแถวถูกลบไปแล้ว หรือเป็นแถวงานเคลม (id อยู่ตาราง claims ไม่ใช่ order_entries)
-      const qUpd = oeUpdate(payload).eq('id', d.id).select().maybeSingle()
+      const qUpd = oeUpdate(patch).eq('id', d.id).select().maybeSingle()
       const sigUpd = abortAfter(20000)
       const res = await withTimeout(sigUpd ? qUpd.abortSignal(sigUpd) : qUpd, 'บันทึกออเดอร์')
       if (res.error) { setError(`บันทึกไม่สำเร็จ: ${res.error.message}`); return }
@@ -978,14 +987,23 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       }
       // งานต่อเนื่องพลาดไม่ทำให้ใบที่บันทึกแล้วหาย — แจ้งเป็นคำเตือนแทน (เหตุผลเดียวกับตอนเพิ่มใบใหม่)
       try {
-        await withTimeout(syncInstallation({ ...payload, admin_name: d.admin_name || null }, String(d.id)), 'ซิงค์ปฏิทินงานติดตั้ง')
+        // เป็นงานติดตั้งอยู่แล้วทั้งก่อน/หลัง → ส่งไปปฏิทินเฉพาะช่องที่แก้ (ไม่ทับวันนัด/หมายเหตุที่ปฏิทินหรือบอทไลน์เพิ่งแก้)
+        // สลับเป็น/ไม่เป็นงานติดตั้ง → syncInstallation เต็มแบบเดิม (สร้าง/ลบแถวปฏิทิน)
+        const instPatch = orig?.is_installation && payload.is_installation
+          ? installPatchFromOrder(patch, { ...orig, ...payload } as Record<string, unknown>) : null
+        let instDone = false
+        if (instPatch) {
+          const r = await withTimeout(instUpdate({ ...instPatch, updated_at: now }).eq('source_order_id', String(d.id)).select('id'), 'ซิงค์ปฏิทินงานติดตั้ง') as { data: unknown[] | null }
+          instDone = !!r.data?.length   // ไม่มีแถวในปฏิทิน (เคยถูกลบ) → ให้ syncInstallation สร้างใหม่ข้างล่าง
+        }
+        if (!instDone) await withTimeout(syncInstallation({ ...payload, admin_name: d.admin_name || null }, String(d.id)), 'ซิงค์ปฏิทินงานติดตั้ง')
         if (payload.is_installation) await withTimeout(saveOrderPhotos(String(d.id)), 'บันทึกรูปหน้างาน')
         if (outsourceVal || prevOutsource) await withTimeout(syncOutsourcePO(String(d.id), payload.customer_name, payload.order_number, outsourceVal, modalItems), 'ซิงค์ใบสั่งซื้อ')
       } catch (e) {
         setError(`บันทึกออเดอร์แล้ว แต่ ${e instanceof Error ? e.message : String(e)}`)
       }
       setRows(prev => prev.map(r => r.id === d.id ? res.data as Entry : r))
-      if (orig) trackOrderField(String(d.id), payload, prevOf(orig, payload), `แก้ออเดอร์ ${oname}`)
+      if (orig) trackOrderField(String(d.id), patch, prevOf(orig, patch), `แก้ออเดอร์ ${oname}`)
     }
     setModal(null)
     setAddType(null)
@@ -4574,6 +4592,7 @@ ${body}
             <button onClick={() => {
               setOpenAction(null); setActionRect(null)
               if (isClaimEntry(r)) { router.push(`/claims?claim=${r.claim_id}`); return }
+              editOrigRef.current = r
               setModal({ mode: 'edit', data: { ...r, items: null } }); void loadOrderPhotos(r); setModalItems(Array.isArray(r.items) ? [...(r.items as Item[])] : []); setItemsPasteText('')
             }}
               style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)' }}>

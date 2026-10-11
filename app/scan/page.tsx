@@ -323,9 +323,13 @@ function ScanContent() {
     if (save && info && shipNosRef.current.length > 0) {
       setShipSaving(true)
       const now = new Date().toISOString()
+      // ‼️ อ่านเลขพัสดุล่าสุดจากฐานก่อนต่อท้าย — info.existing เป็นค่าตอนสแกน QR ระหว่างนั้นถ้ามีคนใส่เลขจากหน้าเว็บ จะโดนทับหาย
+      const { data: cur } = await supabase.from(info.isClaim ? 'claims' : 'order_entries').select('shipments').eq('id', info.id).maybeSingle()
+      const base: { no?: string }[] = Array.isArray(cur?.shipments) ? cur.shipments : info.existing
       const list = [
-        ...info.existing,
-        ...shipNosRef.current.map(x => ({ no: x.no, carrier: x.carrier, status: '', events: null, checked_at: null })),
+        ...base,
+        ...shipNosRef.current.filter(x => !base.some(b => b?.no === x.no))   // เลขที่มีอยู่แล้วไม่ใส่ซ้ำ
+          .map(x => ({ no: x.no, carrier: x.carrier, status: '', events: null, checked_at: null })),
       ]
       // งานเคลม → claims.shipments (+ outbound_tracking ช่องเดิม ให้ตรงกับ popup จัดส่งแล้วในหน้าเคลม)
       const { error } = info.isClaim
@@ -591,6 +595,8 @@ function ScanContent() {
         setPhase('already'); setMsg(`สถานะปัจจุบัน: ${data.current_status || 'รอดำเนินการ'}`); return null
       }
       if (data?.result === 'not_found') { setPhase('noorder'); return null }
+      // sql/scan_guard_20261011.sql — ใบยกเลิกแล้วไม่เดินสถานะ
+      if (data?.result === 'cancelled') { setPhase('error'); setMsg('ออเดอร์นี้ถูกยกเลิกแล้ว — ไม่ได้บันทึก ถ้าจะทำต่อให้แอดมินเปลี่ยนสถานะก่อน'); return null }
       setPhase('error'); setMsg(String(data?.result || 'อัปเดตไม่สำเร็จ')); return null
     }
 

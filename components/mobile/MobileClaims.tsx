@@ -11,6 +11,7 @@ import { PROD_STATUS_COLOR } from '@/lib/orderTabs'
 import { useStickyState, useScrollRestore, usePullToRefresh, PullIndicator, UpdatedRow, CardSkeleton, pillBtn, searchInput, clamp } from './mobileUi'
 import ScanFolderButton from './ScanFolderButton'
 import { usePhotoViewer, type Photo } from './PhotoStrip'
+import { useResync } from '@/lib/useResync'
 
 // หน้างานเคลมบนมือถือ — ดูอย่างเดียว แก้ไม่ได้ (คนละไฟล์กับ ClaimsWorkspace ของเดสก์ท็อป)
 type Claim = {
@@ -76,6 +77,7 @@ export default function MobileClaims() {
   }
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load() }, [])
+  useResync(load)   // เปิดแอปกลับมาหลังพักไว้นาน/เน็ตกลับมา → ดึงข้อมูลใหม่ (lib/useResync.ts)
 
   const { pull, refreshing, refresh } = usePullToRefresh(load)
   useScrollRestore('claims', !loading)

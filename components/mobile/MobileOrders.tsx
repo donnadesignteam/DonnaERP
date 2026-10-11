@@ -11,6 +11,7 @@ import { effShipping } from '@/lib/shipping'
 import { ORDER_TABS, matchQuickTab, PROD_STATUS_COLOR, effectiveDueDate, daysRemaining, daysLabel, daysColor, type QuickTab } from '@/lib/orderTabs'
 import { useStickyState, useScrollRestore, usePullToRefresh, PullIndicator, UpdatedRow, CardSkeleton, pillBtn, searchInput, clamp } from './mobileUi'
 import ScanFolderButton from './ScanFolderButton'
+import { useResync } from '@/lib/useResync'
 
 // หน้าออเดอร์บนมือถือ — ดูอย่างเดียว แก้ไม่ได้ (ตามที่ผู้ใช้สั่ง)
 // ‼️ เป็นคนละไฟล์กับหน้าเดสก์ท็อป (OrderWorkspace) โดยตั้งใจ — ของเดิมเป็นตาราง+จิ้มแก้ในช่อง ยัดลงมือถือไม่ไหว
@@ -71,6 +72,7 @@ export default function MobileOrders() {
   // โหลดข้อมูลตอนเปิดหน้า (แนวเดียวกับหน้าอื่นทั้งเว็บ) — setState เกิดหลัง await ไม่ได้ทำให้ render ซ้อน
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load() }, [])
+  useResync(load)   // เปิดแอปกลับมาหลังพักไว้นาน/เน็ตกลับมา → ดึงข้อมูลใหม่ (lib/useResync.ts)
 
   const { pull, refreshing, refresh } = usePullToRefresh(load)
   useScrollRestore('orders', !loading)

@@ -13,6 +13,7 @@ import { useStickyState, usePullToRefresh, useSheetBack, PullIndicator, UpdatedR
 import ScanFolderButton from './ScanFolderButton'
 import { usePhotoViewer, type Photo } from './PhotoStrip'
 import OrderDetailModal from '@/components/OrderDetailModal'
+import { useResync } from '@/lib/useResync'
 
 // ปฏิทินงานติดตั้งบนมือถือ — ดูอย่างเดียว (เดสก์ท็อป = app/(admin)/installations)
 type Installation = {
@@ -85,6 +86,7 @@ export default function MobileInstallations() {
   }
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load() }, [])
+  useResync(load)   // เปิดแอปกลับมาหลังพักไว้นาน/เน็ตกลับมา → ดึงข้อมูลใหม่ (lib/useResync.ts)
 
   const { pull, refreshing, refresh } = usePullToRefresh(load)
   useSheetBack(!!daySheet, () => setDaySheet(null))
