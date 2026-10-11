@@ -51,7 +51,7 @@ const fmtDateTime = (d: string | null) =>
   d ? new Date(d).toLocaleString('th-TH', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'
 
 // ลูกค้าประจำออเดอร์เยอะ → แบ่งหน้าเหมือนเดสก์ท็อป
-const ORDERS_PER_PAGE = 1_000_000   // 11ต.ค.69 user ขอโชว์ทุกใบในหน้าเดียว (เดิม 5)
+const ORDERS_PER_PAGE = 5
 
 export default function MobileCustomer() {
   const params = useSearchParams()
