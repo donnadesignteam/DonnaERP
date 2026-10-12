@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { matchSerial, installSerial } from '@/lib/serialNo'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
@@ -175,6 +175,7 @@ export default function MobileInstallations() {
   }
   // มาจากลิงก์ที่บอทไลน์ส่งหลังลงนัด ?focus=<id> → เปิดแผ่นของวันนั้น เลื่อนไปที่การ์ดงานแล้วกระพริบ · งานที่ยังไม่มีวัน โชว์ผ่านผลค้นหาด้วยเลขงาน
   const [flashId, setFlashId] = useState<string | null>(null)
+  const refocus = useRef<string | null>(null)   // งานที่ต้องเลื่อนตามอีกรอบหลังโหลดครบ
   // ดึงเฉพาะงานที่ลิงก์ชี้มาก่อนเลย ไม่รอ load() ทั้งปฏิทิน — เดิมต้องรอโหลดทุกงานเสร็จถึงจะเปิดแผ่นวัน (user บอกช้า 13ต.ค.69)
   useEffect(() => {
     const want = new URLSearchParams(window.location.search).get('focus')
@@ -201,14 +202,34 @@ export default function MobileInstallations() {
     const dt = j.appointment_datetime ? new Date(j.appointment_datetime) : null
     if (dt && !isNaN(dt.getTime())) { setSearch(''); setSelDate(dt); setDaySheet(ymdOf(dt.getFullYear(), dt.getMonth(), dt.getDate())) }
     else setSearch(installSerial(j.serial_no) || j.customer_id || j.customer_real_name || '')
+    if (updatedAt === null) refocus.current = want   // ปฏิทินยังโหลดไม่จบ → จบแล้วต้องตามไปอีกรอบ (effect ถัดไป)
     setFlashId(want)
   }, [updatedAt, rows])   // eslint-disable-line react-hooks/exhaustive-deps
+  // โหลดทั้งปฏิทินเสร็จ → การ์ดในแผ่นวันเรียงตามเวลาจริงแล้ว เลื่อนไปหาและกระพริบใหม่อีกรอบ
+  useEffect(() => {
+    const id = refocus.current
+    if (!id || updatedAt === null) return
+    refocus.current = null
+    setFlashId(null)
+    setTimeout(() => setFlashId(id), 80)
+  }, [updatedAt])
   useEffect(() => {
     if (!flashId) return
-    const t0 = setTimeout(() => document.querySelector(`[data-inst-row="${flashId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 350)   // รอแผ่นรายละเอียดวันเลื่อนขึ้นมาก่อน
+    // ‼️ แถว/การ์ดอาจย้ายที่หลังเลื่อนไปแล้ว (ตารางโหลดครบ → จัดลำดับ/ตัวกรองทำงาน) จนหลุดนอกจอ (user เจอ 13ต.ค.69)
+    //    → ตามไปตลอดช่วงที่กระพริบ: หลุดจากกลางจอเมื่อไหร่ เลื่อนกลับเข้ามาใหม่
+    let first = true
+    const follow = () => {
+      const el = document.querySelector(`[data-inst-row="${flashId}"]`)
+      if (!el) return
+      const r = el.getBoundingClientRect()
+      if (first || r.top < 70 || r.bottom > window.innerHeight - 50) el.scrollIntoView({ behavior: first ? 'smooth' : 'auto', block: 'center' })
+      first = false
+    }
+    const t0 = setTimeout(follow, 350)
+    const iv = setInterval(follow, 400)
     const t1 = setTimeout(() => setFlashId(null), 3600)
-    return () => { clearTimeout(t0); clearTimeout(t1) }
-  }, [flashId])
+    return () => { clearTimeout(t0); clearInterval(iv); clearTimeout(t1) }
+  }, [flashId])   // 350 = รอแผ่นรายละเอียดวันเลื่อนขึ้นมาก่อน
 
   const monthCount = cells.reduce<number>((n, d) => n + (d ? (byDay.get(ymdOf(year, month, d))?.length ?? 0) : 0), 0)
   const searching = search.trim().length > 0

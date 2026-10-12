@@ -480,6 +480,7 @@ export default function InstallationsPage() {
 
   // มาจากลิงก์ที่บอทไลน์ส่งหลังลงนัด /installations?focus=<id> → ล้างตัวกรองให้แถวโผล่ เลื่อนไปหาแล้วกระพริบแถวนั้น (แบบเดียวกับ /claims?focus=)
   const [flashId, setFlashId] = useState<string | null>(null)
+  const refocus = useRef<string | null>(null)   // งานที่ต้องเลื่อนตามอีกรอบหลังโหลดครบ
   // ดึงเฉพาะงานที่ลิงก์ชี้มาก่อนเลย ไม่รอ load() ทั้งตาราง — เดิมต้องรอโหลดทุกงานเสร็จถึงจะเลื่อน (user บอกช้า 13ต.ค.69)
   useEffect(() => {
     const want = new URLSearchParams(window.location.search).get('focus')
@@ -500,13 +501,33 @@ export default function InstallationsPage() {
     }
     window.history.replaceState(null, '', window.location.pathname)
     setListFilter('all'); setZoneFilter([]); setSearch(''); cf.clearFilters()
+    if (!(fetched && sortOrder.length)) refocus.current = want   // ตารางยังโหลด/จัดลำดับไม่จบ → จบแล้วต้องตามไปอีกรอบ (effect ถัดไป)
     setFlashId(want)
   }, [fetched, installs])   // eslint-disable-line react-hooks/exhaustive-deps
+  // โหลดทั้งตารางเสร็จและจัดลำดับแล้ว → แถวอยู่ที่จริงของมัน เลื่อนไปหาและกระพริบใหม่อีกรอบ
+  useEffect(() => {
+    const id = refocus.current
+    if (!id || !fetched || !sortOrder.length) return
+    refocus.current = null
+    setFlashId(null)
+    setTimeout(() => setFlashId(id), 80)
+  }, [fetched, sortOrder])
   useEffect(() => {
     if (!flashId) return
-    const t0 = setTimeout(() => document.querySelector(`[data-inst-row="${flashId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
-    const t1 = setTimeout(() => setFlashId(null), 3200)
-    return () => { clearTimeout(t0); clearTimeout(t1) }
+    // ‼️ แถว/การ์ดอาจย้ายที่หลังเลื่อนไปแล้ว (ตารางโหลดครบ → จัดลำดับ/ตัวกรองทำงาน) จนหลุดนอกจอ (user เจอ 13ต.ค.69)
+    //    → ตามไปตลอดช่วงที่กระพริบ: หลุดจากกลางจอเมื่อไหร่ เลื่อนกลับเข้ามาใหม่
+    let first = true
+    const follow = () => {
+      const el = document.querySelector(`[data-inst-row="${flashId}"]`)
+      if (!el) return
+      const r = el.getBoundingClientRect()
+      if (first || r.top < 70 || r.bottom > window.innerHeight - 50) el.scrollIntoView({ behavior: first ? 'smooth' : 'auto', block: 'center' })
+      first = false
+    }
+    const t0 = setTimeout(follow, 50)
+    const iv = setInterval(follow, 400)
+    const t1 = setTimeout(() => setFlashId(null), 3600)
+    return () => { clearTimeout(t0); clearInterval(iv); clearTimeout(t1) }
   }, [flashId])
 
   // แก้ที่หมวดออเดอร์ → ตารางในหน้านี้ขยับตามทันที (sync สองทางแบบเห็นผลเลย ไม่ต้องรีเฟรช)
