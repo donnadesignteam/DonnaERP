@@ -173,6 +173,33 @@ export default function MobileInstallations() {
     const dt = j.appointment_datetime ? new Date(j.appointment_datetime) : null
     if (dt) setDaySheet(ymdOf(dt.getFullYear(), dt.getMonth(), dt.getDate()))
   }
+  // มาจากลิงก์ที่บอทไลน์ส่งหลังลงนัด ?focus=<id> → เปิดแผ่นของวันนั้น เลื่อนไปที่การ์ดงานแล้วกระพริบ · งานที่ยังไม่มีวัน โชว์ผ่านผลค้นหาด้วยเลขงาน
+  const [flashId, setFlashId] = useState<string | null>(null)
+  useEffect(() => {
+    const want = new URLSearchParams(window.location.search).get('focus')
+    if (!want) return
+    const j = rows.find(r => r.id === want)
+    if (!j) {
+      if (updatedAt === null) return   // ยังมีแค่ข้อมูลแคช รอ load() รอบนี้จบก่อนค่อยฟ้องว่าไม่เจอ
+      window.history.replaceState(null, '', window.location.pathname)
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setError('ไม่พบงานติดตั้งใบนี้ (อาจถูกลบไปแล้ว)')
+      return
+    }
+    window.history.replaceState(null, '', window.location.pathname)
+    setZone('')
+    const dt = j.appointment_datetime ? new Date(j.appointment_datetime) : null
+    if (dt && !isNaN(dt.getTime())) { setSearch(''); setSelDate(dt); setDaySheet(ymdOf(dt.getFullYear(), dt.getMonth(), dt.getDate())) }
+    else setSearch(installSerial(j.serial_no) || j.customer_id || j.customer_real_name || '')
+    setFlashId(want)
+  }, [updatedAt, rows])   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!flashId) return
+    const t0 = setTimeout(() => document.querySelector(`[data-inst-row="${flashId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 350)   // รอแผ่นรายละเอียดวันเลื่อนขึ้นมาก่อน
+    const t1 = setTimeout(() => setFlashId(null), 3600)
+    return () => { clearTimeout(t0); clearTimeout(t1) }
+  }, [flashId])
+
   const monthCount = cells.reduce<number>((n, d) => n + (d ? (byDay.get(ymdOf(year, month, d))?.length ?? 0) : 0), 0)
   const searching = search.trim().length > 0
 
@@ -182,7 +209,7 @@ export default function MobileInstallations() {
     const itemLines = formatItemLines(j.source_order_id ? (orderItems[j.source_order_id] ?? null) : null)
     const dt = j.appointment_datetime ? new Date(j.appointment_datetime) : null
     return (
-      <div key={j.id} className={`sc-mitem${j.source_order_id ? ' sc-link' : ''}`} style={{ background: CHIP_BG[c] ?? 'var(--cream-2)' }}
+      <div key={j.id} data-inst-row={j.id} className={`sc-mitem${j.source_order_id ? ' sc-link' : ''}${flashId === j.id ? ' card-flash' : ''}`} style={{ background: CHIP_BG[c] ?? 'var(--cream-2)' }}
         onClick={e => { if ((e.target as HTMLElement).closest('a, button')) return; openJob(j) }}>
         <i className="sc-dot" style={{ background: c }} />
         <div style={{ flex: 1, minWidth: 0 }}>

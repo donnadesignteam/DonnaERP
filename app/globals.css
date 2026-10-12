@@ -482,6 +482,9 @@ table.dn-list input[type="checkbox"]:checked::after { content: ''; position: abs
 /* แถวที่เด้งมาจากลิงก์ กระพริบน้ำตาลอ่อน 3 ครั้ง */
 @keyframes row-flash { 0%,100% { background-color: transparent; } 50% { background-color: #e8d5bf; } }
 tr.row-flash, tr.row-flash > td { animation: row-flash 1s ease-in-out 3; }
+/* การ์ดงาน (มือถือ) ที่เด้งมาจากลิงก์ — การ์ดมีสีพื้นของตัวเอง จึงกระพริบที่ขอบแทนพื้น */
+@keyframes card-flash { 0%,100% { box-shadow: 0 0 0 0 rgba(158,106,73,0); } 50% { box-shadow: 0 0 0 3px rgba(158,106,73,0.8); } }
+.sc-mitem.card-flash { animation: card-flash 1s ease-in-out 3; }
 /* โฟลเดอร์ลูกค้า: รายละเอียดออเดอร์แบ่ง 2 คอลัมน์ให้เต็มจอ · จอแคบกลับเป็นคอลัมน์เดียว */
 .odb-cols { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 0 14px; align-items: start; }
 @media (max-width: 1100px) { .odb-cols { grid-template-columns: minmax(0, 1fr); } }

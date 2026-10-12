@@ -325,6 +325,7 @@ export default function InstallationsPage() {
   // งานไม่หายจากปฏิทิน/รายการทันทีตอนเปลี่ยนสถานะ — กรองด้วย stable() แสดงผลด้วย live() (ดู lib/useStableView.ts)
   const { snapshot, stable, live } = useStableView<Installation>(installs)
   const [loading, setLoading] = useState(!cached)
+  const [fetched, setFetched] = useState(false)   // load() รอบแรกจบแล้ว (ตอนยังมีแค่แคช งานที่เพิ่งลงจากบอทอาจยังไม่อยู่ในรายการ)
   const [year, setYear] = useState(new Date().getFullYear())
   const [month, setMonth] = useState(new Date().getMonth())
   const [modal, setModal] = useState<{ mode: 'add' | 'edit'; data: Partial<Installation>; orig?: Installation } | null>(null)   // orig = ค่าตอนเปิดกล่องแก้ (lib/changedOnly)
@@ -452,6 +453,7 @@ export default function InstallationsPage() {
     setInstalls(rows)
     snapshot(rows)   // ตั้งจุดอ้างอิงใหม่ → งานที่เพิ่งเปลี่ยนสถานะค้างไว้ ออกจากปฏิทิน/รายการตอนนี้
     setLoading(false)
+    setFetched(true)
     // ดึงรายการสินค้าจากออเดอร์ต้นทางมาโชว์ในคอลัมน์ "รายการ"
     const orderIds = rows.map(r => r.source_order_id).filter((v): v is string => !!v)
     if (orderIds.length) {
@@ -475,6 +477,29 @@ export default function InstallationsPage() {
 
   useEffect(() => { load() }, [])
   const resync = useResync(load)   // เปิดค้าง/คอมพัก/เน็ตหลุด → ดึงส่วนที่พลาดกลับมา (lib/useResync.ts)
+
+  // มาจากลิงก์ที่บอทไลน์ส่งหลังลงนัด /installations?focus=<id> → ล้างตัวกรองให้แถวโผล่ เลื่อนไปหาแล้วกระพริบแถวนั้น (แบบเดียวกับ /claims?focus=)
+  const [flashId, setFlashId] = useState<string | null>(null)
+  useEffect(() => {
+    const want = new URLSearchParams(window.location.search).get('focus')
+    if (!want) return
+    if (!installs.some(r => r.id === want)) {
+      if (!fetched) return
+      window.history.replaceState(null, '', window.location.pathname)
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setError('ไม่พบงานติดตั้งใบนี้ (อาจถูกลบไปแล้ว)')
+      return
+    }
+    window.history.replaceState(null, '', window.location.pathname)
+    setListFilter('all'); setZoneFilter([]); setSearch(''); cf.clearFilters()
+    setFlashId(want)
+  }, [fetched, installs])   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!flashId) return
+    const t0 = setTimeout(() => document.querySelector(`[data-inst-row="${flashId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
+    const t1 = setTimeout(() => setFlashId(null), 3200)
+    return () => { clearTimeout(t0); clearTimeout(t1) }
+  }, [flashId])
 
   // แก้ที่หมวดออเดอร์ → ตารางในหน้านี้ขยับตามทันที (sync สองทางแบบเห็นผลเลย ไม่ต้องรีเฟรช)
   useEffect(() => {
@@ -1821,7 +1846,7 @@ export default function InstallationsPage() {
                   notes: ins.notes || '',
                 }
                 return (
-                  <tr key={ins.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <tr key={ins.id} data-inst-row={ins.id} className={flashId === ins.id ? 'row-flash' : undefined} style={{ borderBottom: '1px solid var(--border)' }}>
                     {COLS.filter(c => showCol(c.id)).map(c => (
                       <td key={c.id} className={cellEmpty[c.id] ? 'ow-empty' : undefined} style={{
                         padding: c.id === 'items' ? '6px 14px' : '12px 14px',

@@ -33,7 +33,7 @@ export default function PhoneRedirect() {
     const target = MOBILE_OF[pathname ?? '']
     if (!target) return                        // หน้าที่ยังไม่มีเวอร์ชันมือถือ = เปิดหน้าเดสก์ท็อปไปตามเดิม
     if (pathname === '/dashboard' && readStaffSession()) { router.replace('/m/me'); return }
-    router.replace(target)
+    router.replace(target + window.location.search)   // พก query ไปด้วย (เช่น /installations?focus=<id> จากลิงก์ของบอทไลน์)
   }, [router, pathname])
 
   if (!forced) return null
