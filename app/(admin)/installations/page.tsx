@@ -480,6 +480,14 @@ export default function InstallationsPage() {
 
   // มาจากลิงก์ที่บอทไลน์ส่งหลังลงนัด /installations?focus=<id> → ล้างตัวกรองให้แถวโผล่ เลื่อนไปหาแล้วกระพริบแถวนั้น (แบบเดียวกับ /claims?focus=)
   const [flashId, setFlashId] = useState<string | null>(null)
+  // ดึงเฉพาะงานที่ลิงก์ชี้มาก่อนเลย ไม่รอ load() ทั้งตาราง — เดิมต้องรอโหลดทุกงานเสร็จถึงจะเลื่อน (user บอกช้า 13ต.ค.69)
+  useEffect(() => {
+    const want = new URLSearchParams(window.location.search).get('focus')
+    if (!want) return
+    supabase.from('installations').select('*').eq('id', want).maybeSingle().then(({ data }) => {
+      if (data) setInstalls(prev => prev.some(i => i.id === data.id) ? prev : [data as Installation, ...prev])
+    })
+  }, [])
   useEffect(() => {
     const want = new URLSearchParams(window.location.search).get('focus')
     if (!want) return

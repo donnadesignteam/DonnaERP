@@ -175,6 +175,16 @@ export default function MobileInstallations() {
   }
   // มาจากลิงก์ที่บอทไลน์ส่งหลังลงนัด ?focus=<id> → เปิดแผ่นของวันนั้น เลื่อนไปที่การ์ดงานแล้วกระพริบ · งานที่ยังไม่มีวัน โชว์ผ่านผลค้นหาด้วยเลขงาน
   const [flashId, setFlashId] = useState<string | null>(null)
+  // ดึงเฉพาะงานที่ลิงก์ชี้มาก่อนเลย ไม่รอ load() ทั้งปฏิทิน — เดิมต้องรอโหลดทุกงานเสร็จถึงจะเปิดแผ่นวัน (user บอกช้า 13ต.ค.69)
+  useEffect(() => {
+    const want = new URLSearchParams(window.location.search).get('focus')
+    if (!want) return
+    supabase.from('installations')
+      .select('id, serial_no, appointment_datetime, work_type, platform, customer_id, customer_real_name, province, install_zone, phone, work_details, location_link, price, notes, payment_status, installation_status, send_to_technician, source_order_id, photos')
+      .eq('id', want).maybeSingle().then(({ data }) => {
+        if (data) setRows(prev => prev.some(r => r.id === data.id) ? prev : [...prev, data as Installation])
+      })
+  }, [])
   useEffect(() => {
     const want = new URLSearchParams(window.location.search).get('focus')
     if (!want) return
