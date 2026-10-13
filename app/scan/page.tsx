@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { STAGES, stageByKey } from '@/lib/staff'
 import { readStaffSession, type StaffSession } from '@/lib/staffSession'
+import { reuseQuery } from '@/lib/reuse'
 import { detectCarrier, CARRIER_OPTIONS } from '@/lib/carriers'
 import { uploadPackingFile, deletePackingFile, compressImage } from '@/lib/packingPhotos'
 import { cutMeters, round2 } from '@/lib/fabricUsage'
@@ -190,6 +191,18 @@ function ScanContent() {
     if (busyRef.current || !html5 || !tech) return
     busyRef.current = true
     try { await html5.pause(true) } catch {}
+
+    // ---- QR ใบใช้ของ (พัสดุส่งกลับ / งานยกเลิก-ตีกลับ) — คนละสายกับงานผลิต/งานเคลม/แพ็คราง/จัดส่ง ----
+    // เช็กก่อนทุกอย่าง: ต้องไม่ไหลไป runScan / runClaimScan และต้องไม่ถูกเก็บเป็นเลขพัสดุ
+    const useQ = reuseQuery(decoded)
+    if (useQ && modeRef.current === 'barcode') {
+      setShipMsg('อันนี้คือ QR ใบใช้ของ — ให้จ่อ QR บนใบปะหน้าพัสดุ')
+      setTimeout(() => setShipMsg(''), 2200)
+      setTimeout(() => { try { html5.resume() } catch {}; busyRef.current = false }, 1100)
+      return
+    }
+    // ไปหน้า /use ด้วย origin ของเครื่องนี้ (ใบที่ปริ้นจากเครื่อง dev ชี้ localhost) — หน้า /use บันทึกว่าใครเอาไปใช้ ไม่เดินสถานะงาน
+    if (useQ) { window.location.href = `/use?${useQ}`; return }
 
     // ---- โหมดสแกน QR เลขพัสดุ ----
     if (modeRef.current === 'barcode') {

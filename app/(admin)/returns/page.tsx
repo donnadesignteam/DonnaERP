@@ -29,6 +29,7 @@ import CreamSelect from '@/components/CreamSelect'
 import { CourierIcon } from '@/components/BrandMark'
 import { useStableView } from '@/lib/useStableView'
 import { TH_MONTHS } from '@/lib/shopCalendar'
+import { loadReuse, printReuse, undoReuse, reuseKey, reuseWho, reuseWhen, type ReuseMap } from '@/lib/reuse'
 
 type Media = { url: string; name?: string; caption?: string }
 type Parcel = {
@@ -162,6 +163,16 @@ export default function ReturnParcelsPage() {
   const showCol = (id: ColId) => !hiddenCols.includes(id)
   const [openColPicker, setOpenColPicker] = useState(false)
   const [month, setMonth] = useState('all')   // 'all' | 'YYYY-MM' (เดือนที่ลงพัสดุ)
+  // "ใช้ของ" — พัสดุที่มีคนสแกนใบใช้ของแล้ว ย้ายไปช่อง "ใช้แล้ว" (lib/reuse.ts)
+  const [reuse, setReuse] = useState<ReuseMap>({})
+  const [useView, setUseView] = useState<'pending' | 'used'>('pending')
+  const usedOf = (r: Parcel) => reuse[reuseKey('parcel', r.id)]
+  // สแกนใบใช้ของทำบนมือถือ → กลับมาที่หน้าต่างนี้แล้วดึงสถานะ "ใช้แล้ว" ใหม่ ไม่ต้องรีเฟรชหน้า
+  useEffect(() => {
+    const again = () => { void loadReuse(['parcel']).then(({ map, error: e }) => { if (!e) setReuse(map) }) }
+    window.addEventListener('focus', again)
+    return () => window.removeEventListener('focus', again)
+  }, [])
   const { ask, confirmDialog } = useConfirm()
 
   const load = async () => {
@@ -172,6 +183,8 @@ export default function ReturnParcelsPage() {
     setRows(data)
     snapshot(data)
     setLoading(false)
+    // ยังไม่ได้รัน sql/create_item_reuse.sql = ไม่มีใครถูกนับว่าใช้แล้ว หน้าเดิมยังใช้ได้ปกติ (ไม่ฟ้อง error ตรงนี้)
+    void loadReuse(['parcel']).then(({ map }) => setReuse(map))
     const ids = [...new Set(data.map(r => r.claim_id).filter(Boolean))] as string[]
     if (ids.length) {
       const map: Record<string, ClaimLite> = {}
@@ -381,7 +394,8 @@ export default function ReturnParcelsPage() {
   const monthOptions = useMemo(() => Array.from(new Set(rows.map(monthKey).filter(Boolean))).sort().reverse(), [rows])
   const monthLabel = (k: string) => { const [y, m] = k.split('-'); return `${TH_MONTHS[Number(m) - 1]} ${Number(y) + 543}` }
   const monthRows = rows.map(stable).filter(r => month === 'all' || monthKey(r) === month)
-  const stableRows = monthRows
+  const usedCount = monthRows.filter(r => usedOf(r)).length
+  const stableRows = monthRows.filter(r => !!usedOf(r) === (useView === 'used'))
   const filtered = stableRows.filter(r => {
     const c = r.claim_id ? claims[r.claim_id] : null
     const matchSearch = !q || matchSerial(r.serial_no, q) || [r.sender_name, itemsText(r.items), r.carrier, r.tracking_no, r.orig_carrier, r.orig_tracking_no, r.orig_order_number, r.address, r.phone, c?.original_order_number, c?.customer_username]
@@ -419,6 +433,21 @@ export default function ReturnParcelsPage() {
     if (!get) return []
     const vals = Array.from(new Set(stableRows.map(r => String(get(r) ?? '') || NONE)))
     return vals.filter(v => v !== NONE).sort((a, b) => a.localeCompare(b, 'th')).concat(vals.includes(NONE) ? [NONE] : [])
+  }
+
+  // ปริ้นใบใช้ของ (เมนู ⋯) — รายการแบบเดียวกับใบออเดอร์ + QR ไปหน้า /use
+  const printUse = async (r: Parcel) => {
+    const ok = await printReuse({
+      kind: 'parcel', id: r.id, head: `พัสดุส่งกลับ${r.serial_no ? ' ' + r.serial_no : ''}`,
+      order: { entry_date: r.created_at, customer_name: r.sender_name, order_number: r.orig_order_number, serial_no: r.serial_no, items: parcelItems(r.items) },
+    })
+    if (!ok) setError('เบราว์เซอร์บล็อก popup — โปรดอนุญาต popup เพื่อปริ้น')
+  }
+  const unUse = async (r: Parcel) => {
+    if (!(await ask(`ยกเลิก "ใช้แล้ว" ของ "${label(r)}" ? (กลับไปช่องยังไม่ใช้)`, { okText: 'ยกเลิกใช้แล้ว' }))) return
+    const e = await undoReuse('parcel', r.id)
+    if (e) { setError(e); return }
+    setReuse(p => { const n = { ...p }; delete n[reuseKey('parcel', r.id)]; return n })
   }
 
   // ปริ้นตารางตามที่กรอง/เรียง/โชว์คอลัมน์อยู่บนจอ (วิดีโอ/รูป = จำนวน)
@@ -570,11 +599,14 @@ export default function ReturnParcelsPage() {
 
       {/* แถวที่ 2 — ปุ่มคอลัมน์ชิดขวา ตำแหน่งเดียวกับแถวแท็บของหน้าออเดอร์ */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 18, alignItems: 'center', flexWrap: 'wrap' }}>
-        {/* แท็บ ทั้งหมด — แบบเดียวกับหมวดออเดอร์ · กดแล้วล้างตัวกรองคอลัมน์ (จำนวน = ตามเดือน/คำค้น/ตัวกรองที่ใช้อยู่) */}
-        <button onClick={clearColFilters} className="ow-tab" data-active title={anyColFilter ? 'กดเพื่อล้างตัวกรองคอลัมน์' : undefined}>
-          ทั้งหมด
-          <span className="ow-tab-n">{displayed.length.toLocaleString()}</span>
-        </button>
+        {/* แท็บ ยังไม่ใช้ / ใช้แล้ว — หน้าตาแท็บเดียวกับหมวดออเดอร์ · สแกนใบใช้ของแล้วแถวย้ายมา "ใช้แล้ว" (lib/reuse.ts)
+            ‼️ เดิมเป็นแท็บ "ทั้งหมด" อันเดียว — user สั่งเอาออก เหลือแค่สองแท็บนี้ (13ต.ค.69) · จำนวน = ตามเดือนที่เลือก */}
+        {(['pending', 'used'] as const).map(v => (
+          <button key={v} onClick={() => setUseView(v)} className="ow-tab" data-active={useView === v || undefined}>
+            {v === 'pending' ? 'ยังไม่ใช้' : 'ใช้แล้ว'}
+            <span className="ow-tab-n">{(v === 'pending' ? monthRows.length - usedCount : usedCount).toLocaleString()}</span>
+          </button>
+        ))}
         {/* เลือกคอลัมน์ที่จะโชว์ — ติ๊กออก = ซ่อน */}
         <div style={{ position: 'relative', marginLeft: 'auto' }}>
           <button onClick={() => setOpenColPicker(v => !v)}
@@ -616,6 +648,7 @@ export default function ReturnParcelsPage() {
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)', fontSize: 14 }}>
             <div style={{ fontSize: 36, marginBottom: 12 }}>📦</div>
             {q ? <>ไม่เจอ &quot;{search}&quot; — <button onClick={() => setSearch('')} style={{ border: 'none', background: 'none', color: 'var(--blue)', cursor: 'pointer', fontSize: 14, padding: 0 }}>ล้างคำค้น</button></>
+               : useView === 'used' ? <>ยังไม่มีพัสดุที่ถูกเอาไปใช้ — กด ⋯ ท้ายแถว → &quot;ปริ้นใช้ของ&quot; แล้วสแกน QR บนใบตอนเอาของไปใช้</>
                : <>ยังไม่มีพัสดุส่งกลับ — กด &quot;＋ เพิ่มรายการ&quot; ด้านบนเพื่อเริ่มลงรายการแรก</>}
           </div>
         ) : (
@@ -623,6 +656,7 @@ export default function ReturnParcelsPage() {
             <thead>
               <tr>
                 {ALL_COLS.filter(c => showCol(c.id)).map(c => headCell(c.id, th))}
+                {useView === 'used' && <th style={th}>ใช้โดย</th>}
                 <th style={{ ...th, width: 40 }} />
               </tr>
             </thead>
@@ -698,6 +732,11 @@ export default function ReturnParcelsPage() {
                           setEditing(null)
                           if ((c?.id ?? null) !== r.claim_id) void pickClaim(r, c)
                         }} />
+                    </td>
+                    )}
+                    {useView === 'used' && (
+                    <td style={{ ...td, padding: '12px', whiteSpace: 'nowrap', fontSize: 12 }}>
+                      {usedOf(r) && <><b style={{ color: 'var(--ink)' }}>{reuseWho(usedOf(r))}</b><div style={{ color: 'var(--ink-3)' }}>{reuseWhen(usedOf(r))}</div></>}
                     </td>
                     )}
                     <td style={{ ...td, padding: '8px' }}>
@@ -791,6 +830,17 @@ export default function ReturnParcelsPage() {
                 style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, color: 'var(--ink-2)', borderRadius: 10, fontFamily: 'inherit' }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--cream-2)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>แก้ไข</button>
+              {/* ปริ้นใช้ของ = ใบรายการแบบใบออเดอร์ + QR · สแกนแล้วจำว่าใครเอาไปใช้ แถวย้ายไปช่อง "ใช้แล้ว" */}
+              <button onClick={() => { setActionMenu(null); void printUse(r) }}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, color: 'var(--ink-2)', borderRadius: 10, fontFamily: 'inherit' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--cream-2)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>ปริ้นใช้ของ</button>
+              {usedOf(r) && (
+              <button onClick={() => { setActionMenu(null); void unUse(r) }}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, color: 'var(--ink-2)', borderRadius: 10, fontFamily: 'inherit' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--cream-2)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>ยกเลิกใช้แล้ว</button>
+              )}
               <button onClick={() => { setActionMenu(null); void delRow(r) }}
                 style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, color: 'var(--red)', borderRadius: 10, fontFamily: 'inherit' }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--red-bg)')}

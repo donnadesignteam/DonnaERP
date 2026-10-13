@@ -10,6 +10,7 @@ import { CANCELLED_COLS, returnedFromOrder, type CancelledOrder, type ReturnedFr
 import { formatItemLines } from '@/lib/itemFormat'
 import { fabricStatus } from '@/lib/fabricStatus'
 import { backdropClose } from '@/lib/backdrop'
+import { loadReuse, printReuse, undoReuse, reuseKey, reuseWho, reuseWhen, type ReuseKind, type ReuseMap } from '@/lib/reuse'
 
 export type StockTab = 'overview' | 'fabric' | 'rail' | 'office' | 'outsource' | 'returned'
 type Cat = Exclude<StockTab, 'overview' | 'fabric'>
@@ -212,10 +213,41 @@ export function StockItemsTab({ category, addReq = 0 }: { category: Cat; addReq?
     })()
   }, [all, category])
 
-  const rows = useMemo(() => (category === 'returned' ? mergeReturned(all.filter(it => it.category === 'returned'), cancelled) : all.filter(it => it.category === category))
+  // งานยกเลิก-ตีกลับ: "ใช้ของ" — ปริ้นใบใช้ของ แล้วสแกน QR ตอนเอาของไปใช้ → แถวย้ายไปช่อง "ใช้แล้ว" (lib/reuse.ts)
+  // แถวจากออเดอร์ยกเลิกอ้างด้วย id ออเดอร์ (id ของแถวเปลี่ยนได้เมื่อมีหมายเหตุ) · แถวที่ลงเองอ้างด้วย id ของ stock_items
+  const [reuse, setReuse] = useState<ReuseMap>({})
+  const [useView, setUseView] = useState<'pending' | 'used'>('pending')
+  const reuseRefOf = (it: Item): { kind: ReuseKind; id: string } => it.auto ? { kind: 'order', id: it.auto.order.id } : { kind: 'stock', id: it.id }
+  const usedOf = (it: Item) => { const k = reuseRefOf(it); return reuse[reuseKey(k.kind, k.id)] }
+  useEffect(() => {
+    if (category !== 'returned') return
+    const again = () => { void loadReuse(['stock', 'order']).then(({ map, error: e }) => { if (!e) setReuse(map) }) }
+    again()
+    window.addEventListener('focus', again)   // สแกนบนมือถือแล้วกลับมาหน้าต่างนี้ → ดึงใหม่
+    return () => window.removeEventListener('focus', again)
+  }, [category])
+  const returnedAll = useMemo(() => category === 'returned' ? mergeReturned(all.filter(it => it.category === 'returned'), cancelled) : [], [all, cancelled, category])
+  const printUse = async (it: Item) => {
+    const k = reuseRefOf(it)
+    const ok = await printReuse(it.auto
+      ? { ...k, head: `งาน${it.source ?? 'ยกเลิก'} · ${it.auto.what}`, order: { entry_date: it.auto.cancelledAt, platform: it.auto.order.platform, customer_name: it.auto.order.customer_name, order_number: it.auto.order.order_number, items: it.auto.items } }
+      : { ...k, head: `งาน${it.source ?? 'ยกเลิก'}`, text: [fmtDate(it.created_at), it.ref ?? '', '', it.name, `จำนวน ${it.qty} ${it.unit ?? ''}`.trim(), it.notes ? `หมายเหตุ: ${it.notes}` : ''].filter((l, i) => l || i === 2).join('\n') })
+    if (!ok) setError('เบราว์เซอร์บล็อก popup — โปรดอนุญาต popup เพื่อปริ้น')
+  }
+  const unUse = async (it: Item) => {
+    if (!(await ask(`ยกเลิก "ใช้แล้ว" ของ "${it.ref || it.name}" ? (กลับไปช่องยังไม่ใช้)`, { okText: 'ยกเลิกใช้แล้ว' }))) return
+    const k = reuseRefOf(it)
+    const e = await undoReuse(k.kind, k.id)
+    if (e) { setError(e); return }
+    setReuse(p => { const n = { ...p }; delete n[reuseKey(k.kind, k.id)]; return n })
+  }
+
+  const rows = useMemo(() => (category === 'returned' ? returnedAll : all.filter(it => it.category === category))
+    .filter(it => category !== 'returned' || !!usedOf(it) === (useView === 'used'))
     .filter(it => category !== 'outsource' || (shipped.has(it.id) ? 'จัดส่งแล้ว' : 'ของเข้าแล้ว') === view)
     .filter(it => !q || [it.code, it.name, it.vendor, it.ref, it.notes].some(v => (v ?? '').toLowerCase().includes(q.toLowerCase()))),
-  [all, cancelled, category, q, shipped, view])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [all, returnedAll, category, q, shipped, view, reuse, useView])
 
   // ปุ่ม "＋ เพิ่มรายการ" อยู่ที่หัวหน้าสต็อก (ตำแหน่งเดียวกันทุกแท็บ) — กดแล้ว addReq เพิ่ม → เปิดฟอร์มเพิ่มของแท็บนี้
   const firstReq = useRef(addReq)
@@ -296,6 +328,16 @@ export function StockItemsTab({ category, addReq = 0 }: { category: Cat; addReq?
             </button>
           )
         })}
+        {category === 'returned' && (['pending', 'used'] as const).map(v => {
+          const n = returnedAll.filter(it => !!usedOf(it) === (v === 'used')).length
+          return (
+            <button key={v} onClick={() => setUseView(v)}
+              style={{ padding: '7px 16px', borderRadius: 999, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                       border: useView === v ? 'none' : '1px solid var(--border-2)', background: useView === v ? 'var(--brand)' : 'var(--surface)', color: useView === v ? '#FFF8F0' : 'var(--ink-2)' }}>
+              {v === 'pending' ? 'ยังไม่ใช้' : 'ใช้แล้ว'} {n}
+            </button>
+          )
+        })}
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>{rows.length} รายการ</span>
       </div>
@@ -306,11 +348,16 @@ export function StockItemsTab({ category, addReq = 0 }: { category: Cat; addReq?
           <thead><tr>{COLS[category].map(c => <th key={c.label} style={{ textAlign: 'left' }}>{c.label}</th>)}<th /></tr></thead>
           <tbody>
             {loading ? <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--ink-3)' }}>กำลังโหลด…</td></tr>
-              : rows.length === 0 ? <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: 28 }}>ยังไม่มีรายการ — กด &quot;＋ เพิ่มรายการ&quot; มุมขวาบน</td></tr>
+              : rows.length === 0 ? <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: 28 }}>{category === 'returned' && useView === 'used' ? <>ยังไม่มีของที่ถูกเอาไปใช้ — กด &quot;ปริ้นใช้ของ&quot; ท้ายแถว แล้วสแกน QR บนใบตอนเอาของไปใช้</> : <>ยังไม่มีรายการ — กด &quot;＋ เพิ่มรายการ&quot; มุมขวาบน</>}</td></tr>
               : rows.map(it => (
                 <tr key={it.id}>
                   {COLS[category].map(c => <td key={c.label}>{c.label.startsWith('หมายเหตุ') ? <NoteCell value={it.notes ?? ''} onSave={v => saveNote(it, v)} /> : c.get(it)}</td>)}
                   <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                    {category === 'returned' && <>
+                    {usedOf(it) && <span style={{ fontSize: 12, color: 'var(--ink-3)', marginRight: 10 }}>ใช้โดย <b style={{ color: 'var(--ink)' }}>{reuseWho(usedOf(it))}</b> · {reuseWhen(usedOf(it))}</span>}
+                    <button onClick={() => printUse(it)} style={{ ...btn, padding: '6px 12px', fontSize: 12.5, background: 'var(--cream)', color: PILL_INK, marginRight: 6 }}>ปริ้นใช้ของ</button>
+                    {usedOf(it) && <button onClick={() => unUse(it)} style={{ ...btn, padding: '6px 12px', fontSize: 12.5, background: 'transparent', color: PILL_INK, marginRight: 6 }}>ยกเลิกใช้แล้ว</button>}
+                    </>}
                     {!it.auto && <>
                     <button onClick={() => setEdit(it)} style={{ ...btn, padding: '6px 12px', fontSize: 12.5, background: 'var(--cream)', color: PILL_INK, marginRight: 6 }}>แก้ไข</button>
                     <button onClick={() => remove(it)} style={{ ...btn, padding: '6px 12px', fontSize: 12.5, background: 'transparent', color: '#B3261E' }}>ลบ</button>
