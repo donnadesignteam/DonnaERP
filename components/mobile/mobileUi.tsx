@@ -99,7 +99,14 @@ export function usePullToRefresh(onRefresh: () => Promise<void> | void) {
 
     const onStart = (e: TouchEvent) => {
       // ลากได้เฉพาะตอนอยู่บนสุดของหน้า ไม่งั้นจะไปแย่งการเลื่อนปกติ
-      const ok = window.scrollY <= 0 && !busy.current
+      // ‼️ นิ้วเริ่มในแผ่น/หน้าต่างที่ลอยทับ (position: fixed) หรือกล่องที่เลื่อนในตัวเองได้ → ไม่นับเป็นการลากรีเฟรช
+      //    เดิมเปิดแผ่นรายละเอียดวันแล้วเลื่อนกลับขึ้น หน้าหลังยังอยู่บนสุด เลยโดนจับเป็นลากรีเฟรช เลื่อนรายการไม่ได้ (user เจอ 13ต.ค.69)
+      let inner = false
+      for (let el = e.target as HTMLElement | null; el && el !== document.body; el = el.parentElement) {
+        const cs = getComputedStyle(el)
+        if (cs.position === 'fixed' || (/auto|scroll/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 1)) { inner = true; break }
+      }
+      const ok = window.scrollY <= 0 && !busy.current && !inner
       startY.current = ok ? e.touches[0].clientY : null
       startX.current = ok ? e.touches[0].clientX : null
     }

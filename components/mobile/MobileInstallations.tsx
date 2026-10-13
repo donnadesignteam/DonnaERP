@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { HOLIDAYS } from '@/lib/holidays'
-import { formatItemLines, type RawItem } from '@/lib/itemFormat'
+import { itemBlockLines, type RawItem } from '@/lib/itemFormat'
 import { DAYS_TH, TH_MONTHS, ymdOf, monthCells } from '@/lib/shopCalendar'
 import { rowColor, normStatus, statusLabel } from '@/lib/installMeta'
 import { useStickyState, usePullToRefresh, useSheetBack, PullIndicator, UpdatedRow, clamp } from './mobileUi'
@@ -41,6 +41,52 @@ type Installation = {
 //    (ทำแบบเดียวกับหน้าเดสก์ท็อป app/(admin)/installations)
 
 const ZONES = ['เชียงราย', 'เชียงใหม่', 'กทม']
+
+// รายการสินค้าในการ์ดงาน — กล่องละรายการ หน้าตาเดียวกับ "รายการสินค้า" ในหน้าต่างรายละเอียดออเดอร์ (OrderDetailBody)
+// ‼️ เดิมเป็นบรรทัด • เรียงยาว งานทั้งหลัง 30 รายการอ่านยาก (user ขอ 13ต.ค.69) · หมายเหตุของรายการแยกบรรทัดให้เห็นชัด
+// เกิน ITEMS_SHOWN รายการ → พับไว้ กดดูทั้งหมดได้
+const ITEMS_SHOWN = 4
+function JobItems({ items }: { items: RawItem[] }) {
+  const [all, setAll] = useState(false)
+  const shown = all ? items : items.slice(0, ITEMS_SHOWN)
+  return (
+    <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 5 }}>
+      <div style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>รายการสินค้า ({items.length})</div>
+      {shown.map((it, i) => {
+        const lines = itemBlockLines(it, { hideNote: true })
+        const qty = Number(it.quantity) || null
+        const note = String(it.note ?? '').trim()
+        return (
+          <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: 'rgba(255,255,255,0.65)', borderRadius: 10, padding: '7px 10px' }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              {lines.map((ln, li) => (
+                <div key={li} style={{
+                  fontSize: li === 0 ? 13.5 : 12.5, fontWeight: li === 0 ? 700 : 400,
+                  color: li === 0 ? 'var(--ink)' : (ln.rail ? 'var(--brand)' : 'var(--ink-soft)'),
+                  lineHeight: 1.45, wordBreak: 'break-word',
+                }}>{ln.t}</div>
+              ))}
+              {note && <div style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.45, marginTop: 2, wordBreak: 'break-word' }}>หมายเหตุ: {note}</div>}
+              {it.outsource ? (
+                <span className="dn-pill" style={{ minWidth: 0, fontSize: 11, padding: '1px 8px', marginTop: 4, color: '#6B4326', background: '#F0C0B7' }}>สั่งนอก {String(it.outsource)}</span>
+              ) : null}
+            </div>
+            <div style={{ flexShrink: 0, textAlign: 'right', minWidth: 34 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.3 }}>{qty ?? '—'}</div>
+              {it.unit && <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>{it.unit}</div>}
+            </div>
+          </div>
+        )
+      })}
+      {items.length > ITEMS_SHOWN && (
+        <button onClick={() => setAll(v => !v)} className="sc-mpill"
+          style={{ alignSelf: 'flex-start', border: 'none', cursor: 'pointer', background: 'rgba(255,255,255,0.65)', fontFamily: 'inherit' }}>
+          {all ? 'ย่อรายการ' : `ดูทั้งหมด ${items.length} รายการ`}
+        </button>
+      )}
+    </div>
+  )
+}
 
 export default function MobileInstallations() {
   const cached = getPageCache<Installation[]>('installations')
@@ -237,7 +283,7 @@ export default function MobileInstallations() {
   // การ์ดงาน 1 ใบ — หน้าตาเดียวกับรายการในหน้าต่างรายละเอียดวันบนคอม (.sc-mitem) · ใช้ทั้งแผ่นรายละเอียดวันและผลค้นหา
   const jobCard = (j: Installation, showDate = false) => {
     const c = rowColor(j)
-    const itemLines = formatItemLines(j.source_order_id ? (orderItems[j.source_order_id] ?? null) : null)
+    const items = j.source_order_id ? (orderItems[j.source_order_id] ?? []) : []
     const dt = j.appointment_datetime ? new Date(j.appointment_datetime) : null
     return (
       <div key={j.id} data-inst-row={j.id} className={`sc-mitem${j.source_order_id ? ' sc-link' : ''}${flashId === j.id ? ' card-flash' : ''}`} style={{ background: CHIP_BG[c] ?? 'var(--cream-2)' }}
@@ -255,15 +301,7 @@ export default function MobileInstallations() {
             {j.location_link && <a href={j.location_link} target="_blank" rel="noreferrer" className="sc-mpill" style={{ textDecoration: 'none', background: 'rgba(255,255,255,0.65)' }}>📍 ดูแผนที่</a>}
           </div>
           {j.work_details && <div className="sc-mnote" style={{ color: 'var(--ink-2)', lineHeight: 1.5, ...clamp(4) }}>{j.work_details}</div>}
-          {itemLines.length > 0 ? (
-            <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {itemLines.map((line, i) => (
-                <div key={i} style={{ fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.45, display: 'flex', gap: 6 }}>
-                  <span style={{ color: 'var(--ink-4)', flexShrink: 0 }}>•</span><span>{line}</span>
-                </div>
-              ))}
-            </div>
-          ) : (itemsLoading && j.source_order_id) ? (
+          {items.length > 0 ? <JobItems items={items} /> : (itemsLoading && j.source_order_id) ? (
             // รายการสินค้าอยู่คนละตาราง โหลดตามมาทีหลัง — บอกให้รู้ว่ายังไม่จบ ไม่ใช่ "ไม่มีของ"
             <div className="sc-mnote">กำลังโหลดรายการสินค้า…</div>
           ) : null}
