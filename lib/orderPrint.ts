@@ -4,11 +4,12 @@
 import { itemBlockLines, type RawItem } from '@/lib/itemFormat'
 import { effShipping } from '@/lib/shipping'
 import { OUTSIDE_PLATFORMS } from '@/lib/orderTabs'
+import { moneyLines, type MoneyOrder } from '@/lib/orderMoney'
 
 export type PrintLine = { t: string; rail?: boolean }
 
 // ช่องที่ใบออเดอร์ใช้ — เขียนแบบหลวมๆ ให้ Entry ของหน้าออเดอร์และแถวที่ดึงตรงจาก order_entries ใส่ได้ทั้งคู่
-export type PrintableOrder = {
+export type PrintableOrder = MoneyOrder & {
   entry_date?: string | null
   platform?: string | null
   customer_name?: string | null
@@ -29,7 +30,8 @@ export type PrintableOrder = {
   admin_name?: string | null
 }
 
-export function formatOrderLines(r: PrintableOrder): PrintLine[] {
+// opts.noMoney = ไม่ใส่บรรทัดยอดเงิน (ใบใช้ของ)
+export function formatOrderLines(r: PrintableOrder, opts: { noMoney?: boolean } = {}): PrintLine[] {
   const lines: PrintLine[] = []
   const push = (t: string, rail = false) => lines.push({ t, rail })
 
@@ -83,6 +85,10 @@ export function formatOrderLines(r: PrintableOrder): PrintLine[] {
   }
 
   push('')
+
+  // ยอดเงิน (งานนอก/งานติดตั้ง): ยอดรวม · ค่าส่ง/ค่าติดตั้ง · ชำระแล้ว · เหลือชำระ — lib/orderMoney.ts
+  const money = opts.noMoney ? [] : moneyLines(r)
+  if (money.length) { money.forEach(t => push(t)); push('') }
 
   // บรรทัดวันกำหนด — ใช้วันชุดเดียวกับคอลัมน์ "วันที่เหลือ" บนหน้าจอ (effectiveDueDate ใน lib/orderTabs.ts)
   // งานติดตั้ง → "ติดตั้ง <วันนัด> <เวลา> น." · งานนอก/งานเคลม → "ส่งก่อน <deadline>"
@@ -138,8 +144,8 @@ export function formatOrderText(r: PrintableOrder): string {
 }
 
 // เวอร์ชัน HTML สำหรับปริ้น: บรรทัดของราง = สีแดง
-export function formatOrderHtml(r: PrintableOrder): string {
-  return formatOrderLines(r).map(l => (l.rail ? `<span class="rail">${escPrintHtml(l.t)}</span>` : escPrintHtml(l.t))).join('\n')
+export function formatOrderHtml(r: PrintableOrder, opts: { noMoney?: boolean } = {}): string {
+  return formatOrderLines(r, opts).map(l => (l.rail ? `<span class="rail">${escPrintHtml(l.t)}</span>` : escPrintHtml(l.t))).join('\n')
 }
 
 export function linesToHtml(lines: PrintLine[]): string {

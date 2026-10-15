@@ -48,7 +48,7 @@ export async function printReuse(o: { kind: ReuseKind; id: string; head: string;
   const win = window.open('', '_blank', 'width=1200,height=750')
   if (!win) return false
   const qr = await QRCode.toDataURL(reuseQrUrl(window.location.origin, o.kind, o.id), { margin: 1, width: 240 }).catch(() => '')
-  const body = o.order ? formatOrderHtml(o.order) : escPrintHtml(o.text ?? '')
+  const body = o.order ? formatOrderHtml(o.order, { noMoney: true }) : escPrintHtml(o.text ?? '')
   openFormPrintWindow([{ html: `${escPrintHtml(`ใช้ของ · ${o.head}`)}\n${body}\n\n${escPrintHtml('สแกน QR เมื่อเอาของไปใช้')}`, qr: qr || undefined }], `ใช้ของ ${o.head}`, win)
   return true
 }

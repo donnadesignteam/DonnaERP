@@ -43,6 +43,7 @@ import { todayYmd, ymdLocal } from '@/lib/thaiDate'
 import { parseMoney } from '@/lib/money'
 // ข้อความใบออเดอร์ (คัดลอก/ใบปริ้นแบบฟอร์ม) อยู่ใน lib/orderPrint.ts — หน้าปฏิทินติดตั้งใช้ตัวเดียวกัน
 import { formatOrderText, formatOrderHtml } from '@/lib/orderPrint'
+import { feeOf, feeText, itemsPreview } from '@/lib/orderMoney'
 import * as XLSX from 'xlsx'
 import QRCode from 'qrcode'
 import { takeSerialNumber } from '@/lib/serialCounter'
@@ -132,6 +133,8 @@ type Entry = {
   payment_status: string
   deposit: number | null
   paid_amount: number | null   // ยอดที่ลูกค้าชำระมาแล้ว (กรอกเอง) — ที่เหลือ = ยอดทั้งหมด − ยอดนี้
+  ship_fee?: number | null     // ค่าส่ง (งานนอก) · ค่าติดตั้ง (งานติดตั้ง) = รวมอยู่ในยอดทั้งหมดแล้ว แค่บอกว่าเท่าไหร่ (sql/add_order_fees.sql)
+  install_fee?: number | null
   order_assigned: string
   created_at: string
   updated_at: string
@@ -564,7 +567,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [incomeRows, setIncomeRows] = useState<{ orderNumber: string; amount: number; payoutDate: string; matchedId: string | null; hasIncome: boolean }[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [modalItems, setModalItems] = useState<Item[]>([])
-  const [itemsModal, setItemsModal] = useState<{ id: string; items: Item[]; instId: string | null } | null>(null)
+  // fee = แถว "+ ค่าส่ง/ค่าติดตั้ง" ท้ายรายการ (เฉพาะงานนอก/งานติดตั้ง) — val เป็นข้อความในช่อง, orig = ค่าเดิมไว้เทียบว่าแก้ไหม
+  const [itemsModal, setItemsModal] = useState<{ id: string; items: Item[]; instId: string | null; fee?: { key: 'ship_fee' | 'install_fee'; label: string; val: string; orig: string } | null } | null>(null)
   // คำแนะนำในช่องรายการสินค้า = คำที่เคยลงในออเดอร์ที่โหลดอยู่ (ไม่ดึงฐานเพิ่ม)
   const itemSuggest = useMemo(() => buildItemSuggestions(rows.map(r => r.items)), [rows])
   // รูปหน้างาน (งานติดตั้ง) — คอมโพเนนต์กลางตัวเดียวกับหน้างานติดตั้ง
@@ -903,6 +907,11 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       ...(outsourceVal && outsourceVal !== prevOutsource ? { outsource_at: now } : {}),
       notes: d.notes || null,
       price: d.price ? Number(d.price) : null,
+      // ค่าส่ง/ค่าติดตั้ง — ส่งเฉพาะตอนมีคอลัมน์แล้ว (แถวที่โหลดมามีคีย์นี้) หรือกรอกค่ามา · ยังไม่รัน sql/add_order_fees.sql ก็บันทึกออเดอร์ได้ปกติ
+      ...(['ship_fee', 'install_fee'] as const).reduce((o, k) => {
+        const v = (d as Record<string, unknown>)[k]
+        return k in d || (v != null && String(v) !== '') ? { ...o, [k]: v != null && String(v) !== '' ? Number(v) : null } : o
+      }, {} as Record<string, number | null>),
       payment_status: d.payment_status || 'ยังไม่ชำระ',
       // ชำระแล้ว: กรอกเอง · ไม่กรอกแล้วเลือกมัดจำ50% → ครึ่งหนึ่งของยอดทั้งหมด · ยอดที่เหลือคิดจากยอดนี้
       ...(() => {
@@ -2073,6 +2082,9 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       if (o.order_number) set('order_number', String(o.order_number))
       if (o.deadline) set('deadline', String(o.deadline))
       if (o.price != null && o.price !== '') set('price', String(o.price))
+      // ค่าส่ง → งานนอก · ค่าติดตั้ง → งานติดตั้ง (ช่องในฟอร์มมีตามประเภทงาน)
+      const fee = addType === 'install' ? o.install_fee : o.ship_fee
+      if (fee != null && fee !== '') set(addType === 'install' ? 'install_fee' : 'ship_fee', String(fee))
       if (o.payment_status) set('payment_status', String(o.payment_status))
       if (o.notes) set('notes', String(o.notes))
       // บริษัทจัดส่งท้ายออเดอร์แพลตฟอร์ม — กรอกให้เฉพาะที่ตรงกับตัวเลือกในระบบ (กันชื่อแปลกๆ ทำให้ช่องว่างเปล่า)
@@ -2125,7 +2137,10 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
 
   // เปิดป๊อปอัปรายการสินค้า — ถ้าออเดอร์นี้เป็นงานติดตั้ง ดึงรูปหน้างานของแถวในปฏิทินติดตั้งมาแก้ในแผงรูปได้เลย
   const openItemsModal = async (r: Entry) => {
-    setItemsModal({ id: r.id, items: Array.isArray(r.items) ? r.items : [], instId: null })
+    const f = feeOf(r)
+    const fv = f?.amount != null ? String(f.amount) : ''
+    setItemsModal({ id: r.id, items: Array.isArray(r.items) ? r.items : [], instId: null,
+      fee: f ? { key: r.is_installation ? 'install_fee' : 'ship_fee', label: f.label, val: fv, orig: fv } : null })
     setItemsModalPasteText('')
     ph.begin([], null)
     if (!r.is_installation) return
@@ -2571,7 +2586,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       courier: r => r.is_installation && colTabKey === 'all' ? 'งานติดตั้ง' : esc(r.courier || '-'),
       price: r => r.price ? esc(`${money(r.price)} ฿${r.net_income != null ? ` (รับจริง ${money(r.net_income)})` : ''}`) : '-',
       total: r => money(r.price),
-      items: r => formatItemLines(r.items ?? []).map(l => esc(l)).join('<br>') || '-',
+      items: r => [...formatItemLines(r.items ?? []), ...(feeText(r) ? [`+ ${feeText(r)}`] : [])].map(l => esc(l)).join('<br>') || '-',
       payment: r => esc(r.payment_status || 'ยังไม่ชำระ'),
       paid: r => (!r.payment_status || r.payment_status === 'ยังไม่ชำระ') ? '-'
         : r.payment_status === 'ชำระครบ' && r.paid_amount == null ? money(r.price)
@@ -3528,17 +3543,20 @@ ${body}
                     <td style={{ padding: '6px 14px', maxWidth: 200 }}>
                       <button onClick={() => { openItemsModal(r) }}
                         style={{ border: 'none', background: 'transparent', fontSize: 11, cursor: 'pointer', padding: 0, color: r.items?.length ? 'var(--ink)' : 'var(--ink-4)', textAlign: 'left', display: 'block', width: '100%' }}>
-                        {r.items?.length ? (
-                          // แถวสูง 2 บรรทัด: มี 2 รายการ = โชว์ครบ · เกิน = รายการแรก + "+ อีก N รายการ" · ชี้เมาส์ดูครบทุกรายการ
-                          <div title={formatItemLines(r.items).join('\n')} style={{ maxWidth: 190 }}>
-                            {formatItemLines(r.items).slice(0, formatItemLines(r.items).length > 2 ? 1 : 2).map((line, i) => (
-                              <div key={i} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: i === 0 ? 'var(--ink)' : 'var(--ink-3)' }}>{line}</div>
+                        {r.items?.length || feeText(r) ? (() => {
+                          // แถวสูง 2 บรรทัด: พอ 2 บรรทัด = โชว์ครบ · เกิน = รายการแรก + "+ อีก N รายการ · ค่าส่ง 100" · ชี้เมาส์ดูครบทุกรายการ
+                          // ค่าส่ง (งานนอก) / ค่าติดตั้ง (งานติดตั้ง) ต่อท้ายรายการ — lib/orderMoney.ts
+                          const itemLines = formatItemLines(r.items ?? []), fee = feeText(r)
+                          const pv = itemsPreview(itemLines, fee)
+                          return (
+                          <div title={[...itemLines, ...(fee ? [`+ ${fee}`] : [])].join('\n')} style={{ maxWidth: 190 }}>
+                            {pv.lines.map((line, i) => (
+                              <div key={i} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: i === 0 && itemLines.length ? 'var(--ink)' : 'var(--ink-3)' }}>{line}</div>
                             ))}
-                            {formatItemLines(r.items).length > 2 && (
-                              <div style={{ fontSize: 10, color: 'var(--ink-4)' }}>+ อีก {formatItemLines(r.items).length - 1} รายการ</div>
-                            )}
+                            {pv.more && <div style={{ fontSize: 10, color: 'var(--ink-4)', whiteSpace: 'nowrap' }}>{pv.more}</div>}
                           </div>
-                        ) : <span style={{ color: 'var(--ink-4)' }}>—</span>}
+                          )
+                        })() : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                       </button>
                     </td>
                     )}
@@ -5224,6 +5242,41 @@ ${body}
                 </div>
                 )
               })}
+              {/* + ค่าส่ง (งานนอก) / + ค่าติดตั้ง (งานติดตั้ง) ต่อท้ายรายการ — เก็บแยกคอลัมน์ ไม่ใส่ใน items (ใบงานช่าง/สต็อก/แพ็คไม่เห็น)
+                  รวมอยู่ในยอดทั้งหมดแล้ว · รายการมีราคาครบ → บอกยอดรวมที่ควรเป็น + ปุ่มใช้ยอดนี้ */}
+              {(() => {
+                const ft = modal.mode === 'add' ? addType
+                  : modal.data.is_installation ? 'install'
+                  : OUTSIDE_PLATFORMS.includes(modal.data.platform ?? '') && !isClaimRow(modal.data.platform) ? 'outside' : null
+                if (ft !== 'outside' && ft !== 'install') return null
+                const k = ft === 'install' ? 'install_fee' : 'ship_fee'
+                const label = ft === 'install' ? 'ค่าติดตั้ง' : 'ค่าส่ง'
+                const feeRaw = modal.data[k]
+                const fee = feeRaw != null && String(feeRaw) !== '' ? Number(feeRaw) : 0
+                const priced = modalItems.length > 0 && modalItems.every(it => it.price != null && !isNaN(Number(it.price)))
+                const sum = priced ? modalItems.reduce((t, it) => t + Number(it.price), 0) + fee : null
+                const cur = modal.data.price != null && String(modal.data.price) !== '' ? Number(modal.data.price) : null
+                return (
+                  <div style={{ border: '1px dashed var(--border-2)', borderRadius: 8, padding: '8px 12px', background: 'var(--cream-2)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)', whiteSpace: 'nowrap' }}>+ {label}</span>
+                      <input type="number" step="0.01" value={feeRaw ?? ''} onChange={e => set(k, e.target.value)} placeholder="0"
+                        style={{ width: 110, border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box', textAlign: 'right' }} />
+                      <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>บาท</span>
+                      <span style={{ fontSize: 11, color: 'var(--ink-4)', marginLeft: 'auto' }}>รวมอยู่ในยอดทั้งหมด</span>
+                    </div>
+                    {sum != null && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, fontSize: 12, color: 'var(--ink-3)' }}>
+                        <span>รายการ {(sum - fee).toLocaleString('th-TH')}{fee ? ` + ${label} ${fee.toLocaleString('th-TH')}` : ''} = <b style={{ color: 'var(--ink)' }}>{sum.toLocaleString('th-TH')}</b> บาท</span>
+                        {cur !== sum && (
+                          <button type="button" onClick={() => set('price', String(sum))}
+                            style={{ border: 'none', background: 'transparent', color: 'var(--blue)', cursor: 'pointer', fontSize: 12, padding: 0, fontWeight: 600 }}>ใช้เป็นยอดทั้งหมด</button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
             </div>
 
             {(() => {
@@ -5508,6 +5561,18 @@ ${body}
               + เพิ่มแถว
             </button>
 
+            {/* + ค่าส่ง (งานนอก) / + ค่าติดตั้ง (งานติดตั้ง) — รวมอยู่ในยอดทั้งหมดแล้ว ไม่บวกเพิ่ม (lib/orderMoney.ts) */}
+            {itemsModal.fee && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px dashed var(--border-2)', borderRadius: 8, padding: '8px 12px', background: 'var(--cream-2)', marginBottom: 16 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)', whiteSpace: 'nowrap' }}>+ {itemsModal.fee.label}</span>
+                <input type="number" step="0.01" value={itemsModal.fee.val} placeholder="0"
+                  onChange={e => { const v = e.target.value; setItemsModal(m => m && m.fee ? { ...m, fee: { ...m.fee, val: v } } : m) }}
+                  style={{ width: 110, border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box', textAlign: 'right' }} />
+                <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>บาท</span>
+                <span style={{ fontSize: 11, color: 'var(--ink-4)', marginLeft: 'auto' }}>รวมอยู่ในยอดทั้งหมด</span>
+              </div>
+            )}
+
             {itemsModal.instId && ph.trigger()}
 
             <div style={{ display: 'flex', gap: 10 }}>
@@ -5527,11 +5592,16 @@ ${body}
                 //    (ไม่ error ด้วย เลยดูเหมือนบันทึกได้ แต่พอรีเฟรชรายการหาย)
                 const isClaim = !!row && isClaimEntry(row)
                 const outPatch = itemsOut && itemsOut !== prevOut ? { outsource: itemsOut, outsource_at: now } : {}
+                // ค่าส่ง/ค่าติดตั้ง — ส่งเฉพาะตอนแก้ (ยังไม่รัน sql/add_order_fees.sql ก็บันทึกรายการได้ปกติ)
+                const fee = itemsModal.fee
+                const feePatch = !isClaim && fee && fee.val.trim() !== fee.orig
+                  ? { [fee.key]: fee.val.trim() === '' ? null : Number(fee.val) } : {}
                 const updates = {
                   items: newItems,
                   updated_at: now,
                   // ตาราง claims ไม่มีช่องสั่งนอก — ใส่ไปจะ error ทั้งคำสั่ง
                   ...(isClaim ? {} : outPatch),
+                  ...feePatch,
                 }
                 const res = isClaim
                   ? await claimUpdate(updates).eq('id', itemsModal.id).select('id').maybeSingle()

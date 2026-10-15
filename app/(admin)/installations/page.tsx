@@ -29,6 +29,7 @@ import { TECH_OPTIONS } from '@/lib/techs'
 import { syncWorkStatus } from '@/lib/workStatusSync'
 import ProvinceSelect from '@/components/ProvinceSelect'
 import { formatOrderLines, linesToHtml, openFormPrintWindow, escPrintHtml, type PrintLine, type PrintableOrder } from '@/lib/orderPrint'
+import { feeText, itemsPreview } from '@/lib/orderMoney'
 import QRCode from 'qrcode'
 import { takeSerialNumber } from '@/lib/serialCounter'
 import { PlatformIcon } from '@/components/BrandMark'
@@ -79,6 +80,7 @@ type OrderMeta = {
   customer_name: string | null
   items: RawItem[] | null
   price: number | null
+  install_fee?: number | null   // ค่าติดตั้ง (รวมอยู่ใน price แล้ว) — มีเมื่อรัน sql/add_order_fees.sql
   payment_status: string | null
   paid_amount: number | null
   deposit: number | null
@@ -401,7 +403,8 @@ export default function InstallationsPage() {
   ]
   const cf = useColumnFilters(filterDefs)
   // popup แก้รายการสินค้า (แบบเดียวกับหมวดออเดอร์) — บันทึกกลับไปที่ order_entries ต้นทาง
-  const [itemsModal, setItemsModal] = useState<{ orderId: string; items: RawItem[]; instId: string } | null>(null)
+  // fee = แถว "+ ค่าติดตั้ง" ท้ายรายการ (ช่อง install_fee ของออเดอร์ต้นทาง) — orig ไว้เทียบว่าแก้ไหม
+  const [itemsModal, setItemsModal] = useState<{ orderId: string; items: RawItem[]; instId: string; fee?: { val: string; orig: string } } | null>(null)
   // คำแนะนำในช่องรายการสินค้า = คำที่เคยลงในออเดอร์ที่โหลดอยู่ (ไม่ดึงฐานเพิ่ม)
   const itemSuggest = useMemo(() => buildItemSuggestions(Object.values(orderItems)), [orderItems])
   const [itemsPasteText, setItemsPasteText] = useState('')
@@ -457,9 +460,13 @@ export default function InstallationsPage() {
     // ดึงรายการสินค้าจากออเดอร์ต้นทางมาโชว์ในคอลัมน์ "รายการ"
     const orderIds = rows.map(r => r.source_order_id).filter((v): v is string => !!v)
     if (orderIds.length) {
-      const { data: oes } = await supabase.from('order_entries')
-        .select(ORDER_META_COLS)
+      const withFee = await supabase.from('order_entries')
+        .select(`${ORDER_META_COLS}, install_fee`)
         .in('id', orderIds)
+      // ยังไม่ได้รัน sql/add_order_fees.sql (ไม่มีคอลัมน์ install_fee) → ดึงแบบเดิม
+      const oes: unknown[] | null = withFee.error
+        ? (await supabase.from('order_entries').select(ORDER_META_COLS).in('id', orderIds)).data
+        : withFee.data
       const map: Record<string, RawItem[]> = {}
       const metaMap: Record<string, OrderMeta> = {}
       for (const oe of (oes ?? []) as OrderMeta[]) {
@@ -791,8 +798,12 @@ export default function InstallationsPage() {
       const { data: cur } = await supabase.from('order_entries').select('outsource').eq('id', itemsModal.orderId).single()
       if (itemsOut !== (cur?.outsource ?? '')) { outUpdates = { outsource: itemsOut, outsource_at: now }; outChanged = true }
     }
-    const { error: err } = await oeUpdate({ items: newItems, updated_at: now, ...outUpdates }).eq('id', itemsModal.orderId)
+    // ค่าติดตั้ง — ส่งเฉพาะตอนแก้ (ยังไม่รัน sql/add_order_fees.sql ก็บันทึกรายการได้ปกติ)
+    const fee = itemsModal.fee
+    const feePatch = fee && fee.val.trim() !== fee.orig ? { install_fee: fee.val.trim() === '' ? null : Number(fee.val) } : {}
+    const { error: err } = await oeUpdate({ items: newItems, updated_at: now, ...outUpdates, ...feePatch }).eq('id', itemsModal.orderId)
     if (err) { setError(`บันทึกรายการไม่สำเร็จ: ${err.message}`); return }
+    if ('install_fee' in feePatch) setOrderMeta(prev => prev[itemsModal.orderId] ? { ...prev, [itemsModal.orderId]: { ...prev[itemsModal.orderId], install_fee: feePatch.install_fee } } : prev)
     // รูปหน้างานผูกกับแถวงานติดตั้ง (ตาราง installations) ไม่ใช่ตัวออเดอร์ — บันทึกพร้อมกันตอนกดบันทึกรายการ
     const hadPhotos = !!installs.find(i => i.id === itemsModal.instId)?.photos?.length
     if (ph.photos.length || hadPhotos) {
@@ -1110,7 +1121,10 @@ export default function InstallationsPage() {
       work: r => esc(r.work_type),
       customer: r => esc(r.customer_real_name || r.customer_id),
       platform: r => esc(r.platform),
-      items: r => formatItemLines(r.source_order_id ? (orderItems[r.source_order_id] ?? []) : []).join('<br>') || esc(r.work_details) || '-',
+      items: r => {
+        const fee = feeText({ ...oeOf(r), is_installation: true })
+        return [...formatItemLines(r.source_order_id ? (orderItems[r.source_order_id] ?? []) : []), ...(fee ? [`+ ${fee}`] : [])].join('<br>') || esc(r.work_details) || '-'
+      },
       total: r => num(oeOf(r)?.price ?? (r.price || null)),
       payment: r => esc(oeOf(r)?.payment_status || r.payment_status),
       paid: r => num(oeOf(r)?.paid_amount),
@@ -1635,19 +1649,22 @@ export default function InstallationsPage() {
                   ),
                   items: ins.source_order_id ? (
                     // มาจากหมวดออเดอร์ → จิ้มเปิด popup แก้รายการ บันทึกกลับไปที่ออเดอร์ต้นทาง
-                    <div onClick={() => { ph.begin(ins.photos, ins.id); setItemsModal({ orderId: ins.source_order_id!, items: withAutoHooks(orderItems[ins.source_order_id!] ?? []), instId: ins.id }); setItemsPasteText(''); setItemsError('') }}
+                    <div onClick={() => { ph.begin(ins.photos, ins.id); setItemsModal({ orderId: ins.source_order_id!, items: withAutoHooks(orderItems[ins.source_order_id!] ?? []), instId: ins.id, fee: { val: oe?.install_fee != null ? String(oe.install_fee) : '', orig: oe?.install_fee != null ? String(oe.install_fee) : '' } }); setItemsPasteText(''); setItemsError('') }}
                       style={{ cursor: 'pointer' }} title="จิ้มเพื่อแก้รายการ">
                       {orderItems[ins.source_order_id]?.length ? (
                         // โชว์แบบเดียวกับคอลัมน์รายการในหมวดออเดอร์: บรรทัดสั้น 1 บรรทัด/ชิ้น ตัดท้ายด้วย …
                         (() => {
                           const lines = formatItemLines(orderItems[ins.source_order_id!])
+                          // ค่าติดตั้งต่อท้ายรายการ (lib/orderMoney.ts)
+                          const fee = feeText({ ...oe, is_installation: true })
+                          const pv = itemsPreview(lines, fee)
                           return (
-                            // แถวสูง 2 บรรทัด (แบบหมวดออเดอร์): มี 2 รายการ = ครบ · เกิน = รายการแรก + "+ อีก N รายการ" · ชี้ดูครบ
-                            <div title={lines.join('\n')} style={{ maxWidth: COL_W.items }}>
-                              {lines.slice(0, lines.length > 2 ? 1 : 2).map((line, k) => (
+                            // แถวสูง 2 บรรทัด (แบบหมวดออเดอร์): พอ 2 บรรทัด = ครบ · เกิน = รายการแรก + "+ อีก N รายการ · ค่าติดตั้ง …" · ชี้ดูครบ
+                            <div title={[...lines, ...(fee ? [`+ ${fee}`] : [])].join('\n')} style={{ maxWidth: COL_W.items }}>
+                              {pv.lines.map((line, k) => (
                                 <div key={k} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 11, color: k === 0 ? 'var(--ink)' : 'var(--ink-3)' }}>{line}</div>
                               ))}
-                              {lines.length > 2 && <div style={{ fontSize: 10, color: 'var(--ink-4)' }}>+ อีก {lines.length - 1} รายการ</div>}
+                              {pv.more && <div style={{ fontSize: 10, color: 'var(--ink-4)', whiteSpace: 'nowrap' }}>{pv.more}</div>}
                             </div>
                           )
                         })()
@@ -2073,6 +2090,18 @@ export default function InstallationsPage() {
               style={{ fontSize: 12, padding: '4px 12px', border: '1px solid var(--blue)', borderRadius: 6, color: 'var(--blue)', background: 'var(--blue-bg)', cursor: 'pointer', marginBottom: 16 }}>
               + เพิ่มแถว
             </button>
+
+            {/* + ค่าติดตั้ง — รวมอยู่ในยอดทั้งหมดแล้ว ไม่บวกเพิ่ม (lib/orderMoney.ts) */}
+            {itemsModal.fee && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px dashed var(--border-2)', borderRadius: 8, padding: '8px 12px', background: 'var(--cream-2)', marginBottom: 16 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)', whiteSpace: 'nowrap' }}>+ ค่าติดตั้ง</span>
+                <input type="number" step="0.01" value={itemsModal.fee.val} placeholder="0"
+                  onChange={e => { const v = e.target.value; setItemsModal(m => m && m.fee ? { ...m, fee: { ...m.fee, val: v } } : m) }}
+                  style={{ width: 110, border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box', textAlign: 'right' }} />
+                <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>บาท</span>
+                <span style={{ fontSize: 11, color: 'var(--ink-4)', marginLeft: 'auto' }}>รวมอยู่ในยอดทั้งหมด</span>
+              </div>
+            )}
 
             {ph.trigger()}
 
