@@ -682,28 +682,35 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
 
   const load = async () => {
     // จำออเดอร์ไว้ในเครื่อง ขอเฉพาะใบที่เปลี่ยน (lib/rowCache.ts) — เดิมดึงทั้งตาราง ~1.4 MB ทุกครั้งที่เปิด/undo
-    const { data, error: err } = await syncRows<Entry>({
-      key: 'workspace', table: 'order_entries', select: '*', sort: byEntryDateDesc,
-      full: () => supabase.from('order_entries').select('*').order('entry_date', { ascending: false, nullsFirst: false }).order('id', { ascending: true }),
-    })
+    // ‼️ 16ต.ค.69 ออเดอร์ / งานติดตั้ง / งานเคลม ขอพร้อมกัน (เดิมรอทีละตาราง เปิดหน้าช้าเพราะเซิร์ฟเวอร์ตอบครั้งละ ~0.3-0.5 วิ)
+    const CLAIM_COLS = 'id, serial_no, claim_date, channel, customer_username, original_order_number, items, status, is_urgent, notes, courier, printed_at, shipped_at, admin_name, estimated_price, created_at, updated_at'
+    const loadClaims = async () => {
+      let claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(`${CLAIM_COLS}, deadline, technician, pinned, pinned_at, serial_no`).order('id', { ascending: true }))
+      // ยังไม่ได้รัน sql/add_serial_no.sql → ดึงแบบไม่มีเลขที่ใบไปก่อน (คอลัมน์ Serial ของงานเคลมจะขึ้น —)
+      if (claimRes.error) claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(`${CLAIM_COLS}, deadline, technician, pinned, pinned_at`).order('id', { ascending: true }))
+      // ยังไม่ได้รัน sql/add_pinned_column.sql → ดึงแบบไม่มีคอลัมน์ปักหมุดไปก่อน
+      if (claimRes.error) claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(`${CLAIM_COLS}, deadline, technician`).order('id', { ascending: true }))
+      // ยังไม่ได้รัน scripts/add_claim_deadline.sql / add_claim_technician.sql → ดึงแบบไม่มี 2 คอลัมน์นั้นไปก่อน (งานเคลมยังโชว์ได้)
+      if (claimRes.error) claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(CLAIM_COLS).order('id', { ascending: true }))
+      return claimRes
+    }
+    const [{ data, error: err }, { data: insts }, claimRes] = await Promise.all([
+      syncRows<Entry>({
+        key: 'workspace', table: 'order_entries', select: '*', sort: byEntryDateDesc,
+        full: () => supabase.from('order_entries').select('*').order('entry_date', { ascending: false, nullsFirst: false }).order('id', { ascending: true }),
+      }),
+      // ใบที่ผูกกับปฏิทิน แต่ในปฏิทินไม่ใช่ "งานติดตั้ง" (เช่น งานวัดหน้างาน) → ไม่ต้องโชว์ในหมวดออเดอร์
+      fetchAllRows<InstMeta & { source_order_id: string | null }>(() =>
+        supabase.from('installations').select('id, source_order_id, work_type, serial_no, installation_status, install_zone, technician_type').not('source_order_id', 'is', null).order('id', { ascending: true })),
+      // งานเคลมจากหน้าเคลม (ตาราง claims) → โชว์ปนในหมวดออเดอร์ด้วย จะได้เรียงวันที่เหลือรวมกัน
+      loadClaims(),
+    ])
     if (err) setError(`โหลดข้อมูลไม่ได้: ${err.message}`)
-    // ใบที่ผูกกับปฏิทิน แต่ในปฏิทินไม่ใช่ "งานติดตั้ง" (เช่น งานวัดหน้างาน) → ไม่ต้องโชว์ในหมวดออเดอร์
-    const { data: insts } = await fetchAllRows<InstMeta & { source_order_id: string | null }>(() =>
-      supabase.from('installations').select('id, source_order_id, work_type, serial_no, installation_status, install_zone, technician_type').not('source_order_id', 'is', null).order('id', { ascending: true }))
     setNonOrderIds(new Set(insts.filter(i => i.source_order_id && i.work_type !== 'งานติดตั้ง').map(i => i.source_order_id as string)))
     // แท็บงานติดตั้งเอา Serial/งาน/สถานะ มาโชว์+แก้ได้ตรงตาราง
     setInstMeta(Object.fromEntries(insts.filter(i => i.source_order_id).map(i =>
       [i.source_order_id as string, { id: i.id, work_type: i.work_type, serial_no: i.serial_no, installation_status: i.installation_status,
         install_zone: i.install_zone, technician_type: i.technician_type }])))
-    // งานเคลมจากหน้าเคลม (ตาราง claims) → โชว์ปนในหมวดออเดอร์ด้วย จะได้เรียงวันที่เหลือรวมกัน
-    const CLAIM_COLS = 'id, serial_no, claim_date, channel, customer_username, original_order_number, items, status, is_urgent, notes, courier, printed_at, shipped_at, admin_name, estimated_price, created_at, updated_at'
-    let claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(`${CLAIM_COLS}, deadline, technician, pinned, pinned_at, serial_no`).order('id', { ascending: true }))
-    // ยังไม่ได้รัน sql/add_serial_no.sql → ดึงแบบไม่มีเลขที่ใบไปก่อน (คอลัมน์ Serial ของงานเคลมจะขึ้น —)
-    if (claimRes.error) claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(`${CLAIM_COLS}, deadline, technician, pinned, pinned_at`).order('id', { ascending: true }))
-    // ยังไม่ได้รัน sql/add_pinned_column.sql → ดึงแบบไม่มีคอลัมน์ปักหมุดไปก่อน
-    if (claimRes.error) claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(`${CLAIM_COLS}, deadline, technician`).order('id', { ascending: true }))
-    // ยังไม่ได้รัน scripts/add_claim_deadline.sql / add_claim_technician.sql → ดึงแบบไม่มี 2 คอลัมน์นั้นไปก่อน (งานเคลมยังโชว์ได้)
-    if (claimRes.error) claimRes = await fetchAllRows<ClaimSource>(() => supabase.from('claims').select(CLAIM_COLS).order('id', { ascending: true }))
     const claimEntries = claimRes.data.map(claimToEntry)
     const entries = scope === 'claims' ? data : [...data, ...claimEntries]
     const order = computeSortOrder(entries, daysSort)
@@ -820,7 +827,8 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
           ...onsite,
         })
       }
-    } else {
+    } else if (p.__wasInstall !== false) {
+      // ‼️ 16ต.ค.69 รู้แน่ว่าไม่มีแถวในปฏิทิน (ใบใหม่ / ใบเดิมไม่ใช่งานติดตั้งและไม่ผูกปฏิทิน) → ข้ามคำขอลบ (บันทึกเร็วขึ้น 1 รอบ)
       await supabase.from('installations').delete().eq('source_order_id', orderId)
     }
   }
@@ -950,7 +958,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
       // ‼️ ใบออเดอร์บันทึกลงฐานแล้ว — งานต่อเนื่อง (ปฏิทินติดตั้ง/รูป/ใบสั่งซื้อ) ถ้าพลาดต้องไม่ทำให้
       //    ใบที่บันทึกไปแล้วดูเหมือนบันทึกไม่สำเร็จ จึงจับ error แยกแล้วแจ้งเป็นคำเตือนแทน
       try {
-        await withTimeout(syncInstallation({ ...payload, admin_name: d.admin_name || null }, saved.id), 'ซิงค์ปฏิทินงานติดตั้ง')
+        await withTimeout(syncInstallation({ ...payload, admin_name: d.admin_name || null, __wasInstall: false }, saved.id), 'ซิงค์ปฏิทินงานติดตั้ง')
         if (payload.is_installation) await withTimeout(saveOrderPhotos(saved.id), 'บันทึกรูปหน้างาน')
         if (outsourceVal) await withTimeout(syncOutsourcePO(saved.id, payload.customer_name, payload.order_number, outsourceVal, modalItems), 'ซิงค์ใบสั่งซื้อ')
       } catch (e) {
@@ -1006,7 +1014,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
           const r = await withTimeout(instUpdate({ ...instPatch, updated_at: now }).eq('source_order_id', String(d.id)).select('id'), 'ซิงค์ปฏิทินงานติดตั้ง') as { data: unknown[] | null }
           instDone = !!r.data?.length   // ไม่มีแถวในปฏิทิน (เคยถูกลบ) → ให้ syncInstallation สร้างใหม่ข้างล่าง
         }
-        if (!instDone) await withTimeout(syncInstallation({ ...payload, admin_name: d.admin_name || null }, String(d.id)), 'ซิงค์ปฏิทินงานติดตั้ง')
+        if (!instDone) await withTimeout(syncInstallation({ ...payload, admin_name: d.admin_name || null, ...(orig && !orig.is_installation && !instMeta[String(d.id)] ? { __wasInstall: false } : {}) }, String(d.id)), 'ซิงค์ปฏิทินงานติดตั้ง')
         if (payload.is_installation) await withTimeout(saveOrderPhotos(String(d.id)), 'บันทึกรูปหน้างาน')
         if (outsourceVal || prevOutsource) await withTimeout(syncOutsourcePO(String(d.id), payload.customer_name, payload.order_number, outsourceVal, modalItems), 'ซิงค์ใบสั่งซื้อ')
       } catch (e) {

@@ -85,8 +85,8 @@ export async function syncRows<T extends { id: string }>(opts: {
     && Date.now() - saved.savedAt < MAX_AGE_MS && Array.isArray(saved.rows)
 
   const fullLoad = async (): Promise<SyncResult<T>> => {
-    const since = await latestChange(opts.table)   // จดเวลา "ก่อน" ดึง — อะไรเปลี่ยนระหว่างดึงจะติดมารอบหน้า
-    const { data, error } = await fetchAllRows<T>(opts.full)
+    // ขอเวลาเปลี่ยนล่าสุดพร้อมกับดึงแถว (เดิมรอทีละอย่าง) — อะไรเปลี่ยนระหว่างดึงจะติดมารอบหน้า (ย้อนเผื่อ OVERLAP_MS)
+    const [since, { data, error }] = await Promise.all([latestChange(opts.table), fetchAllRows<T>(opts.full)])
     if (!error && since !== undefined) {
       void idbSet(cacheKey, { format: FORMAT, table: opts.table, select: opts.select,
         syncedAt: since ?? '1970-01-01T00:00:00Z', savedAt: Date.now(), rows: data } satisfies Saved<T>)
@@ -106,9 +106,12 @@ export async function syncRows<T extends { id: string }>(opts: {
   const byId = new Map(saved.rows.map(r => [r.id, r]))
   const want = [...new Set(ch.data.filter(c => !c.deleted).map(c => c.row_id))]
   for (const c of ch.data) if (c.deleted) byId.delete(c.row_id)
-  for (let i = 0; i < want.length; i += CHUNK) {
-    const ids = want.slice(i, i + CHUNK)
-    const { data, error } = await supabase.from(opts.table).select(opts.select).in('id', ids)
+  // ขอทุกก้อนพร้อมกัน (เดิมทีละก้อน)
+  const chunks: string[][] = []
+  for (let i = 0; i < want.length; i += CHUNK) chunks.push(want.slice(i, i + CHUNK))
+  const results = await Promise.all(chunks.map(ids => supabase.from(opts.table).select(opts.select).in('id', ids)))
+  for (let k = 0; k < chunks.length; k++) {
+    const ids = chunks[k], { data, error } = results[k]
     if (error) return fullLoad()
     const got = new Set<string>()
     for (const r of (data ?? []) as unknown as T[]) { byId.set(r.id, r); got.add(r.id) }

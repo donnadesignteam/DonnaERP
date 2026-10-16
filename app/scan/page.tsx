@@ -585,6 +585,16 @@ function ScanContent() {
     if (!id && !ord) { setPhase('noorder'); setMsg(''); return null }
     setUploadedCnt({}); setUploadErr(''); setPhotos([]); setJoinInfo(null); askJoinRef.current = false
     setPhase('working')
+    const advance = (orderId: string) => supabase.rpc('scan_advance', {
+      p_order_id: orderId,
+      p_stage_key: t.stageKey,
+      p_tech_code: t.code,
+      p_tech_name: t.name,
+      p_scanned_term: ord || '',
+    })
+    // ‼️ 16ต.ค.69 QR มี id + ไม่ใช่แผนกจัดส่ง (ไม่มีกล่องยืนยันก่อนบันทึก) → ค้นออเดอร์กับเดินสถานะพร้อมกัน ประหยัด 1 รอบ
+    //    id ไม่ตรงออเดอร์ (QR เก่าของใบเคลม/ค้นเจอด้วยเลขคำสั่งซื้อแทน) → RPC ตอบ not_found ไม่บันทึกอะไร แล้วเรียกใหม่ด้วย id ที่ถูกตามเดิม
+    const early = id && t.stageKey !== 'shipped' ? Promise.resolve(advance(id)) : null   // Promise.resolve = ยิงทันที (builder ของ supabase ไม่ยิงจนกว่าจะ then)
     const o = await findOrder(id, ord)
     if (!o) { setOrder({ order_number: ord || `id:${id}` }); setPhase('noorder'); return null }
     if ('__claimId' in o) return runClaimScan(t, o.__claimId)   // QR เก่าของใบเคลม → เดินสถานะงานเคลมแทน
@@ -592,13 +602,8 @@ function ScanContent() {
     setOrder(o)
     setPhotos(Array.isArray(o.packing_photos) ? o.packing_photos : [])
 
-    const { data, error } = await supabase.rpc('scan_advance', {
-      p_order_id: o.id,
-      p_stage_key: t.stageKey,
-      p_tech_code: t.code,
-      p_tech_name: t.name,
-      p_scanned_term: ord || '',
-    })
+    const pre = early && o.id === id ? await early : null
+    const { data, error } = pre && !(pre.data?.result === 'not_found') ? pre : await advance(o.id)
     if (error) { setPhase('error'); setMsg(error.message); return null }
     if (!data?.ok) {
       if (data?.result === 'already') {
