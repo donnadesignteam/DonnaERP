@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
-import { formatItemLines, type RawItem } from '@/lib/itemFormat'
+import { formatItemLinesGrouped, type RawItem } from '@/lib/itemFormat'
 import { PROD_STATUS_COLOR } from '@/lib/orderTabs'
 import { useStickyState, useScrollRestore, usePullToRefresh, PullIndicator, UpdatedRow, CardSkeleton, pillBtn, searchInput, clamp } from './mobileUi'
 import ScanFolderButton from './ScanFolderButton'
@@ -154,7 +154,7 @@ export default function MobileClaims() {
       ) : (
         <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
           {displayed.map(r => {
-            const itemLines = formatItemLines(r.items)
+            const itemLines = formatItemLinesGrouped(r.items)
             // แตะการ์ด → โฟลเดอร์ลูกค้า เหมือนหน้าออเดอร์ (เดิมหน้าเคลมกดไม่ได้ทั้งที่มีชื่อลูกค้าพร้อมอยู่แล้ว)
             const folderHref = r.customer_username ? `/m/customers?name=${encodeURIComponent(r.customer_username)}` : null
             const CardTag = (folderHref ? Link : 'div') as React.ElementType

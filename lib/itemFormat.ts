@@ -538,7 +538,8 @@ export function pullSideSplit(it: RawItem): { side: 'ดึงซ้าย' | '�
 // รายการที่มีฝั่งดึงและหัวรายการ (ชนิด/สี) เหมือนกัน ติดกัน → รวมเป็นชุดเดียว (ซ้ายก่อนขวา)
 // ใช้ทั้งใบคัดลอก/ปริ้น (lib/orderPrint) และกล่องรายการสินค้าในหน้ารายละเอียดออเดอร์ — ขึ้นหัวครั้งเดียว ตามด้วยบรรทัดขนาดของแต่ละฝั่ง
 export function pullRuns<T extends RawItem>(items: T[]): T[][] {
-  const headOf = (it: RawItem) => ((it.pull_side ?? '').trim() ? itemBlockLines(it).slice(0, -1).map(l => l.t).join('|') : null)
+  // ห้องต่างกันไม่รวม แม้ผ้าเดียวกัน
+  const headOf = (it: RawItem) => ((it.pull_side ?? '').trim() ? `${(it.room ?? '').trim()}|${itemBlockLines(it).slice(0, -1).map(l => l.t).join('|')}` : null)
   const rank = (it: RawItem) => (it.pull_side === 'ดึงซ้าย' ? 0 : it.pull_side === 'ดึงขวา' ? 1 : 2)
   const runs: { head: string | null; items: T[] }[] = []
   for (const it of items) {
@@ -598,30 +599,45 @@ export const heightText = (h?: number | string): string => {
 }
 
 // สรุปรายการแบบสั้น 1 บรรทัด/ชิ้น — ใช้ในคอลัมน์ "รายการ" ของตาราง (หมวดออเดอร์ + ปฏิทินงานติดตั้ง)
+// head = ชนิด/สี · tail = ขนาด ×จำนวน (แยกไว้ให้ formatItemLinesGrouped รวมหัวรายการได้)
+function shortParts(it: RawItem): { head: string; tail: string } {
+  const parts: string[] = []
+  if (it.type) parts.push(it.type)
+  if (it.eyelet_color) parts.push(it.eyelet_color)
+  if (it.floors) parts.push(`${it.floors}ชั้น`)
+  if (it.rail_head) parts.push(it.rail_head)
+  if (it.rail_color) parts.push(it.rail_color)
+  if (it.pleat) parts.push(it.pleat)
+  if (it.hook_type) parts.push(it.hook_type)
+  if (it.model) parts.push(it.model)
+  if (it.slat_size) parts.push(it.slat_size)
+  if (it.opacity) parts.push(it.opacity)
+  if (it.fabric_type) parts.push(it.fabric_type)
+  if (it.color_code) parts.push(it.color_code)
+  if (it.color_name) parts.push(it.color_name)
+  if (it.color_desc) parts.push(it.color_desc)
+  if (it.orientation) parts.push(it.orientation.startsWith('(') ? it.orientation : `(${it.orientation})`)
+  const tail: string[] = []
+  const wTxt = widthText(it.width), hTxt = heightText(it.height)
+  if (wTxt && hTxt) tail.push(`${wTxt}×${hTxt}`)
+  else if (wTxt) tail.push(wTxt)
+  if (it.quantity) tail.push(`×${it.quantity}${it.unit || ''}`)
+  return { head: parts.join(' '), tail: tail.join(' ') }
+}
 export function formatItemLines(items: RawItem[] | null): string[] {
   if (!items || items.length === 0) return []
-  return items.map(it => {
-    const parts: string[] = []
-    if (it.type) parts.push(it.type)
-    if (it.eyelet_color) parts.push(it.eyelet_color)
-    if (it.floors) parts.push(`${it.floors}ชั้น`)
-    if (it.rail_head) parts.push(it.rail_head)
-    if (it.rail_color) parts.push(it.rail_color)
-    if (it.pleat) parts.push(it.pleat)
-    if (it.hook_type) parts.push(it.hook_type)
-    if (it.model) parts.push(it.model)
-    if (it.slat_size) parts.push(it.slat_size)
-    if (it.opacity) parts.push(it.opacity)
-    if (it.fabric_type) parts.push(it.fabric_type)
-    if (it.color_code) parts.push(it.color_code)
-    if (it.color_name) parts.push(it.color_name)
-    if (it.color_desc) parts.push(it.color_desc)
-    if (it.orientation) parts.push(it.orientation.startsWith('(') ? it.orientation : `(${it.orientation})`)
-    const wTxt = widthText(it.width), hTxt = heightText(it.height)
-    if (wTxt && hTxt) parts.push(`${wTxt}×${hTxt}`)
-    else if (wTxt) parts.push(wTxt)
-    if (it.quantity) parts.push(`×${it.quantity}${it.unit || ''}`)
-    return parts.join(' ')
+  return items.map(it => { const { head, tail } = shortParts(it); return [head, tail].filter(Boolean).join(' ') })
+}
+
+// แบบสั้นสำหรับการ์ดมือถือ: มีห้อง + ฝั่งดึง และรวมม่านพับ/มู่ลี่ผ้าเดียวกันฝั่งซ้าย/ขวาเป็นบรรทัดเดียว (แบบเดียวกับใบปริ้น)
+//   "[ห้องนอน] ม่านพับ S05 ขาว 1.00×1.00 ×1ชุด ดึงซ้าย · 1.00×1.00 ×1ชุด ดึงขวา"
+export function formatItemLinesGrouped(items: RawItem[] | null): string[] {
+  if (!items || items.length === 0) return []
+  return pullRuns(splitPullItems(items)).map(run => {
+    const first = shortParts(run[0])
+    const tails = run.map(it => { const t = shortParts(it).tail; const ps = String(it.pull_side ?? '').trim(); return [t, ps].filter(Boolean).join(' ') })
+    const room = String(run[0].room ?? '').trim()
+    return [room ? `[${room}]` : '', first.head, tails.join(' · ')].filter(Boolean).join(' ')
   })
 }
 

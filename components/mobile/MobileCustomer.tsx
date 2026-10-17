@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { formatItemLines, type RawItem } from '@/lib/itemFormat'
+import { formatItemLinesGrouped, type RawItem } from '@/lib/itemFormat'
 import { thaiTrackStatus } from '@/lib/trackExtract'
 import { carrierTrackUrl } from '@/lib/carriers'
 import { INSTALL_STATUS_COLOR } from '@/lib/shopCalendar'
@@ -123,7 +123,7 @@ export default function MobileCustomer() {
 
   // แชร์รายการออเดอร์เข้ากลุ่ม LINE (navigator.share) — มือถือไม่มี share ก็คัดลอกลงคลิปบอร์ดแทน
   const shareOrder = async (o: Order) => {
-    const lines = formatItemLines(o.items)
+    const lines = formatItemLinesGrouped(o.items)
     const text = [
       name,
       `ออเดอร์ ${o.order_number || '-'}${o.platform ? ` · ${o.platform}` : ''}`,

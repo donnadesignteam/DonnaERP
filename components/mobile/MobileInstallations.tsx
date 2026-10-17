@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
 import { HOLIDAYS } from '@/lib/holidays'
-import { itemBlockLines, type RawItem } from '@/lib/itemFormat'
+import { itemBlockLines, splitPullItems, pullRuns, type RawItem } from '@/lib/itemFormat'
 import { DAYS_TH, TH_MONTHS, ymdOf, monthCells } from '@/lib/shopCalendar'
 import { rowColor, normStatus, statusLabel } from '@/lib/installMeta'
 import { useStickyState, usePullToRefresh, useSheetBack, PullIndicator, UpdatedRow, clamp } from './mobileUi'
@@ -48,14 +48,19 @@ const ZONES = ['เชียงราย', 'เชียงใหม่', 'ก�
 const ITEMS_SHOWN = 4
 function JobItems({ items }: { items: RawItem[] }) {
   const [all, setAll] = useState(false)
-  const shown = all ? items : items.slice(0, ITEMS_SHOWN)
+  // ม่านพับ/มู่ลี่ผ้าเดียวกันฝั่งซ้าย/ขวา → กล่องเดียว (แบบเดียวกับใบปริ้น/หน้ารายละเอียดออเดอร์)
+  const groups = pullRuns(splitPullItems(items))
+  const shown = all ? groups : groups.slice(0, ITEMS_SHOWN)
   return (
     <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 5 }}>
-      <div style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>รายการสินค้า ({items.length})</div>
-      {shown.map((it, i) => {
-        const lines = itemBlockLines(it, { hideNote: true })
-        const qty = Number(it.quantity) || null
-        const note = String(it.note ?? '').trim()
+      <div style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>รายการสินค้า ({groups.length})</div>
+      {shown.map((group, i) => {
+        const it = group[0]
+        const blocks = group.map(g => itemBlockLines(g, { hideNote: true }))
+        const lines = group.length > 1 ? [...blocks[0].slice(0, -1), ...blocks.map(b => b[b.length - 1])] : blocks[0]
+        const qty = group.reduce((a, g) => a + (Number(g.quantity) || 0), 0) || null
+        const note = [...new Set(group.map(g => String(g.note ?? '').trim()).filter(Boolean))].join(' · ')
+        const room = String(it.room ?? '').trim()
         return (
           <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: 'rgba(255,255,255,0.65)', borderRadius: 10, padding: '7px 10px' }}>
             <div style={{ minWidth: 0, flex: 1 }}>
@@ -66,6 +71,7 @@ function JobItems({ items }: { items: RawItem[] }) {
                   lineHeight: 1.45, wordBreak: 'break-word',
                 }}>{ln.t}</div>
               ))}
+              {room && <div style={{ fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.45, marginTop: 2, wordBreak: 'break-word' }}>ห้อง: {room}</div>}
               {note && <div style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.45, marginTop: 2, wordBreak: 'break-word' }}>หมายเหตุ: {note}</div>}
               {it.outsource ? (
                 <span className="dn-pill" style={{ minWidth: 0, fontSize: 11, padding: '1px 8px', marginTop: 4, color: '#6B4326', background: '#F0C0B7' }}>สั่งนอก {String(it.outsource)}</span>
@@ -78,10 +84,10 @@ function JobItems({ items }: { items: RawItem[] }) {
           </div>
         )
       })}
-      {items.length > ITEMS_SHOWN && (
+      {groups.length > ITEMS_SHOWN && (
         <button onClick={() => setAll(v => !v)} className="sc-mpill"
           style={{ alignSelf: 'flex-start', border: 'none', cursor: 'pointer', background: 'rgba(255,255,255,0.65)', fontFamily: 'inherit' }}>
-          {all ? 'ย่อรายการ' : `ดูทั้งหมด ${items.length} รายการ`}
+          {all ? 'ย่อรายการ' : `ดูทั้งหมด ${groups.length} รายการ`}
         </button>
       )}
     </div>

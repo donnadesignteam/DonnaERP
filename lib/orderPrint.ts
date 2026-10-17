@@ -56,49 +56,70 @@ export function formatOrderLines(r: PrintableOrder, opts: { noMoney?: boolean } 
         push(`${out} ${dt.getDate()}/${dt.getMonth() + 1}`)
       }
     }
-    // แยกหัวข้อตามห้อง/จุด เหมือนใบเสนอราคา จะได้รู้ว่ารางชุดไหนคู่กับผ้าผืนไหน · งานแพลตฟอร์มที่ไม่มีห้องพิมพ์แบบเดิม (หมายเหตุมักเป็น ซ้าย/ขวา ไม่ใช่จุด)
-    // รายการที่มีราคาแยก → ต่อท้ายบรรทัด "= 1 ชุด" ด้วยราคา เช่น "= 1 ชุด 1,500 บาท" (ใบใช้ของไม่ใส่)
-    // ‼️ ใส่ที่นี่ ไม่ใส่ใน itemBlockLines เพราะตัวนั้นใช้กับหน้าจออื่นด้วย (รายละเอียดออเดอร์/มือถือ/สต็อก…)
+    // บรรทัดของรายการ 1 ชิ้นในใบคัดลอก/ปริ้น
+    // - ผ้าโปร่ง: ย้ายคำว่า "ผ้าโปร่ง" ขึ้นไปหน้าชื่อชนิด "ผ้าโปร่งม่านลอนเทป" ไม่ซ้ำในบรรทัดสี (ทุกชนิดม่าน — user ขอ 17ต.ค.69)
+    // - ราคาแยกของรายการ → ต่อท้ายบรรทัด "= 1 ชุด" เช่น "= 1 ชุด 1,500 บาท" (ใบใช้ของไม่ใส่)
+    // ‼️ ทำที่นี่ ไม่ทำใน itemBlockLines เพราะตัวนั้นใช้กับหน้าจออื่นด้วย (รายละเอียดออเดอร์/มือถือ/สต็อก…)
     const blockOf = (item: RawItem, o?: { hideNote?: boolean }) => {
-      const ls = itemBlockLines(item, o)
+      const ls = itemBlockLines(item, o).map(l => ({ ...l }))
+      const isRail = (item.type ?? '').startsWith('ราง')
+      if (!isRail && (item.fabric_type ?? '').includes('โปร่ง') && ls.length >= 2 && !ls[0].t.includes('โปร่ง')) {
+        ls[0].t = `ผ้าโปร่ง${ls[0].t}`
+        const rest = ls[1].t.replace(/^(ผ้า)?โปร่ง\s*/, '').trim()
+        if (rest) ls[1].t = rest
+        else ls.splice(1, 1)
+      }
       const p = opts.noMoney ? null : itemPrice(item.price)
       if (p != null && ls.length) ls[ls.length - 1] = { ...ls[ls.length - 1], t: `${ls[ls.length - 1].t} ${baht(p)} บาท` }
       return ls
     }
     // ฝั่งดึงรวมในรายการเดียว ("2 ชุด ดึงขวา1 ดึงซ้าย1") → แตกเป็นบรรทัดละฝั่ง เหมือนลงแยกรายการ
     const items = splitPullItems(r.items)
+    const noteOf = (it: RawItem) => (it.note ?? '').trim()
     // รายการที่มีฝั่งดึงและหัวรายการ (ชนิด/สี) เหมือนกัน ติดกัน → ขึ้นหัวครั้งเดียว แล้วตามด้วยบรรทัดขนาดของแต่ละฝั่ง (ซ้ายก่อนขวา)
-    //   ม่านพับ
-    //   ก1.00*ส1.00 = 1 ชุด (ดึงซ้าย)
-    //   ก1.00*ส1.00 = 1 ชุด (ดึงขวา)
-    const pushList = (list: RawItem[], bullet: boolean, hideNote: boolean) => {
+    // indent = แบบแยกตามห้อง: ชื่อชนิดชิดซ้าย บรรทัดอื่นเยื้อง 3 ช่อง
+    // noteHead = หมายเหตุขึ้นท้ายชื่อชนิด "มู่ลี่ไม้ (บังราง)" แทนท้ายบรรทัดขนาด
+    const pushList = (list: RawItem[], o: { indent: boolean; hideNote: boolean; noteHead: boolean }) => {
       pullRuns(list).forEach((run, ri) => {
-        if (!bullet && ri > 0) push('')
-        const blocks = run.map(it => blockOf(it, { hideNote }))
-        blocks[0].slice(0, -1).forEach((ln, li) => push(bullet ? (li === 0 ? `• ${ln.t}` : `   ${ln.t}`) : ln.t, ln.rail))
+        if (!o.indent && ri > 0) push('')
+        const blocks = run.map(it => blockOf(it, { hideNote: o.hideNote || o.noteHead }))
+        const notes = o.noteHead ? [...new Set(run.map(noteOf).filter(Boolean))] : []
+        blocks[0].slice(0, -1).forEach((ln, li) => {
+          const t = li === 0 && notes.length ? `${ln.t} (${notes.join(' ')})` : ln.t
+          push(o.indent && li > 0 ? `   ${t}` : t, ln.rail)
+        })
         blocks.forEach(ls => {
           const ln = ls[ls.length - 1]
-          push(bullet ? (ls.length === 1 ? `• ${ln.t}` : `   ${ln.t}`) : ln.t, ln.rail)
+          const t = ls.length === 1 && notes.length ? `${ln.t} (${notes.join(' ')})` : ln.t
+          push(o.indent && ls.length > 1 ? `   ${t}` : t, ln.rail)
         })
         const seen = new Set<string>()
         run.forEach(it => { const k = (it.outsource ?? '').trim(); if (!seen.has(k)) { seen.add(k); pushOutsource(it) } })
       })
     }
-    // แยกหัวข้อตามห้อง (ช่อง "ห้อง") — ไม่มีช่องห้อง: งานนอก/งานติดตั้งที่ลงจุดไว้ในหมายเหตุ ≥ 2 รายการ แยกตามหมายเหตุแบบเดิม
+    // แยกหัวข้อตามห้อง (ช่อง "ห้อง") เหมือนใบเสนอราคา จะได้รู้ว่ารางชุดไหนคู่กับผ้าผืนไหน — หัวข้อ "📍ห้องนอน"
+    // ไม่มีช่องห้อง: งานนอก/งานติดตั้งที่ลงจุดไว้ในหมายเหตุ ≥ 2 รายการ แยกตามหมายเหตุแบบเดิม · งานแพลตฟอร์มพิมพ์เรียงตามเดิม
+    // ทุกรายการในห้องมีหมายเหตุเดียวกัน (เช่น "สูงเต็ม") → ต่อท้ายหัวข้อห้องครั้งเดียว "📍ประตูหน้า สูงเต็ม"
     const hasRoom = items.some(it => (it.room ?? '').trim())
     const isOutsideOrder = OUTSIDE_PLATFORMS.includes(r.platform ?? '') || !!r.is_installation
-    const pointOf = (it: RawItem) => (hasRoom ? (it.room ?? '') : (it.note ?? '')).trim()
-    const byPoint = hasRoom || (isOutsideOrder && items.filter(it => (it.note ?? '').trim()).length >= 2)
+    const pointOf = (it: RawItem) => (hasRoom ? (it.room ?? '') : noteOf(it)).trim()
+    const byPoint = hasRoom || (isOutsideOrder && items.filter(it => noteOf(it)).length >= 2)
     if (byPoint) {
       const points: string[] = []
       for (const it of items) { const p = pointOf(it); if (!points.includes(p)) points.push(p) }
       points.forEach((p, gi) => {
         if (gi > 0) push('')
-        if (p) push(`[${p}]`)
-        pushList(items.filter(it => pointOf(it) === p), true, !hasRoom)
+        let list = items.filter(it => pointOf(it) === p)
+        let head = p
+        if (hasRoom && p && list.length > 1) {
+          const shared = noteOf(list[0])
+          if (shared && list.every(it => noteOf(it) === shared)) { head = `${p} ${shared}`; list = list.map(it => ({ ...it, note: '' })) }
+        }
+        if (head) push(`📍${head}`)
+        pushList(list, { indent: true, hideNote: !hasRoom, noteHead: hasRoom })
       })
     } else {
-      pushList(items, false, false)
+      pushList(items, { indent: false, hideNote: false, noteHead: false })
     }
   }
 

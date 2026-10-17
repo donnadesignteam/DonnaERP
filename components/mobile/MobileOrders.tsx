@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { syncRows, byEntryDateDesc } from '@/lib/rowCache'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
-import { formatItemLines, type RawItem } from '@/lib/itemFormat'
+import { formatItemLinesGrouped, type RawItem } from '@/lib/itemFormat'
 import { effShipping } from '@/lib/shipping'
 import { ORDER_TABS, matchQuickTab, PROD_STATUS_COLOR, effectiveDueDate, daysRemaining, daysLabel, daysColor, type QuickTab } from '@/lib/orderTabs'
 import { useStickyState, useScrollRestore, usePullToRefresh, PullIndicator, UpdatedRow, CardSkeleton, pillBtn, searchInput, clamp } from './mobileUi'
@@ -166,7 +166,7 @@ export default function MobileOrders() {
             // ให้ตรงกับหน้าเดสก์ท็อปแท็บ "ทั้งหมด": จัดส่งแล้ว/งานเสร็จ โชว์สถานะแทนจำนวนวัน
             const due = effectiveDueDate(r)
             const d = due && due !== '-' ? daysRemaining(due) : null
-            const itemLines = formatItemLines(r.items)
+            const itemLines = formatItemLinesGrouped(r.items)
             const shippedDone = r.order_status === 'จัดส่งแล้ว'
             const done = !!r.is_urgent   // is_urgent = ธง "งานเสร็จ" ในระบบนี้ (ชื่อคอลัมน์เก่า)
             // แตะการ์ด → โฟลเดอร์ออเดอร์ของลูกค้าคนนั้น (ไม่มีชื่อลูกค้า = เปิดไม่ได้ เพราะโฟลเดอร์จับคู่ด้วยชื่อ)

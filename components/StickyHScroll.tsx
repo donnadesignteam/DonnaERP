@@ -6,7 +6,17 @@ import { useEffect, useRef, useState } from 'react'
 // หาตัวที่เลื่อนแนวนอนได้ซึ่งขอบล่างเลยจอไป แล้วโชว์แถบเลื่อนแทนที่ขอบล่างจอ (ซิงค์กันสองทาง)
 const CANDIDATES = 'main .overflow-x-auto, main .overflow-auto, main .overflow-x-scroll, main [style*="overflow"]'
 
-type Box = { left: number; width: number; inner: number }
+// ขอบล่างที่มองเห็นได้ของ el — ไล่กล่องแม่ที่เลื่อนแนวตั้งได้ (overflow-y auto/scroll) เอาขอบล่างที่ต่ำสุดที่ไม่ล้นจอ
+function clipBottom(el: HTMLElement, vh: number): number {
+  let bottom = vh
+  for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+    const oy = getComputedStyle(p).overflowY
+    if ((oy === 'auto' || oy === 'scroll') && p.scrollHeight > p.clientHeight + 1) bottom = Math.min(bottom, p.getBoundingClientRect().bottom)
+  }
+  return bottom
+}
+
+type Box = { left: number; width: number; inner: number; top: number }
 
 export default function StickyHScroll() {
   const barRef = useRef<HTMLDivElement>(null)
@@ -34,23 +44,28 @@ export default function StickyHScroll() {
     const measure = () => {
       raf = 0
       const vh = window.innerHeight
-      let best: HTMLElement | null = null, bestArea = 0
+      let best: HTMLElement | null = null, bestArea = 0, bestBottom = vh
       document.querySelectorAll<HTMLElement>(CANDIDATES).forEach(el => {
         if (el.scrollWidth <= el.clientWidth + 1) return
         const ox = getComputedStyle(el).overflowX
         if (ox !== 'auto' && ox !== 'scroll') return
         const r = el.getBoundingClientRect()
-        // ต้องเห็นส่วนบนของตารางอยู่ แต่ขอบล่าง (ที่มีตัวเลื่อนเดิม) ยังไม่โผล่ในจอ
-        if (r.top >= vh - 40 || r.bottom <= vh || r.width < 50) return
-        const area = r.width * (Math.min(r.bottom, vh) - Math.max(r.top, 0))
-        if (area > bestArea) { bestArea = area; best = el }
+        // ขอบล่างที่มองเห็น = ขอบจอ หรือขอบกล่องที่เลื่อนแนวตั้งได้ซึ่งครอบตารางอยู่ (เช่นป๊อปอัปรายการสินค้า) แล้วแต่อันไหนสูงกว่า
+        const bottom = clipBottom(el, vh)
+        // ต้องเห็นส่วนบนของตารางอยู่ แต่ขอบล่าง (ที่มีตัวเลื่อนเดิม) ยังไม่โผล่
+        if (r.top >= bottom - 40 || r.bottom <= bottom || r.width < 50) return
+        // ตารางที่ถูกป๊อปอัปบังอยู่ (หน้าหลังฉากมืด) ไม่นับ — เช็กว่าจุดกลางส่วนที่เห็นเป็นของตารางนี้จริง
+        const hit = document.elementFromPoint(r.left + r.width / 2, (Math.max(r.top, 0) + bottom) / 2)
+        if (!hit || !el.contains(hit)) return
+        const area = r.width * (Math.min(r.bottom, bottom) - Math.max(r.top, 0))
+        if (area > bestArea) { bestArea = area; best = el; bestBottom = bottom }
       })
       setTarget(best)
       if (!best) { setBox(null); return }
       const el = best as HTMLElement
       const r = el.getBoundingClientRect()
-      const next = { left: r.left, width: el.clientWidth, inner: el.scrollWidth }
-      setBox(prev => prev && prev.left === next.left && prev.width === next.width && prev.inner === next.inner ? prev : next)
+      const next = { left: r.left, width: el.clientWidth, inner: el.scrollWidth, top: bestBottom - 16 }
+      setBox(prev => prev && prev.left === next.left && prev.width === next.width && prev.inner === next.inner && prev.top === next.top ? prev : next)
       const bar = barRef.current
       if (bar && performance.now() - barAt.current > 200 && Math.abs(bar.scrollLeft - el.scrollLeft) > 1) bar.scrollLeft = el.scrollLeft
     }
@@ -83,7 +98,7 @@ export default function StickyHScroll() {
       onScroll={onBarScroll}
       className="dn-sticky-hscroll"
       style={{
-        position: 'fixed', bottom: 0, zIndex: 400,
+        position: 'fixed', top: box?.top ?? 0, zIndex: 1100,   // เหนือป๊อปอัป (zIndex 1000)
         left: box?.left ?? 0, width: box?.width ?? 0,
         overflowX: 'auto', overflowY: 'hidden', height: 16,
         display: box ? 'block' : 'none',
