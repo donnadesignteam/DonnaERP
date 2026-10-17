@@ -47,6 +47,58 @@ export function formatOrderLines(r: PrintableOrder, opts: { noMoney?: boolean } 
 
   push('')
 
+  itemSectionLines(r, opts).forEach(l => lines.push(l))
+
+  push('')
+
+  // ยอดเงิน (งานนอก/งานติดตั้ง): ยอดรวม · ค่าส่ง/ค่าติดตั้ง · ชำระแล้ว · เหลือชำระ — lib/orderMoney.ts
+  const money = opts.noMoney ? [] : moneyLines(r)
+  if (money.length) { money.forEach(t => push(t)); push('') }
+
+  // บรรทัดวันกำหนด — ใช้วันชุดเดียวกับคอลัมน์ "วันที่เหลือ" บนหน้าจอ (effectiveDueDate ใน lib/orderTabs.ts)
+  // งานติดตั้ง → "ติดตั้ง <วันนัด> <เวลา> น." · งานนอก/งานเคลม → "ส่งก่อน <deadline>"
+  // งานแพลตฟอร์ม → "ส่งก่อน" จาก effShipping (dropoff +2 + เลี่ยงวันอาทิตย์/วันหยุดร้าน) — ห้ามใช้ shipping_datetime ดิบ
+  const dl = ymdToDmy(r.deadline)
+  if (r.is_installation && dl) {
+    const t = (r.install_time ?? '').trim().replace(/^(\d{1,2}:\d{2}):\d{2}$/, '$1')
+    push(`ติดตั้ง ${dl}${t ? ` ${t} น.` : ''}`)
+  } else if (isOutsideOrderRow(r) && dl) {
+    push(`ส่งก่อน ${dl}`)
+  } else {
+    const effShip = effShipping(r)
+    if (effShip && effShip !== '-') push(`ส่งก่อน ${effShip}`)
+  }
+  if (r.courier) push(r.courier)
+  if (r.notes) push(`หมายเหตุ: ${r.notes}`)
+
+  // ที่อยู่จัดส่ง — ขึ้นเมื่อมีข้อมูลเท่านั้น
+  // ‼️ คอลัมน์ "ที่อยู่จัดส่งแยก" ของแท็บงานแพลตฟอร์ม = ช่อง address ตัวเดียวกับ "ที่อยู่" ของแท็บอื่น
+  const shipAddr = (r.address ?? '').trim()
+  const shipPhone = (r.phone ?? '').trim()
+  if (shipAddr || shipPhone) {
+    push('')
+    push(r.is_installation ? 'ที่อยู่หน้างาน' : 'ที่อยู่จัดส่ง')
+    if (r.customer_name) push(r.customer_name)
+    if (shipPhone) push(shipPhone)
+    if (shipAddr) {
+      const prov = (r.province ?? '').trim()
+      push(prov && !shipAddr.includes(prov) ? `${shipAddr} ${prov}` : shipAddr)
+    }
+  }
+
+  // ชื่อแอดมินต่อท้ายสุด — ขึ้นทั้งตอนคัดลอกและใบปริ้น
+  if (r.admin_name) {
+    push('')
+    push(`แอดมิน: ${r.admin_name}`)
+  }
+
+  return lines
+}
+
+// ส่วนรายการสินค้าของใบคัดลอก/ปริ้น (📍ห้อง · ฝั่งดึง · ผ้าโปร่ง · ราคาท้ายบรรทัด) — แยกออกมาให้บอท LINE ใช้หน้าตาเดียวกัน (app/api/item-lines)
+export function itemSectionLines(r: PrintableOrder, opts: { noMoney?: boolean } = {}): PrintLine[] {
+  const lines: PrintLine[] = []
+  const push = (t: string, rail = false) => lines.push({ t, rail })
   if (r.items && r.items.length > 0) {
     // รายการที่ลงสั่งนอก: ชื่อที่สั่ง + วัน/เดือนที่ลง ต่อท้ายรายการ เช่น "KC 8/7"
     const pushOutsource = (item: RawItem) => {
@@ -121,49 +173,6 @@ export function formatOrderLines(r: PrintableOrder, opts: { noMoney?: boolean } 
     } else {
       pushList(items, { indent: false, hideNote: false, noteHead: false })
     }
-  }
-
-  push('')
-
-  // ยอดเงิน (งานนอก/งานติดตั้ง): ยอดรวม · ค่าส่ง/ค่าติดตั้ง · ชำระแล้ว · เหลือชำระ — lib/orderMoney.ts
-  const money = opts.noMoney ? [] : moneyLines(r)
-  if (money.length) { money.forEach(t => push(t)); push('') }
-
-  // บรรทัดวันกำหนด — ใช้วันชุดเดียวกับคอลัมน์ "วันที่เหลือ" บนหน้าจอ (effectiveDueDate ใน lib/orderTabs.ts)
-  // งานติดตั้ง → "ติดตั้ง <วันนัด> <เวลา> น." · งานนอก/งานเคลม → "ส่งก่อน <deadline>"
-  // งานแพลตฟอร์ม → "ส่งก่อน" จาก effShipping (dropoff +2 + เลี่ยงวันอาทิตย์/วันหยุดร้าน) — ห้ามใช้ shipping_datetime ดิบ
-  const dl = ymdToDmy(r.deadline)
-  if (r.is_installation && dl) {
-    const t = (r.install_time ?? '').trim().replace(/^(\d{1,2}:\d{2}):\d{2}$/, '$1')
-    push(`ติดตั้ง ${dl}${t ? ` ${t} น.` : ''}`)
-  } else if (isOutsideOrderRow(r) && dl) {
-    push(`ส่งก่อน ${dl}`)
-  } else {
-    const effShip = effShipping(r)
-    if (effShip && effShip !== '-') push(`ส่งก่อน ${effShip}`)
-  }
-  if (r.courier) push(r.courier)
-  if (r.notes) push(`หมายเหตุ: ${r.notes}`)
-
-  // ที่อยู่จัดส่ง — ขึ้นเมื่อมีข้อมูลเท่านั้น
-  // ‼️ คอลัมน์ "ที่อยู่จัดส่งแยก" ของแท็บงานแพลตฟอร์ม = ช่อง address ตัวเดียวกับ "ที่อยู่" ของแท็บอื่น
-  const shipAddr = (r.address ?? '').trim()
-  const shipPhone = (r.phone ?? '').trim()
-  if (shipAddr || shipPhone) {
-    push('')
-    push(r.is_installation ? 'ที่อยู่หน้างาน' : 'ที่อยู่จัดส่ง')
-    if (r.customer_name) push(r.customer_name)
-    if (shipPhone) push(shipPhone)
-    if (shipAddr) {
-      const prov = (r.province ?? '').trim()
-      push(prov && !shipAddr.includes(prov) ? `${shipAddr} ${prov}` : shipAddr)
-    }
-  }
-
-  // ชื่อแอดมินต่อท้ายสุด — ขึ้นทั้งตอนคัดลอกและใบปริ้น
-  if (r.admin_name) {
-    push('')
-    push(`แอดมิน: ${r.admin_name}`)
   }
 
   return lines
