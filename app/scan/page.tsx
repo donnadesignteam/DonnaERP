@@ -19,10 +19,12 @@ const LS_KEY = 'donna-scan-tech'
 type Tech = { code: string; name: string; stageKey: string }
 
 // งานพิเศษ (ไม่ใช่สายผลิตปกติ) — แพ็คราง = ติ๊ก rail_packed, จัดส่งแล้ว = ตั้ง order_status+shipped_at
-type SpecialKind = 'rail' | 'shipped'
+type SpecialKind = 'rail' | 'shipped' | 'install'
 const SPECIAL_STAGES: { key: string; label: string; status: string; special: SpecialKind }[] = [
   { key: 'rail_pack', label: 'แพ็คราง', status: 'แพ็คราง', special: 'rail' },
   { key: 'shipped', label: 'จัดส่งแล้ว', status: 'จัดส่งแล้ว', special: 'shipped' },
+  // ช่างติดตั้ง (17ต.ค.69) — สแกนได้เฉพาะงานติดตั้ง → ติดตั้งสำเร็จ ไม่แตะสถานะผลิต (RPC install_scan_advance ใน sql/install_scan.sql)
+  { key: 'install', label: 'ช่างติดตั้ง', status: 'ติดตั้งสำเร็จ', special: 'install' },
 ]
 const resolveStage = (key: string): any => stageByKey(key) || SPECIAL_STAGES.find(s => s.key === key)
 type Phase = 'scanning' | 'working' | 'done' | 'already' | 'noorder' | 'error' | 'barcode' | 'undone' | 'joined'
@@ -523,6 +525,7 @@ function ScanContent() {
   async function runClaimScan(t: Tech, claimId: string): Promise<any> {
     const stage = resolveStage(t.stageKey)
     if (!stage) { setPhase('error'); setMsg('ไม่พบแผนกของผู้ใช้ กรุณาตั้งค่าใหม่'); return null }
+    if (t.stageKey === 'install') { setOrder({ order_number: 'ใบเคลม', isClaim: true }); setPhase('error'); setMsg('แผนกช่างติดตั้งสแกนได้เฉพาะใบออเดอร์งานติดตั้ง'); return null }
     setUploadedCnt({}); setUploadErr(''); setPhotos([]); setJoinInfo(null); askJoinRef.current = false
     setPhase('working')
 
@@ -585,7 +588,13 @@ function ScanContent() {
     if (!id && !ord) { setPhase('noorder'); setMsg(''); return null }
     setUploadedCnt({}); setUploadErr(''); setPhotos([]); setJoinInfo(null); askJoinRef.current = false
     setPhase('working')
-    const advance = (orderId: string) => supabase.rpc('scan_advance', {
+    // ช่างติดตั้ง: RPC แยก — เช็กว่าเป็นงานติดตั้ง แล้วตั้งสถานะติดตั้งสำเร็จ (sql/install_scan.sql)
+    const advance = (orderId: string) => t.stageKey === 'install' ? supabase.rpc('install_scan_advance', {
+      p_order_id: orderId,
+      p_tech_code: t.code,
+      p_tech_name: t.name,
+      p_scanned_term: ord || '',
+    }) : supabase.rpc('scan_advance', {
       p_order_id: orderId,
       p_stage_key: t.stageKey,
       p_tech_code: t.code,
@@ -604,8 +613,13 @@ function ScanContent() {
 
     const pre = early && o.id === id ? await early : null
     const { data, error } = pre && !(pre.data?.result === 'not_found') ? pre : await advance(o.id)
-    if (error) { setPhase('error'); setMsg(error.message); return null }
+    if (error) { setPhase('error'); setMsg(/install_scan_advance/.test(error.message) ? 'ยังไม่ได้รัน sql/install_scan.sql' : error.message); return null }
     if (!data?.ok) {
+      if (data?.result === 'not_install') { setPhase('error'); setMsg('ใบนี้ไม่ใช่งานติดตั้ง — แผนกช่างติดตั้งสแกนได้เฉพาะงานติดตั้ง'); return null }
+      if (t.stageKey === 'install' && data?.result === 'already') {
+        const people = Array.isArray(data.people) && data.people.length ? ` (สแกนโดย ${data.people.join(', ')})` : ''
+        setPhase('error'); setMsg(`งานนี้ติดตั้งสำเร็จไปแล้ว${people}`); return null
+      }
       if (data?.result === 'already') {
         // ขั้นนี้มีคนสแกนไปแล้ว → ถามว่าเป็นการช่วยกันทำหรือเปล่า (ยืนยันแล้วค่อยเรียก scan_join)
         setJoinInfo({ stage: data.stage || stage.label, people: Array.isArray(data.people) ? data.people : [], mine: !!data.mine })
@@ -620,7 +634,7 @@ function ScanContent() {
 
     // แพ็คราง = ติ๊ก flag อย่างเดียว ไม่เปลี่ยนสถานะหลักของออเดอร์
     const special: SpecialKind | undefined = stage.special
-    const done = special === 'rail' ? o : { ...o, order_status: data.status }
+    const done = special === 'rail' || special === 'install' ? o : { ...o, order_status: data.status }
     setOrder(done)
     setPhase('done')
     if (t.stageKey === 'cut') splitCut(scanNoOf(o, ord), o.items, false)
