@@ -1,10 +1,10 @@
 // ข้อความ "ใบออเดอร์" ที่ใช้ทั้งตอนคัดลอกและตอนปริ้นแบบฟอร์ม
 // เดิมอยู่ใน components/OrderWorkspace.tsx — ย้ายออกมาเพราะหน้าปฏิทินงานติดตั้งขอปริ้นฟอร์มหน้าตาเดียวกัน
 // ‼️ แก้ที่นี่ที่เดียว แล้วได้เหมือนกันทั้งหมวดออเดอร์และปฏิทินติดตั้ง
-import { itemBlockLines, type RawItem } from '@/lib/itemFormat'
+import { itemBlockLines, itemPrice, splitPullItems, pullRuns, type RawItem } from '@/lib/itemFormat'
 import { effShipping } from '@/lib/shipping'
 import { OUTSIDE_PLATFORMS } from '@/lib/orderTabs'
-import { moneyLines, type MoneyOrder } from '@/lib/orderMoney'
+import { moneyLines, baht, type MoneyOrder } from '@/lib/orderMoney'
 
 export type PrintLine = { t: string; rail?: boolean }
 
@@ -56,31 +56,49 @@ export function formatOrderLines(r: PrintableOrder, opts: { noMoney?: boolean } 
         push(`${out} ${dt.getDate()}/${dt.getMonth() + 1}`)
       }
     }
-    // งานนอก/งานติดตั้งที่ลงจุดไว้ในช่องหมายเหตุของรายการ (ห้องครัว/โถงหน้าบ้าน…) — พิมพ์แยกหัวข้อตามจุด
-    // เหมือนใบเสนอราคา จะได้รู้ว่ารางชุดไหนคู่กับผ้าผืนไหน · งานแพลตฟอร์มพิมพ์แบบเดิม (หมายเหตุมักเป็น ซ้าย/ขวา ไม่ใช่จุด)
+    // แยกหัวข้อตามห้อง/จุด เหมือนใบเสนอราคา จะได้รู้ว่ารางชุดไหนคู่กับผ้าผืนไหน · งานแพลตฟอร์มที่ไม่มีห้องพิมพ์แบบเดิม (หมายเหตุมักเป็น ซ้าย/ขวา ไม่ใช่จุด)
+    // รายการที่มีราคาแยก → ต่อท้ายบรรทัด "= 1 ชุด" ด้วยราคา เช่น "= 1 ชุด 1,500 บาท" (ใบใช้ของไม่ใส่)
+    // ‼️ ใส่ที่นี่ ไม่ใส่ใน itemBlockLines เพราะตัวนั้นใช้กับหน้าจออื่นด้วย (รายละเอียดออเดอร์/มือถือ/สต็อก…)
+    const blockOf = (item: RawItem, o?: { hideNote?: boolean }) => {
+      const ls = itemBlockLines(item, o)
+      const p = opts.noMoney ? null : itemPrice(item.price)
+      if (p != null && ls.length) ls[ls.length - 1] = { ...ls[ls.length - 1], t: `${ls[ls.length - 1].t} ${baht(p)} บาท` }
+      return ls
+    }
+    // ฝั่งดึงรวมในรายการเดียว ("2 ชุด ดึงขวา1 ดึงซ้าย1") → แตกเป็นบรรทัดละฝั่ง เหมือนลงแยกรายการ
+    const items = splitPullItems(r.items)
+    // รายการที่มีฝั่งดึงและหัวรายการ (ชนิด/สี) เหมือนกัน ติดกัน → ขึ้นหัวครั้งเดียว แล้วตามด้วยบรรทัดขนาดของแต่ละฝั่ง (ซ้ายก่อนขวา)
+    //   ม่านพับ
+    //   ก1.00*ส1.00 = 1 ชุด (ดึงซ้าย)
+    //   ก1.00*ส1.00 = 1 ชุด (ดึงขวา)
+    const pushList = (list: RawItem[], bullet: boolean, hideNote: boolean) => {
+      pullRuns(list).forEach((run, ri) => {
+        if (!bullet && ri > 0) push('')
+        const blocks = run.map(it => blockOf(it, { hideNote }))
+        blocks[0].slice(0, -1).forEach((ln, li) => push(bullet ? (li === 0 ? `• ${ln.t}` : `   ${ln.t}`) : ln.t, ln.rail))
+        blocks.forEach(ls => {
+          const ln = ls[ls.length - 1]
+          push(bullet ? (ls.length === 1 ? `• ${ln.t}` : `   ${ln.t}`) : ln.t, ln.rail)
+        })
+        const seen = new Set<string>()
+        run.forEach(it => { const k = (it.outsource ?? '').trim(); if (!seen.has(k)) { seen.add(k); pushOutsource(it) } })
+      })
+    }
+    // แยกหัวข้อตามห้อง (ช่อง "ห้อง") — ไม่มีช่องห้อง: งานนอก/งานติดตั้งที่ลงจุดไว้ในหมายเหตุ ≥ 2 รายการ แยกตามหมายเหตุแบบเดิม
+    const hasRoom = items.some(it => (it.room ?? '').trim())
     const isOutsideOrder = OUTSIDE_PLATFORMS.includes(r.platform ?? '') || !!r.is_installation
-    const noted = r.items.filter(it => (it.note ?? '').trim())
-    const byPoint = isOutsideOrder && noted.length >= 2
+    const pointOf = (it: RawItem) => (hasRoom ? (it.room ?? '') : (it.note ?? '')).trim()
+    const byPoint = hasRoom || (isOutsideOrder && items.filter(it => (it.note ?? '').trim()).length >= 2)
     if (byPoint) {
       const points: string[] = []
-      for (const it of r.items) {
-        const p = (it.note ?? '').trim()
-        if (!points.includes(p)) points.push(p)
-      }
+      for (const it of items) { const p = pointOf(it); if (!points.includes(p)) points.push(p) }
       points.forEach((p, gi) => {
         if (gi > 0) push('')
         if (p) push(`[${p}]`)
-        r.items!.filter(it => (it.note ?? '').trim() === p).forEach(item => {
-          itemBlockLines(item, { hideNote: true }).forEach((ln, li) => push(li === 0 ? `• ${ln.t}` : `   ${ln.t}`, ln.rail))
-          pushOutsource(item)
-        })
+        pushList(items.filter(it => pointOf(it) === p), true, !hasRoom)
       })
     } else {
-      r.items.forEach((item, idx) => {
-        if (idx > 0) push('')
-        for (const ln of itemBlockLines(item)) push(ln.t, ln.rail)
-        pushOutsource(item)
-      })
+      pushList(items, false, false)
     }
   }
 

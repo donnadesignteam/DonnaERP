@@ -10,7 +10,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { FIELD_TH } from '@/lib/activityText'
 import { PlatformIcon, CourierIcon } from './BrandMark'
-import { itemBlockLines, itemPrice, type RawItem } from '@/lib/itemFormat'
+import { itemBlockLines, itemPrice, splitPullItems, pullRuns, type RawItem } from '@/lib/itemFormat'
 import OrderHistory from './OrderHistory'
 import Pager from './Pager'
 import { OUTSIDE_PLATFORMS, PLATFORM_NAMES } from '@/lib/orderTabs'
@@ -191,7 +191,9 @@ export function OrderDetailBody({ row, afterShipping, wide }: { row: Row; afterS
 
   const items = (row.items as Item[] | null) ?? []
   const [itemPage, setItemPage] = useState(1)
-  const itemPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE))
+  // ม่านพับ/มู่ลี่ฝั่งซ้าย+ขวาที่ผ้าเดียวกัน → กล่องเดียว (แบบเดียวกับใบคัดลอก/ปริ้น) · แบ่งหน้าตามจำนวนกล่อง
+  const itemGroups = pullRuns(splitPullItems(items as RawItem[]))
+  const itemPages = Math.max(1, Math.ceil(itemGroups.length / ITEMS_PER_PAGE))
   const curItemPage = Math.min(itemPage, itemPages)
   const itemStart = (curItemPage - 1) * ITEMS_PER_PAGE
   const itemsTop = useRef<HTMLDivElement>(null)
@@ -199,7 +201,7 @@ export function OrderDetailBody({ row, afterShipping, wide }: { row: Row; afterS
   const itemPager = (bottom: boolean) => (
     <Pager page={curItemPage} pageCount={itemPages}
       onPage={n => { setItemPage(n); if (bottom) requestAnimationFrame(() => itemsTop.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })) }}
-      label={`รายการที่ ${itemStart + 1} - ${Math.min(itemStart + ITEMS_PER_PAGE, items.length)} จาก ${items.length}`} />
+      label={`รายการที่ ${itemStart + 1} - ${Math.min(itemStart + ITEMS_PER_PAGE, itemGroups.length)} จาก ${itemGroups.length}`} />
   )
   const price = typeof row.price === 'number' ? row.price as number : null
   const shipments = (row.shipments as Shipment[] | null) ?? []
@@ -319,14 +321,19 @@ export function OrderDetailBody({ row, afterShipping, wide }: { row: Row; afterS
       <div style={wide ? { minWidth: 0 } : { display: 'contents' }}>
       {/* ══ รายการสินค้า ══ */}
       {items.length > 0 && (
-        <Card title={`รายการสินค้า (${items.length})`} icon={BOX_ICON}>
+        <Card title={`รายการสินค้า (${itemGroups.length})`} icon={BOX_ICON}>
           <div ref={itemsTop} style={{ display: 'flex', flexDirection: 'column', gap: 6, scrollMarginTop: 16 }}>
             {itemPager(false)}
-            {items.slice(itemStart, itemStart + ITEMS_PER_PAGE).map((it, idx) => {
+            {itemGroups.slice(itemStart, itemStart + ITEMS_PER_PAGE).map((group, idx) => {
               const i = itemStart + idx
-              const qty = Number(it.quantity) || null
+              const it = group[0]
+              const qty = group.reduce((a, g) => a + (Number(g.quantity) || 0), 0) || null
               // ‼️ ใช้สูตรบรรทัดเดียวกับตอนปริ้น/คัดลอกในหมวดออเดอร์ จะได้อ่านแล้วตรงกับใบสั่งงาน
-              const lines = itemBlockLines(it as RawItem)
+              // กล่องรวมฝั่งดึง: หัวรายการครั้งเดียว + บรรทัดขนาดของแต่ละฝั่ง
+              const blocks = group.map(g => itemBlockLines(g))
+              const lines = group.length > 1 ? [...blocks[0].slice(0, -1), ...blocks.map(b => b[b.length - 1])] : blocks[0]
+              const prices = group.map(g => itemPrice(g.price))
+              const groupPrice = prices.every(p => p != null) ? prices.reduce((a, p) => a + p!, 0) : null
               return (
                 <div key={i} className="odb-item" style={{ display: 'flex', alignItems: 'flex-start', gap: 14,
                                       background: 'var(--cream-2)', borderRadius: 12, padding: '8px 14px' }}>
@@ -339,6 +346,10 @@ export function OrderDetailBody({ row, afterShipping, wide }: { row: Row; afterS
                         lineHeight: 1.5, wordBreak: 'break-word',
                       }}>{ln.t}</div>
                     ))}
+                    {it.room ? (
+                      <span className="dn-pill" style={{ minWidth: 0, fontSize: 11.5, padding: '2px 10px',
+                            marginTop: 6, marginRight: 6, color: 'var(--ink-2)', background: 'var(--cream)' }}>{String(it.room)}</span>
+                    ) : null}
                     {it.outsource ? (
                       <span className="dn-pill" style={{ minWidth: 0, fontSize: 11.5, padding: '2px 10px',
                             marginTop: 6, color: '#6B4326', background: '#F0C0B7' }}>สั่งนอก {String(it.outsource)}</span>
@@ -350,8 +361,8 @@ export function OrderDetailBody({ row, afterShipping, wide }: { row: Row; afterS
                   <div className="odb-item-nums" style={{ display: 'flex', flexShrink: 0, alignItems: 'stretch' }}>
                     {[
                       { k: 'จำนวน', v: qty ? String(qty) : '—', sub: String(it.unit ?? '') },
-                      ...(itemPrice(it.price) != null ? [{ k: 'ราคา', v: baht(itemPrice(it.price)!), sub: '' }]
-                        : items.length === 1 && price !== null ? [{ k: 'ราคารวม', v: baht(price), sub: '' }] : []),
+                      ...(groupPrice != null ? [{ k: 'ราคา', v: baht(groupPrice), sub: '' }]
+                        : itemGroups.length === 1 && price !== null ? [{ k: 'ราคารวม', v: baht(price), sub: '' }] : []),
                     ].map((c, j) => (
                       <div key={c.k} style={{ minWidth: 92, textAlign: 'right', paddingLeft: 16,
                                               borderLeft: j === 0 ? 'none' : '1px solid var(--hairline)', marginLeft: j === 0 ? 0 : 16 }}>

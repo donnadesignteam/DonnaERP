@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { applyFabricCatalog } from '@/lib/fabrics'
-import { fillItemDefaults, autoTapeHooks, type RawItem } from '@/lib/itemFormat'
+import { fillItemDefaults, autoTapeHooks, splitPullItems, type RawItem } from '@/lib/itemFormat'
 import { askClaude } from '@/lib/askClaude'
 import { normalizeThaiDate } from '@/lib/thaiDate'
 import { inferPlatform } from '@/lib/orderTabs'
@@ -62,7 +62,7 @@ ${ITEM_RULES}
   · "Blackout" = ชนิดผ้า ให้ลง fabric_type="Blackout" (ไม่ใช่ชื่อสี) · "(ต่อผ้า)" ลง orientation
 - รหัสสีในใบเสนอราคาอยู่บรรทัดของมันเอง (ใต้ชื่อสินค้า) เช่น "SHB98 Oatmeal" → color_code="SHB98" color_name="Oatmeal"
   ‼️ ทุกรายการที่มีบรรทัดรหัสต้องเก็บ color_code เสมอ รวมมู่ลี่/ม่านม้วน เช่น "มู่ลี่ไม้ / PDPS-F022 / 1.70*1.30 = 1 ชุด" → {"type":"มู่ลี่ไม้","color_code":"PDPS-F022",...} · "ผ้าโปร่งลอนเทป / AF19-23" → color_code="AF19-23" ห้ามทิ้ง
-- ลด output ของ item: ฟิลด์ต่อไปนี้ถ้าค่าว่าง/null ให้ตัดทิ้ง ไม่ต้องใส่ใน JSON (ระบบเติมให้เอง) — floors, rail_head, eyelet_color, fabric_type, color_code, color_name, color_desc, hooks, orientation, fabric_split, chemical, weight_chain, pull_side, note, price — ใส่เฉพาะฟิลด์ที่มีค่าจริง · แต่ type, width, height, quantity, unit ต้องใส่ครบทุก item เสมอ (ฟิลด์ระดับออเดอร์ยังใส่ null ตามเดิม)
+- ลด output ของ item: ฟิลด์ต่อไปนี้ถ้าค่าว่าง/null ให้ตัดทิ้ง ไม่ต้องใส่ใน JSON (ระบบเติมให้เอง) — floors, rail_head, eyelet_color, fabric_type, color_code, color_name, color_desc, hooks, orientation, fabric_split, chemical, weight_chain, pull_side, room, note, price — ใส่เฉพาะฟิลด์ที่มีค่าจริง · แต่ type, width, height, quantity, unit ต้องใส่ครบทุก item เสมอ (ฟิลด์ระดับออเดอร์ยังใส่ null ตามเดิม)
 
 ข้อความ:
 `
@@ -97,13 +97,14 @@ ${ITEM_RULES}
     // เติม/แก้ fabric_type ให้ถูกต้องจากแคตตาล็อกรหัสผ้า (แม่นกว่าให้ AI เดา)
     // เฉพาะรายการผ้า (ไม่ใช่ราง) ที่มีรหัสสีตรงกับแคตตาล็อก
     if (Array.isArray(order.items)) {
-      order.items = order.items.map((raw: RawItem) => {
+      // ฝั่งดึงรวม ("2 ชุด ดึงขวา1 ดึงซ้าย1") → แตกเป็นรายการละฝั่ง
+      order.items = splitPullItems(order.items.map((raw: RawItem) => {
         const it = fillItemDefaults(raw)
         // ม่านลอนเทป/รางม่านลอนเทป ที่ไม่ได้ลงจำนวนกระดูม → คำนวณจากความกว้างให้เลย
         if (!it.hooks) { const h = autoTapeHooks(it); if (h) it.hooks = h }
         if (typeof it.type === 'string' && it.type.startsWith('ราง')) return it
         return applyFabricCatalog(it)
-      })
+      }))
     }
     if (sample) order.items = sample.items
     return NextResponse.json({ order })

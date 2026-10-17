@@ -26,7 +26,8 @@ export type RawItem = {
   fabric_split?: string   // แบ่งผ้า (ม่านผ้าทั่วไป): แยกกลาง / สไลด์เดี่ยว
   chemical?: string       // เคมี (เฉพาะม่านซ่อนหู): ใส่เคมี / ไม่ใส่เคมี
   weight_chain?: string   // โซ่ถ่วง: ว่าง = ไม่ได้ระบุ / ใส่โซ่ถ่วง / ไม่รับโซ่ถ่วง
-  pull_side?: string      // ฝั่งดึง (ม่านพับ/มู่ลี่): ดึงซ้าย / ดึงขวา
+  pull_side?: string      // ฝั่งดึง (ม่านพับ/มู่ลี่): ดึงซ้าย / ดึงขวา · แอดมินลงรวมได้ เช่น "ขวา1 ซ้าย1" "ขวา/ซ้าย" (ใบคัดลอก/ปริ้นแตกบรรทัดให้ — pullSideSplit)
+  room?: string           // ห้อง/จุดติดตั้ง เช่น ห้องนอน ห้องครัว — ใบคัดลอก/ปริ้นแยกหัวข้อตามห้อง
   note?: string
   outsource?: string      // สั่งนอกของรายการนี้ — ตอนบันทึกจะรวมไปลงคอลัมน์สั่งนอกของออเดอร์
   price?: number          // ราคาของรายการนี้ (ยอดทั้งบรรทัด) — มีเฉพาะตอนต้นฉบับเขียนราคาแยกไว้ ไม่มี = ไม่เก็บ key นี้เลย
@@ -265,6 +266,7 @@ export const ITEM_FIELDS: [string, keyof RawItem, string, number][] = [
   ['โซ่ถ่วง', 'weight_chain', 'text', 80],
   ['ฝั่งดึง', 'pull_side', 'text', 54],
   ['สั่งนอก', 'outsource', 'text', 90],
+  ['ห้อง', 'room', 'text', 80],
   ['หมายเหตุ', 'note', 'text', 90],
   ['ราคา (บาท)', 'price', 'number', 76],   // ราคาของรายการ (ยอดทั้งบรรทัด) — ขึ้นเฉพาะใบที่มีราคาแยก
 ]
@@ -366,12 +368,16 @@ export function itemFieldMissing(it: RawItem, key: string): boolean {
 }
 
 // คอลัมน์ที่จะโชว์ในตารางแก้รายการ — เรียงตาม ITEM_FIELDS เสมอ (ตำแหน่งเดียวกันทุกหน้า)
-export const visibleItemCols = (items: RawItem[], showAll: boolean) => {
+// force = ช่องที่ต้องขึ้นเสมอแม้ยังว่าง (งานติดตั้ง → ITEM_INSTALL_FIELDS)
+export const visibleItemCols = (items: RawItem[], showAll: boolean, force: string[] = []) => {
   const shown = items.map(shownFields)
-  return ITEM_FIELDS.filter(([, key]) => showAll || shown.length === 0 || shown.some(s => s.has(key as string)))
+  return ITEM_FIELDS.filter(([, key]) => showAll || shown.length === 0 || force.includes(key as string) || shown.some(s => s.has(key as string)))
 }
 
-export const emptyItem = (): RawItem => ({ type: '', supply: 'สั่งตัด', floors: null, rail_head: '', pleat: '', rail_color: '', opacity: '', model: '', slat_size: '', hook_type: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', orientation: '', fabric_split: '', chemical: '', weight_chain: '', pull_side: '', note: '', outsource: '' })
+// งานติดตั้งขึ้นช่อง "ห้อง" ไว้เสมอ (มีหรือไม่มีห้องตอนแปลง) · แพลตฟอร์ม/งานนอกขึ้นเฉพาะเมื่อมีค่า
+export const ITEM_INSTALL_FIELDS = ['room']
+
+export const emptyItem = (): RawItem => ({ type: '', supply: 'สั่งตัด', floors: null, rail_head: '', pleat: '', rail_color: '', opacity: '', model: '', slat_size: '', hook_type: '', eyelet_color: '', fabric_type: '', color_code: '', color_name: '', color_desc: '', width: '', height: '', quantity: 1, unit: 'ชุด', hooks: '', orientation: '', fabric_split: '', chemical: '', weight_chain: '', pull_side: '', room: '', note: '', outsource: '' })
 
 // จำนวนชั้นของราง — ออเดอร์เก่าบางใบชั้นติดอยู่ในชื่อชนิด ("รางม่านจีบ 2 ชั้น") ช่อง floors ว่าง
 // ถ้าไม่เผื่ออ่านจากชื่อด้วย เว็บคำนวณอุปกรณ์รางจะคิดเป็นชั้นเดียว (ราง/หัวปิด/ลูกล้อ ขาดครึ่ง)
@@ -420,7 +426,7 @@ export function railIssues(items: RawItem[]): string[] {
 const ITEM_EMPTY_FIELDS = ['type', 'rail_head', 'pleat', 'rail_color', 'opacity', 'model', 'slat_size',
   'hook_type', 'eyelet_color', 'fabric_type', 'color_code', 'color_name',
   'color_desc', 'width', 'height', 'quantity', 'unit', 'hooks', 'orientation', 'fabric_split',
-  'chemical', 'weight_chain', 'pull_side', 'note', 'outsource', 'supply'] as const
+  'chemical', 'weight_chain', 'pull_side', 'room', 'note', 'outsource', 'supply'] as const
 export function fillItemDefaults(it: RawItem): RawItem {
   const out: RawItem = { ...it }
   // ราคา: เก็บเฉพาะที่เป็นตัวเลขจริง ไม่มีราคา → ลบ key ทิ้ง (ไม่เก็บ 0/null ให้รกข้อมูล)
@@ -507,8 +513,55 @@ export function fillItemDefaults(it: RawItem): RawItem {
     const extra = /ราง/.test(pull) ? 'ไม่รับราง' : pull
     out.note = [String(out.note ?? '').trim(), extra].filter(Boolean).join(' ')
     out.pull_side = ''
-  } else if (pull) out.pull_side = /ซ้าย/.test(pull) ? 'ดึงซ้าย' : 'ดึงขวา'
+  } else if (pull) out.pull_side = pullSideSplit(out) ? pull : (/ซ้าย/.test(pull) ? 'ดึงซ้าย' : 'ดึงขวา')
   return out
+}
+
+// ===== ฝั่งดึงหลายฝั่งในรายการเดียว =====
+// "ม่านพับ 1.00*1.00 = 2 ชุด ดึงขวา1 ดึงซ้าย1" (หรือ ขวา1/ซ้าย1 · ขวา/ซ้าย · ดึงขวา/ดึงซ้าย)
+// → [{ดึงซ้าย,1},{ดึงขวา,1}] เรียงซ้ายก่อนขวาเสมอ · ไม่มีตัวเลข = แบ่งจำนวนเท่าๆ กัน
+// คืน null = ฝั่งเดียว/อ่านไม่ออก/ตัวเลขรวมไม่เท่าจำนวน (ปล่อยไว้ตามเดิม)
+export function pullSideSplit(it: RawItem): { side: 'ดึงซ้าย' | 'ดึงขวา'; qty: number }[] | null {
+  const t = String(it.pull_side ?? '').replace(/\s+/g, '')
+  if (!/ซ้าย/.test(t) || !/ขวา/.test(t)) return null
+  const total = Number(it.quantity)
+  if (!(total >= 2) || !Number.isInteger(total)) return null
+  const num = (side: string) => { const m = t.match(side === 'ซ้าย' ? /ซ้าย(\d+)/ : /ขวา(\d+)/); return m ? Number(m[1]) : null }
+  let l = num('ซ้าย'), r = num('ขวา')
+  if (l == null && r == null) { if (total % 2) return null; l = r = total / 2 }
+  else if (l == null) l = total - (r as number)
+  else if (r == null) r = total - l
+  if (!(l! > 0) || !(r! > 0) || l! + r! !== total) return null
+  return [{ side: 'ดึงซ้าย', qty: l! }, { side: 'ดึงขวา', qty: r! }]
+}
+
+// รายการที่มีฝั่งดึงและหัวรายการ (ชนิด/สี) เหมือนกัน ติดกัน → รวมเป็นชุดเดียว (ซ้ายก่อนขวา)
+// ใช้ทั้งใบคัดลอก/ปริ้น (lib/orderPrint) และกล่องรายการสินค้าในหน้ารายละเอียดออเดอร์ — ขึ้นหัวครั้งเดียว ตามด้วยบรรทัดขนาดของแต่ละฝั่ง
+export function pullRuns<T extends RawItem>(items: T[]): T[][] {
+  const headOf = (it: RawItem) => ((it.pull_side ?? '').trim() ? itemBlockLines(it).slice(0, -1).map(l => l.t).join('|') : null)
+  const rank = (it: RawItem) => (it.pull_side === 'ดึงซ้าย' ? 0 : it.pull_side === 'ดึงขวา' ? 1 : 2)
+  const runs: { head: string | null; items: T[] }[] = []
+  for (const it of items) {
+    const h = headOf(it)
+    const last = runs[runs.length - 1]
+    if (last && h != null && last.head === h) last.items.push(it)
+    else runs.push({ head: h, items: [it] })
+  }
+  return runs.map(r => (r.items.length > 1 ? [...r.items].sort((x, y) => rank(x) - rank(y)) : r.items))
+}
+
+// แตกรายการที่ลงฝั่งดึงรวมกันเป็นรายการละฝั่ง (ราคาแบ่งตามจำนวน) — ใช้ตอนแปลงรายการ + ตอนคัดลอก/ปริ้น
+export function splitPullItems<T extends RawItem>(items: T[]): T[] {
+  return items.flatMap(it => {
+    const parts = pullSideSplit(it)
+    if (!parts) return [it]
+    const total = Number(it.quantity)
+    return parts.map(p => {
+      const one = { ...it, pull_side: p.side, quantity: p.qty } as T
+      if (it.price != null) one.price = Math.round((it.price * p.qty / total) * 100) / 100
+      return one
+    })
+  })
 }
 
 // แยก "จำนวนจีบ" กับ "ชนิดตะขอ" ที่เคยเก็บรวมช่องเดียว → ['3จีบ', 'ตะขอยาว']

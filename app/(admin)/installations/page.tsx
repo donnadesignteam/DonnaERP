@@ -13,7 +13,7 @@ import { HOLIDAYS } from '@/lib/holidays'
 import OrderDetailModal from '@/components/OrderDetailModal'
 import { ThemedSelect, SuggestInput } from '@/components/ItemInputs'
 import ReadingNotice from '@/components/ReadingNotice'
-import { formatItemLines, autoTapeHooks, ITEM_FIELDS, ITEM_FIELD_OPTIONS, visibleItemCols, railNoField, itemFieldMissing, itemInputValue, buildItemSuggestions, emptyItem, type RawItem } from '@/lib/itemFormat'
+import { formatItemLines, autoTapeHooks, ITEM_FIELDS, ITEM_FIELD_OPTIONS, visibleItemCols, ITEM_INSTALL_FIELDS, railNoField, itemFieldMissing, itemInputValue, buildItemSuggestions, emptyItem, type RawItem } from '@/lib/itemFormat'
 import { syncOutsourcePO } from '@/lib/outsourceSync'
 import { recordAction } from '@/lib/history'
 import { opUpdate, opInsert, opDelete } from '@/lib/historyOps'
@@ -2020,7 +2020,7 @@ export default function InstallationsPage() {
 
             {/* ตารางแก้รายการ — ชุดคอลัมน์/ลำดับเดียวกับหมวดออเดอร์ (ITEM_FIELDS ใน lib/itemFormat.ts) */}
             {(() => {
-            const cols = visibleItemCols(itemsModal.items, itemsShowAll)
+            const cols = visibleItemCols(itemsModal.items, itemsShowAll, ITEM_INSTALL_FIELDS)
             return (
             <>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>

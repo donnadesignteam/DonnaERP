@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { applyFabricCatalog } from '@/lib/fabrics'
-import { fillItemDefaults, autoTapeHooks, type RawItem } from '@/lib/itemFormat'
+import { fillItemDefaults, autoTapeHooks, splitPullItems, type RawItem } from '@/lib/itemFormat'
 import { askClaude } from '@/lib/askClaude'
 import { ITEM_SCHEMA, ITEM_RULES } from '@/lib/itemPrompt'
 import { parseFabricSample } from '@/lib/fabricSample'
@@ -48,13 +48,14 @@ ${ITEM_RULES}
     const items = JSON.parse(jsonMatch[0])
     // เติมฟิลด์เสริมที่ AI ตัดทิ้งกลับให้ครบ แล้วเติม/แก้ fabric_type จากแคตตาล็อกรหัสผ้า (เฉพาะรายการผ้า ไม่ใช่ราง)
     const normalized = Array.isArray(items)
-      ? items.map((raw: RawItem) => {
+      // ฝั่งดึงรวม ("2 ชุด ดึงขวา1 ดึงซ้าย1") → แตกเป็นรายการละฝั่ง
+      ? splitPullItems(items.map((raw: RawItem) => {
           const it = fillItemDefaults(raw)
           // ม่านลอนเทป/รางม่านลอนเทป ที่ไม่ได้ลงจำนวนกระดูม → คำนวณจากความกว้างให้เลย (โชว์ในตารางแปลง)
           if (!it.hooks) { const h = autoTapeHooks(it); if (h) it.hooks = h }
           if (typeof it.type === 'string' && it.type.startsWith('ราง')) return it
           return applyFabricCatalog(it)
-        })
+        }))
       : items
     return NextResponse.json({ items: normalized })
   } catch {

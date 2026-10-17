@@ -11,7 +11,7 @@ import { useResync, resyncOnReconnect } from '@/lib/useResync'
 import { changedOnly } from '@/lib/changedOnly'
 import { fetchAllRows } from '@/lib/fetchAll'
 import { getPageCache, setPageCache } from '@/lib/pageCache'
-import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, ITEM_FIELDS, ITEM_FIELD_OPTIONS, shownFields, visibleItemCols, railNoField, itemFieldMissing, itemInputValue, buildItemSuggestions, emptyItem as emptyRawItem } from '@/lib/itemFormat'
+import { itemBlockLines, heightText, formatItemLines, railKind, railSplit, railLayers, railIssues, normalizeRailColor, ITEM_FIELDS, ITEM_FIELD_OPTIONS, shownFields, visibleItemCols, ITEM_INSTALL_FIELDS, railNoField, itemFieldMissing, itemInputValue, buildItemSuggestions, emptyItem as emptyRawItem } from '@/lib/itemFormat'
 import { railLink } from '@/lib/rail'
 import { installSerial, formatSerial, matchSerial } from '@/lib/serialNo'
 import { buildCustomerBook } from '@/lib/customerBook'
@@ -80,6 +80,7 @@ type Item = {
   chemical?: string       // เคมี (เฉพาะม่านซ่อนหู): ใส่เคมี / ไม่ใส่เคมี
   weight_chain?: string   // โซ่ถ่วง: ว่าง = ไม่ได้ระบุ / ใส่โซ่ถ่วง / ไม่รับโซ่ถ่วง
   pull_side?: string      // ฝั่งดึง (ม่านพับ/มู่ลี่): ดึงซ้าย / ดึงขวา
+  room?: string           // ห้อง/จุดติดตั้ง
   note: string
   outsource?: string      // สั่งนอกของรายการนี้ — ตอนบันทึกจะรวมทุกรายการไปลงคอลัมน์สั่งนอกของออเดอร์
   price?: number          // ราคาของรายการนี้ (ยอดทั้งบรรทัด) — มีเฉพาะตอนแปลงจากข้อความที่เขียนราคาแยกไว้
@@ -568,7 +569,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [modalItems, setModalItems] = useState<Item[]>([])
   // fee = แถว "+ ค่าส่ง/ค่าติดตั้ง" ท้ายรายการ (เฉพาะงานนอก/งานติดตั้ง) — val เป็นข้อความในช่อง, orig = ค่าเดิมไว้เทียบว่าแก้ไหม
-  const [itemsModal, setItemsModal] = useState<{ id: string; items: Item[]; instId: string | null; fee?: { key: 'ship_fee' | 'install_fee'; label: string; val: string; orig: string } | null } | null>(null)
+  const [itemsModal, setItemsModal] = useState<{ id: string; items: Item[]; instId: string | null; isInst?: boolean; fee?: { key: 'ship_fee' | 'install_fee'; label: string; val: string; orig: string } | null } | null>(null)
   // คำแนะนำในช่องรายการสินค้า = คำที่เคยลงในออเดอร์ที่โหลดอยู่ (ไม่ดึงฐานเพิ่ม)
   const itemSuggest = useMemo(() => buildItemSuggestions(rows.map(r => r.items)), [rows])
   // รูปหน้างาน (งานติดตั้ง) — คอมโพเนนต์กลางตัวเดียวกับหน้างานติดตั้ง
@@ -2147,7 +2148,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
   const openItemsModal = async (r: Entry) => {
     const f = feeOf(r)
     const fv = f?.amount != null ? String(f.amount) : ''
-    setItemsModal({ id: r.id, items: Array.isArray(r.items) ? r.items : [], instId: null,
+    setItemsModal({ id: r.id, items: Array.isArray(r.items) ? r.items : [], instId: null, isInst: !!r.is_installation,
       fee: f ? { key: r.is_installation ? 'install_fee' : 'ship_fee', label: f.label, val: fv, orig: fv } : null })
     setItemsModalPasteText('')
     ph.begin([], null)
@@ -5211,6 +5212,7 @@ ${body}
               {modalItems.map((item, idx) => {
                 // โชว์เฉพาะช่องที่เกี่ยวกับสินค้าชนิดนี้ + ช่องที่มีข้อมูลอยู่ (กด "ทุกช่อง" ถ้าต้องกรอกช่องอื่น)
                 const shown = shownFields(item)
+                if (modal?.data?.is_installation) ITEM_INSTALL_FIELDS.forEach(k => shown.add(k))   // งานติดตั้ง: ช่องห้องขึ้นไว้เสมอ
                 const fields = (formShowAll.includes(idx) ? ITEM_FIELDS : ITEM_FIELDS.filter(([, key]) => shown.has(key as string))).filter(([, key]) => !railNoField(item, key as string))
                 const hidden = ITEM_FIELDS.length - fields.length
                 return (
@@ -5500,7 +5502,7 @@ ${body}
 
             {/* Editable table — โชว์เฉพาะช่องที่เกี่ยวกับสินค้าในใบนี้ (กด "ทุกช่อง" ถ้าอยากกรอกช่องอื่น) */}
             {(() => {
-            const cols = visibleItemCols(itemsModal.items, itemsShowAll)
+            const cols = visibleItemCols(itemsModal.items, itemsShowAll, itemsModal.isInst ? ITEM_INSTALL_FIELDS : [])
             return (
             <>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
