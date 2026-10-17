@@ -23,6 +23,13 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next()
   }
 
+  // บอท LINE (DonnaBot) เรียกตัวแปลงรายการด้วยกุญแจของตัวเอง (header x-bot-key = env BOT_API_KEY ตั้งทั้ง Vercel + Railway)
+  // ‼️ เปิดเฉพาะ /api/parse-items — กุญแจนี้เข้าหน้าอื่น/API อื่นไม่ได้ · ไม่ใช้ SITE_PASS จะได้เปลี่ยนรหัสร้านโดยไม่กระทบบอท
+  const botKey = process.env.BOT_API_KEY
+  if (botKey && botKey.length >= 16 && pathname === '/api/parse-items' && request.headers.get('x-bot-key') === botKey) {
+    return NextResponse.next()
+  }
+
   const cookie = request.cookies.get(AUTH_COOKIE)?.value
   if (cookie === token) {
     // หมวดพนักงาน / วิเคราะห์ข้อมูล — เฉพาะผู้จัดการ (ดู lib/staffAuth.ts) · คนอื่นเด้งกลับหน้าภาพรวม
