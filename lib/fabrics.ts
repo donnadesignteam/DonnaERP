@@ -54,7 +54,7 @@ export const FABRIC_LOOKUP: Record<string, FabricMeta> = {
   'HB85': { color_name: 'เทาเข้ม', fabric_width: 3.20, fabric_type: 'BLACKOUT สูงพิเศษ หน้าหลังเหมือนกัน', shop_code: '8186-4', shop_name: 'จิงจิง' },
   'HB88': { color_name: 'ขาวครีม', fabric_width: 3.20, fabric_type: 'BLACKOUT สูงพิเศษ หน้าหลังเหมือนกัน', shop_code: 'KK1', shop_name: 'จิงจิง' },
   'HB87': { color_name: 'ลินินหม่นขาว', fabric_width: 3.20, fabric_type: 'BLACKOUT สูงพิเศษ หน้าหลังเหมือนกัน', shop_code: 'AF23-22', shop_name: 'Asia fabric' },
-  'HB93': { color_name: 'Mocha Grey', fabric_width: 0, fabric_type: 'BLACKOUT สูงพิเศษ หน้าหลังเหมือนกัน', shop_code: '777-3', shop_name: '' },
+  'HB93': { color_name: 'Mocha Mint', fabric_width: 0, fabric_type: 'BLACKOUT สูงพิเศษ หน้าหลังเหมือนกัน', shop_code: '777-3', shop_name: '' },
   'HB94': { color_name: 'Cloud Grey', fabric_width: 0, fabric_type: 'BLACKOUT สูงพิเศษ หน้าหลังเหมือนกัน', shop_code: '777-4', shop_name: '' },
   'HB95': { color_name: 'Soft grey', fabric_width: 0, fabric_type: 'BLACKOUT สูงพิเศษ หน้าหลังเหมือนกัน', shop_code: '777-5', shop_name: '' },
   'HB96': { color_name: 'Charcoal Grey', fabric_width: 0, fabric_type: 'BLACKOUT สูงพิเศษ หน้าหลังเหมือนกัน', shop_code: '777-6', shop_name: '' },
