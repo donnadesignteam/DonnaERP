@@ -37,7 +37,7 @@ import CreamSelect from '@/components/CreamSelect'
 import { pillBg, pillInk } from '@/components/OrderDetailModal'
 import { useColumnFilters, SearchPill, MonthSelect, SortSelect, Tab, type FilterDef } from '@/components/ListFilters'
 import { parseMoney } from '@/lib/money'
-import { WORK_PILL_BG, INST_PILL_BG, WORK_TYPES, WORK_TYPE_OPTIONS, ZONES, TECHS, TECH_BY_ZONE,
+import { WORK_PILL_BG, INST_PILL_BG, WORK_TYPES, WORK_TYPE_OPTIONS, ZONES, TECHS,
   normStatus, statusLabel, statusOptions, rowColor, INSTALL_COLUMNS } from '@/lib/installMeta'
 import { backdropClose } from '@/lib/backdrop'
 import { useResync, resyncOnReconnect } from '@/lib/useResync'
@@ -598,10 +598,7 @@ export default function InstallationsPage() {
 
   const set = (k: string, v: string | number) => setModal(m => {
     if (!m) return null
-    // เลือกโซนกทม → เติมช่อง "ช่าง" เป็นช่างนอกให้เลย (ถ้ายังไม่ได้เลือกไว้)
-    const auto = k === 'install_zone' && TECH_BY_ZONE[String(v)] && !m.data.technician_type
-      ? { technician_type: TECH_BY_ZONE[String(v)] } : null
-    return { ...m, data: { ...m.data, [k]: v, ...auto } }
+    return { ...m, data: { ...m.data, [k]: v } }
   })
 
   // ‼️ ช่อง "ชื่อลูกค้า" มีช่องเดียว แต่ในฐานมี 2 คอลัมน์ (customer_id = ชื่อไลน์/บัญชี · customer_real_name = ชื่อจริง)
@@ -1051,15 +1048,11 @@ export default function InstallationsPage() {
   const updateZone = async (id: string, zone: string) => {
     const now = new Date().toISOString()
     const old = installs.find(i => i.id === id)
-    // เลือกโซนที่รู้ชนิดช่างอยู่แล้ว (กทม = ช่างนอก) → เติมช่องช่างให้เลย ถ้ายังไม่ได้เลือกไว้
-    const autoTech = TECH_BY_ZONE[zone]
-    const patch = autoTech && !old?.technician_type
-      ? { install_zone: zone, technician_type: autoTech, updated_at: now }
-      : { install_zone: zone, updated_at: now }
+    const patch = { install_zone: zone, updated_at: now }
     setInstalls(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i))
     const { error: err } = await instUpdate(patch).eq('id', id)
     if (err) { setError(`อัพเดทโซนไม่สำเร็จ: ${err.message}`); load() }
-    else trackInst(id, patch, { install_zone: old?.install_zone ?? null, technician_type: old?.technician_type ?? null, updated_at: old?.updated_at ?? null }, `แก้โซนติดตั้ง ${old?.customer_real_name || ''}`)
+    else trackInst(id, patch, { install_zone: old?.install_zone ?? null, updated_at: old?.updated_at ?? null }, `แก้โซนติดตั้ง ${old?.customer_real_name || ''}`)
   }
 
   const updateTech = async (id: string, tech: string) => {

@@ -35,7 +35,7 @@ import { stampInsert, oeUpdate, oeInsert, instUpdate, instInsert, claimUpdate } 
 import { useConfirm } from '@/components/ConfirmDialog'
 import AnchoredMenu from '@/components/AnchoredMenu'
 import { usePrintColumns, PrintColumnPicker, PrintScopePicker, printTableHtml, type PrintCol } from '@/components/PrintColumnPicker'
-import { WORK_TYPE_OPTIONS, ZONES, TECHS as INST_TECHS, TECH_BY_ZONE, statusOptions, statusLabel, normStatus, rowColor as instColor, INSTALL_COLUMNS, WORK_PILL_BG, INST_PILL_BG } from '@/lib/installMeta'
+import { WORK_TYPE_OPTIONS, ZONES, TECHS as INST_TECHS, statusOptions, statusLabel, normStatus, rowColor as instColor, INSTALL_COLUMNS, WORK_PILL_BG, INST_PILL_BG } from '@/lib/installMeta'
 import { orderPatchFromInstall, installPatchFromOrder } from '@/lib/installOrderSync'
 import { useStableView } from '@/lib/useStableView'
 import { TH_MONTHS } from '@/lib/shopCalendar'
@@ -2458,8 +2458,6 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     return (
       <CreamSelect value={val} onChange={v => {
         const patch: Partial<InstMeta> = { [field]: v || null }
-        // เลือกโซนที่รู้ชนิดช่างอยู่แล้ว → เติมช่างให้เลย (เหมือนหน้าปฏิทิน) ถ้ายังไม่ได้เลือกช่างไว้
-        if (field === 'install_zone' && TECH_BY_ZONE[v] && !ins.technician_type) patch.technician_type = TECH_BY_ZONE[v]
         saveInstMeta(orderId, patch)
       }} className="cs-inline" menuMinWidth={150}
         style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', outline: 'none', fontWeight: val ? 600 : 400, color: val ? 'var(--ink-2)' : 'var(--ink-4)', padding: 0, display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'inherit' }}
