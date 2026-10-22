@@ -445,7 +445,7 @@ function ScanContent() {
   // เลือกรูปแล้วยังไม่อัพ — ย่อรูปก่อน (ประหยัดพื้นที่ R2) แล้วเปิดหน้าเช็ครูป กดยืนยันค่อยอัพโหลดจริง
   async function pickPhoto(file: File, tag: string) {
     const label = (UPLOAD_SLOTS[tech?.stageKey || ''] ?? []).find(s => s.tag === tag)?.label || 'รูปที่เลือก'
-    const small = await compressImage(file)
+    const small = await compressImage(file, 1024, 0.7, { dept: resolveStage(tech?.stageKey || '')?.label })
     setPreview({ file: small, tag, url: URL.createObjectURL(small), label })
   }
   function cancelPreview() {

@@ -322,9 +322,11 @@ export default function MobileMe() {
     setLeaveError('')
     let certUrl: string | null = null
     if (certFile) {
-      const ext = (certFile.name.split('.').pop() || 'jpg').toLowerCase()
+      // รูป → ลายน้ำชื่อ·ตำแหน่ง+วันเวลา (lib/photoStamp) · PDF อัพตามเดิม
+      const cf = certFile.type.startsWith('image/') ? await compressImage(certFile, 2000, 0.85) : certFile
+      const ext = (cf.name.split('.').pop() || 'jpg').toLowerCase()
       const path = `${emp.code}/${Date.now()}.${ext}`
-      const up = await supabase.storage.from('medical-certs').upload(path, certFile, { upsert: true })
+      const up = await supabase.storage.from('medical-certs').upload(path, cf, { upsert: true })
       if (up.error) { setLeaveSaving(false); setLeaveError(`แนบใบรับรองแพทย์ไม่สำเร็จ: ${up.error.message}`); return }
       certUrl = supabase.storage.from('medical-certs').getPublicUrl(path).data.publicUrl
     }

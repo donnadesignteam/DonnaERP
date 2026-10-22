@@ -2,13 +2,16 @@
 // ใช้ร่วมกันหน้า /scan และโฟลเดอร์ลูกค้า (customers)
 import { supabase } from '@/lib/supabase'
 import { READ_ONLY } from './readOnly'
+import { stampLines, drawStamp, type StampOpts } from './photoStamp'
 
 // ย่อรูปก่อนอัพ: จำกัดด้านยาวสุด 1024px + JPEG 70% — รูปมือถือ ~4MB เหลือ ~100-150KB
 // ‼️ 5ก.ย.69 ลดจาก 1600px/80% (ได้ ~500KB/รูป กินโควต้า R2 ฟรีเดือนละ ~650MB) — เทียบภาพจริงแล้ว
 //    ตัวหนังสือบนใบสั่งงาน/QR ยังคมอ่านออกครบ · รูปเก่าบน R2 ย่อย้อนหลังไปแล้ว (scripts/r2_shrink_all.mjs)
-// แปลงไม่ได้ (เช่น HEIC บนบางเบราว์เซอร์) หรือย่อแล้วใหญ่กว่าเดิม → ใช้ไฟล์เดิม
-export async function compressImage(file: File, maxDim = 1024, quality = 0.7): Promise<File> {
+// แปลงไม่ได้ (เช่น HEIC บนบางเบราว์เซอร์) → ใช้ไฟล์เดิม (ไม่มีลายน้ำ)
+// ‼️ 22ต.ค.69 ทุกรูปที่ผ่านตรงนี้ได้ลายน้ำ ชื่อ · แผนก + วันเวลา (lib/photoStamp.ts) — stamp=false ปิดได้
+export async function compressImage(file: File, maxDim = 1024, quality = 0.7, stamp: StampOpts | false = {}): Promise<File> {
   try {
+    const lines = stamp === false ? [] : await stampLines(stamp)
     const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' })
     const scale = Math.min(1, maxDim / Math.max(bmp.width, bmp.height))
     const w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale)
@@ -18,8 +21,11 @@ export async function compressImage(file: File, maxDim = 1024, quality = 0.7): P
     if (!ctx) return file
     ctx.drawImage(bmp, 0, 0, w, h)
     bmp.close()
+    drawStamp(ctx, w, h, lines)
     const blob = await new Promise<Blob | null>(res => canvas.toBlob(res, 'image/jpeg', quality))
-    if (!blob || blob.size >= file.size) return file
+    if (!blob) return file
+    // ไม่มีลายน้ำ + ย่อแล้วใหญ่กว่าเดิม → ใช้ไฟล์เดิม (มีลายน้ำต้องใช้ไฟล์ใหม่เสมอ)
+    if (!lines.length && blob.size >= file.size) return file
     return new File([blob], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' })
   } catch { return file }
 }

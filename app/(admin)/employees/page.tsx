@@ -1,5 +1,6 @@
 'use client'
 
+import { compressImage } from '@/lib/packingPhotos'
 import NotifyBell from '@/components/NotifyBell'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -175,7 +176,9 @@ export default function EmployeesPage() {
   }
 
   // อัปโหลดรูปใบรับรองแพทย์เข้า Supabase Storage → คืน public URL (null = ไม่มีไฟล์/พลาด)
-  const uploadCert = async (file: File, code: string): Promise<string | null> => {
+  const uploadCert = async (raw: File, code: string): Promise<string | null> => {
+    // รูป → ใส่ลายน้ำชื่อ·ตำแหน่ง+วันเวลา (ย่อไม่เกิน 2000px ให้ตัวหนังสือในใบยังอ่านออก) · PDF อัพตามเดิม
+    const file = raw.type.startsWith('image/') ? await compressImage(raw, 2000, 0.85) : raw
     const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
     const path = `${code || 'unknown'}/${Date.now()}.${ext}`
     const { error } = await supabase.storage.from('medical-certs').upload(path, file, { upsert: true })
