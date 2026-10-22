@@ -53,6 +53,12 @@ const UPLOAD_SLOTS: Record<string, { tag: string; label: string }[]> = {
   pack: [{ tag: 'rail', label: 'ภาพรางม่าน' }, { tag: 'packed', label: 'ภาพแพ็คแล้ว' }],
   rail_pack: [{ tag: 'rail', label: 'ภาพรางม่าน' }, { tag: 'packed', label: 'ภาพแพ็คแล้ว' }],
   iron: [{ tag: 'ironed', label: 'ภาพม่านที่รีด' }],
+  // 22ต.ค.69 user ขอให้ทุกแผนกส่งรูปได้เหมือนแพ็ค
+  cut: [{ tag: 'cut', label: 'ภาพผ้าที่ตัด' }],
+  sew: [{ tag: 'sewn', label: 'ภาพม่านที่เย็บ' }],
+  assist: [{ tag: 'checked', label: 'ภาพตรวจงาน' }],
+  shipped: [{ tag: 'shipped', label: 'ภาพพัสดุก่อนส่ง' }],   // โผล่หลังจบสแกนเลขพัสดุ (finishBarcode)
+  install: [{ tag: 'installed', label: 'ภาพติดตั้งเสร็จ' }],
 }
 
 // ── แผนกตัด: เมตรผ้าที่ตัดในออเดอร์ที่เพิ่งสแกน (sql/fabric_meters.sql) ──
@@ -357,8 +363,10 @@ function ScanContent() {
     modeRef.current = 'order'
     shipRef.current = null
     shipNosRef.current = []; setShipNos([]); setShipMsg(''); setShipTyped('')
-    setPhase('scanning')
     if (savedCnt > 0) { setShipToast(`✓ บันทึก ${savedCnt} เลขพัสดุแล้ว`); setTimeout(() => setShipToast(''), 3000) }
+    // แผนกจัดส่งมีช่องรูป → ค้างหน้าผลให้อัพรูปพัสดุก่อน กด "สแกนต่อ" เอง (เหมือนแพ็ค)
+    if ((UPLOAD_SLOTS[tech?.stageKey || ''] ?? []).length > 0 && info?.id) { setPhase('done'); return }
+    setPhase('scanning')
     try { scannerRef.current?.resume() } catch {}
     busyRef.current = false
   }

@@ -113,7 +113,7 @@ const PAYMENT_STATUS_COLOR: Record<string, string> = {
   'ยังไม่ชำระ': '#C79A4B', 'มัดจำ': '#9A7BA0', 'มัดจำ50%': '#6E8CA0', 'ชำระครบ': '#6F8F6A',
 }
 const ORDER_ASSIGNED = ['รออัพเดท', 'แจ้งลงหน้าร้าน', 'พี่ฟอง', 'ช่างเชียงใหม่']
-const ADMINS = ['กาย', 'แพท', 'หนูนา', 'ยุน', 'ส้ม', 'เก๋', 'ช่างแพ็ค']
+const ADMINS = ['กาย', 'แพท', 'หนูนา', 'ติว', 'ยุน', 'ส้ม', 'เก๋', 'ช่างแพ็ค']
 
 // ช่องเลือกในแถวตาราง — CreamSelect เพื่อให้เมนูคลี่ลงมีอนิเมชั่นและเป็นโทนครีมเหมือนทั้งเว็บ
 function RowSelect({ value, opts, onPick, blank, maxWidth, bold, color }: {
