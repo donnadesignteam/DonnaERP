@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { verifyTrackToken } from '@/lib/trackLink'
+import { resolveTrackToken } from '@/lib/trackLink'
 import { itemBlockLines, splitPullItems, pullRuns, type RawItem } from '@/lib/itemFormat'
 import { carrierTrackUrl } from '@/lib/carriers'
 import { thaiTrackStatus } from '@/lib/trackExtract'
@@ -50,7 +50,7 @@ const fmtDay = (s: string | null) => {
 
 export default async function TrackPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
-  const id = await verifyTrackToken(token)
+  const id = await resolveTrackToken(token)
   if (!id) notFound()
 
   const { data: r } = await supabase.from('order_entries')
