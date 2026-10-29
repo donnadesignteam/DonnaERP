@@ -65,7 +65,10 @@ export default function UpdateBanner() {
   const [stale, setStale] = useState(false)
   const [updating, setUpdating] = useState(false)
 
+  const onCustomerPage = (pathname ?? '').startsWith('/t/')   // หน้าเช็คสถานะของลูกค้า — ไม่เช็กเวอร์ชัน/ไม่ลงทะเบียนเครื่อง
+
   useEffect(() => {
+    if (onCustomerPage) return
     let current: string | null = null
     let stopped = false
 
@@ -92,7 +95,7 @@ export default function UpdateBanner() {
       document.removeEventListener('visibilitychange', onVisible)
       window.removeEventListener('focus', onVisible)
     }
-  }, [])
+  }, [onCustomerPage])
 
   const update = async () => {
     setUpdating(true)

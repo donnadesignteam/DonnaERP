@@ -44,6 +44,19 @@ export default function MobileOrders() {
   const [rows, setRows] = useState<Entry[]>(cached?.rows ?? [])
   const [loading, setLoading] = useState(!cached)
   const [error, setError] = useState('')
+  const [linkDone, setLinkDone] = useState<string | null>(null)
+  // ลิงก์เช็คสถานะส่งลูกค้า (หน้า /t/<token> ดูได้อย่างเดียว) — มือถือเปิดเมนูแชร์ (ส่งเข้าไลน์ได้เลย) ไม่มีเมนูแชร์ = คัดลอก
+  const shareTrackLink = async (r: Entry) => {
+    try {
+      const { url } = await (await fetch(`/api/track-link?id=${encodeURIComponent(r.id)}`)).json()
+      if (!url) throw new Error()
+      if (navigator.share) {
+        try { await navigator.share({ title: 'สถานะออเดอร์ Donna Design', url }); return } catch (e) { if ((e as Error)?.name === 'AbortError') return }
+      }
+      await navigator.clipboard.writeText(url)
+      setLinkDone(r.id); setTimeout(() => setLinkDone(null), 2000)
+    } catch { setError('สร้างลิงก์เช็คสถานะไม่สำเร็จ ลองใหม่อีกครั้ง') }
+  }
   const [updatedAt, setUpdatedAt] = useState<number | null>(null)
   // แท็บ/คำค้น จำไว้ข้ามการเปลี่ยนหน้า — กดการ์ดเข้าโฟลเดอร์ลูกค้าแล้วกด back ต้องกลับมาที่เดิม
   const [tab, setTab] = useStickyState<QuickTab>('orders:tab', 'all')
@@ -222,8 +235,14 @@ export default function MobileOrders() {
 
                 {/* โทร / เปิดแผนที่ ได้จากการ์ดเลย (หน้าติดตั้งมีอยู่แล้ว หน้านี้เคยเป็นข้อความเปล่า)
                     ‼️ ใช้ span + window.open ไม่ใช่ <a> — การ์ดทั้งใบเป็น <Link> อยู่แล้ว ซ้อน <a> ใน <a> ไม่ได้ */}
-                {(r.phone || r.address) && (
+                {(
                   <div style={{ display: 'flex', gap: 8, marginTop: 9, flexWrap: 'wrap' }}>
+                    {r.order_status !== 'ยกเลิก' && (
+                      <span role="button" tabIndex={0} style={miniBtn}
+                        onClick={e => { e.preventDefault(); e.stopPropagation(); void shareTrackLink(r) }}>
+                        {linkDone === r.id ? '✓ คัดลอกลิงก์แล้ว' : '🔗 ส่งลิงก์ลูกค้า'}
+                      </span>
+                    )}
                     {r.phone && (
                       <span role="button" tabIndex={0} style={miniBtn}
                         onClick={e => { e.preventDefault(); e.stopPropagation(); window.location.href = `tel:${r.phone}` }}>

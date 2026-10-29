@@ -1065,6 +1065,19 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     setTimeout(() => setCopiedId(null), 2000)
   }
 
+  // ลิงก์เช็คสถานะส่งให้ลูกค้า (หน้า /t/<token> ดูได้อย่างเดียว ไม่ต้อง login) — ลายเซ็นออกฝั่งเซิร์ฟเวอร์ /api/track-link
+  const [linkCopiedId, setLinkCopiedId] = useState<string | null>(null)
+  const copyTrackLink = async (r: Entry) => {
+    try {
+      const res = await fetch(`/api/track-link?id=${encodeURIComponent(r.id)}`)
+      const { url } = await res.json()
+      if (!url) throw new Error()
+      await navigator.clipboard.writeText(url)
+      setLinkCopiedId(r.id)
+      setTimeout(() => setLinkCopiedId(null), 2000)
+    } catch { setError('สร้างลิงก์เช็คสถานะไม่สำเร็จ ลองใหม่อีกครั้ง') }
+  }
+
   // ===== เชื่อมกับเว็บคำนวณอุปกรณ์ราง (donna-rail) =====
   const railItemsOf = (r: Entry) => (Array.isArray(r.items) ? r.items : []).filter(it => typeof it.type === 'string' && it.type.startsWith('ราง'))
   const hasRail = (r: Entry) => railItemsOf(r).length > 0
@@ -1219,7 +1232,7 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
         {/* กล่องนี้หดตามความกว้างป้าย — วันเวลาข้างล่างเลยอยู่กึ่งกลางป้ายพอดี */}
         <div style={{ display: 'inline-block' }}>
         {/* ป้ายหน้าตาเดียวกับหน้าภาพรวม (.dn-pill: กว้าง 100 · ตัวน้ำตาลเข้ม · พื้นสีตามขั้นจาก pillBg) — กดแล้วเลือกสถานะได้ */}
-        <CreamSelect value={r.order_status || ''} onChange={v => updateField(r.id, 'order_status', v)}
+        <CreamSelect value={r.order_status || ''} onChange={v => (r.is_installation && v === 'จัดส่งแล้ว' ? handleInstallStatus(r, 'ติดตั้งแล้ว') : updateField(r.id, 'order_status', v))}
           className="dn-pill ow-pill" style={{ color: pillInk(r.order_status || ''), background: pillBg(r.order_status || '') }} menuMinWidth={170}
           options={flow.map(s => ({ value: s, label: r.is_installation && s === 'จัดส่งแล้ว' ? 'ติดตั้งแล้ว' : s, color: PROD_STATUS_COLOR[s] }))}
           renderValue={o => <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{o?.label ?? ((r.is_installation && r.order_status === 'จัดส่งแล้ว' ? 'ติดตั้งแล้ว' : r.order_status) || '—')}</span>} />
@@ -2327,8 +2340,11 @@ export default function OrderWorkspace({ scope = 'orders' }: { scope?: 'orders' 
     const now = new Date().toISOString()
     const updates: Record<string, unknown> = { install_status: val || null, is_dropoff: val === 'ติดตั้งแล้ว', updated_at: now }
     if (val === 'ติดตั้ง50%') updates.deadline = null
+    // ติดตั้งแล้ว = ถือว่างานเสร็จ (สถานะงานเปลี่ยนเป็น "ติดตั้งแล้ว" ต่อด้านล่างผ่าน applyField ให้ลงประวัติ/กระดานงาน)
+    if (val === 'ติดตั้งแล้ว') { updates.is_urgent = true; updates.done_at = r.done_at || now }
     const { error: err } = await oeUpdate(updates).eq('id', r.id)
     if (!err) {
+      if (val === 'ติดตั้งแล้ว' && r.order_status !== 'จัดส่งแล้ว') await applyField(r.id, 'order_status', 'จัดส่งแล้ว')
       const sy = window.scrollY
       flushSync(() => setRows(prev => prev.map(row => row.id === r.id ? { ...row, ...updates } as Entry : row)))
       window.scrollTo(window.scrollX, sy)
@@ -4571,6 +4587,13 @@ ${body}
               <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
               {copiedId === r.id ? 'คัดลอกแล้ว' : 'คัดลอก'}
             </button>
+            {!isClaimEntry(r) && (
+              <button onClick={() => copyTrackLink(r)} title="คัดลอกลิงก์ให้ลูกค้าเปิดดูว่าออเดอร์ถึงขั้นตอนไหนแล้ว (ดูได้อย่างเดียว)"
+                style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: linkCopiedId === r.id ? '#6F8F6A' : 'var(--ink)' }}>
+                <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"/></svg>
+                {linkCopiedId === r.id ? 'คัดลอกลิงก์แล้ว' : 'ลิงก์เช็คสถานะ'}
+              </button>
+            )}
             <button onClick={() => { setOpenAction(null); setActionRect(null); requestPrint(selectedIds.size > 1 ? rows.filter(x => selectedIds.has(x.id)) : [r]) }}
               style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)' }}>
               <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z"/></svg>

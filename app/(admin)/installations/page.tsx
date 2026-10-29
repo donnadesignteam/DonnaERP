@@ -23,7 +23,7 @@ import { oeUpdate, instUpdate, instInsert } from '@/lib/adminActor'
 import { useConfirm } from '@/components/ConfirmDialog'
 import { installSerial, matchSerial } from '@/lib/serialNo'
 import { usePrintColumns, PrintColumnPicker, PrintScopePicker, printTableHtml, type PrintCol } from '@/components/PrintColumnPicker'
-import { createOrderForInstall, orderPatchFromInstall } from '@/lib/installOrderSync'
+import { createOrderForInstall, orderPatchFromInstall, installPatchFromOrder } from '@/lib/installOrderSync'
 import { PROD_STATUS_COLOR, INSTALL_STATUSES, daysRemaining, daysLabel, cmpDaysSort, cmpDeadlineSort } from '@/lib/orderTabs'
 import { TECH_OPTIONS } from '@/lib/techs'
 import { syncWorkStatus } from '@/lib/workStatusSync'
@@ -48,6 +48,7 @@ type Installation = {
   id: string
   serial_no: string
   appointment_datetime: string
+  installed_at?: string | null   // เวลาที่เปลี่ยนเป็น ติดตั้งเสร็จ — trigger ในฐานประทับให้ (sql/add_installed_at_20261029.sql)
   work_type: string
   platform: string
   customer_id: string
@@ -913,6 +914,9 @@ export default function InstallationsPage() {
     for (const [oKey, iKey] of Object.entries(INST_MIRROR)) {
       if (Object.prototype.hasOwnProperty.call(patch, oKey)) instPatch[iKey] = patch[oKey] ?? ''
     }
+    // คอลัมน์ติดตั้ง → สถานะในปฏิทิน (ติดตั้งแล้ว = ติดตั้งเสร็จ ถึงจะนับในยอดติดตั้ง)
+    if (Object.prototype.hasOwnProperty.call(patch, 'install_status'))
+      Object.assign(instPatch, installPatchFromOrder({ install_status: patch.install_status }, { install_status: patch.install_status as string | null }))
     if (inst && Object.keys(instPatch).length) {
       instPatch.updated_at = now
       setInstalls(p => p.map(i => i.id === inst.id ? { ...i, ...instPatch } as Installation : i))
@@ -963,8 +967,13 @@ export default function InstallationsPage() {
   }
 
   // คอลัมน์ "ติดตั้ง" — ติดตั้งแล้ว/ติดตั้ง50% (50% = ล้างวันนัดรอนัดใหม่ เหมือนหมวดออเดอร์)
+  // ติดตั้งแล้ว = สถานะงานไป "ติดตั้งแล้ว" (เก็บเป็น จัดส่งแล้ว) + ถือว่างานเสร็จ ไปด้วยกันทั้งสองช่อง
+  const installedPatch = (orderId: string): Record<string, unknown> => {
+    const oe = orderMeta[orderId]
+    return { install_status: 'ติดตั้งแล้ว', is_dropoff: true, order_status: 'จัดส่งแล้ว', is_urgent: true, done_at: oe?.done_at || new Date().toISOString() }
+  }
   const saveOrderInstallStatus = async (orderId: string, val: string) => {
-    const patch: Record<string, unknown> = { install_status: val || null, is_dropoff: val === 'ติดตั้งแล้ว' }
+    const patch: Record<string, unknown> = val === 'ติดตั้งแล้ว' ? installedPatch(orderId) : { install_status: val || null, is_dropoff: false }
     if (val === 'ติดตั้ง50%') patch.deadline = null
     await saveOrder(orderId, patch, `แก้สถานะติดตั้ง ${orderMeta[orderId]?.customer_name || ''}`)
   }
@@ -1707,7 +1716,7 @@ export default function InstallationsPage() {
                   status: oid ? (
                     /* สถานะงาน — ป้าย .dn-pill ชุดเดียวกับหมวดออเดอร์ (statusCell) · จัดส่งแล้ว = ติดตั้งแล้ว */
                     <div style={{ display: 'inline-block' }}>
-                    <CreamSelect value={oe?.order_status || ''} onChange={v => saveOrder(oid, { order_status: v }, 'แก้สถานะงาน ' + (oe?.customer_name || ''))}
+                    <CreamSelect value={oe?.order_status || ''} onChange={v => saveOrder(oid, v === 'จัดส่งแล้ว' ? installedPatch(oid) : { order_status: v }, 'แก้สถานะงาน ' + (oe?.customer_name || ''))}
                       className="dn-pill ow-pill" style={{ color: pillInk(oe?.order_status || ''), background: pillBg(oe?.order_status || '') }} menuMinWidth={170}
                       options={INSTALL_STATUSES.map(st => ({ value: st, label: st === 'จัดส่งแล้ว' ? 'ติดตั้งแล้ว' : st, color: PROD_STATUS_COLOR[st] }))}
                       renderValue={o => <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{o?.label ?? ((oe?.order_status === 'จัดส่งแล้ว' ? 'ติดตั้งแล้ว' : oe?.order_status) || '—')}</span>} />
@@ -2223,14 +2232,18 @@ export default function InstallationsPage() {
       {/* ยอดติดตั้ง — สรุปยอดติดตั้งสำเร็จ+โบนัสช่างรายเดือน (สูตรตามชีท: ทุน 80% / กำไร 20% / โบนัสรวม 1% ของยอด / หารตามจำนวนช่าง) */}
       {bonusModal && (() => {
         const [by, bm] = bonusMonth.split('-').map(Number)
-        const inMonth = installs.filter(ins => {
-          if (!ins.appointment_datetime) return false
-          const d = new Date(ins.appointment_datetime)
+        // ‼️ นับเข้าเดือนที่ "ติดตั้งเสร็จ" (installed_at) ไม่ใช่เดือนวันนัด — ลงงานกันยา เสร็จตุลา = ยอดตุลา (user สั่ง 29ต.ค.69)
+        //    แถวเก่าที่ยังไม่มี installed_at ใช้วันนัดแทน
+        const doneAt = (ins: Installation) => ins.installed_at || ins.appointment_datetime
+        const done = installs.filter(ins => {
+          if (ins.installation_status !== 'ติดตั้งเสร็จ') return false
+          const v = doneAt(ins)
+          if (!v) return false
+          const d = new Date(v)
           if (bonusZones.length && !bonusZones.includes(ins.install_zone)) return false
           if (bonusTech && ins.technician_type !== bonusTech) return false
           return d.getFullYear() === by && d.getMonth() === bm - 1
         })
-        const done = inMonth.filter(ins => ins.installation_status === 'ติดตั้งเสร็จ')
         const noPrice = done.filter(ins => !(priceOf(ins) > 0))
         const total = done.reduce((s, ins) => s + Math.max(0, priceOf(ins)), 0)
         const cost = total * 0.8
@@ -2238,8 +2251,8 @@ export default function InstallationsPage() {
         const bonusTotal = total * 0.01
         const bonusEach = techCount > 0 ? Math.round(bonusTotal / techCount) : 0
         const fmtB = (n: number) => '฿' + n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-        const monthOptions = Array.from(new Set(installs.filter(i => i.appointment_datetime).map(ins => {
-          const d = new Date(ins.appointment_datetime)
+        const monthOptions = Array.from(new Set(installs.filter(i => doneAt(i)).map(ins => {
+          const d = new Date(doneAt(ins)!)
           return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
         }).concat([bonusMonth]))).sort().reverse()
         const card = (label: string, value: string, color: string) => (
@@ -2314,7 +2327,7 @@ export default function InstallationsPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--border)', background: '#FAFAFA' }}>
-                      {['Serial', 'ลูกค้า', 'วันติดตั้ง', 'แพลตฟอร์ม', 'โซน', 'ช่าง', 'สถานะชำระ', 'ราคา'].map(h => (
+                      {['Serial', 'ลูกค้า', 'วันติดตั้งเสร็จ', 'แพลตฟอร์ม', 'โซน', 'ช่าง', 'สถานะชำระ', 'ราคา'].map(h => (
                         <th key={h} style={{ textAlign: h === 'ราคา' ? 'right' : 'left', padding: '10px 14px', color: 'var(--ink-3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
                       ))}
                     </tr>
@@ -2329,7 +2342,7 @@ export default function InstallationsPage() {
                             : '-'}
                         </td>
                         <td style={{ padding: '10px 14px', color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
-                          {ins.appointment_datetime ? new Date(ins.appointment_datetime).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '-'}
+                          {doneAt(ins) ? new Date(doneAt(ins)!).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '-'}
                         </td>
                         <td style={{ padding: '10px 14px', color: 'var(--ink-3)' }}>{ins.platform || '-'}</td>
                         <td style={{ padding: '10px 14px', color: 'var(--ink-3)' }}>{ins.install_zone || '-'}</td>

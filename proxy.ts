@@ -23,6 +23,9 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next()
   }
 
+  // หน้าเช็คสถานะออเดอร์ของลูกค้า (/t/<token>) — ไม่ต้อง login ลายเซ็นในลิงก์กันเดาเอง (lib/trackLink.ts) ดูได้อย่างเดียว
+  if (pathname.startsWith('/t/')) return NextResponse.next()
+
   // บอท LINE (DonnaBot) เรียกตัวแปลงรายการด้วยกุญแจของตัวเอง (header x-bot-key = env BOT_API_KEY ตั้งทั้ง Vercel + Railway)
   // ‼️ เปิดเฉพาะ /api/parse-items + /api/item-lines (จัดรูปแบบรายการ ไม่แตะฐานข้อมูล) — กุญแจนี้เข้าหน้าอื่น/API อื่นไม่ได้ · ไม่ใช้ SITE_PASS จะได้เปลี่ยนรหัสร้านโดยไม่กระทบบอท
   const botKey = process.env.BOT_API_KEY
