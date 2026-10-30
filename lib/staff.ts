@@ -36,7 +36,9 @@ export const EMPLOYEES: Employee[] = [
   { code:'DN032', realName:'หม่อง ยอง', nickname:'แลง', role:'ช่างทั่วไป', dept:'ปฏิบัติการ' },
   { code:'DN033', realName:'ธีรพล หม่องส่วย', nickname:'ที', role:'แพคสินค้า', dept:'ปฏิบัติการ' },
   { code:'DN034', realName:'ไซพ่อน หล่าย', nickname:'พงศ์', role:'แพคสินค้า', dept:'ปฏิบัติการ' },
-  { code:'DN0X2', realName:'กุลนิษฐ์ แก้ววงศ์', nickname:'ติว', role:'แอดมิน', dept:'ธุรการ' },   // ฝึกงาน
+  { code:'DN038', realName:'ชยานันต์ ใจตรง', nickname:'เมฆ', role:'แพคสินค้า', dept:'ปฏิบัติการ' },
+  { code:'DN039', realName:'กุลนิตย์ แก้ววงค์', nickname:'ติว', role:'แอดมิน', dept:'ธุรการ' },   // เดิม DN0X2 (ฝึกงาน) → ได้รหัสจริง 30ต.ค.69
+  { code:'DN040', realName:'ก้อนหาญ นวล', nickname:'ก้อน', role:'แพคสินค้า', dept:'ปฏิบัติการ' },
 ]
 
 // ลำดับสถานะงานผลิต (ใช้กันสแกนข้ามขั้น — เดินหน้าได้อย่างเดียว)
