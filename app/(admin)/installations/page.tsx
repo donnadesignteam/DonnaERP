@@ -348,7 +348,6 @@ export default function InstallationsPage() {
   const [error, setError] = useState('')
   // กล่องยืนยันของเว็บเอง (ไม่ใช้ window.confirm — ดูเหตุผลใน components/ConfirmDialog.tsx)
   const { ask, confirmDialog } = useConfirm()
-  const [pasteText, setPasteText] = useState('')
   const [parsing, setParsing] = useState(false)
   const [printAsk, setPrintAsk] = useState(false)   // ป๊อปอัปถามก่อนปริ้น: ตารางรายการ / ปฏิทิน
   const printCols = usePrintColumns('installations-v2')   // เลือกคอลัมน์ที่จะเอาลงใบปริ้นตารางรายการ
@@ -575,7 +574,6 @@ export default function InstallationsPage() {
   const openAdd = () => {
     setApptDate('')
     setApptTime('9:00')
-    setPasteText('')
     setParseError('')
     setNameSugOpen(false)
     ph.begin([], null)
@@ -588,7 +586,6 @@ export default function InstallationsPage() {
     setActionMenu(null)
     setApptDate(ins.appointment_datetime?.split('T')[0] ?? '')
     setApptTime(ins.appointment_datetime ? new Date(ins.appointment_datetime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : '9:00')
-    setPasteText('')
     setParseError('')
     setNameSugOpen(false)
     ph.begin([], null)
@@ -616,7 +613,7 @@ export default function InstallationsPage() {
   const closeModal = () => { setModal(null); ph.cancel() }
   const closeItemsModal = () => { setItemsModal(null); setItemsError(''); ph.cancel() }
 
-  // ดรอป PDF ใบเสนอราคา → ดึงข้อความใส่ช่องวางข้อความ แล้วแปลงกรอกฟอร์มให้เลย
+  // ดรอป PDF ใบเสนอราคา → ดึงข้อความแล้วแปลงกรอกฟอร์มให้เลย (ช่องวางข้อความจากไลน์เอาออกแล้ว 3พ.ย.69)
   const handleQuotePdf = async (file: File) => {
     if (!/\.pdf$/i.test(file.name)) { setParseError('รองรับเฉพาะไฟล์ .pdf'); return }
     setParsing(true)
@@ -627,21 +624,9 @@ export default function InstallationsPage() {
       const res = await fetch('/api/parse-pdf', { method: 'POST', body: fd })
       const json = await res.json()
       if (!res.ok || json.error) throw new Error(json.error || 'อ่านไฟล์ไม่สำเร็จ')
-      setPasteText(json.text)
       await parseText(json.text)
     } catch (e) {
       setParseError(e instanceof Error ? e.message : 'อ่านไฟล์ไม่สำเร็จ')
-    } finally {
-      setParsing(false)
-    }
-  }
-
-  const parseFromLine = async () => {
-    if (!pasteText.trim()) return
-    setParsing(true)
-    setParseError('')
-    try {
-      await parseText(pasteText)
     } finally {
       setParsing(false)
     }
@@ -2374,15 +2359,6 @@ export default function InstallationsPage() {
             </h2>
             {modal.mode === 'add' && (
               <div style={{ marginBottom: 20, padding: 14, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>วางข้อความจากไลน์</label>
-                  <button onClick={parseFromLine} disabled={parsing || !pasteText.trim()}
-                    style={{ border: 'none', background: 'var(--blue)', color: '#fff', borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: parsing || !pasteText.trim() ? 'default' : 'pointer', opacity: parsing || !pasteText.trim() ? 0.5 : 1 }}>
-                    {parsing ? 'กำลังแปลง…' : '✨ แปลงข้อมูล'}
-                  </button>
-                </div>
-                <textarea value={pasteText} onChange={e => setPasteText(e.target.value)} rows={3}
-                  style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
                 {/* ลากไฟล์ PDF ใบเสนอราคามาวาง → อ่านข้อความแล้วกรอกฟอร์มให้ตรวจก่อนบันทึก */}
                 <div
                   onDragOver={e => { e.preventDefault(); setQuoteDragOver(true) }}
@@ -2392,7 +2368,7 @@ export default function InstallationsPage() {
                     const f = e.dataTransfer.files[0]
                     if (f) handleQuotePdf(f)
                   }}
-                  style={{ marginTop: 10, border: `2px dashed ${quoteDragOver ? 'var(--blue)' : 'var(--border)'}`, borderRadius: 10, padding: '22px 16px', textAlign: 'center', background: quoteDragOver ? 'var(--blue-bg)' : 'var(--surface)', transition: 'all 0.15s' }}>
+                  style={{ border: `2px dashed ${quoteDragOver ? 'var(--blue)' : 'var(--border)'}`, borderRadius: 10, padding: '22px 16px', textAlign: 'center', background: quoteDragOver ? 'var(--blue-bg)' : 'var(--surface)', transition: 'all 0.15s' }}>
                   <div style={{ fontSize: 26, marginBottom: 6 }}>📄</div>
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>{parsing ? 'กำลังอ่านใบเสนอราคา…' : 'วางไฟล์ใบเสนอราคาที่นี่'}</div>
                   <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 12 }}>รองรับ .pdf</div>
