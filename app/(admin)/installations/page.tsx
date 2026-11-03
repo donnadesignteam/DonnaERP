@@ -405,7 +405,7 @@ export default function InstallationsPage() {
   const cf = useColumnFilters(filterDefs)
   // popup แก้รายการสินค้า (แบบเดียวกับหมวดออเดอร์) — บันทึกกลับไปที่ order_entries ต้นทาง
   // fee = แถว "+ ค่าติดตั้ง" ท้ายรายการ (ช่อง install_fee ของออเดอร์ต้นทาง) — orig ไว้เทียบว่าแก้ไหม
-  const [itemsModal, setItemsModal] = useState<{ orderId: string; items: RawItem[]; instId: string; fee?: { val: string; orig: string } } | null>(null)
+  const [itemsModal, setItemsModal] = useState<{ orderId: string; items: RawItem[]; instId: string; fee?: { val: string; orig: string }; inline?: boolean } | null>(null)
   // คำแนะนำในช่องรายการสินค้า = คำที่เคยลงในออเดอร์ที่โหลดอยู่ (ไม่ดึงฐานเพิ่ม)
   const itemSuggest = useMemo(() => buildItemSuggestions(Object.values(orderItems)), [orderItems])
   const [itemsPasteText, setItemsPasteText] = useState('')
@@ -612,6 +612,21 @@ export default function InstallationsPage() {
   const ph = useInstallPhotos()
 
   const closeModal = () => { setModal(null); ph.cancel() }
+
+  // กล่องเพิ่ม/แก้ไข ลักษณะงาน = งานติดตั้ง → ฝังช่องรายการสินค้า (หน้าตาเดียวกับแท็บงานติดตั้งในหมวดออเดอร์) · งานอื่น/ปิดกล่อง → เอาออก
+  const modalOpen = !!modal
+  const modalWorkType = modal?.data.work_type
+  const modalInstId = modal?.data.id
+  useEffect(() => {
+    if (!modal || modal.data.work_type !== 'งานติดตั้ง') { setItemsModal(m => (m?.inline ? null : m)); return }
+    setItemsModal(m => {
+      if (m?.inline) return m
+      const oid = modal.data.source_order_id || ''
+      const fee = oid && orderMeta[oid]?.install_fee != null ? String(orderMeta[oid].install_fee) : ''
+      return { orderId: oid, instId: String(modal.data.id ?? ''), items: oid ? withAutoHooks(orderItems[oid] ?? []) : [], fee: { val: fee, orig: fee }, inline: true }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalOpen, modalWorkType, modalInstId])
   const closeItemsModal = () => { setItemsModal(null); setItemsError(''); ph.cancel() }
 
   // ดรอป PDF ใบเสนอราคา → ดึงข้อความแล้วแปลงกรอกฟอร์มให้เลย (ช่องวางข้อความจากไลน์เอาออกแล้ว 3พ.ย.69)
@@ -727,6 +742,13 @@ export default function InstallationsPage() {
       setModal(null)
       if (savedRow) await linkOrder(savedRow)   // งานติดตั้ง → สร้างใบออเดอร์ให้ฝ่ายผลิต
       if (modal.mode === 'edit' && d.id) await pushToOrder(d.id, editPatch)   // แก้ในปฏิทิน → sync ไปใบออเดอร์
+      // งานติดตั้ง: รายการสินค้าที่กรอกในกล่อง → ใบออเดอร์ที่ผูกกัน (งานใหม่เพิ่งได้ใบตอน linkOrder ข้างบน)
+      if (savedRow && itemsModal?.inline && savedRow.work_type === 'งานติดตั้ง') {
+        const { data: cur } = await supabase.from('installations').select('source_order_id').eq('id', savedRow.id).maybeSingle()
+        const oid = cur?.source_order_id as string | undefined
+        if (oid) await saveItems({ orderId: oid, instId: savedRow.id })
+        else if (itemsModal.items.length) setError('บันทึกงานแล้ว แต่ยังไม่มีใบออเดอร์ให้ลงรายการสินค้า — กดแก้ไขแล้วบันทึกอีกครั้ง')
+      }
       load()
       return savedRow?.id ?? null
     }
@@ -743,14 +765,6 @@ export default function InstallationsPage() {
     setItemsError('')
   }
 
-  // กล่องเพิ่ม/แก้ไข (เฉพาะงานติดตั้ง) → บันทึกก่อน แล้วเปิดช่องกรอก/แปลงรายการสินค้าของใบออเดอร์ที่ผูกกัน
-  const saveAndOpenItems = async () => {
-    const id = await save()
-    if (!id) return
-    const { data } = await supabase.from('installations').select('*').eq('id', id).maybeSingle()
-    if (!data?.source_order_id) { setError('ยังไม่มีใบออเดอร์ของงานนี้ — ลองกดแก้ไขแล้วกดปุ่มรายการสินค้าอีกครั้ง'); return }
-    openItems(data as Installation, data.source_order_id)
-  }
 
   const saveAppt = async (id: string, date: string, time: string) => {
     if (!date) return
@@ -797,8 +811,10 @@ export default function InstallationsPage() {
     }
   }
 
-  const saveItems = async () => {
-    if (!itemsModal) return
+  const saveItems = async (target?: { orderId: string; instId: string }): Promise<boolean> => {
+    if (!itemsModal) return false
+    const orderId = target?.orderId ?? itemsModal.orderId
+    const instId = target?.instId ?? itemsModal.instId
     // เก็บกระดูมที่คำนวณได้ (ม่านลอนเทป) ลงฐานด้วย ให้ตรงกับที่โชว์ในตาราง
     const newItems = itemsModal.items.length > 0 ? withAutoHooks(itemsModal.items) : null
     const now = new Date().toISOString()
@@ -807,36 +823,40 @@ export default function InstallationsPage() {
     let outUpdates = {}
     let outChanged = false
     if (itemsOut) {
-      const { data: cur } = await supabase.from('order_entries').select('outsource').eq('id', itemsModal.orderId).single()
+      const { data: cur } = await supabase.from('order_entries').select('outsource').eq('id', orderId).single()
       if (itemsOut !== (cur?.outsource ?? '')) { outUpdates = { outsource: itemsOut, outsource_at: now }; outChanged = true }
     }
     // ค่าติดตั้ง — ส่งเฉพาะตอนแก้ (ยังไม่รัน sql/add_order_fees.sql ก็บันทึกรายการได้ปกติ)
     const fee = itemsModal.fee
     const feePatch = fee && fee.val.trim() !== fee.orig ? { install_fee: fee.val.trim() === '' ? null : Number(fee.val) } : {}
-    const { error: err } = await oeUpdate({ items: newItems, updated_at: now, ...outUpdates, ...feePatch }).eq('id', itemsModal.orderId)
-    if (err) { setError(`บันทึกรายการไม่สำเร็จ: ${err.message}`); return }
-    if ('install_fee' in feePatch) setOrderMeta(prev => prev[itemsModal.orderId] ? { ...prev, [itemsModal.orderId]: { ...prev[itemsModal.orderId], install_fee: feePatch.install_fee } } : prev)
+    const { error: err } = await oeUpdate({ items: newItems, updated_at: now, ...outUpdates, ...feePatch }).eq('id', orderId)
+    if (err) { setError(`บันทึกรายการไม่สำเร็จ: ${err.message}`); return false }
+    if ('install_fee' in feePatch) setOrderMeta(prev => prev[orderId] ? { ...prev, [orderId]: { ...prev[orderId], install_fee: feePatch.install_fee } } : prev)
     // รูปหน้างานผูกกับแถวงานติดตั้ง (ตาราง installations) ไม่ใช่ตัวออเดอร์ — บันทึกพร้อมกันตอนกดบันทึกรายการ
-    const hadPhotos = !!installs.find(i => i.id === itemsModal.instId)?.photos?.length
-    if (ph.photos.length || hadPhotos) {
-      const { error: pErr } = await instUpdate({ photos: ph.photos, updated_at: now }).eq('id', itemsModal.instId)
-      if (pErr) { setError(photoSaveError(pErr.message)); return }
-      setInstalls(prev => prev.map(i => i.id === itemsModal.instId ? { ...i, photos: ph.photos } : i))
+    // (ช่องรายการในกล่องเพิ่ม/แก้ไข — รูปบันทึกไปกับ save() แล้ว)
+    if (!itemsModal.inline) {
+      const hadPhotos = !!installs.find(i => i.id === instId)?.photos?.length
+      if (ph.photos.length || hadPhotos) {
+        const { error: pErr } = await instUpdate({ photos: ph.photos, updated_at: now }).eq('id', instId)
+        if (pErr) { setError(photoSaveError(pErr.message)); return false }
+        setInstalls(prev => prev.map(i => i.id === instId ? { ...i, photos: ph.photos } : i))
+      }
+      ph.commit()   // ลบไฟล์ของรูปที่เอาออก หลังบันทึกผ่านแล้ว
     }
-    ph.commit()   // ลบไฟล์ของรูปที่เอาออก หลังบันทึกผ่านแล้ว
     // สั่งนอกเปลี่ยน → sync ไปหมวดสั่งซื้อด้วย
     if (outChanged) {
-      const { data: oe } = await supabase.from('order_entries').select('customer_name, order_number').eq('id', itemsModal.orderId).single()
-      await syncOutsourcePO(itemsModal.orderId, oe?.customer_name, oe?.order_number, itemsOut, itemsModal.items)
+      const { data: oe } = await supabase.from('order_entries').select('customer_name, order_number').eq('id', orderId).single()
+      await syncOutsourcePO(orderId, oe?.customer_name, oe?.order_number, itemsOut, itemsModal.items)
     }
     setOrderItems(prev => {
       const next = { ...prev }
-      if (newItems) next[itemsModal.orderId] = newItems
-      else delete next[itemsModal.orderId]
+      if (newItems) next[orderId] = newItems
+      else delete next[orderId]
       return next
     })
     setItemsModal(null)
     setItemsError('')
+    return true
   }
 
   // แถวที่เพิ่มเองไม่มีออเดอร์ต้นทาง → แก้รายละเอียดงานตรงคอลัมน์รายการ
@@ -1410,6 +1430,121 @@ export default function InstallationsPage() {
         style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} data-missing={missAttr(isBlank(modal?.data[key as keyof typeof modal.data]))} />
     </div>
   )
+
+  // ช่องรายการสินค้า (วางข้อความ→แปลง · ตารางรายการ · ค่าติดตั้ง) — ใช้ทั้ง popup จากคอลัมน์รายการ และฝังในกล่องเพิ่ม/แก้ไขงานติดตั้ง
+  const itemsEditor = () => {
+    if (!itemsModal) return null
+    return (
+          <>
+            {/* AI Paste zone */}
+            <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px', marginBottom: 16 }}>
+              <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 6, fontWeight: 500 }}>วางข้อความรายการสินค้า — AI จะแปลงให้อัตโนมัติ</label>
+              <textarea
+                value={itemsPasteText}
+                onChange={e => { setItemsPasteText(e.target.value); setItemsError('') }}
+                rows={4}
+                placeholder={'ตัวอย่าง:\nม่านจีบ CC-101 ขาวนวล กว้าง 2.5 สูง 2.2 จำนวน 1 ชุด\nม่านโปร่ง BB-202 ครีม 1.8x2.0 2 ชุด'}
+                style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 10px', fontSize: 12, outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit', background: '#fff' }}
+              />
+              {itemsError && (
+                <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 6 }}>{itemsError}</div>
+              )}
+              <button
+                onClick={parseItems}
+                disabled={!itemsPasteText.trim() || itemsParsing}
+                style={{ marginTop: 8, padding: '7px 18px', borderRadius: 7, border: 'none', background: itemsParsing || !itemsPasteText.trim() ? 'var(--border)' : 'var(--blue)', color: itemsParsing || !itemsPasteText.trim() ? 'var(--ink-3)' : '#fff', fontSize: 13, fontWeight: 600, cursor: itemsParsing || !itemsPasteText.trim() ? 'default' : 'pointer' }}>
+                {itemsParsing ? 'กำลังแปลง…' : '✦ แปลงรายการ'}
+              </button>
+              {itemsParsing && <div style={{ marginTop: 10 }}><ReadingNotice text="กำลังแปลงรายการ…" sub="ใช้เวลาประมาณ 10-40 วินาที" /></div>}
+            </div>
+
+            {/* ตารางแก้รายการ — ชุดคอลัมน์/ลำดับเดียวกับหมวดออเดอร์ (ITEM_FIELDS ใน lib/itemFormat.ts) */}
+            {(() => {
+            const cols = visibleItemCols(itemsModal.items, itemsShowAll, ITEM_INSTALL_FIELDS)
+            return (
+            <>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+              <button onClick={() => setItemsShowAll(v => !v)}
+                style={{ fontSize: 11, padding: '3px 10px', border: '1px solid var(--border)', borderRadius: 6, background: itemsShowAll ? 'var(--blue-bg)' : 'var(--bg)', color: itemsShowAll ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer' }}>
+                {itemsShowAll ? 'โชว์เฉพาะช่องที่ใช้' : `ทุกช่อง (${ITEM_FIELDS.length - cols.length} ช่องที่ซ่อนอยู่)`}
+              </button>
+            </div>
+            <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'auto', marginBottom: 14 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead>
+                  <tr style={{ background: '#FAFAFA', borderBottom: '1px solid var(--border)' }}>
+                    {['#', ...cols.map(([lbl]) => lbl)].map(h => (
+                      <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 500, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                    <th style={{ padding: '8px 10px', position: 'sticky', right: 0, background: '#FAFAFA', zIndex: 1 }} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {itemsModal.items.map((item, idx) => (
+                    <tr key={idx} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: '6px 10px', color: 'var(--ink-4)', fontWeight: 500, width: 28 }}>{idx + 1}</td>
+                      {cols.map(([, key, type, w]) => (
+                        <td key={key} style={{ padding: '4px 6px' }}>
+                          {railNoField(item, key) ? <span style={{ display: 'inline-block', width: w, color: 'var(--ink-4)', fontSize: 12, textAlign: 'center' }}>—</span> : ITEM_FIELD_OPTIONS[key] ? (
+                            <ThemedSelect value={String(item[key] ?? ITEM_FIELD_OPTIONS[key][0])} options={ITEM_FIELD_OPTIONS[key]}
+                              onChange={v => setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: v } : it) } : null)}
+                              style={{ width: w, borderRadius: 4, padding: '4px 6px' }} />
+                          ) : (
+                          <SuggestInput
+                            type={type} missing={itemFieldMissing(item, key as string)}
+                            step={type === 'number' ? '0.01' : undefined}
+                            value={key === 'hooks' && !(item.hooks ?? '').toString().trim()
+                              ? autoTapeHooks(item)                                  /* ว่าง → โชว์กระดูมที่คำนวณจากม่านลอนเทป (พิมพ์ทับได้) */
+                              : (item[key] == null ? '' : String(item[key]))}
+                            suggestions={itemSuggest[key as string]}
+                            onChange={v => {
+                              const val = itemInputValue(key, v)
+                              setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: val } : it) } : null)
+                            }}
+                            style={{ width: w, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }}
+                          />
+                          )}
+                        </td>
+                      ))}
+                      <td style={{ padding: '4px 8px', position: 'sticky', right: 0, background: 'var(--surface)', boxShadow: '-2px 0 4px rgba(0,0,0,0.04)' }}>
+                        <button onClick={() => setItemsModal(m => m ? { ...m, items: m.items.filter((_, i) => i !== idx) } : null)}
+                          style={{ border: 'none', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontSize: 13, padding: '2px 4px', whiteSpace: 'nowrap' }}>ลบ</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {itemsModal.items.length === 0 && (
+                    <tr>
+                      <td colSpan={cols.length + 2} style={{ padding: '20px', textAlign: 'center', color: 'var(--ink-4)', fontSize: 12 }}>
+                        ยังไม่มีรายการ — วางข้อความด้านบนแล้วกดแปลง หรือกดเพิ่มแถว
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            </>
+            )
+            })()}
+
+            <button onClick={() => setItemsModal(m => m ? { ...m, items: [...m.items, emptyItem()] } : null)}
+              style={{ fontSize: 12, padding: '4px 12px', border: '1px solid var(--blue)', borderRadius: 6, color: 'var(--blue)', background: 'var(--blue-bg)', cursor: 'pointer', marginBottom: 16 }}>
+              + เพิ่มแถว
+            </button>
+
+            {/* + ค่าติดตั้ง — รวมอยู่ในยอดทั้งหมดแล้ว ไม่บวกเพิ่ม (lib/orderMoney.ts) */}
+            {itemsModal.fee && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px dashed var(--border-2)', borderRadius: 8, padding: '8px 12px', background: 'var(--cream-2)', marginBottom: 16 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)', whiteSpace: 'nowrap' }}>+ ค่าติดตั้ง</span>
+                <input type="number" step="0.01" value={itemsModal.fee.val} placeholder="0"
+                  onChange={e => { const v = e.target.value; setItemsModal(m => m && m.fee ? { ...m, fee: { ...m.fee, val: v } } : m) }}
+                  style={{ width: 110, border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box', textAlign: 'right' }} />
+                <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>บาท</span>
+                <span style={{ fontSize: 11, color: 'var(--ink-4)', marginLeft: 'auto' }}>รวมอยู่ในยอดทั้งหมด</span>
+              </div>
+            )}
+          </>
+    )
+  }
 
   return (
     <div>
@@ -2010,118 +2145,13 @@ export default function InstallationsPage() {
       })()}
 
       {/* Items modal — แก้รายการสินค้าของออเดอร์ต้นทาง (หน้าตา/พฤติกรรมเดียวกับหมวดออเดอร์) */}
-      {itemsModal && (
+      {itemsModal && !itemsModal.inline && (
         <div {...backdropClose(closeItemsModal)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 1000, padding: 24 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', width: '100%', maxWidth: 900, maxHeight: '90vh', overflowY: 'auto', padding: '24px 28px' }}>
 
             <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', marginBottom: 14 }}>รายการสินค้า</h3>
 
-            {/* AI Paste zone */}
-            <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px', marginBottom: 16 }}>
-              <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 6, fontWeight: 500 }}>วางข้อความรายการสินค้า — AI จะแปลงให้อัตโนมัติ</label>
-              <textarea
-                value={itemsPasteText}
-                onChange={e => { setItemsPasteText(e.target.value); setItemsError('') }}
-                rows={4}
-                placeholder={'ตัวอย่าง:\nม่านจีบ CC-101 ขาวนวล กว้าง 2.5 สูง 2.2 จำนวน 1 ชุด\nม่านโปร่ง BB-202 ครีม 1.8x2.0 2 ชุด'}
-                style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 10px', fontSize: 12, outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit', background: '#fff' }}
-              />
-              {itemsError && (
-                <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 6 }}>{itemsError}</div>
-              )}
-              <button
-                onClick={parseItems}
-                disabled={!itemsPasteText.trim() || itemsParsing}
-                style={{ marginTop: 8, padding: '7px 18px', borderRadius: 7, border: 'none', background: itemsParsing || !itemsPasteText.trim() ? 'var(--border)' : 'var(--blue)', color: itemsParsing || !itemsPasteText.trim() ? 'var(--ink-3)' : '#fff', fontSize: 13, fontWeight: 600, cursor: itemsParsing || !itemsPasteText.trim() ? 'default' : 'pointer' }}>
-                {itemsParsing ? 'กำลังแปลง…' : '✦ แปลงรายการ'}
-              </button>
-              {itemsParsing && <div style={{ marginTop: 10 }}><ReadingNotice text="กำลังแปลงรายการ…" sub="ใช้เวลาประมาณ 10-40 วินาที" /></div>}
-            </div>
-
-            {/* ตารางแก้รายการ — ชุดคอลัมน์/ลำดับเดียวกับหมวดออเดอร์ (ITEM_FIELDS ใน lib/itemFormat.ts) */}
-            {(() => {
-            const cols = visibleItemCols(itemsModal.items, itemsShowAll, ITEM_INSTALL_FIELDS)
-            return (
-            <>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
-              <button onClick={() => setItemsShowAll(v => !v)}
-                style={{ fontSize: 11, padding: '3px 10px', border: '1px solid var(--border)', borderRadius: 6, background: itemsShowAll ? 'var(--blue-bg)' : 'var(--bg)', color: itemsShowAll ? 'var(--blue)' : 'var(--ink-3)', cursor: 'pointer' }}>
-                {itemsShowAll ? 'โชว์เฉพาะช่องที่ใช้' : `ทุกช่อง (${ITEM_FIELDS.length - cols.length} ช่องที่ซ่อนอยู่)`}
-              </button>
-            </div>
-            <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'auto', marginBottom: 14 }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                <thead>
-                  <tr style={{ background: '#FAFAFA', borderBottom: '1px solid var(--border)' }}>
-                    {['#', ...cols.map(([lbl]) => lbl)].map(h => (
-                      <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 500, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{h}</th>
-                    ))}
-                    <th style={{ padding: '8px 10px', position: 'sticky', right: 0, background: '#FAFAFA', zIndex: 1 }} />
-                  </tr>
-                </thead>
-                <tbody>
-                  {itemsModal.items.map((item, idx) => (
-                    <tr key={idx} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ padding: '6px 10px', color: 'var(--ink-4)', fontWeight: 500, width: 28 }}>{idx + 1}</td>
-                      {cols.map(([, key, type, w]) => (
-                        <td key={key} style={{ padding: '4px 6px' }}>
-                          {railNoField(item, key) ? <span style={{ display: 'inline-block', width: w, color: 'var(--ink-4)', fontSize: 12, textAlign: 'center' }}>—</span> : ITEM_FIELD_OPTIONS[key] ? (
-                            <ThemedSelect value={String(item[key] ?? ITEM_FIELD_OPTIONS[key][0])} options={ITEM_FIELD_OPTIONS[key]}
-                              onChange={v => setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: v } : it) } : null)}
-                              style={{ width: w, borderRadius: 4, padding: '4px 6px' }} />
-                          ) : (
-                          <SuggestInput
-                            type={type} missing={itemFieldMissing(item, key as string)}
-                            step={type === 'number' ? '0.01' : undefined}
-                            value={key === 'hooks' && !(item.hooks ?? '').toString().trim()
-                              ? autoTapeHooks(item)                                  /* ว่าง → โชว์กระดูมที่คำนวณจากม่านลอนเทป (พิมพ์ทับได้) */
-                              : (item[key] == null ? '' : String(item[key]))}
-                            suggestions={itemSuggest[key as string]}
-                            onChange={v => {
-                              const val = itemInputValue(key, v)
-                              setItemsModal(m => m ? { ...m, items: m.items.map((it, i) => i === idx ? { ...it, [key]: val } : it) } : null)
-                            }}
-                            style={{ width: w, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }}
-                          />
-                          )}
-                        </td>
-                      ))}
-                      <td style={{ padding: '4px 8px', position: 'sticky', right: 0, background: 'var(--surface)', boxShadow: '-2px 0 4px rgba(0,0,0,0.04)' }}>
-                        <button onClick={() => setItemsModal(m => m ? { ...m, items: m.items.filter((_, i) => i !== idx) } : null)}
-                          style={{ border: 'none', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontSize: 13, padding: '2px 4px', whiteSpace: 'nowrap' }}>ลบ</button>
-                      </td>
-                    </tr>
-                  ))}
-                  {itemsModal.items.length === 0 && (
-                    <tr>
-                      <td colSpan={cols.length + 2} style={{ padding: '20px', textAlign: 'center', color: 'var(--ink-4)', fontSize: 12 }}>
-                        ยังไม่มีรายการ — วางข้อความด้านบนแล้วกดแปลง หรือกดเพิ่มแถว
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            </>
-            )
-            })()}
-
-            <button onClick={() => setItemsModal(m => m ? { ...m, items: [...m.items, emptyItem()] } : null)}
-              style={{ fontSize: 12, padding: '4px 12px', border: '1px solid var(--blue)', borderRadius: 6, color: 'var(--blue)', background: 'var(--blue-bg)', cursor: 'pointer', marginBottom: 16 }}>
-              + เพิ่มแถว
-            </button>
-
-            {/* + ค่าติดตั้ง — รวมอยู่ในยอดทั้งหมดแล้ว ไม่บวกเพิ่ม (lib/orderMoney.ts) */}
-            {itemsModal.fee && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px dashed var(--border-2)', borderRadius: 8, padding: '8px 12px', background: 'var(--cream-2)', marginBottom: 16 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)', whiteSpace: 'nowrap' }}>+ ค่าติดตั้ง</span>
-                <input type="number" step="0.01" value={itemsModal.fee.val} placeholder="0"
-                  onChange={e => { const v = e.target.value; setItemsModal(m => m && m.fee ? { ...m, fee: { ...m.fee, val: v } } : m) }}
-                  style={{ width: 110, border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box', textAlign: 'right' }} />
-                <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>บาท</span>
-                <span style={{ fontSize: 11, color: 'var(--ink-4)', marginLeft: 'auto' }}>รวมอยู่ในยอดทั้งหมด</span>
-              </div>
-            )}
+            {itemsEditor()}
 
             {ph.trigger()}
 
@@ -2130,7 +2160,7 @@ export default function InstallationsPage() {
                 style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>
                 ยกเลิก
               </button>
-              <button onClick={saveItems}
+              <button onClick={() => { saveItems() }}
                 style={{ flex: 2, padding: '10px', borderRadius: 8, border: 'none', background: 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
                 บันทึก
               </button>
@@ -2386,7 +2416,7 @@ export default function InstallationsPage() {
       {/* Add/Edit modal */}
       {modal && (
         <div className="sc-mback" onMouseDown={e => { if (e.target === e.currentTarget) closeModal() }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 1000, padding: 24 }}>
-          <div className="sc-modal" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: 680, maxHeight: '90vh', overflowY: 'auto' }}>
+          <div className="sc-modal" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 28, width: '100%', maxWidth: modal.data.work_type === 'งานติดตั้ง' ? 900 : 680, maxHeight: '90vh', overflowY: 'auto' }}>
             <h2 className="sc-mtitle">
               {modal.mode === 'add' ? '+ เพิ่มรายการติดตั้ง' : 'แก้ไขรายการ'}
             </h2>
@@ -2493,13 +2523,10 @@ export default function InstallationsPage() {
                 style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} data-missing={missAttr(isBlank(modal.data.address))} />
             </div>
             {/* ช่องรายละเอียดงานเอาออกจากกล่องแล้ว (3พ.ย.69) — งานติดตั้งกรอกรายการสินค้าแทน · งานเก่าที่มีรายละเอียดยังแก้ได้ที่ตาราง */}
-            {modal.data.work_type === 'งานติดตั้ง' && (
+            {modal.data.work_type === 'งานติดตั้ง' && itemsModal?.inline && (
               <div style={{ marginBottom: 12 }}>
-                <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>รายการสินค้า</label>
-                <button type="button" onClick={saveAndOpenItems} disabled={saving}
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: 10, border: '1px dashed var(--border-2)', background: 'var(--bg)', color: 'var(--ink)', cursor: saving ? 'default' : 'pointer', fontSize: 13, fontWeight: 600 }}>
-                  ✦ บันทึก แล้วกรอก/แปลงรายการสินค้า
-                </button>
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', margin: '4px 0 10px' }}>รายการสินค้า</h3>
+                {itemsEditor()}
               </div>
             )}
             <div style={{ marginBottom: 12 }}>
