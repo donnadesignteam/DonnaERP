@@ -510,6 +510,7 @@ tr.row-flash, tr.row-flash > td { animation: row-flash 1s ease-in-out 3; }
 
 /* ช่องรายการสินค้าที่ต้องกรอกแต่ยังว่าง (SuggestInput/ThemedSelect missing) — selector ยาวกว่า .sc-fields/.sc-modal input เพื่อชนะ !important ของธีม */
 html input[data-missing]:not([type=checkbox]):not([type=radio]):not([type=file]):not(:focus),
+html select[data-missing]:not(:focus), html textarea[data-missing]:not(:focus),
 html button[data-themed-select][data-missing][data-missing] {
   background: var(--missing-bg) !important; border-color: var(--missing-border) !important; }
 html input[data-missing]::placeholder { color: var(--cal-holiday-ink); }

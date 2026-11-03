@@ -1363,15 +1363,15 @@ export default function InstallationsPage() {
     installs.flatMap(i => [i.customer_id, i.customer_real_name]).map(v => (v ?? '').trim()).filter(Boolean)
   )).sort((a, b) => a.localeCompare(b, 'th'))
 
-  // ช่องที่ยังไม่กรอกในกล่องเพิ่ม/แก้รายการ → พื้นเหลือง เห็นชัดว่าเหลือช่องไหน
-  const fieldStyle = (empty: boolean) => ({ background: empty ? '#FFF6D6' : 'var(--surface)', borderColor: empty ? '#E8C76A' : 'var(--border)' })
+  // ช่องที่ยังไม่กรอกในกล่องเพิ่ม/แก้รายการ → ไฮไลต์น้ำตาลแบบหมวดออเดอร์ ([data-missing] ใน globals.css — inline style แพ้ !important ของธีม .sc-modal)
+  const missAttr = (empty: boolean) => (empty ? '' : undefined)
   const isBlank = (v: unknown) => v == null || String(v).trim() === ''
 
   const sel = (label: string, key: string, options: string[]) => (
     <div style={{ marginBottom: 12 }}>
       <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>{label}</label>
       <select value={String(modal?.data[key as keyof typeof modal.data] ?? '')} onChange={e => set(key, e.target.value)}
-        style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', ...fieldStyle(isBlank(modal?.data[key as keyof typeof modal.data])) }}>
+        style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none' }} data-missing={missAttr(isBlank(modal?.data[key as keyof typeof modal.data]))}>
         <option value="">— เลือก —</option>
         {options.map(o => <option key={o}>{o}</option>)}
       </select>
@@ -1382,7 +1382,7 @@ export default function InstallationsPage() {
     <div style={{ marginBottom: 12 }}>
       <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>{label}</label>
       <input type={type} value={String(modal?.data[key as keyof typeof modal.data] ?? '')} onChange={e => set(key, type === 'number' ? Number(e.target.value) : e.target.value)}
-        style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box', ...fieldStyle(isBlank(modal?.data[key as keyof typeof modal.data])) }} />
+        style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} data-missing={missAttr(isBlank(modal?.data[key as keyof typeof modal.data]))} />
     </div>
   )
 
@@ -2402,7 +2402,7 @@ export default function InstallationsPage() {
                     value={/^\d{4}-\d{2}-\d{2}$/.test(apptDate) ? apptDate : ''}
                     onChange={e => { if (e.target.value) setApptDate(e.target.value) }}
                     onMouseDown={e => { e.preventDefault(); try { (e.target as HTMLInputElement).showPicker() } catch {} }}
-                    style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box', color: apptDate ? 'transparent' : 'var(--ink-3)', ...fieldStyle(!/^\d{4}-\d{2}-\d{2}$/.test(apptDate)) }}
+                    style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box', color: apptDate ? 'transparent' : 'var(--ink-3)' }} data-missing={missAttr(!/^\d{4}-\d{2}-\d{2}$/.test(apptDate))}
                   />
                   {apptDate && (
                     <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, display: 'flex', alignItems: 'center', paddingLeft: 10, fontSize: 13, color: 'var(--ink)', pointerEvents: 'none' }}>
@@ -2439,7 +2439,7 @@ export default function InstallationsPage() {
                       onChange={e => { setCustomerName(e.target.value); setNameSugOpen(true) }}
                       onFocus={() => setNameSugOpen(true)}
                       onBlur={() => setTimeout(() => setNameSugOpen(false), 120)}
-                      style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box', ...fieldStyle(isBlank(val)) }} />
+                      style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} data-missing={missAttr(isBlank(val))} />
                     {nameSugOpen && sugs.length > 0 && (
                       <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 7, boxShadow: '0 4px 16px rgba(0,0,0,0.14)', zIndex: 30, maxHeight: 190, overflowY: 'auto', marginTop: 2 }}>
                         {sugs.map(n => (
@@ -2465,17 +2465,17 @@ export default function InstallationsPage() {
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>ที่อยู่</label>
               <textarea value={modal.data.address ?? ''} onChange={e => set('address', e.target.value)} rows={2}
-                style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box', ...fieldStyle(isBlank(modal.data.address)) }} />
+                style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} data-missing={missAttr(isBlank(modal.data.address))} />
             </div>
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>รายละเอียดงาน</label>
               <textarea value={modal.data.work_details ?? ''} onChange={e => set('work_details', e.target.value)} rows={2}
-                style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box', ...fieldStyle(isBlank(modal.data.work_details)) }} />
+                style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} data-missing={missAttr(isBlank(modal.data.work_details))} />
             </div>
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>หมายเหตุ</label>
               <textarea value={modal.data.notes ?? ''} onChange={e => set('notes', e.target.value)} rows={2}
-                style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box', ...fieldStyle(isBlank(modal.data.notes)) }} />
+                style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} data-missing={missAttr(isBlank(modal.data.notes))} />
             </div>
 
             {ph.trigger()}
