@@ -2420,7 +2420,8 @@ export default function InstallationsPage() {
               </div>
               {sel('ลักษณะงาน', 'work_type', WORK_TYPES)}
               {sel('จาก', 'platform', PLATFORMS)}
-              {sel('ผู้ลงข้อมูล', 'entered_by', ENTERED_BY)}
+              {/* ชุดชื่อเดียวกับช่อง "แอดมิน" ของหมวดออเดอร์ (ชื่อเก่าที่ไม่อยู่ในชุดยังโชว์ให้ตอนแก้) */}
+              {sel('ผู้ลงข้อมูล', 'entered_by', [...ADMINS, ...(modal.data.entered_by && !ADMINS.includes(modal.data.entered_by) ? [modal.data.entered_by] : [])])}
               {/* ชื่อลูกค้า — พิมพ์แล้วเดาชื่อจากลูกค้าที่เคยมีในระบบ (ไม่สนตัวพิมพ์เล็ก/ใหญ่) */}
               {(() => {
                 const val = String(modal.data.customer_real_name || modal.data.customer_id || '')
