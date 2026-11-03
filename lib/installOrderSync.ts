@@ -23,6 +23,7 @@ type InstallRow = {
   province?: string | null
   phone?: string | null
   location_link?: string | null
+  address?: string | null
   work_details?: string | null
   notes?: string | null
   price?: number | null
@@ -58,6 +59,7 @@ export async function createOrderForInstall(ins: InstallRow): Promise<{ orderId:
     province: ins.province || null,
     phone: ins.phone || null,
     location_link: ins.location_link || null,
+    address: ins.address || null,
     notes: [ins.work_details, ins.notes].map(v => (v ?? '').trim()).filter(Boolean).join(' · ') || null,
     price: ins.price ?? null,
     payment_status: pay,
@@ -151,6 +153,7 @@ export function orderPatchFromInstall(patch: Record<string, unknown>, merged: In
   if (has('phone')) out.phone = merged.phone || null
   if (has('province')) out.province = merged.province || null
   if (has('location_link')) out.location_link = merged.location_link || null
+  if (has('address')) out.address = merged.address || null
   if (has('platform')) out.platform = merged.platform || null
   if (has('customer_id') || has('customer_real_name')) out.customer_name = merged.customer_real_name || merged.customer_id || null
   if (has('notes') || has('work_details')) {

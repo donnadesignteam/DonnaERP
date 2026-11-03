@@ -59,6 +59,7 @@ type Installation = {
   phone: string
   work_details: string
   location_link: string
+  address?: string | null   // ที่อยู่หน้างาน (sql/add_installation_address_20261103.sql) — งานติดตั้งส่งต่อไปช่องที่อยู่ของใบออเดอร์
   price: number
   notes: string
   payment_status: string
@@ -315,7 +316,7 @@ function Chip({ bg, dot, title, sub, big, onClick }: { bg: string; dot: string; 
 
 const emptyForm = (): Omit<Installation, 'id' | 'created_at' | 'updated_at' | 'serial_no'> => ({
   appointment_datetime: '', work_type: 'งานวัดหน้างาน', platform: '', customer_id: '',
-  customer_real_name: '', province: '', install_zone: '', technician_type: '', phone: '', work_details: '', location_link: '',
+  customer_real_name: '', province: '', install_zone: '', technician_type: '', phone: '', work_details: '', location_link: '', address: '',
   price: 0, notes: '', payment_status: 'รอมัดจำ', appointment_status: 'นัดหมายแล้ว',
   production_status: 'กำลังผลิต', send_to_technician: 'หน้าร้าน',
   installation_status: 'รอนัดหมาย', entered_by: '', photos: [],
@@ -682,6 +683,7 @@ export default function InstallationsPage() {
     // ยังไม่เคยใช้รูปกับรายการนี้ → ไม่ต้องส่งคอลัมน์ photos (เว็บทำงานได้ตามปกติแม้ยังไม่ได้รัน SQL เพิ่มคอลัมน์)
     const hadPhotos = !!installs.find(i => i.id === d.id)?.photos?.length
     if (!ph.photos.length && !hadPhotos) delete payload.photos
+    if (!payload.address && !installs.find(i => i.id === d.id)?.address) delete payload.address   // ว่าง → ไม่ส่ง (ยังไม่รัน SQL ก็บันทึกได้)
     const name = (d.customer_real_name || d.customer_id || d.serial_no || '').toString()
     let err
     let savedRow: Installation | null = null
@@ -713,7 +715,9 @@ export default function InstallationsPage() {
     }
     setSaving(false)
     if (err) {
-      setError(/photos/.test(err.message) ? photoSaveError(err.message) : `บันทึกไม่สำเร็จ: ${err.message}`)
+      setError(/photos/.test(err.message) ? photoSaveError(err.message)
+        : /address/.test(err.message) ? 'บันทึกที่อยู่ไม่ได้ — ต้องรัน SQL เพิ่มคอลัมน์ก่อน: C:\\Users\\Com\\donnaweb\\sql\\add_installation_address_20261103.sql'
+        : `บันทึกไม่สำเร็จ: ${err.message}`)
     } else {
       ph.commit()   // บันทึกผ่านแล้วค่อยลบไฟล์ของรูปที่กดเอาออก (กดยกเลิกกลางทางรูปเดิมจะไม่หาย)
       setModal(null)
@@ -1136,7 +1140,7 @@ export default function InstallationsPage() {
       zone: r => esc(r.install_zone),
       insttech: r => esc(r.technician_type),
       tech: r => esc(oeOf(r)?.technician),
-      address: r => esc(oeOf(r)?.address),
+      address: r => esc(oeOf(r)?.address || r.address),
       phone: r => esc(r.phone),
       maps: r => esc(r.location_link),
       notes: r => esc(r.notes),
@@ -1359,11 +1363,15 @@ export default function InstallationsPage() {
     installs.flatMap(i => [i.customer_id, i.customer_real_name]).map(v => (v ?? '').trim()).filter(Boolean)
   )).sort((a, b) => a.localeCompare(b, 'th'))
 
+  // ช่องที่ยังไม่กรอกในกล่องเพิ่ม/แก้รายการ → พื้นเหลือง เห็นชัดว่าเหลือช่องไหน
+  const fieldStyle = (empty: boolean) => ({ background: empty ? '#FFF6D6' : 'var(--surface)', borderColor: empty ? '#E8C76A' : 'var(--border)' })
+  const isBlank = (v: unknown) => v == null || String(v).trim() === ''
+
   const sel = (label: string, key: string, options: string[]) => (
     <div style={{ marginBottom: 12 }}>
       <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>{label}</label>
       <select value={String(modal?.data[key as keyof typeof modal.data] ?? '')} onChange={e => set(key, e.target.value)}
-        style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none' }}>
+        style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', ...fieldStyle(isBlank(modal?.data[key as keyof typeof modal.data])) }}>
         <option value="">— เลือก —</option>
         {options.map(o => <option key={o}>{o}</option>)}
       </select>
@@ -1374,7 +1382,7 @@ export default function InstallationsPage() {
     <div style={{ marginBottom: 12 }}>
       <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>{label}</label>
       <input type={type} value={String(modal?.data[key as keyof typeof modal.data] ?? '')} onChange={e => set(key, type === 'number' ? Number(e.target.value) : e.target.value)}
-        style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+        style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box', ...fieldStyle(isBlank(modal?.data[key as keyof typeof modal.data])) }} />
     </div>
   )
 
@@ -1814,7 +1822,7 @@ export default function InstallationsPage() {
                         {oe?.address || '—'}
                       </div>
                     )
-                  ) : noOrder,
+                  ) : ins.address ? <span title={ins.address} style={{ fontSize: 11, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ins.address}</span> : noOrder,
                   phone: isInst('phone') ? (
                     <input type="text" autoFocus value={oeEdit!.val}
                       onChange={e => setOeEdit(ec => ec ? { ...ec, val: e.target.value } : null)}
@@ -2394,7 +2402,7 @@ export default function InstallationsPage() {
                     value={/^\d{4}-\d{2}-\d{2}$/.test(apptDate) ? apptDate : ''}
                     onChange={e => { if (e.target.value) setApptDate(e.target.value) }}
                     onMouseDown={e => { e.preventDefault(); try { (e.target as HTMLInputElement).showPicker() } catch {} }}
-                    style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box', color: apptDate ? 'transparent' : 'var(--ink-3)' }}
+                    style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box', color: apptDate ? 'transparent' : 'var(--ink-3)', ...fieldStyle(!/^\d{4}-\d{2}-\d{2}$/.test(apptDate)) }}
                   />
                   {apptDate && (
                     <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, display: 'flex', alignItems: 'center', paddingLeft: 10, fontSize: 13, color: 'var(--ink)', pointerEvents: 'none' }}>
@@ -2430,7 +2438,7 @@ export default function InstallationsPage() {
                       onChange={e => { setCustomerName(e.target.value); setNameSugOpen(true) }}
                       onFocus={() => setNameSugOpen(true)}
                       onBlur={() => setTimeout(() => setNameSugOpen(false), 120)}
-                      style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                      style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box', ...fieldStyle(isBlank(val)) }} />
                     {nameSugOpen && sugs.length > 0 && (
                       <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 7, boxShadow: '0 4px 16px rgba(0,0,0,0.14)', zIndex: 30, maxHeight: 190, overflowY: 'auto', marginTop: 2 }}>
                         {sugs.map(n => (
@@ -2454,14 +2462,19 @@ export default function InstallationsPage() {
             </div>
             {inp('ลิงค์โลเคชั่น', 'location_link')}
             <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>ที่อยู่</label>
+              <textarea value={modal.data.address ?? ''} onChange={e => set('address', e.target.value)} rows={2}
+                style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box', ...fieldStyle(isBlank(modal.data.address)) }} />
+            </div>
+            <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>รายละเอียดงาน</label>
               <textarea value={modal.data.work_details ?? ''} onChange={e => set('work_details', e.target.value)} rows={2}
-                style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+                style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box', ...fieldStyle(isBlank(modal.data.work_details)) }} />
             </div>
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>หมายเหตุ</label>
               <textarea value={modal.data.notes ?? ''} onChange={e => set('notes', e.target.value)} rows={2}
-                style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+                style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box', ...fieldStyle(isBlank(modal.data.notes)) }} />
             </div>
 
             {ph.trigger()}
