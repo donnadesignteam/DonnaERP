@@ -670,14 +670,18 @@ export default function InstallationsPage() {
     })
   }
 
-  const save = async () => {
-    if (!modal) return
+  const save = async (): Promise<string | null> => {
+    if (!modal) return null
     setSaving(true)
     setError('')
     const dt = apptDate && apptTime ? `${apptDate}T${apptTime.padStart(5, '0')}:00+07:00` : modal.data.appointment_datetime
     const d = modal.data
-    const instStatus = (modal.mode === 'add' || INITIAL_STATUSES.includes(d.installation_status ?? ''))
-      ? (STATUS_BY_TYPE[d.work_type ?? ''] ?? d.installation_status)
+    // ‼️ 3พ.ย.69 เดิมสถานะตั้งต้นตามลักษณะงานอย่างเดียว → เลือก "นัดหมายแล้ว" ในฟอร์มแต่ตารางขึ้น "รอนัดหมาย"
+    const baseStatus = d.appointment_status === 'นัดหมายแล้ว' && statusOptions(d.work_type).includes('นัดหมายแล้ว')
+      ? 'นัดหมายแล้ว'
+      : (STATUS_BY_TYPE[d.work_type ?? ''] ?? d.installation_status)
+    const instStatus = (modal.mode === 'add' || INITIAL_STATUSES.includes(d.installation_status ?? '') || normStatus(d.installation_status) === 'นัดหมายแล้ว')
+      ? baseStatus
       : d.installation_status
     const payload: Partial<Installation> = { ...d, appointment_datetime: dt, installation_status: instStatus, serial_no: modal.mode === 'add' ? await nextSerial() : d.serial_no, updated_at: new Date().toISOString(), photos: ph.photos }
     // ยังไม่เคยใช้รูปกับรายการนี้ → ไม่ต้องส่งคอลัมน์ photos (เว็บทำงานได้ตามปกติแม้ยังไม่ได้รัน SQL เพิ่มคอลัมน์)
@@ -724,7 +728,28 @@ export default function InstallationsPage() {
       if (savedRow) await linkOrder(savedRow)   // งานติดตั้ง → สร้างใบออเดอร์ให้ฝ่ายผลิต
       if (modal.mode === 'edit' && d.id) await pushToOrder(d.id, editPatch)   // แก้ในปฏิทิน → sync ไปใบออเดอร์
       load()
+      return savedRow?.id ?? null
     }
+    return null
+  }
+
+  // เปิด popup รายการสินค้าของใบออเดอร์ที่ผูกกับงานติดตั้ง (ช่องรายการในตาราง + ปุ่มในกล่องแก้ไข)
+  const openItems = (ins: Installation, orderId: string) => {
+    const oe = orderMeta[orderId]
+    const fee = oe?.install_fee != null ? String(oe.install_fee) : ''
+    ph.begin(ins.photos, ins.id)
+    setItemsModal({ orderId, items: withAutoHooks(orderItems[orderId] ?? []), instId: ins.id, fee: { val: fee, orig: fee } })
+    setItemsPasteText('')
+    setItemsError('')
+  }
+
+  // กล่องเพิ่ม/แก้ไข (เฉพาะงานติดตั้ง) → บันทึกก่อน แล้วเปิดช่องกรอก/แปลงรายการสินค้าของใบออเดอร์ที่ผูกกัน
+  const saveAndOpenItems = async () => {
+    const id = await save()
+    if (!id) return
+    const { data } = await supabase.from('installations').select('*').eq('id', id).maybeSingle()
+    if (!data?.source_order_id) { setError('ยังไม่มีใบออเดอร์ของงานนี้ — ลองกดแก้ไขแล้วกดปุ่มรายการสินค้าอีกครั้ง'); return }
+    openItems(data as Installation, data.source_order_id)
   }
 
   const saveAppt = async (id: string, date: string, time: string) => {
@@ -1644,7 +1669,7 @@ export default function InstallationsPage() {
                   ),
                   items: ins.source_order_id ? (
                     // มาจากหมวดออเดอร์ → จิ้มเปิด popup แก้รายการ บันทึกกลับไปที่ออเดอร์ต้นทาง
-                    <div onClick={() => { ph.begin(ins.photos, ins.id); setItemsModal({ orderId: ins.source_order_id!, items: withAutoHooks(orderItems[ins.source_order_id!] ?? []), instId: ins.id, fee: { val: oe?.install_fee != null ? String(oe.install_fee) : '', orig: oe?.install_fee != null ? String(oe.install_fee) : '' } }); setItemsPasteText(''); setItemsError('') }}
+                    <div onClick={() => openItems(ins, ins.source_order_id!)}
                       style={{ cursor: 'pointer' }} title="จิ้มเพื่อแก้รายการ">
                       {orderItems[ins.source_order_id]?.length ? (
                         // โชว์แบบเดียวกับคอลัมน์รายการในหมวดออเดอร์: บรรทัดสั้น 1 บรรทัด/ชิ้น ตัดท้ายด้วย …
@@ -2467,11 +2492,16 @@ export default function InstallationsPage() {
               <textarea value={modal.data.address ?? ''} onChange={e => set('address', e.target.value)} rows={2}
                 style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} data-missing={missAttr(isBlank(modal.data.address))} />
             </div>
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>รายละเอียดงาน</label>
-              <textarea value={modal.data.work_details ?? ''} onChange={e => set('work_details', e.target.value)} rows={2}
-                style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} data-missing={missAttr(isBlank(modal.data.work_details))} />
-            </div>
+            {/* ช่องรายละเอียดงานเอาออกจากกล่องแล้ว (3พ.ย.69) — งานติดตั้งกรอกรายการสินค้าแทน · งานเก่าที่มีรายละเอียดยังแก้ได้ที่ตาราง */}
+            {modal.data.work_type === 'งานติดตั้ง' && (
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>รายการสินค้า</label>
+                <button type="button" onClick={saveAndOpenItems} disabled={saving}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 10, border: '1px dashed var(--border-2)', background: 'var(--bg)', color: 'var(--ink)', cursor: saving ? 'default' : 'pointer', fontSize: 13, fontWeight: 600 }}>
+                  ✦ บันทึก แล้วกรอก/แปลงรายการสินค้า
+                </button>
+              </div>
+            )}
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>หมายเหตุ</label>
               <textarea value={modal.data.notes ?? ''} onChange={e => set('notes', e.target.value)} rows={2}
@@ -2483,7 +2513,7 @@ export default function InstallationsPage() {
             <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
               <button className="sc-mcancel" onClick={closeModal}
                 style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: 14 }}>ยกเลิก</button>
-              <button className="sc-msave" onClick={save} disabled={saving}
+              <button className="sc-msave" onClick={() => { save() }} disabled={saving}
                 style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
                 {saving ? 'กำลังบันทึก…' : 'บันทึก'}
               </button>
