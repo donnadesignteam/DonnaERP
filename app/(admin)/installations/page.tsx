@@ -1443,7 +1443,6 @@ export default function InstallationsPage() {
                 value={itemsPasteText}
                 onChange={e => { setItemsPasteText(e.target.value); setItemsError('') }}
                 rows={4}
-                placeholder={'ตัวอย่าง:\nม่านจีบ CC-101 ขาวนวล กว้าง 2.5 สูง 2.2 จำนวน 1 ชุด\nม่านโปร่ง BB-202 ครีม 1.8x2.0 2 ชุด'}
                 style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 10px', fontSize: 12, outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit', background: '#fff' }}
               />
               {itemsError && (
